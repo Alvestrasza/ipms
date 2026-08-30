@@ -30,10 +30,10 @@ test("serves the anonymous sign-in experience without browser errors", async ({
     }),
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+  expect(failedResponses).toEqual([]);
+  expect(browserErrors).toEqual([]);
   await expect(page.getByLabel("Username")).toBeEnabled();
   await expect(page.getByLabel("Password")).toBeEnabled();
   await expect(page.getByRole("button", { name: "Continue" })).toBeEnabled();
   await expect(page.getByLabel("Language")).toHaveValue("en");
-  expect(failedResponses).toEqual([]);
-  expect(browserErrors).toEqual([]);
 });

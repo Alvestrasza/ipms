@@ -33,6 +33,9 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+// A request-scoped CSP nonce requires dynamically rendered HTML.
+export const dynamic = "force-dynamic";
+
 export default async function RootLayout({
   children,
   params,
