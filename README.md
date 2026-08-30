@@ -18,6 +18,7 @@ maintained in [ROADMAP.md](ROADMAP.md).
 - [Ubuntu Appliance hardening baseline](docs/operations/UBUNTU-APPLIANCE-HARDENING.md)
 - [Ubuntu Appliance hardening automation](docs/operations/UBUNTU-HARDENING-AUTOMATION.md)
 - [Standalone development deployment](docs/operations/STANDALONE-DEV-DEPLOYMENT.md)
+- [Standalone development acceptance](docs/operations/STANDALONE-DEV-ACCEPTANCE.md)
 
 ## Architecture Decisions
 
