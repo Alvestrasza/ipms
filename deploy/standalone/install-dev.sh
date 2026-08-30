@@ -85,8 +85,14 @@ getent group ipms-control-plane >/dev/null || groupadd --system ipms-control-pla
 id ipms-control-plane >/dev/null 2>&1 || useradd --system --gid ipms-control-plane --home-dir /nonexistent --shell /usr/sbin/nologin ipms-control-plane
 getent group ipms-web >/dev/null || groupadd --system ipms-web
 id ipms-web >/dev/null 2>&1 || useradd --system --gid ipms-web --home-dir /nonexistent --shell /usr/sbin/nologin ipms-web
+getent group ipms-runtime >/dev/null || groupadd --system ipms-runtime
+for runtime_user in postgres ipms-control-plane ipms-web; do
+    usermod --append --groups ipms-runtime "$runtime_user"
+done
 
 install -d -m 0755 /srv/ipms/releases /srv/ipms/shared /srv/ipms/data
+chown root:ipms-runtime /srv/ipms
+chmod 0710 /srv/ipms
 install -d -o ipms-web -g ipms-web -m 0750 /srv/ipms/shared/web-cache
 release_directory="/srv/ipms/releases/${RELEASE_REF}"
 if [[ ! -d $release_directory ]]; then
@@ -122,7 +128,10 @@ chown -R root:root "$release_directory"
 postgresql_version=$(ls /usr/lib/postgresql | sort -V | tail -n 1)
 postgresql_data="/srv/ipms/data/postgresql/${postgresql_version}/main"
 if ! pg_lsclusters --no-header | awk '{print $1, $2}' | grep -qx "${postgresql_version} main"; then
-    install -d -o postgres -g postgres -m 0700 "$postgresql_data"
+    install -d -o postgres -g postgres -m 0700 \
+        /srv/ipms/data/postgresql \
+        "/srv/ipms/data/postgresql/${postgresql_version}" \
+        "$postgresql_data"
     pg_createcluster "$postgresql_version" main --datadir="$postgresql_data" --start
 fi
 systemctl enable --now postgresql
