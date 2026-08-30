@@ -1,0 +1,11 @@
+[Unit]
+Description=Run IPMS connector discovery worker
+
+[Timer]
+OnBootSec=15s
+OnUnitActiveSec=10s
+AccuracySec=1s
+Unit=ipms-connector-worker.service
+
+[Install]
+WantedBy=timers.target

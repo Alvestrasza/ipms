@@ -1,15 +1,19 @@
 import uuid
 from dataclasses import asdict
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from ipms.apps.audit.models import AuditEvent
 from ipms.apps.tenancy.models import Tenant, TenantMembership
 
 from .connectors.ilo_redfish import RedfishConnectorError, RedfishTransport, discover_ilo
-from .models import ConnectorEndpoint, DiscoveryJob, PhysicalSystem
+from .models import ConnectorEndpoint, ConnectorSecret, DiscoveryJob, PhysicalSystem
+from .secrets import load_connector_secret
+from .services import process_discovery_queue
 
 
 class DiscoveryJobApiTests(TestCase):
@@ -241,3 +245,130 @@ class IloRedfishConnectorTests(TestCase):
             with self.subTest(method=method):
                 with self.assertRaisesRegex(RedfishConnectorError, "request_method_rejected"):
                     transport.request_json(method, path)
+
+
+class IloPortalEnrollmentTests(TestCase):
+    def setUp(self) -> None:
+        user_model = get_user_model()
+        self.admin = user_model.objects.create_user("tenant-admin", password="test-password")
+        self.reader = user_model.objects.create_user("reader", password="test-password")
+        self.tenant = Tenant.objects.create(slug="wizard", display_name="Wizard")
+        self.other_tenant = Tenant.objects.create(slug="other-wizard", display_name="Other")
+        TenantMembership.objects.create(
+            tenant=self.tenant,
+            user=self.admin,
+            role=TenantMembership.Role.TENANT_ADMIN,
+        )
+        TenantMembership.objects.create(
+            tenant=self.tenant,
+            user=self.reader,
+            role=TenantMembership.Role.READER,
+        )
+        self.payload = {
+            "display_name": "Synthetic iLO",
+            "base_url": "https://192.0.2.10/",
+            "certificate_sha256": "ab:" * 31 + "ab",
+            "username": "readonly-user",
+            "password": "test-only-secret",
+            "confirm_read_only": True,
+        }
+
+    def post(self, user, tenant, payload=None):
+        self.client.force_login(user)
+        return self.client.post(
+            reverse("core:ilo-enroll"),
+            data=payload or self.payload,
+            content_type="application/json",
+            headers={"X-IPMS-Tenant-ID": str(tenant.id)},
+        )
+
+    def test_tenant_admin_enrolls_with_encrypted_write_only_secret_and_queued_job(self) -> None:
+        response = self.post(self.admin, self.tenant)
+        self.assertEqual(response.status_code, 201)
+        endpoint = ConnectorEndpoint.objects.get()
+        secret = ConnectorSecret.objects.get()
+        job = DiscoveryJob.objects.get()
+        self.assertEqual(secret.id, endpoint.credential_reference)
+        self.assertNotIn(b"readonly-user", bytes(secret.ciphertext))
+        self.assertNotIn(b"test-only-secret", bytes(secret.ciphertext))
+        self.assertEqual(
+            load_connector_secret(tenant_id=self.tenant.id, secret_id=secret.id),
+            ("readonly-user", "test-only-secret"),
+        )
+        self.assertEqual(job.status, DiscoveryJob.Status.QUEUED)
+        self.assertEqual(
+            AuditEvent.objects.get(action="connector.enroll").tenant,
+            self.tenant,
+        )
+        document = response.json()
+        serialized = str(document)
+        self.assertNotIn("readonly-user", serialized)
+        self.assertNotIn("test-only-secret", serialized)
+        self.assertNotIn("credential_reference", serialized)
+        self.assertNotIn("certificate_sha256", serialized)
+
+    def test_reader_cannot_enroll_connector(self) -> None:
+        response = self.post(self.reader, self.tenant)
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(ConnectorEndpoint.objects.exists())
+
+    def test_inaccessible_tenant_is_not_disclosed(self) -> None:
+        response = self.post(self.admin, self.other_tenant)
+        self.assertEqual(response.status_code, 404)
+
+    def test_requires_https_origin_and_read_only_confirmation(self) -> None:
+        payload = {**self.payload, "base_url": "http://192.0.2.10/redfish", "confirm_read_only": False}
+        response = self.post(self.admin, self.tenant, payload)
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(ConnectorEndpoint.objects.exists())
+
+    def test_duplicate_endpoint_is_rejected_without_replacing_credential(self) -> None:
+        self.assertEqual(self.post(self.admin, self.tenant).status_code, 201)
+        original_ciphertext = bytes(ConnectorSecret.objects.get().ciphertext)
+        response = self.post(
+            self.admin,
+            self.tenant,
+            {**self.payload, "password": "replacement-test-secret"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(ConnectorEndpoint.objects.count(), 1)
+        self.assertEqual(bytes(ConnectorSecret.objects.get().ciphertext), original_ciphertext)
+
+    @patch("ipms.apps.discovery.services.socket.getaddrinfo")
+    @patch("ipms.apps.discovery.services.discover_ilo")
+    def test_isolated_queue_processor_updates_inventory(self, discover, getaddrinfo) -> None:
+        response = self.post(self.admin, self.tenant)
+        self.assertEqual(response.status_code, 201)
+        getaddrinfo.return_value = [(2, 1, 6, "", ("10.0.0.20", 0))]
+        discover.return_value = (self.fixture_observations(), {"redfish_version": "1.0.0", "system_count": "1"})
+        self.assertEqual(process_discovery_queue(limit=1), 1)
+        job = DiscoveryJob.objects.get()
+        endpoint = ConnectorEndpoint.objects.get()
+        self.assertEqual(job.status, DiscoveryJob.Status.SUCCEEDED)
+        self.assertEqual(endpoint.health, ConnectorEndpoint.Health.HEALTHY)
+        self.assertEqual(PhysicalSystem.objects.get().name, "Synthetic host")
+
+    @staticmethod
+    def fixture_observations():
+        from .connectors.ilo_redfish import PhysicalSystemObservation
+
+        return [
+            PhysicalSystemObservation(
+                source_resource_id="/redfish/v1/Systems/1/",
+                name="Synthetic host",
+                manufacturer="Example",
+                model="Fixture",
+                serial_number="SYNTHETIC",
+                sku="",
+                system_uuid="00000000-0000-0000-0000-000000000001",
+                power_state="On",
+                health="ok",
+                state="Enabled",
+                processor_count=2,
+                processor_model="Fixture CPU",
+                total_cores=16,
+                memory_bytes=64 * 1024**3,
+                bios_version="Fixture BIOS",
+                bmc_firmware_version="Fixture BMC",
+            )
+        ]

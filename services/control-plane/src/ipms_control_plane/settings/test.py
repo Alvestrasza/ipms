@@ -2,6 +2,10 @@ import os
 
 
 os.environ.setdefault("IPMS_SECRET_KEY", "test-only-not-for-deployment")
+os.environ.setdefault(
+    "IPMS_CONNECTOR_MASTER_KEY",
+    "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+)
 os.environ.setdefault("IPMS_ALLOWED_HOSTS", "testserver")
 os.environ.setdefault("IPMS_DATABASE_NAME", "unused-in-test-settings")
 os.environ.setdefault("IPMS_DATABASE_USER", "unused-in-test-settings")

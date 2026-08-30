@@ -137,6 +137,45 @@ test("opens the tenant-scoped physical infrastructure view", async ({
   ).toHaveAttribute("aria-current", "page");
 });
 
+test("enrolls an iLO connector through the guided portal wizard", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.goto("/en/physical");
+  let submittedPassword = "";
+  await page.route("**/api/v1/connectors/ilo/", async (route) => {
+    const payload = route.request().postDataJSON();
+    submittedPassword = payload.password;
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        connector: { id: "00000000-0000-0000-0000-000000000001" },
+        discovery_job: { status: "queued" },
+      }),
+    });
+  });
+
+  await page.getByRole("button", { name: "Add iLO connector" }).click();
+  await page.getByLabel("Display name").fill("Synthetic iLO");
+  await page.getByLabel("iLO HTTPS URL").fill("https://192.0.2.40/");
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByLabel("TLS certificate SHA-256 fingerprint")
+    .fill("0".repeat(64));
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByLabel("Read-only iLO user").fill("synthetic-reader");
+  const password = page.getByLabel("Password", { exact: true });
+  await expect(password).toHaveAttribute("type", "password");
+  await password.fill("test-only-secret");
+  await page.getByLabel(/I confirm that this iLO account/).check();
+  await page.getByRole("button", { name: "Enroll and discover" }).click();
+
+  await expect(page.getByText(/first discovery job is queued/)).toBeVisible();
+  expect(submittedPassword).toBe("test-only-secret");
+  await expect(page.getByText("test-only-secret")).toHaveCount(0);
+});
+
 test("has no automatically detectable critical accessibility violations", async ({
   page,
 }) => {

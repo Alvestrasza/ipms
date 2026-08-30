@@ -2,57 +2,54 @@
 
 ## Scope
 
-This procedure enrolls one tenant-owned HPE iLO endpoint and runs one
-read-only Redfish discovery. It does not perform power, BIOS, firmware,
-virtual-media, storage, network, or account changes on the managed server.
+Tenant and platform administrators enroll iLO connectors through the **Physical
+infrastructure** portal wizard. No console command, SSH transfer, or manually
+managed credential file is part of the product workflow.
+
+The initial connector performs read-only Redfish inventory. It does not change
+power, BIOS, firmware, virtual media, storage, network, or accounts.
 
 ## Prerequisites
 
-- iLO 4 firmware 2.30 or later, or a supported iLO 5+ generation.
-- HTTPS reachability from the IPMS connector execution environment.
-- A dedicated iLO account with only login/read privileges.
-- A separately verified SHA-256 fingerprint for the presented leaf
-  certificate, or an approved CA trust path in a future profile.
-- The IPMS SSH key and pinned server host key already validated.
+- HTTPS reachability from the connector-worker network boundary.
+- A dedicated iLO account restricted to login and read privileges.
+- A SHA-256 fingerprint for the leaf certificate, verified through an
+  independent trusted channel.
+- Tenant-administrator or platform-administrator access in IPMS.
 
-Do not place an iLO password in a shell argument, command history, GitHub,
-documentation, ticket, chat, or fixture.
+Never place an iLO password in a command line, shell history, GitHub issue,
+documentation, chat, test fixture, or screenshot.
 
-## Enrollment
+## Portal Workflow
 
-Run the PowerShell helper from the trusted management workstation. Use the
-actual private values for the deployment; the values below are documentation
-placeholders only.
+1. Sign in and select the intended tenant.
+2. Open **Physical infrastructure**.
+3. Select **Add iLO connector**.
+4. Enter the display name and HTTPS origin URL.
+5. Enter the independently verified certificate SHA-256 fingerprint.
+6. Enter the dedicated read-only account and confirm its read-only scope.
+7. Select **Enroll and discover**.
 
-```powershell
-.\scripts\enroll-ilo-connector.ps1 `
-  -HostName 'ipms-dev.example.invalid' `
-  -TenantSlug 'development' `
-  -DisplayName 'Example iLO' `
-  -BaseUrl 'https://192.0.2.40/' `
-  -CertificateSha256 '0000000000000000000000000000000000000000000000000000000000000000' `
-  -IloUsername 'ipms_ro'
-```
+The Control Plane revalidates tenant access and requires either the tenant
+administrator role or platform-administrator status. It encrypts the credential
+with AES-256-GCM using a dedicated appliance master key, stores no plaintext
+credential, emits an enrollment audit event, and queues the first discovery.
+The API response is redacted and never contains the credential reference,
+username, password, certificate pin, nonce, or ciphertext.
 
-The helper prompts for the password as a SecureString. It then:
-
-1. enrolls or updates the endpoint without a secret;
-2. sends the credential JSON only over the pinned SSH connection;
-3. installs it as a root-owned, group-readable `0640` file in the dedicated
-   connector-secret directory;
-4. executes one discovery as the unprivileged Control Plane runtime identity;
-5. returns only endpoint, job, Redfish version, and object-count identifiers.
+The isolated connector worker polls the durable queue, validates that the
+resolved destination is a private, non-local address, verifies the pinned TLS
+certificate before authentication, and runs the read-only Redfish session.
 
 ## Validation
 
-- The endpoint appears under **Physical infrastructure**.
-- The discovered system is tenant-scoped and shows model, serial number,
-  power state, health, CPU, memory, BIOS, and iLO firmware when exposed.
-- The discovery job is `succeeded` and has an append-only audit event.
-- The connector transport used only `GET` requests plus session creation and
-  deletion.
+- The endpoint appears under **Physical infrastructure** for the selected
+  tenant only.
+- A queued job becomes `succeeded` or reports a stable, non-secret error code.
+- A successful discovery populates normalized hardware inventory.
+- Enrollment and discovery each produce an append-only audit event.
 - No credential, token, certificate body, raw Redfish payload, or private
-  endpoint is present in logs or public issue evidence.
+  endpoint appears in public issue evidence or application logs.
 
-If discovery fails, use the stable error code in the job and connector health
-record. Do not enable insecure TLS or broaden iLO privileges as a workaround.
+Do not enable insecure TLS, bypass private-target validation, or broaden iLO
+privileges to work around a failed discovery.

@@ -132,6 +132,35 @@ export const en = {
     noConnectors: "No iLO connector enrolled",
     noConnectorsHint:
       "Enroll and validate a read-only iLO endpoint to begin discovery.",
+    addConnector: "Add iLO connector",
+    wizardEyebrow: "Guided enrollment",
+    wizardHeading: "Add an iLO Redfish connector",
+    closeWizard: "Close connector wizard",
+    wizardProgress: "Connector enrollment progress",
+    stepEndpoint: "Endpoint",
+    stepTrust: "Trust",
+    stepCredential: "Credential",
+    displayName: "Display name",
+    baseUrl: "iLO HTTPS URL",
+    endpointHint:
+      "Use the management address or resolvable management DNS name. Only HTTPS is accepted.",
+    fingerprint: "TLS certificate SHA-256 fingerprint",
+    fingerprintHint:
+      "Verify the fingerprint through an independent, trusted channel before continuing.",
+    connectorUsername: "Read-only iLO user",
+    connectorPassword: "Password",
+    readOnlyConfirmation:
+      "I confirm that this iLO account is restricted to read-only access.",
+    credentialHint:
+      "The password is encrypted before storage and is never returned to the browser.",
+    back: "Back",
+    next: "Next",
+    enroll: "Enroll and discover",
+    enrolling: "Enrolling…",
+    wizardSuccess: "Connector enrolled. The first discovery job is queued.",
+    wizardError:
+      "Enrollment was rejected. Review the values and your tenant role.",
+    wizardUnavailable: "The Control Plane is currently unavailable.",
   },
   status: {
     healthy: "Healthy",

@@ -591,6 +591,129 @@ h2 {
 .connector-card .panel__header > svg {
   color: var(--color-text-muted);
 }
+.wizard-launch {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-default);
+}
+.form-success {
+  margin: 0;
+  color: var(--color-success);
+  font-size: 0.76rem;
+}
+.wizard {
+  margin: 16px 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface-panel-raised);
+}
+.wizard__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border-default);
+}
+.wizard__header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+.wizard__steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 0;
+  padding: 14px 18px;
+  list-style: none;
+  border-bottom: 1px solid var(--border-default);
+}
+.wizard__steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+}
+.wizard__steps li > span {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border-default);
+  border-radius: 50%;
+}
+.wizard__step--active,
+.wizard__step--done {
+  color: var(--color-text-primary) !important;
+}
+.wizard__step--active > span {
+  border-color: var(--color-accent-crimson) !important;
+}
+.wizard__step--done > span {
+  color: var(--color-success);
+  border-color: var(--color-success) !important;
+}
+.wizard form,
+.wizard fieldset,
+.wizard label {
+  display: grid;
+  gap: 8px;
+}
+.wizard form {
+  padding: 18px;
+}
+.wizard fieldset {
+  gap: 15px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.wizard fieldset[hidden] {
+  display: none;
+}
+.wizard legend {
+  margin-bottom: 13px;
+  font-weight: 700;
+}
+.wizard label {
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.wizard input[type="text"],
+.wizard input[type="url"],
+.wizard input[type="password"] {
+  min-height: 43px;
+  padding: 0 12px;
+  color: var(--color-text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: 5px;
+  background: var(--surface-page);
+}
+.wizard__confirmation {
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  font-weight: 500 !important;
+  line-height: 1.45;
+}
+.wizard__confirmation input {
+  margin-top: 3px;
+}
+.wizard__hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+.wizard__actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 18px;
+}
 .connector-row {
   min-height: 57px;
   display: flex;

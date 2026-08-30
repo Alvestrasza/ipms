@@ -23,6 +23,7 @@ def comma_separated_environment(name: str, *, required: bool = False) -> list[st
 
 
 SECRET_KEY = required_environment("IPMS_SECRET_KEY")
+CONNECTOR_MASTER_KEY = required_environment("IPMS_CONNECTOR_MASTER_KEY")
 DEBUG = False
 ALLOWED_HOSTS = comma_separated_environment("IPMS_ALLOWED_HOSTS", required=True)
 

@@ -19,6 +19,7 @@ maintained in [ROADMAP.md](ROADMAP.md).
 - [Ubuntu Appliance hardening automation](docs/operations/UBUNTU-HARDENING-AUTOMATION.md)
 - [Standalone development deployment](docs/operations/STANDALONE-DEV-DEPLOYMENT.md)
 - [Standalone development acceptance](docs/operations/STANDALONE-DEV-ACCEPTANCE.md)
+- [Portal-based iLO connector enrollment](docs/operations/ILO-CONNECTOR-ENROLLMENT.md)
 
 ## Architecture Decisions
 

@@ -18,13 +18,14 @@ The initial scaffold provides:
   discovery jobs with read APIs;
 - a certificate-pinned, session-scoped iLO Redfish connector that rejects
   managed-infrastructure write methods; and
+- portal-only iLO enrollment with tenant-administrator authorization,
+  AES-256-GCM credential storage, and a separately sandboxed queue worker; and
 - request correlation and a common API error envelope; and
 - tests for endpoint policy and model invariants.
 
-Inventory, connector, external identity-provider, and tenant-management APIs
-are not yet implemented. Discovery-job creation is reserved for the future
-internal job engine. No endpoint in this scaffold changes managed
-infrastructure.
+External identity-provider and tenant-management APIs are not yet implemented.
+The iLO enrollment endpoint creates read-only discovery jobs but no endpoint in
+this scaffold changes managed infrastructure.
 
 ## Local Development
 
@@ -71,6 +72,9 @@ deployment database.
   read-only status for the tenant selected through `X-IPMS-Tenant-ID`.
 - `GET /api/v1/connectors/` exposes a redacted tenant-owned connector
   projection without credential references or certificate pins.
+- `POST /api/v1/connectors/ilo/` enrolls an iLO endpoint and queues its first
+  read-only discovery for tenant or platform administrators. Credential and
+  trust-secret fields are write-only.
 - `GET /api/v1/physical-systems/` exposes normalized tenant-owned hardware
   inventory without raw Redfish payloads.
 

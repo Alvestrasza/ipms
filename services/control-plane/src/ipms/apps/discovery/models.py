@@ -52,6 +52,23 @@ class ConnectorEndpoint(models.Model):
         return f"{self.display_name} ({self.connector_type})"
 
 
+class ConnectorSecret(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.PROTECT,
+        related_name="connector_secrets",
+    )
+    nonce = models.BinaryField()
+    ciphertext = models.BinaryField()
+    key_version = models.PositiveSmallIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"Connector credential {self.id}"
+
+
 class PhysicalSystem(models.Model):
     class Health(models.TextChoices):
         OK = "ok", "OK"

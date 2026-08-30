@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.14,<3.15"
 license = { text = "Proprietary" }
 dependencies = [
+  "cryptography==50.0.1",
   "Django==6.1",
   "djangorestframework==3.18.0",
   "gunicorn==26.2.0",

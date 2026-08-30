@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { ConsoleShell } from "@/components/console-shell";
+import { IloConnectorWizard } from "@/components/ilo-connector-wizard";
 import { StatusPill } from "@/components/status-pill";
 import { documentLocale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionaries";
@@ -53,6 +54,8 @@ export default async function PhysicalInfrastructurePage() {
   const iloConnectors = infrastructure.connectors.filter(
     (connector) => connector.connector_type === "ilo-redfish",
   );
+  const canManageConnectors =
+    session.user.is_platform_admin || tenant.role === "tenant_admin";
 
   return (
     <ConsoleShell session={session} tenant={tenant} activeSection="physical">
@@ -210,6 +213,13 @@ export default async function PhysicalInfrastructurePage() {
           </div>
           <span className="read-only-badge">Redfish</span>
         </div>
+        {canManageConnectors ? (
+          <IloConnectorWizard
+            csrfToken={session.csrf_token}
+            tenantId={tenant.id}
+            copy={dictionary.physical}
+          />
+        ) : null}
         {iloConnectors.length ? (
           iloConnectors.map((connector) => (
             <div className="connector-row" key={connector.id}>

@@ -23,9 +23,11 @@ required for the baseline inventory.
 - Use a dedicated iLO local account with the HPE `ReadOnly` role. HPE maps that
   role to `LoginPriv` only; no power, console, media, BIOS, storage, network,
   user-management, or iLO-configuration privilege is granted.
-- Store the password as a protected secret reference. Never return it through
-  the API, serialize it into a job, place it in a command line, or write it to a
-  log.
+- Enroll connectors only through the tenant-aware portal workflow. Encrypt the
+  username and password with AES-256-GCM under a dedicated deployment master
+  key and bind the ciphertext to its tenant and secret identifiers. Never
+  return credentials, secret references, certificate pins, nonces, or
+  ciphertext through the API.
 - Prefer Redfish session authentication. The password is submitted only to the
   session collection, the returned `X-Auth-Token` is held in worker memory, and
   the connector deletes its own session during cleanup.
@@ -43,18 +45,22 @@ inventory operations.
 
 ## Discovery Sequence
 
-1. Fetch `/redfish/v1/` and record Redfish version plus advertised service
+1. A tenant or platform administrator completes the portal wizard; the Control
+   Plane stores the encrypted credential and queues a durable discovery job.
+2. The isolated connector worker claims the job and validates its private
+   destination and trust material.
+3. Fetch `/redfish/v1/` and record Redfish version plus advertised service
    links.
-2. Create a Redfish login session through the advertised session collection.
-3. Enumerate the advertised `Systems`, `Chassis`, and `Managers` collections.
-4. Follow resource links to processors, memory, storage, drives, volumes,
+4. Create a Redfish login session through the advertised session collection.
+5. Enumerate the advertised `Systems`, `Chassis`, and `Managers` collections.
+6. Follow resource links to processors, memory, storage, drives, volumes,
    network interfaces or adapters, thermal data, power data, log summaries, and
    firmware inventory when present.
-5. Normalize stable identity, manufacturer, model, serial number, SKU, UUID,
+7. Normalize stable identity, manufacturer, model, serial number, SKU, UUID,
    power state, health, CPU, memory, storage, network, BMC, and firmware fields.
-6. Record unsupported and inaccessible optional resources as partial-data
+8. Record unsupported and inaccessible optional resources as partial-data
    observations rather than inventing values or failing the entire endpoint.
-7. Persist one tenant-scoped discovery result transaction, update connector
+9. Persist one tenant-scoped discovery result transaction, update connector
    health, emit an audit event, and delete the Redfish session.
 
 Collection members and optional resources vary by iLO generation, firmware,
@@ -98,8 +104,8 @@ isolates any legacy Smart Storage parsing in a version-specific adapter.
 ## Implementation Stages
 
 1. Finalize the generic read-only connector contract in Issue #4.
-2. Add endpoint enrollment, protected credential references, and trust
-   material without exposing secrets to the Web Console.
+2. Add portal-based endpoint enrollment, encrypted credentials, trust material,
+   tenant-administrator authorization, and a separate execution worker.
 3. Implement the session-scoped Redfish transport and strict request allowlist.
 4. Implement standard resource discovery and normalization with fixtures.
 5. Add HPE adapters only for required data absent from the standard model.

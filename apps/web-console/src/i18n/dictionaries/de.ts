@@ -138,6 +138,36 @@ export const de = {
     noConnectors: "Kein iLO-Connector eingebunden",
     noConnectorsHint:
       "Binden Sie einen schreibgeschützten iLO-Endpunkt ein, um die Erkennung zu beginnen.",
+    addConnector: "iLO-Connector hinzufügen",
+    wizardEyebrow: "Geführte Einrichtung",
+    wizardHeading: "iLO-Redfish-Connector hinzufügen",
+    closeWizard: "Connector-Assistent schließen",
+    wizardProgress: "Fortschritt der Connector-Einrichtung",
+    stepEndpoint: "Endpunkt",
+    stepTrust: "Vertrauen",
+    stepCredential: "Zugangsdaten",
+    displayName: "Anzeigename",
+    baseUrl: "iLO-HTTPS-URL",
+    endpointHint:
+      "Verwenden Sie die Managementadresse oder einen auflösbaren Management-DNS-Namen. Es wird ausschließlich HTTPS akzeptiert.",
+    fingerprint: "SHA-256-Fingerabdruck des TLS-Zertifikats",
+    fingerprintHint:
+      "Prüfen Sie den Fingerabdruck vor dem Fortfahren über einen unabhängigen, vertrauenswürdigen Weg.",
+    connectorUsername: "Schreibgeschützter iLO-Benutzer",
+    connectorPassword: "Passwort",
+    readOnlyConfirmation:
+      "Ich bestätige, dass dieses iLO-Konto nur Leserechte besitzt.",
+    credentialHint:
+      "Das Passwort wird vor der Speicherung verschlüsselt und niemals an den Browser zurückgegeben.",
+    back: "Zurück",
+    next: "Weiter",
+    enroll: "Einbinden und erkennen",
+    enrolling: "Wird eingebunden…",
+    wizardSuccess:
+      "Der Connector wurde eingebunden. Der erste Erkennungsauftrag ist eingereiht.",
+    wizardError:
+      "Die Einrichtung wurde abgelehnt. Prüfen Sie die Werte und Ihre Mandantenrolle.",
+    wizardUnavailable: "Die Steuerungsebene ist derzeit nicht verfügbar.",
   },
   status: {
     healthy: "Fehlerfrei",

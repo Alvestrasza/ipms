@@ -16,6 +16,7 @@ The installer deploys:
 - the official Node.js 24 LTS archive after SHA-256 verification, plus the
   repository-pinned pnpm version;
 - the Next.js standalone Web Console;
+- a separately sandboxed, private-network-only connector worker and timer;
 - nginx as the only HTTPS listener; and
 - systemd sandboxing, UFW source restriction, and Fail2ban for SSH.
 
@@ -78,7 +79,7 @@ operations process.
 ## Acceptance
 
 ```shell
-sudo systemctl is-active postgresql ipms-control-plane ipms-web-console nginx fail2ban
+sudo systemctl is-active postgresql ipms-control-plane ipms-web-console ipms-connector-worker.timer nginx fail2ban
 sudo ss -lntp
 sudo ufw status verbose
 curl --fail http://127.0.0.1:8000/api/v1/health/ready/
@@ -97,7 +98,7 @@ database files, runtime cache, secrets, and the initial credential do not live
 inside a release.
 
 Application rollback consists of selecting the previous release symlink and
-restarting the two IPMS services. Database migrations require a separately
+restarting the IPMS application services and connector timer. Database migrations require a separately
 reviewed backward-compatibility or restore decision; switching application code
 does not reverse a migration automatically.
 

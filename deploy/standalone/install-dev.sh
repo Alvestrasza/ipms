@@ -85,8 +85,10 @@ getent group ipms-control-plane >/dev/null || groupadd --system ipms-control-pla
 id ipms-control-plane >/dev/null 2>&1 || useradd --system --gid ipms-control-plane --home-dir /nonexistent --shell /usr/sbin/nologin ipms-control-plane
 getent group ipms-web >/dev/null || groupadd --system ipms-web
 id ipms-web >/dev/null 2>&1 || useradd --system --gid ipms-web --home-dir /nonexistent --shell /usr/sbin/nologin ipms-web
+getent group ipms-connector-worker >/dev/null || groupadd --system ipms-connector-worker
+id ipms-connector-worker >/dev/null 2>&1 || useradd --system --gid ipms-connector-worker --home-dir /nonexistent --shell /usr/sbin/nologin ipms-connector-worker
 getent group ipms-runtime >/dev/null || groupadd --system ipms-runtime
-for runtime_user in postgres ipms-control-plane ipms-web; do
+for runtime_user in postgres ipms-control-plane ipms-web ipms-connector-worker; do
     usermod --append --groups ipms-runtime "$runtime_user"
 done
 
@@ -94,7 +96,6 @@ install -d -m 0755 /srv/ipms/releases /srv/ipms/shared /srv/ipms/data
 chown root:ipms-runtime /srv/ipms
 chmod 0710 /srv/ipms
 install -d -o ipms-web -g ipms-web -m 0750 /srv/ipms/shared/web-cache
-install -d -o root -g ipms-control-plane -m 0750 /srv/ipms/shared/connector-secrets
 release_directory="/srv/ipms/releases/${RELEASE_REF}"
 if [[ ! -d $release_directory ]]; then
     staging_directory="/srv/ipms/releases/.${RELEASE_REF}.staging"
@@ -159,6 +160,7 @@ if [[ ! -f $control_plane_env ]]; then
     {
         echo "DJANGO_SETTINGS_MODULE=ipms_control_plane.settings.production"
         echo "IPMS_SECRET_KEY=${secret_key}"
+        echo "IPMS_CONNECTOR_MASTER_KEY=$(openssl rand -base64 32 | tr -d '\n')"
         echo "IPMS_ALLOWED_HOSTS=${PUBLIC_HOST},127.0.0.1"
         echo "IPMS_CSRF_TRUSTED_ORIGINS=https://${PUBLIC_HOST}"
         echo "IPMS_DATABASE_NAME=ipms"
@@ -167,12 +169,11 @@ if [[ ! -f $control_plane_env ]]; then
         echo "IPMS_DATABASE_HOST=127.0.0.1"
         echo "IPMS_DATABASE_PORT=5432"
         echo "IPMS_DATABASE_SSLMODE=prefer"
-        echo "IPMS_CONNECTOR_SECRET_DIRECTORY=/srv/ipms/shared/connector-secrets"
         echo "IPMS_HSTS_SECONDS=0"
     } > "$control_plane_env"
 fi
-if ! grep -q '^IPMS_CONNECTOR_SECRET_DIRECTORY=' "$control_plane_env"; then
-    echo "IPMS_CONNECTOR_SECRET_DIRECTORY=/srv/ipms/shared/connector-secrets" >> "$control_plane_env"
+if ! grep -q '^IPMS_CONNECTOR_MASTER_KEY=' "$control_plane_env"; then
+    echo "IPMS_CONNECTOR_MASTER_KEY=$(openssl rand -base64 32 | tr -d '\n')" >> "$control_plane_env"
 fi
 if grep -q '^IPMS_ALLOWED_HOSTS=' "$control_plane_env"; then
     sed -i "s|^IPMS_ALLOWED_HOSTS=.*|IPMS_ALLOWED_HOSTS=${PUBLIC_HOST},127.0.0.1|" "$control_plane_env"
@@ -212,6 +213,8 @@ control_manage=/srv/ipms/current/services/control-plane/manage.py
 
 install -m 0644 "$release_directory/deploy/standalone/ipms-control-plane.service" /etc/systemd/system/ipms-control-plane.service
 install -m 0644 "$release_directory/deploy/standalone/ipms-web-console.service" /etc/systemd/system/ipms-web-console.service
+install -m 0644 "$release_directory/deploy/standalone/ipms-connector-worker.service" /etc/systemd/system/ipms-connector-worker.service
+install -m 0644 "$release_directory/deploy/standalone/ipms-connector-worker.timer" /etc/systemd/system/ipms-connector-worker.timer
 
 install -d -m 0700 /etc/ipms/tls
 if [[ ! -f /etc/ipms/tls/server.key || ! -f /etc/ipms/tls/server.crt ]]; then
@@ -245,14 +248,15 @@ install -d -m 0755 /etc/fail2ban/jail.d
 nginx -t
 fail2ban-client -t
 systemctl daemon-reload
-systemctl enable fail2ban ipms-control-plane ipms-web-console nginx
-systemctl restart fail2ban ipms-control-plane ipms-web-console nginx
+systemctl enable fail2ban ipms-control-plane ipms-web-console ipms-connector-worker.timer nginx
+systemctl restart fail2ban ipms-control-plane ipms-web-console ipms-connector-worker.timer nginx
 ufw allow from "$MANAGEMENT_SOURCE" to any port 443 proto tcp comment "IPMS HTTPS management"
 ufw --force enable
 
 systemctl is-active --quiet postgresql
 systemctl is-active --quiet ipms-control-plane
 systemctl is-active --quiet ipms-web-console
+systemctl is-active --quiet ipms-connector-worker.timer
 systemctl is-active --quiet nginx
 curl --fail --silent --show-error \
     --header "Host: ${PUBLIC_HOST}" \
