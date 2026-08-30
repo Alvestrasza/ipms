@@ -1,0 +1,42 @@
+[Unit]
+Description=IPMS Control Plane
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=ipms-control-plane
+Group=ipms-control-plane
+WorkingDirectory=/srv/ipms/current/services/control-plane
+EnvironmentFile=/srv/ipms/shared/control-plane.env
+Environment=PYTHONPATH=/srv/ipms/current/services/control-plane/src
+ExecStart=/srv/ipms/current/services/control-plane/.venv/bin/gunicorn ipms_control_plane.wsgi:application --bind 127.0.0.1:8000 --workers 3 --timeout 60 --graceful-timeout 30 --access-logfile - --error-logfile -
+ExecReload=/bin/kill -HUP $MAINPID
+KillSignal=SIGQUIT
+TimeoutStopSec=35
+Restart=on-failure
+RestartSec=3
+UMask=0027
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectHostname=true
+ProtectClock=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

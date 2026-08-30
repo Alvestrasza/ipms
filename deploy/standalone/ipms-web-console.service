@@ -1,0 +1,42 @@
+[Unit]
+Description=IPMS Web Console
+After=network-online.target ipms-control-plane.service
+Wants=network-online.target
+Requires=ipms-control-plane.service
+
+[Service]
+Type=simple
+User=ipms-web
+Group=ipms-web
+WorkingDirectory=/srv/ipms/current/apps/web-console/.next/standalone
+EnvironmentFile=/srv/ipms/shared/web-console.env
+Environment=NODE_ENV=production
+Environment=NEXT_TELEMETRY_DISABLED=1
+ExecStart=/opt/ipms/node-current/bin/node server.js
+KillSignal=SIGTERM
+TimeoutStopSec=35
+Restart=on-failure
+RestartSec=3
+UMask=0027
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectHostname=true
+ProtectClock=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+ReadWritePaths=/srv/ipms/shared/web-cache
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

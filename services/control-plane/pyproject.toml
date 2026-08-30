@@ -12,6 +12,7 @@ license = { text = "Proprietary" }
 dependencies = [
   "Django==6.1",
   "djangorestframework==3.18.0",
+  "gunicorn==26.2.0",
   "psycopg[binary]==3.3.4",
 ]
 

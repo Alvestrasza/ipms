@@ -1,7 +1,10 @@
 import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
+from django.core.management import call_command
 from django.test import Client, TestCase
 from django.urls import reverse
 
@@ -137,3 +140,36 @@ class AuthenticationApiTests(TestCase):
             AuditEvent.objects.get(action="auth.logout").outcome,
             AuditEvent.Outcome.SUCCEEDED,
         )
+
+
+class InstanceBootstrapCommandTests(TestCase):
+    def test_command_creates_idempotent_platform_admin_and_membership(self) -> None:
+        with TemporaryDirectory() as directory:
+            password_file = Path(directory) / "password"
+            password_file.write_text(
+                "A-strong-test-only-bootstrap-password-482!",
+                encoding="utf-8",
+            )
+            arguments = [
+                "bootstrap_instance",
+                "--tenant-slug",
+                "development",
+                "--tenant-name",
+                "Development",
+                "--admin-username",
+                "alice",
+                "--admin-password-file",
+                str(password_file),
+            ]
+
+            call_command(*arguments)
+            call_command(*arguments)
+
+        user = get_user_model().objects.get(username="alice")
+        tenant = Tenant.objects.get(slug="development")
+        self.assertTrue(user.is_staff)
+        self.assertTrue(user.is_superuser)
+        self.assertTrue(user.check_password("A-strong-test-only-bootstrap-password-482!"))
+        membership = TenantMembership.objects.get(user=user, tenant=tenant)
+        self.assertEqual(membership.role, TenantMembership.Role.TENANT_ADMIN)
+        self.assertEqual(TenantMembership.objects.count(), 1)
