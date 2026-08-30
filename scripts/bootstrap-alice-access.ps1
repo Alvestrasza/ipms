@@ -207,6 +207,15 @@ if (-not $PSCmdlet.ShouldProcess("$HostName`:$Port", $action)) {
     return
 }
 
+if ($env:OS -eq 'Windows_NT') {
+    $aclRepairScript = Join-Path $PSScriptRoot 'repair-alice-private-key-acl.ps1'
+    if (-not (Test-Path -LiteralPath $aclRepairScript -PathType Leaf)) {
+        throw "Private-key ACL repair script not found: $aclRepairScript"
+    }
+
+    & $aclRepairScript -PrivateKeyPath $PrivateKeyPath -Confirm:$false
+}
+
 & ssh @sshCommonArguments -t -- $target $remoteCommand
 if ($LASTEXITCODE -ne 0) {
     throw "Remote bootstrap failed with SSH exit code $LASTEXITCODE."

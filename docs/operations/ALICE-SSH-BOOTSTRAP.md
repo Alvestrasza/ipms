@@ -55,6 +55,22 @@ in a temporary file, compares its fingerprint with the console-verified value,
 and deletes the temporary file. No password or private key is sent before that
 comparison succeeds.
 
+On Windows, the bootstrap also verifies that the private key is owned by the
+interactive Windows identity and has no access-control entries for other
+identities. If necessary, it creates a restricted replacement, verifies that it
+still matches the public key, and retains the original until replacement
+validation succeeds.
+
+If an earlier bootstrap completed the remote configuration but failed locally
+with `WARNING: UNPROTECTED PRIVATE KEY FILE`, repair only the local key first:
+
+```powershell
+.\scripts\repair-alice-private-key-acl.ps1
+```
+
+The repair does not connect to or modify a server. After it succeeds, rerun the
+bootstrap command; its remote operations are idempotent.
+
 ## Idempotent Behavior
 
 - An existing safe `alice` account is retained.
