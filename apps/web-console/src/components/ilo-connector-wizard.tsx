@@ -54,6 +54,8 @@ export function IloConnectorWizard({ csrfToken, tenantId, copy }: Props) {
           display_name: form.get("display_name"),
           base_url: form.get("base_url"),
           certificate_sha256: form.get("certificate_sha256"),
+          confirm_certificate_trust:
+            form.get("confirm_certificate_trust") === "on",
           username: form.get("username"),
           password: form.get("password"),
           confirm_read_only: form.get("confirm_read_only") === "on",
@@ -187,6 +189,11 @@ export function IloConnectorWizard({ csrfToken, tenantId, copy }: Props) {
             />
           </label>
           <p className="wizard__hint">{copy.fingerprintHint}</p>
+          <label className="wizard__confirmation">
+            <input name="confirm_certificate_trust" type="checkbox" required />
+            {copy.certificateTrustConfirmation}
+          </label>
+          <p className="wizard__hint">{copy.certificateTrustHint}</p>
         </fieldset>
         <fieldset hidden={step !== 3}>
           <legend>{copy.stepCredential}</legend>

@@ -271,6 +271,7 @@ class IloPortalEnrollmentTests(TestCase):
             "username": "readonly-user",
             "password": "test-only-secret",
             "confirm_read_only": True,
+            "confirm_certificate_trust": True,
         }
 
     def post(self, user, tenant, payload=None):
@@ -322,6 +323,15 @@ class IloPortalEnrollmentTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertFalse(ConnectorEndpoint.objects.exists())
 
+    def test_requires_explicit_certificate_trust(self) -> None:
+        response = self.post(
+            self.admin,
+            self.tenant,
+            {**self.payload, "confirm_certificate_trust": False},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(ConnectorEndpoint.objects.exists())
+
     def test_duplicate_endpoint_is_rejected_without_replacing_credential(self) -> None:
         self.assertEqual(self.post(self.admin, self.tenant).status_code, 201)
         original_ciphertext = bytes(ConnectorSecret.objects.get().ciphertext)
@@ -333,6 +343,31 @@ class IloPortalEnrollmentTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(ConnectorEndpoint.objects.count(), 1)
         self.assertEqual(bytes(ConnectorSecret.objects.get().ciphertext), original_ciphertext)
+
+    def test_tenant_admin_can_queue_a_repeat_discovery(self) -> None:
+        self.assertEqual(self.post(self.admin, self.tenant).status_code, 201)
+        endpoint = ConnectorEndpoint.objects.get()
+        DiscoveryJob.objects.all().delete()
+        response = self.client.post(
+            reverse("core:connector-discover", kwargs={"pk": endpoint.id}),
+            data={},
+            content_type="application/json",
+            headers={"X-IPMS-Tenant-ID": str(self.tenant.id)},
+        )
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(DiscoveryJob.objects.get().connector, endpoint)
+
+    def test_reader_cannot_queue_a_repeat_discovery(self) -> None:
+        self.assertEqual(self.post(self.admin, self.tenant).status_code, 201)
+        endpoint = ConnectorEndpoint.objects.get()
+        self.client.force_login(self.reader)
+        response = self.client.post(
+            reverse("core:connector-discover", kwargs={"pk": endpoint.id}),
+            data={},
+            content_type="application/json",
+            headers={"X-IPMS-Tenant-ID": str(self.tenant.id)},
+        )
+        self.assertEqual(response.status_code, 403)
 
     @patch("ipms.apps.discovery.services.socket.getaddrinfo")
     @patch("ipms.apps.discovery.services.discover_ilo")
@@ -347,6 +382,38 @@ class IloPortalEnrollmentTests(TestCase):
         self.assertEqual(job.status, DiscoveryJob.Status.SUCCEEDED)
         self.assertEqual(endpoint.health, ConnectorEndpoint.Health.HEALTHY)
         self.assertEqual(PhysicalSystem.objects.get().name, "Synthetic host")
+
+    @patch("ipms.apps.discovery.services.socket.getaddrinfo")
+    @patch("ipms.apps.discovery.services.discover_ilo")
+    def test_failed_discovery_exposes_only_safe_request_diagnostics(
+        self, discover, getaddrinfo
+    ) -> None:
+        response = self.post(self.admin, self.tenant)
+        self.assertEqual(response.status_code, 201)
+        getaddrinfo.return_value = [(2, 1, 6, "", ("10.0.0.20", 0))]
+        discover.side_effect = RedfishConnectorError(
+            "redfish_request_failed",
+            {
+                "method": "POST",
+                "path": "/redfish/v1/SessionService/Sessions/",
+                "http_status": 400,
+            },
+        )
+
+        self.assertEqual(process_discovery_queue(limit=1), 1)
+
+        endpoint = ConnectorEndpoint.objects.get()
+        job = DiscoveryJob.objects.get()
+        self.assertEqual(endpoint.last_error_detail["http_status"], 400)
+        self.assertEqual(job.error_detail, endpoint.last_error_detail)
+        self.client.force_login(self.reader)
+        document = self.client.get(
+            reverse("core:connector-list"),
+            headers={"X-IPMS-Tenant-ID": str(self.tenant.id)},
+        ).json()[0]
+        self.assertEqual(document["last_error_detail"]["method"], "POST")
+        self.assertNotIn("password", str(document).lower())
+        self.assertNotIn("token", str(document).lower())
 
     @staticmethod
     def fixture_observations():

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { ConnectorOperations } from "@/components/connector-operations";
 import { ConsoleShell } from "@/components/console-shell";
 import { IloConnectorWizard } from "@/components/ilo-connector-wizard";
 import { StatusPill } from "@/components/status-pill";
@@ -222,19 +223,29 @@ export default async function PhysicalInfrastructurePage() {
         ) : null}
         {iloConnectors.length ? (
           iloConnectors.map((connector) => (
-            <div className="connector-row" key={connector.id}>
-              <span>
-                <i className="connector-mark connector-mark--ilo">i</i>
+            <div className="connector-entry" key={connector.id}>
+              <div className="connector-row">
                 <span>
-                  <strong>{connector.display_name}</strong>
-                  <small className="connector-detail">
-                    {connector.base_url}
-                  </small>
+                  <i className="connector-mark connector-mark--ilo">i</i>
+                  <span>
+                    <strong>{connector.display_name}</strong>
+                    <small className="connector-detail">
+                      {connector.base_url}
+                    </small>
+                  </span>
                 </span>
-              </span>
-              <StatusPill
-                status={connector.health}
-                label={dictionary.status[connector.health]}
+                <StatusPill
+                  status={connector.health}
+                  label={dictionary.status[connector.health]}
+                />
+              </div>
+              <ConnectorOperations
+                connector={connector}
+                csrfToken={session.csrf_token}
+                tenantId={tenant.id}
+                canManage={canManageConnectors}
+                locale={locale}
+                copy={dictionary.physical}
               />
             </div>
           ))

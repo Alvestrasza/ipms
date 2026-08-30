@@ -723,6 +723,72 @@ h2 {
   padding: 8px 18px;
   border-bottom: 1px solid var(--border-default);
 }
+.connector-entry:last-child .connector-row,
+.connector-entry:last-child .connector-operations {
+  border-bottom: 0;
+}
+.connector-operations {
+  display: grid;
+  gap: 12px;
+  padding: 0 18px 14px 55px;
+  border-bottom: 1px solid var(--border-default);
+}
+.connector-log {
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--color-critical) 38%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-critical) 8%, transparent);
+}
+.connector-log summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-critical);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.connector-log > p {
+  margin: 10px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.connector-log dl {
+  display: grid;
+  gap: 7px;
+  margin: 12px 0 0;
+}
+.connector-log dl > div {
+  display: grid;
+  grid-template-columns: minmax(95px, 0.25fr) 1fr;
+  gap: 12px;
+}
+.connector-log dt,
+.connector-log dd {
+  margin: 0;
+  font-size: 0.72rem;
+}
+.connector-log dt {
+  color: var(--color-text-muted);
+}
+.connector-log dd {
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+.connector-log__privacy {
+  color: var(--color-text-muted) !important;
+  font-size: 0.68rem !important;
+}
+.connector-operations__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.connector-operations__actions > span {
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+}
 .connector-row > span:first-child {
   display: flex;
   align-items: center;

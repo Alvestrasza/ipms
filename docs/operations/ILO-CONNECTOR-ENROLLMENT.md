@@ -27,8 +27,11 @@ documentation, chat, test fixture, or screenshot.
 3. Select **Add iLO connector**.
 4. Enter the display name and HTTPS origin URL.
 5. Enter the independently verified certificate SHA-256 fingerprint.
-6. Enter the dedicated read-only account and confirm its read-only scope.
-7. Select **Enroll and discover**.
+6. Explicitly approve that exact fingerprint. Self-signed certificates and
+   certificates issued by a private CA are accepted through this pin; a
+   different certificate remains rejected.
+7. Enter the dedicated read-only account and confirm its read-only scope.
+8. Select **Enroll and discover**.
 
 The Control Plane revalidates tenant access and requires either the tenant
 administrator role or platform-administrator status. It encrypts the credential
@@ -40,6 +43,18 @@ username, password, certificate pin, nonce, or ciphertext.
 The isolated connector worker polls the durable queue, validates that the
 resolved destination is a private, non-local address, verifies the pinned TLS
 certificate before authentication, and runs the read-only Redfish session.
+
+## Failure Diagnosis and Retry
+
+The connector card exposes the latest tenant-scoped discovery error and a
+portal action to queue another read-only discovery. Safe diagnostics can
+include the normalized error code, HTTP status, HTTP method, Redfish resource
+path, and attempt time. Credentials, session tokens, certificate bodies,
+response bodies, and raw device logs are never returned to the browser.
+
+A certificate-pin mismatch is not resolved by disabling TLS verification. An
+administrator must compare and explicitly approve the new SHA-256 fingerprint.
+This permits private trust models without creating an insecure connector mode.
 
 ## Validation
 

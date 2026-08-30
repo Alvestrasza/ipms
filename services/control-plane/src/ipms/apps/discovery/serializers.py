@@ -22,6 +22,7 @@ class ConnectorEndpointSerializer(serializers.ModelSerializer):
             "health",
             "trust_mode",
             "last_error_code",
+            "last_error_detail",
             "last_attempt_at",
             "last_success_at",
         )
@@ -38,6 +39,7 @@ class IloConnectorEnrollmentSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=255, write_only=True)
     password = serializers.CharField(max_length=4096, write_only=True, trim_whitespace=False)
     confirm_read_only = serializers.BooleanField(write_only=True)
+    confirm_certificate_trust = serializers.BooleanField(write_only=True)
 
     def validate_base_url(self, value: str) -> str:
         parts = urlsplit(value)
@@ -61,6 +63,13 @@ class IloConnectorEnrollmentSerializer(serializers.Serializer):
     def validate_confirm_read_only(self, value: bool) -> bool:
         if not value:
             raise serializers.ValidationError("Read-only scope confirmation is required.")
+        return value
+
+    def validate_confirm_certificate_trust(self, value: bool) -> bool:
+        if not value:
+            raise serializers.ValidationError(
+                "Explicit certificate fingerprint trust is required."
+            )
         return value
 
 class PhysicalSystemSerializer(serializers.ModelSerializer):
@@ -108,6 +117,7 @@ class DiscoveryJobSerializer(serializers.ModelSerializer):
             "correlation_id",
             "result_summary",
             "error_code",
+            "error_detail",
             "created_at",
             "started_at",
             "completed_at",

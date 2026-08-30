@@ -147,6 +147,10 @@ export const en = {
     fingerprint: "TLS certificate SHA-256 fingerprint",
     fingerprintHint:
       "Verify the fingerprint through an independent, trusted channel before continuing.",
+    certificateTrustConfirmation:
+      "I explicitly trust this exact certificate fingerprint for this connector.",
+    certificateTrustHint:
+      "Self-signed and private-CA certificates are accepted after this explicit fingerprint approval. IPMS still rejects a different certificate.",
     connectorUsername: "Read-only iLO user",
     connectorPassword: "Password",
     readOnlyConfirmation:
@@ -161,6 +165,29 @@ export const en = {
     wizardError:
       "Enrollment was rejected. Review the values and your tenant role.",
     wizardUnavailable: "The Control Plane is currently unavailable.",
+    errorLog: "Last discovery error",
+    errorCode: "Error code",
+    httpStatus: "HTTP status",
+    request: "Redfish request",
+    lastAttempt: "Last attempt",
+    errorLogPrivacy:
+      "Credentials, session tokens, and response bodies are never included in this log.",
+    runDiscovery: "Run discovery again",
+    queueingDiscovery: "Queueing…",
+    discoveryQueued: "Discovery was queued.",
+    discoveryError: "Discovery could not be queued.",
+    authenticationFailed:
+      "The iLO rejected the configured account or its permissions.",
+    certificatePinMismatch:
+      "The presented certificate no longer matches the explicitly trusted fingerprint.",
+    connectionFailed: "IPMS could not establish the HTTPS connection.",
+    connectionTimeout: "The HTTPS connection timed out.",
+    redfishRequestFailed:
+      "The iLO returned an error for a Redfish request. The safe request details are shown below.",
+    unsupportedService:
+      "The endpoint does not advertise the Redfish resources required by this connector.",
+    unknownConnectorError:
+      "The connector reported a normalized error. Use the code below for diagnosis.",
   },
   status: {
     healthy: "Healthy",

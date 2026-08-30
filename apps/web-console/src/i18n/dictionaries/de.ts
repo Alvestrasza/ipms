@@ -153,6 +153,10 @@ export const de = {
     fingerprint: "SHA-256-Fingerabdruck des TLS-Zertifikats",
     fingerprintHint:
       "Prüfen Sie den Fingerabdruck vor dem Fortfahren über einen unabhängigen, vertrauenswürdigen Weg.",
+    certificateTrustConfirmation:
+      "Ich vertraue diesem exakten Zertifikatsfingerabdruck ausdrücklich für diesen Connector.",
+    certificateTrustHint:
+      "Selbstsignierte Zertifikate und Zertifikate einer privaten CA werden nach dieser ausdrücklichen Freigabe akzeptiert. Ein abweichendes Zertifikat lehnt IPMS weiterhin ab.",
     connectorUsername: "Schreibgeschützter iLO-Benutzer",
     connectorPassword: "Passwort",
     readOnlyConfirmation:
@@ -168,6 +172,29 @@ export const de = {
     wizardError:
       "Die Einrichtung wurde abgelehnt. Prüfen Sie die Werte und Ihre Mandantenrolle.",
     wizardUnavailable: "Die Steuerungsebene ist derzeit nicht verfügbar.",
+    errorLog: "Letzter Erkennungsfehler",
+    errorCode: "Fehlercode",
+    httpStatus: "HTTP-Status",
+    request: "Redfish-Aufruf",
+    lastAttempt: "Letzter Versuch",
+    errorLogPrivacy:
+      "Zugangsdaten, Session-Token und Antwortinhalte werden niemals in diesem Protokoll ausgegeben.",
+    runDiscovery: "Erkennung erneut starten",
+    queueingDiscovery: "Wird eingereiht…",
+    discoveryQueued: "Die Erkennung wurde eingereiht.",
+    discoveryError: "Die Erkennung konnte nicht eingereiht werden.",
+    authenticationFailed:
+      "Der iLO hat das konfigurierte Konto oder dessen Berechtigungen abgelehnt.",
+    certificatePinMismatch:
+      "Das präsentierte Zertifikat stimmt nicht mehr mit dem ausdrücklich vertrauten Fingerabdruck überein.",
+    connectionFailed: "IPMS konnte die HTTPS-Verbindung nicht herstellen.",
+    connectionTimeout: "Die HTTPS-Verbindung hat das Zeitlimit überschritten.",
+    redfishRequestFailed:
+      "Der iLO hat einen Redfish-Aufruf mit einem Fehler beantwortet. Die sicheren Aufrufdetails stehen unten.",
+    unsupportedService:
+      "Der Endpunkt veröffentlicht nicht alle von diesem Connector benötigten Redfish-Ressourcen.",
+    unknownConnectorError:
+      "Der Connector hat einen normalisierten Fehler gemeldet. Der folgende Code dient der Diagnose.",
   },
   status: {
     healthy: "Fehlerfrei",

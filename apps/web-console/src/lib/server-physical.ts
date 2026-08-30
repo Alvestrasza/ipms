@@ -17,6 +17,11 @@ export type ConnectorEndpoint = {
   health: "unknown" | "healthy" | "warning" | "critical";
   trust_mode: "certificate-pin" | "unconfigured";
   last_error_code: string;
+  last_error_detail: {
+    method?: string;
+    path?: string;
+    http_status?: number;
+  };
   last_attempt_at: string | null;
   last_success_at: string | null;
 };

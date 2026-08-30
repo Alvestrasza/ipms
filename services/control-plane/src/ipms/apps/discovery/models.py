@@ -34,6 +34,7 @@ class ConnectorEndpoint(models.Model):
         default=Health.UNKNOWN,
     )
     last_error_code = models.CharField(max_length=64, blank=True)
+    last_error_detail = models.JSONField(default=dict, blank=True)
     last_attempt_at = models.DateTimeField(blank=True, null=True)
     last_success_at = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -162,6 +163,7 @@ class DiscoveryJob(models.Model):
     parameters = models.JSONField(default=dict, blank=True)
     result_summary = models.JSONField(default=dict, blank=True)
     error_code = models.CharField(max_length=64, blank=True)
+    error_detail = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     started_at = models.DateTimeField(blank=True, null=True)
     completed_at = models.DateTimeField(blank=True, null=True)

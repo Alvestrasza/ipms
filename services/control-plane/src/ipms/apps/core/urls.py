@@ -1,6 +1,7 @@
 from django.urls import include, path
 
 from ipms.apps.discovery.views import (
+    ConnectorDiscoveryView,
     ConnectorEndpointListView,
     IloConnectorEnrollmentView,
     PhysicalSystemListView,
@@ -18,6 +19,11 @@ urlpatterns = [
     path("auth/", include("ipms.apps.tenancy.urls")),
     path("connectors/", ConnectorEndpointListView.as_view(), name="connector-list"),
     path("connectors/ilo/", IloConnectorEnrollmentView.as_view(), name="ilo-enroll"),
+    path(
+        "connectors/<uuid:pk>/discover/",
+        ConnectorDiscoveryView.as_view(),
+        name="connector-discover",
+    ),
     path("physical-systems/", PhysicalSystemListView.as_view(), name="physical-list"),
     path("discovery-jobs/", include("ipms.apps.discovery.urls")),
 ]

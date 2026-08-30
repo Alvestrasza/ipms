@@ -16,8 +16,9 @@ MAX_COLLECTION_MEMBERS = 256
 
 
 class RedfishConnectorError(Exception):
-    def __init__(self, code: str) -> None:
+    def __init__(self, code: str, detail: dict[str, str | int] | None = None) -> None:
         self.code = code
+        self.detail = detail or {}
         super().__init__(code)
 
 
@@ -140,7 +141,14 @@ class RedfishTransport:
             if response.status in (401, 403):
                 raise RedfishConnectorError("authentication_failed")
             if response.status >= 400:
-                raise RedfishConnectorError("redfish_request_failed")
+                raise RedfishConnectorError(
+                    "redfish_request_failed",
+                    {
+                        "method": normalized_method,
+                        "path": path,
+                        "http_status": response.status,
+                    },
+                )
             document = json.loads(content) if content else {}
             if not isinstance(document, dict):
                 raise RedfishConnectorError("malformed_response")

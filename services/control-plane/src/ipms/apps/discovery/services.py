@@ -43,15 +43,30 @@ def _validate_private_target(base_url: str) -> None:
             raise ConnectorExecutionError("target_not_private")
 
 
-def _finish_failed(job: DiscoveryJob, endpoint: ConnectorEndpoint, code: str) -> None:
+def _finish_failed(
+    job: DiscoveryJob,
+    endpoint: ConnectorEndpoint,
+    code: str,
+    detail: dict[str, str | int] | None = None,
+) -> None:
     completed_at = timezone.now()
+    safe_detail = detail or {}
     job.status = DiscoveryJob.Status.FAILED
     job.error_code = code
+    job.error_detail = safe_detail
     job.completed_at = completed_at
-    job.save(update_fields=("status", "error_code", "completed_at"))
+    job.save(update_fields=("status", "error_code", "error_detail", "completed_at"))
     endpoint.health = ConnectorEndpoint.Health.CRITICAL
     endpoint.last_error_code = code
-    endpoint.save(update_fields=("health", "last_error_code", "updated_at"))
+    endpoint.last_error_detail = safe_detail
+    endpoint.save(
+        update_fields=(
+            "health",
+            "last_error_code",
+            "last_error_detail",
+            "updated_at",
+        )
+    )
     AuditEvent.objects.create(
         tenant=endpoint.tenant,
         actor=job.requested_by,
@@ -100,7 +115,7 @@ def process_discovery_job(job: DiscoveryJob) -> None:
         _finish_failed(job, endpoint, "credential_invalid")
         return
     except RedfishConnectorError as exc:
-        _finish_failed(job, endpoint, exc.code)
+        _finish_failed(job, endpoint, exc.code, exc.detail)
         return
 
     completed_at = timezone.now()
@@ -135,9 +150,16 @@ def process_discovery_job(job: DiscoveryJob) -> None:
         job.save(update_fields=("status", "result_summary", "completed_at"))
         endpoint.health = ConnectorEndpoint.Health.HEALTHY
         endpoint.last_error_code = ""
+        endpoint.last_error_detail = {}
         endpoint.last_success_at = completed_at
         endpoint.save(
-            update_fields=("health", "last_error_code", "last_success_at", "updated_at")
+            update_fields=(
+                "health",
+                "last_error_code",
+                "last_error_detail",
+                "last_success_at",
+                "updated_at",
+            )
         )
         AuditEvent.objects.create(
             tenant=endpoint.tenant,

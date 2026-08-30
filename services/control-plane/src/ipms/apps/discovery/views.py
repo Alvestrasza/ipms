@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import ListAPIView, RetrieveAPIView
@@ -77,6 +78,48 @@ class IloConnectorEnrollmentView(APIView):
                 "discovery_job": DiscoveryJobSerializer(job).data,
             },
             status=status.HTTP_201_CREATED,
+        )
+
+
+class ConnectorDiscoveryView(APIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess, CanManageConnectors)
+
+    def post(self, request, pk):
+        endpoint = get_object_or_404(
+            ConnectorEndpoint,
+            id=pk,
+            tenant=request.tenant,
+            connector_type=ConnectorEndpoint.ConnectorType.ILO_REDFISH,
+            enabled=True,
+        )
+        active_job = DiscoveryJob.objects.filter(
+            connector=endpoint,
+            status__in=(DiscoveryJob.Status.QUEUED, DiscoveryJob.Status.RUNNING),
+        ).first()
+        if active_job:
+            return Response(
+                {"discovery_job": DiscoveryJobSerializer(active_job).data},
+                status=status.HTTP_202_ACCEPTED,
+            )
+        job = DiscoveryJob.objects.create(
+            tenant=request.tenant,
+            connector=endpoint,
+            connector_type=DiscoveryJob.ConnectorType.ILO_REDFISH,
+            requested_by=request.user.get_username(),
+        )
+        AuditEvent.objects.create(
+            tenant=request.tenant,
+            actor=request.user.get_username(),
+            action="connector.discovery.queued",
+            object_type="connector_endpoint",
+            object_id=str(endpoint.id),
+            outcome=AuditEvent.Outcome.SUCCEEDED,
+            correlation_id=job.correlation_id,
+            details={"connector_type": endpoint.connector_type, "job_id": str(job.id)},
+        )
+        return Response(
+            {"discovery_job": DiscoveryJobSerializer(job).data},
+            status=status.HTTP_202_ACCEPTED,
         )
 
 

@@ -20,6 +20,9 @@ required for the baseline inventory.
   explicitly approved certificate pin is enrolled before the first credentialed
   request. Automatic trust-on-first-use and an `insecure` runtime mode are not
   supported in deployed environments.
+- Treat explicit leaf-certificate pin approval as the supported trust path for
+  self-signed and private-CA endpoints. A different presented certificate is a
+  hard failure until an administrator reviews and approves the new pin.
 - Use a dedicated iLO local account with the HPE `ReadOnly` role. HPE maps that
   role to `LoginPriv` only; no power, console, media, BIOS, storage, network,
   user-management, or iLO-configuration privilege is granted.
@@ -62,6 +65,8 @@ inventory operations.
    observations rather than inventing values or failing the entire endpoint.
 9. Persist one tenant-scoped discovery result transaction, update connector
    health, emit an audit event, and delete the Redfish session.
+10. Return only normalized, secret-free failure diagnostics to the tenant
+    console and allow an authorized administrator to queue a repeat discovery.
 
 Collection members and optional resources vary by iLO generation, firmware,
 server power state, installed hardware, and license. Capability detection is

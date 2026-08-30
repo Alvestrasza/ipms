@@ -163,6 +163,7 @@ test("enrolls an iLO connector through the guided portal wizard", async ({
   await page
     .getByLabel("TLS certificate SHA-256 fingerprint")
     .fill("0".repeat(64));
+  await page.getByLabel(/I explicitly trust this exact certificate/).check();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByLabel("Read-only iLO user").fill("synthetic-reader");
   const password = page.getByLabel("Password", { exact: true });
