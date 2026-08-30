@@ -1,4 +1,5 @@
 from django.db import DatabaseError, connection
+from django.http import JsonResponse
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
@@ -34,3 +35,20 @@ def readiness(request: Request) -> Response:
             status=HTTP_503_SERVICE_UNAVAILABLE,
         )
     return Response({"status": "ok"})
+
+
+def csrf_failure(request, reason="") -> JsonResponse:
+    correlation_id = getattr(request, "correlation_id", None)
+    response = JsonResponse(
+        {
+            "error": {
+                "code": "csrf_failed",
+                "message": "The request could not be completed.",
+                "correlation_id": str(correlation_id) if correlation_id else None,
+            }
+        },
+        status=403,
+    )
+    if correlation_id:
+        response["X-Correlation-ID"] = str(correlation_id)
+    return response

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Cinzel, Inter } from "next/font/google";
+import { connection } from "next/server";
 
 import "./globals.css";
 
@@ -24,9 +25,10 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  await connection();
   return (
     <html lang="en" data-theme="dark" suppressHydrationWarning>
       <body className={`${inter.variable} ${cinzel.variable}`}>{children}</body>

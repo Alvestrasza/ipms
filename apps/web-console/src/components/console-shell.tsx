@@ -1,16 +1,37 @@
 import { Bell, CircleUserRound, Search } from "lucide-react";
 
+import type { AuthenticatedSession, TenantSummary } from "@/lib/auth-types";
+
+import { LogoutButton } from "./logout-button";
 import { Sidebar } from "./sidebar";
 import { TenantSwitcher } from "./tenant-switcher";
 import { ThemeToggle } from "./theme-toggle";
 
-export function ConsoleShell({ children }: { children: React.ReactNode }) {
+const roleLabels = {
+  platform_admin: "Platform administrator",
+  tenant_admin: "Tenant administrator",
+  operator: "Operator",
+  reader: "Reader",
+};
+
+export function ConsoleShell({
+  children,
+  session,
+  tenant,
+}: {
+  children: React.ReactNode;
+  session: AuthenticatedSession;
+  tenant: TenantSummary;
+}) {
   return (
     <div className="console-shell">
       <Sidebar />
       <div className="console-workspace">
         <header className="topbar">
-          <TenantSwitcher />
+          <TenantSwitcher
+            tenants={session.tenants}
+            selectedTenantId={tenant.id}
+          />
           <div className="topbar__tools">
             <button
               className="search-trigger"
@@ -34,10 +55,11 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
             <div className="user-summary">
               <CircleUserRound aria-hidden="true" size={24} strokeWidth={1.6} />
               <span>
-                <strong>Platform Admin</strong>
-                <small>Development preview</small>
+                <strong>{roleLabels[tenant.role]}</strong>
+                <small>{session.user.display_name}</small>
               </span>
             </div>
+            <LogoutButton csrfToken={session.csrf_token} />
           </div>
         </header>
         <main className="console-main">{children}</main>

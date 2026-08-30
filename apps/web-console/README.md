@@ -26,8 +26,10 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Then open `http://127.0.0.1:3000`. The initial interface contains an explicit
-preview dataset and does not accept credentials or execute infrastructure
+Set `IPMS_CONTROL_PLANE_URL` to the private Django origin, then open
+`http://127.0.0.1:3000`. Development rewrites keep browser traffic same-origin;
+the deployed reverse proxy owns `/api/v1/` routing. The current overview still
+contains an explicit preview dataset and does not execute infrastructure
 actions.
 
 ## Validation
@@ -48,3 +50,8 @@ Browser-visible environment variables, static assets, and API responses must
 never contain connector credentials, certificate private keys, database
 credentials, or privileged backend tokens. Authentication and tenant
 authorization decisions remain authoritative in the Django Control Plane.
+
+The console uses Django's HttpOnly session cookie and CSRF token bootstrap.
+Tenant selection is stored in a separate HttpOnly preference cookie, but it is
+never trusted for authorization: every tenant-scoped API call carries the
+selected tenant ID and the Control Plane validates current access again.

@@ -12,14 +12,16 @@ The initial scaffold provides:
 - PostgreSQL-first configuration;
 - versioned liveness, readiness, and API-information endpoints;
 - a tenant domain model;
+- audited session login/logout endpoints and explicit user-to-tenant membership;
 - an append-only audit-event domain model; and
-- a durable discovery-job model with a platform-admin-only read API;
+- a durable discovery-job model with a tenant-scoped read API;
 - request correlation and a common API error envelope; and
 - tests for endpoint policy and model invariants.
 
-Inventory, connector, identity-provider, and tenant-management APIs are not yet
-implemented. Discovery-job creation is reserved for the future internal job
-engine. No endpoint in this scaffold changes managed infrastructure.
+Inventory, connector, external identity-provider, and tenant-management APIs
+are not yet implemented. Discovery-job creation is reserved for the future
+internal job engine. No endpoint in this scaffold changes managed
+infrastructure.
 
 ## Local Development
 
@@ -57,11 +59,25 @@ deployment database.
   request.
 - `GET /api/v1/health/ready/` confirms database connectivity without exposing
   connection details.
+- `GET /api/v1/auth/session/` bootstraps CSRF protection and returns the minimal
+  authenticated user and authorized-tenant projection.
+- `POST /api/v1/auth/login/` and `POST /api/v1/auth/logout/` use Django's
+  server-side session framework, CSRF protection, generic failure responses,
+  and append-only authentication audit events.
 - `GET /api/v1/discovery-jobs/` and `GET /api/v1/discovery-jobs/{id}/` expose
-  read-only job status to authenticated platform administrators.
+  read-only status for the tenant selected through `X-IPMS-Tenant-ID`.
+
+Platform administrators must also select one tenant. Tenant members can select
+only active tenants for which their membership is active. Inaccessible tenants
+and cross-tenant object identifiers return `404` so the API does not confirm
+their existence.
 
 Every future API is authenticated by default. Public access must be declared
 on the individual view and covered by a policy test.
+
+The `ipms_control_plane.settings.e2e` module exists only for isolated browser
+tests with a disposable SQLite database. It must never be selected in an IPMS
+deployment; development and production remain PostgreSQL-only.
 
 ## Security Boundaries Still Required
 

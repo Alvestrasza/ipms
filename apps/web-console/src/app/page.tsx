@@ -8,16 +8,25 @@ import {
   ServerCog,
   ShieldCheck,
 } from "lucide-react";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 import { ConsoleShell } from "@/components/console-shell";
 import { StatusPill } from "@/components/status-pill";
 import { discoveryJobs, inventoryRows, summaryCards } from "@/lib/console-data";
+import { getServerSession } from "@/lib/server-auth";
+import { selectedTenant } from "@/lib/tenant-selection";
 
 const summaryIcons = [ServerCog, Boxes, Network, ShieldCheck];
 
-export default function OverviewPage() {
+export default async function OverviewPage() {
+  const session = await getServerSession();
+  if (!session?.authenticated) redirect("/login");
+  const tenant = selectedTenant(session, await cookies());
+  if (!tenant) redirect("/login?reason=no-tenant");
+
   return (
-    <ConsoleShell>
+    <ConsoleShell session={session} tenant={tenant}>
       <div className="preview-notice" role="status">
         <span className="preview-notice__dot" aria-hidden="true" />
         Preview dataset — no live infrastructure data is displayed yet.

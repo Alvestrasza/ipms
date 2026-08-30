@@ -9,5 +9,6 @@ urlpatterns = [
     path("", views.api_information, name="api-information"),
     path("health/live/", views.liveness, name="liveness"),
     path("health/ready/", views.readiness, name="readiness"),
+    path("auth/", include("ipms.apps.tenancy.urls")),
     path("discovery-jobs/", include("ipms.apps.discovery.urls")),
 ]
