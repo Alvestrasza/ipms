@@ -45,6 +45,20 @@ class PublicEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "ok"})
 
+    @override_settings(
+        ALLOWED_HOSTS=["127.0.0.1"],
+        SECURE_SSL_REDIRECT=True,
+        SECURE_PROXY_SSL_HEADER=("HTTP_X_FORWARDED_PROTO", "https"),
+    )
+    def test_internal_https_proxy_request_is_not_redirected(self) -> None:
+        response = self.client.get(
+            reverse("core:readiness"),
+            headers={"Host": "127.0.0.1", "X-Forwarded-Proto": "https"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ok"})
+
     @override_settings(DEBUG=False)
     @patch("ipms.apps.core.views.connection.cursor", side_effect=DatabaseError)
     def test_readiness_failure_is_generic(self, mocked_cursor) -> None:

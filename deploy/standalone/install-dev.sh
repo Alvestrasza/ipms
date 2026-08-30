@@ -158,7 +158,7 @@ if [[ ! -f $control_plane_env ]]; then
     {
         echo "DJANGO_SETTINGS_MODULE=ipms_control_plane.settings.production"
         echo "IPMS_SECRET_KEY=${secret_key}"
-        echo "IPMS_ALLOWED_HOSTS=${PUBLIC_HOST}"
+        echo "IPMS_ALLOWED_HOSTS=${PUBLIC_HOST},127.0.0.1"
         echo "IPMS_CSRF_TRUSTED_ORIGINS=https://${PUBLIC_HOST}"
         echo "IPMS_DATABASE_NAME=ipms"
         echo "IPMS_DATABASE_USER=ipms"
@@ -168,6 +168,11 @@ if [[ ! -f $control_plane_env ]]; then
         echo "IPMS_DATABASE_SSLMODE=prefer"
         echo "IPMS_HSTS_SECONDS=0"
     } > "$control_plane_env"
+fi
+if grep -q '^IPMS_ALLOWED_HOSTS=' "$control_plane_env"; then
+    sed -i "s|^IPMS_ALLOWED_HOSTS=.*|IPMS_ALLOWED_HOSTS=${PUBLIC_HOST},127.0.0.1|" "$control_plane_env"
+else
+    echo "IPMS_ALLOWED_HOSTS=${PUBLIC_HOST},127.0.0.1" >> "$control_plane_env"
 fi
 
 web_console_env=/srv/ipms/shared/web-console.env

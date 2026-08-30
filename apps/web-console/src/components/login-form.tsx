@@ -11,6 +11,7 @@ export function LoginForm() {
   const [csrfToken, setCsrfToken] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -23,7 +24,7 @@ export function LoginForm() {
       .then((session) => {
         if (!active) return;
         if (session.authenticated) {
-          router.replace("/");
+          setIsAuthenticated(true);
           return;
         }
         setCsrfToken(session.csrf_token);
@@ -37,7 +38,7 @@ export function LoginForm() {
     return () => {
       active = false;
     };
-  }, [router]);
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -71,6 +72,19 @@ export function LoginForm() {
   }
 
   const disabled = isLoading || isSubmitting || !csrfToken;
+
+  if (isAuthenticated) {
+    return (
+      <button
+        className="primary-button"
+        type="button"
+        onClick={() => router.push("/")}
+      >
+        <ArrowRight aria-hidden="true" size={17} />
+        Continue to console
+      </button>
+    );
+  }
 
   return (
     <form onSubmit={submit}>

@@ -2,6 +2,11 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
+import {
+  CONTROL_PLANE_URL,
+  controlPlaneHeaders,
+} from "./control-plane-request";
+
 export type DiscoveryJob = {
   id: string;
   tenant_id: string;
@@ -23,23 +28,20 @@ export type DashboardData = {
   discoveryJobs: DiscoveryJob[];
 };
 
-const CONTROL_PLANE_URL = (
-  process.env.IPMS_CONTROL_PLANE_URL ?? "http://127.0.0.1:8000"
-).replace(/\/$/, "");
-
 export async function getDashboardData(
   tenantId: string,
 ): Promise<DashboardData> {
   const cookieHeader = (await cookies()).toString();
-  const requestHeaders = {
+  const requestHeaders = controlPlaneHeaders({
     cookie: cookieHeader,
     "X-IPMS-Tenant-ID": tenantId,
-  };
+  });
 
   try {
     const [readinessResponse, jobsResponse] = await Promise.all([
       fetch(`${CONTROL_PLANE_URL}/api/v1/health/ready/`, {
         cache: "no-store",
+        headers: controlPlaneHeaders(),
       }),
       fetch(`${CONTROL_PLANE_URL}/api/v1/discovery-jobs/`, {
         cache: "no-store",
