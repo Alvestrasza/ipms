@@ -9,26 +9,61 @@ import {
   ServerCog,
   Settings,
 } from "lucide-react";
+import type { Route } from "next";
+import Link from "next/link";
 
 import { getDictionary } from "@/i18n/dictionaries";
 import { resolveLocale } from "@/i18n/server";
 
 import { Brand } from "./brand";
 
-export async function Sidebar() {
-  const dictionary = getDictionary(await resolveLocale());
+export async function Sidebar({
+  activeSection,
+}: {
+  activeSection: "overview" | "physical";
+}) {
+  const locale = await resolveLocale();
+  const dictionary = getDictionary(locale);
   const navigation = [
     {
       label: dictionary.navigation.overview,
       icon: LayoutDashboard,
-      active: true,
+      href: `/${locale}`,
+      section: "overview" as const,
+      enabled: true as const,
     },
-    { label: dictionary.navigation.physical, icon: ServerCog },
-    { label: dictionary.navigation.virtual, icon: Boxes },
-    { label: dictionary.navigation.monitoring, icon: Activity },
-    { label: dictionary.navigation.network, icon: Network },
-    { label: dictionary.navigation.storage, icon: Database },
-    { label: dictionary.navigation.backup, icon: ArchiveRestore },
+    {
+      label: dictionary.navigation.physical,
+      icon: ServerCog,
+      href: `/${locale}/physical`,
+      section: "physical" as const,
+      enabled: true as const,
+    },
+    {
+      label: dictionary.navigation.virtual,
+      icon: Boxes,
+      enabled: false as const,
+    },
+    {
+      label: dictionary.navigation.monitoring,
+      icon: Activity,
+      enabled: false as const,
+    },
+    {
+      label: dictionary.navigation.network,
+      icon: Network,
+      enabled: false as const,
+    },
+    {
+      label: dictionary.navigation.storage,
+      icon: Database,
+      enabled: false as const,
+    },
+    {
+      label: dictionary.navigation.backup,
+      icon: ArchiveRestore,
+      enabled: false as const,
+    },
   ];
   return (
     <aside className="sidebar" aria-label={dictionary.navigation.primary}>
@@ -41,25 +76,31 @@ export async function Sidebar() {
           {dictionary.navigation.workspace}
         </p>
         <ul>
-          {navigation.map(({ label, icon: Icon, active }) => (
+          {navigation.map(({ label, icon: Icon, ...item }) => (
             <li key={label}>
-              <span
-                className={
-                  active
-                    ? "nav-item nav-item--active"
-                    : "nav-item nav-item--disabled"
-                }
-                aria-current={active ? "page" : undefined}
-                aria-disabled={!active}
-              >
-                <Icon aria-hidden="true" size={18} strokeWidth={1.8} />
-                <span>{label}</span>
-                {!active && (
+              {item.enabled ? (
+                <Link
+                  className={`nav-item ${item.section === activeSection ? "nav-item--active" : ""}`}
+                  href={item.href as Route}
+                  aria-current={
+                    item.section === activeSection ? "page" : undefined
+                  }
+                >
+                  <Icon aria-hidden="true" size={18} strokeWidth={1.8} />
+                  <span>{label}</span>
+                </Link>
+              ) : (
+                <span
+                  className="nav-item nav-item--disabled"
+                  aria-disabled="true"
+                >
+                  <Icon aria-hidden="true" size={18} strokeWidth={1.8} />
+                  <span>{label}</span>
                   <span className="nav-item__soon">
                     {dictionary.navigation.soon}
                   </span>
-                )}
-              </span>
+                </span>
+              )}
             </li>
           ))}
         </ul>

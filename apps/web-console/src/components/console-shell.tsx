@@ -14,10 +14,12 @@ export async function ConsoleShell({
   children,
   session,
   tenant,
+  activeSection = "overview",
 }: {
   children: React.ReactNode;
   session: AuthenticatedSession;
   tenant: TenantSummary;
+  activeSection?: "overview" | "physical";
 }) {
   const dictionary = getDictionary(await resolveLocale());
   const roleLabels = {
@@ -28,7 +30,7 @@ export async function ConsoleShell({
   };
   return (
     <div className="console-shell">
-      <Sidebar />
+      <Sidebar activeSection={activeSection} />
       <div className="console-workspace">
         <header className="topbar">
           <TenantSwitcher

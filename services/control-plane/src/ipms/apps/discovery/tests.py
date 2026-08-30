@@ -1,12 +1,15 @@
 import uuid
+from dataclasses import asdict
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from ipms.apps.tenancy.models import Tenant, TenantMembership
 
-from .models import DiscoveryJob
+from .connectors.ilo_redfish import RedfishConnectorError, RedfishTransport, discover_ilo
+from .models import ConnectorEndpoint, DiscoveryJob, PhysicalSystem
 
 
 class DiscoveryJobApiTests(TestCase):
@@ -115,3 +118,126 @@ class DiscoveryJobApiTests(TestCase):
 
         self.assertEqual(response.status_code, 405)
         self.assertEqual(DiscoveryJob.objects.count(), 2)
+
+
+class InventoryApiTests(DiscoveryJobApiTests):
+    def setUp(self) -> None:
+        super().setUp()
+        self.endpoint = ConnectorEndpoint.objects.create(
+            tenant=self.tenant,
+            connector_type=ConnectorEndpoint.ConnectorType.ILO_REDFISH,
+            display_name="Fixture iLO",
+            base_url="https://192.0.2.10",
+            tls_certificate_sha256="a" * 64,
+        )
+        self.system = PhysicalSystem.objects.create(
+            tenant=self.tenant,
+            connector=self.endpoint,
+            source_resource_id="/redfish/v1/Systems/1/",
+            name="Fixture server",
+            serial_number="SYNTHETIC",
+            health=PhysicalSystem.Health.OK,
+            discovered_at=timezone.now(),
+        )
+
+    def test_connector_projection_excludes_secret_and_pin(self) -> None:
+        self.client.force_login(self.tenant_reader)
+        response = self.client.get(reverse("core:connector-list"), **self.tenant_header())
+        self.assertEqual(response.status_code, 200)
+        projection = response.json()[0]
+        self.assertNotIn("credential_reference", projection)
+        self.assertNotIn("tls_certificate_sha256", projection)
+
+    def test_physical_inventory_is_tenant_scoped(self) -> None:
+        self.client.force_login(self.tenant_reader)
+        response = self.client.get(reverse("core:physical-list"), **self.tenant_header())
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["id"] for item in response.json()], [str(self.system.id)])
+
+    def test_inventory_write_is_not_available(self) -> None:
+        self.client.force_login(self.platform_admin)
+        response = self.client.post(
+            reverse("core:physical-list"),
+            data={},
+            **self.tenant_header(),
+        )
+        self.assertEqual(response.status_code, 405)
+
+
+class FakeRedfishTransport:
+    def __init__(self, documents: dict[str, dict]) -> None:
+        self.documents = documents
+        self.calls: list[tuple[str, str]] = []
+        self.session_path = ""
+
+    def get(self, path: str) -> dict:
+        self.calls.append(("GET", path))
+        if path not in self.documents:
+            raise RedfishConnectorError("fixture_missing")
+        return self.documents[path]
+
+    def create_session(self, path: str, username: str, password: str) -> None:
+        self.calls.append(("POST", path))
+        self.session_path = "/redfish/v1/SessionService/Sessions/fixture"
+
+    def delete_session(self) -> None:
+        self.calls.append(("DELETE", self.session_path))
+        self.session_path = ""
+
+
+class IloRedfishConnectorTests(TestCase):
+    def fixture(self) -> FakeRedfishTransport:
+        return FakeRedfishTransport(
+            {
+                "/redfish/v1/": {
+                    "RedfishVersion": "1.0.0",
+                    "Systems": {"@odata.id": "/redfish/v1/Systems/"},
+                    "Managers": {"@odata.id": "/redfish/v1/Managers/"},
+                    "Links": {
+                        "Sessions": {
+                            "@odata.id": "/redfish/v1/SessionService/Sessions/"
+                        }
+                    },
+                },
+                "/redfish/v1/Systems/": {
+                    "Members": [{"@odata.id": "/redfish/v1/Systems/1/"}]
+                },
+                "/redfish/v1/Systems/1/": {
+                    "Name": "Fixture server",
+                    "Manufacturer": "HPE",
+                    "Model": "ProLiant Synthetic",
+                    "SerialNumber": "SYNTHETIC",
+                    "UUID": "00000000-0000-0000-0000-000000000001",
+                    "PowerState": "On",
+                    "Status": {"Health": "OK", "State": "Enabled"},
+                    "ProcessorSummary": {"Count": 2, "Model": "Fixture CPU"},
+                    "MemorySummary": {"TotalSystemMemoryGiB": 128},
+                    "BiosVersion": "Fixture BIOS",
+                },
+                "/redfish/v1/Managers/": {
+                    "Members": [{"@odata.id": "/redfish/v1/Managers/1/"}]
+                },
+                "/redfish/v1/Managers/1/": {"FirmwareVersion": "iLO 4 fixture"},
+            }
+        )
+
+    def test_normalizes_ilo4_summary_and_cleans_up_session(self) -> None:
+        transport = self.fixture()
+        observations, summary = discover_ilo(transport, "fixture", "not-a-secret")
+        self.assertEqual(summary, {"redfish_version": "1.0.0", "system_count": "1"})
+        self.assertEqual(asdict(observations[0])["memory_bytes"], 128 * 1024**3)
+        self.assertEqual(observations[0].bmc_firmware_version, "iLO 4 fixture")
+        self.assertEqual(transport.calls[-1][0], "DELETE")
+        self.assertEqual({method for method, _ in transport.calls}, {"GET", "POST", "DELETE"})
+
+    def test_transport_rejects_managed_infrastructure_writes(self) -> None:
+        transport = RedfishTransport("https://192.0.2.10", "a" * 64)
+        for method, path in (
+            ("PATCH", "/redfish/v1/Systems/1/"),
+            ("PUT", "/redfish/v1/Systems/1/"),
+            ("POST", "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset"),
+            ("DELETE", "/redfish/v1/Systems/1/"),
+        ):
+            with self.subTest(method=method):
+                with self.assertRaisesRegex(RedfishConnectorError, "request_method_rejected"):
+                    transport.request_json(method, path)

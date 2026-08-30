@@ -3,8 +3,28 @@ from rest_framework.permissions import IsAuthenticated
 
 from ipms.apps.tenancy.permissions import HasSelectedTenantAccess
 
-from .models import DiscoveryJob
-from .serializers import DiscoveryJobSerializer
+from .models import ConnectorEndpoint, DiscoveryJob, PhysicalSystem
+from .serializers import (
+    ConnectorEndpointSerializer,
+    DiscoveryJobSerializer,
+    PhysicalSystemSerializer,
+)
+
+
+class ConnectorEndpointListView(ListAPIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess)
+    serializer_class = ConnectorEndpointSerializer
+
+    def get_queryset(self):
+        return ConnectorEndpoint.objects.filter(tenant=self.request.tenant)
+
+
+class PhysicalSystemListView(ListAPIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess)
+    serializer_class = PhysicalSystemSerializer
+
+    def get_queryset(self):
+        return PhysicalSystem.objects.filter(tenant=self.request.tenant)
 
 
 class DiscoveryJobListView(ListAPIView):

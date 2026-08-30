@@ -73,6 +73,13 @@ For an unprefixed request, the routing proxy first uses the validated
 response synchronizes the preference in a Secure, HttpOnly, SameSite cookie.
 Locale routing does not affect authentication or tenant authorization.
 
+## Physical Infrastructure
+
+The localized `/en/physical` and `/de/physical` routes display tenant-scoped
+physical-system inventory and redacted iLO connector health from the Control
+Plane. The Web Console never receives connector credentials, credential
+references, certificate pins, session tokens, or raw Redfish payloads.
+
 ## Security Boundary
 
 Browser-visible environment variables, static assets, and API responses must

@@ -120,6 +120,23 @@ test("provides dark and light semantic themes after sign-in", async ({
   ).toBeVisible();
 });
 
+test("opens the tenant-scoped physical infrastructure view", async ({
+  page,
+}) => {
+  await signIn(page);
+
+  await page.getByRole("link", { name: "Physical infrastructure" }).click();
+  await expect(page).toHaveURL("/en/physical");
+  await expect(
+    page.getByRole("heading", { name: "Physical infrastructure" }),
+  ).toBeVisible();
+  await expect(page.getByText("No physical systems discovered")).toBeVisible();
+  await expect(page.getByText("No iLO connector enrolled")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Physical infrastructure" }),
+  ).toHaveAttribute("aria-current", "page");
+});
+
 test("has no automatically detectable critical accessibility violations", async ({
   page,
 }) => {

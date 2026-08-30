@@ -64,8 +64,13 @@ therefore based on advertised links and schemas rather than a fixed URI list.
 ## Compatibility Baseline
 
 The design targets standards-conformant Redfish services in iLO 5, iLO 6, and
-iLO 7. iLO 4 can be evaluated with a separate compatibility fixture, but its
-older API behavior must not weaken the iLO 5+ security or data-model baseline.
+iLO 7. iLO 4 firmware 2.30 and later is eligible through a separate
+compatibility adapter because HPE identifies 2.30 as its Redfish 1.0
+conformance baseline. Its older API behavior must not weaken the iLO 5+
+security or data-model baseline. The initially probed acceptance device
+advertised Redfish 1.0.0, the standard Systems, Chassis, Managers, and
+SessionService collections, and TLS 1.2. No private endpoint or certificate
+identity is recorded in this public document.
 The first physical acceptance device defines the initially tested generation
 and firmware; support claims require a deterministic fixture and a real-device
 read-only acceptance record for that version.
@@ -110,5 +115,6 @@ isolates any legacy Smart Storage parsing in a version-specific adapter.
 - [HPE Redfish getting started](https://servermanagementportal.ext.hpe.com/docs/concepts/gettingstarted)
 - [HPE managing iLO users](https://servermanagementportal.ext.hpe.com/docs/redfishservices/ilos/supplementdocuments/managingusers)
 - [HPE storage data models](https://servermanagementportal.ext.hpe.com/docs/redfishservices/ilos/supplementdocuments/storage)
+- [HPE iLO 4 API reference](https://hewlettpackard.github.io/ilo-rest-api-docs/ilo4/)
 - [HPE iLO 5 documentation](https://servermanagementportal.ext.hpe.com/docs/redfishservices/ilos/ilo5)
 - [HPE iLO 7 documentation](https://servermanagementportal.ext.hpe.com/docs/redfishservices/ilos/ilo7)

@@ -94,6 +94,7 @@ install -d -m 0755 /srv/ipms/releases /srv/ipms/shared /srv/ipms/data
 chown root:ipms-runtime /srv/ipms
 chmod 0710 /srv/ipms
 install -d -o ipms-web -g ipms-web -m 0750 /srv/ipms/shared/web-cache
+install -d -o root -g ipms-control-plane -m 0750 /srv/ipms/shared/connector-secrets
 release_directory="/srv/ipms/releases/${RELEASE_REF}"
 if [[ ! -d $release_directory ]]; then
     staging_directory="/srv/ipms/releases/.${RELEASE_REF}.staging"
@@ -166,8 +167,12 @@ if [[ ! -f $control_plane_env ]]; then
         echo "IPMS_DATABASE_HOST=127.0.0.1"
         echo "IPMS_DATABASE_PORT=5432"
         echo "IPMS_DATABASE_SSLMODE=prefer"
+        echo "IPMS_CONNECTOR_SECRET_DIRECTORY=/srv/ipms/shared/connector-secrets"
         echo "IPMS_HSTS_SECONDS=0"
     } > "$control_plane_env"
+fi
+if ! grep -q '^IPMS_CONNECTOR_SECRET_DIRECTORY=' "$control_plane_env"; then
+    echo "IPMS_CONNECTOR_SECRET_DIRECTORY=/srv/ipms/shared/connector-secrets" >> "$control_plane_env"
 fi
 if grep -q '^IPMS_ALLOWED_HOSTS=' "$control_plane_env"; then
     sed -i "s|^IPMS_ALLOWED_HOSTS=.*|IPMS_ALLOWED_HOSTS=${PUBLIC_HOST},127.0.0.1|" "$control_plane_env"

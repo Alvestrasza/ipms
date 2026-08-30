@@ -14,7 +14,10 @@ The initial scaffold provides:
 - a tenant domain model;
 - audited session login/logout endpoints and explicit user-to-tenant membership;
 - an append-only audit-event domain model; and
-- a durable discovery-job model with a tenant-scoped read API;
+- tenant-scoped connector endpoints, physical-system inventory, and durable
+  discovery jobs with read APIs;
+- a certificate-pinned, session-scoped iLO Redfish connector that rejects
+  managed-infrastructure write methods; and
 - request correlation and a common API error envelope; and
 - tests for endpoint policy and model invariants.
 
@@ -66,6 +69,10 @@ deployment database.
   and append-only authentication audit events.
 - `GET /api/v1/discovery-jobs/` and `GET /api/v1/discovery-jobs/{id}/` expose
   read-only status for the tenant selected through `X-IPMS-Tenant-ID`.
+- `GET /api/v1/connectors/` exposes a redacted tenant-owned connector
+  projection without credential references or certificate pins.
+- `GET /api/v1/physical-systems/` exposes normalized tenant-owned hardware
+  inventory without raw Redfish payloads.
 
 Platform administrators must also select one tenant. Tenant members can select
 only active tenants for which their membership is active. Inaccessible tenants
