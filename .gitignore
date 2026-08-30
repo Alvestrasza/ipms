@@ -1,0 +1,7 @@
+# Project-local credentials and host trust data
+.ssh/
+
+# Local environment and secret files
+.env
+.env.*
+!.env.example
