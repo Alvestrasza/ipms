@@ -18,6 +18,10 @@ maintained in [ROADMAP.md](ROADMAP.md).
 - [Ubuntu Appliance hardening baseline](docs/operations/UBUNTU-APPLIANCE-HARDENING.md)
 - [Ubuntu Appliance hardening automation](docs/operations/UBUNTU-HARDENING-AUTOMATION.md)
 
+## Architecture Decisions
+
+- [ADR-0001: Appliance encryption, unlock, and recovery policy](docs/architecture/ADR-0001-APPLIANCE-ENCRYPTION-AND-UNLOCK.md)
+
 ## License
 
 IPMS is proprietary software. See [LICENSE](LICENSE). Public extension

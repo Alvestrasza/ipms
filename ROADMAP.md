@@ -136,6 +136,9 @@ restore point.
   shared production credentials are used in development or CI.
 - Publish installation, bootstrap, security, update, and rollback guidance for
   the Appliance.
+- Enforce the deployment-profile encryption, unlock, recovery, rotation, and
+  migration policy defined in
+  [ADR-0001](docs/architecture/ADR-0001-APPLIANCE-ENCRYPTION-AND-UNLOCK.md).
 
 ### v0.1.0 Acceptance Criteria
 
