@@ -12,6 +12,11 @@ A-Corp-hosted hybrid deployments.
 IPMS is in the architecture and foundation phase. The product roadmap is
 maintained in [ROADMAP.md](ROADMAP.md).
 
+## Operations Documentation
+
+- [Alice SSH bootstrap](docs/operations/ALICE-SSH-BOOTSTRAP.md)
+- [Ubuntu Appliance hardening baseline](docs/operations/UBUNTU-APPLIANCE-HARDENING.md)
+
 ## License
 
 IPMS is proprietary software. See [LICENSE](LICENSE). Public extension
