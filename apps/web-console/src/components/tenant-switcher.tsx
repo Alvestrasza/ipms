@@ -18,16 +18,20 @@ export function TenantSwitcher({
 
   async function selectTenant(value: string) {
     setTenantId(value);
-    const response = await fetch("/api/tenant-selection", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tenantId: value }),
-    });
-    if (!response.ok) {
+    try {
+      const response = await fetch("/api/tenant-selection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId: value }),
+      });
+      if (!response.ok) {
+        setTenantId(selectedTenantId);
+        return;
+      }
+      router.refresh();
+    } catch {
       setTenantId(selectedTenantId);
-      return;
     }
-    router.refresh();
   }
 
   return (

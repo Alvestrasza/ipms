@@ -29,6 +29,7 @@ export function ConsoleShell({
       <div className="console-workspace">
         <header className="topbar">
           <TenantSwitcher
+            key={tenant.id}
             tenants={session.tenants}
             selectedTenantId={tenant.id}
           />

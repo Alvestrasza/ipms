@@ -2,6 +2,7 @@ import {
   CircleAlert,
   CircleCheck,
   CircleHelp,
+  Clock3,
   LoaderCircle,
   XCircle,
 } from "lucide-react";
@@ -12,6 +13,7 @@ type Status =
   | "critical"
   | "unknown"
   | "succeeded"
+  | "queued"
   | "running"
   | "failed";
 
@@ -21,6 +23,7 @@ const labels: Record<Status, string> = {
   critical: "Critical",
   unknown: "Unknown",
   succeeded: "Succeeded",
+  queued: "Queued",
   running: "Running",
   failed: "Failed",
 };
@@ -31,6 +34,7 @@ const icons = {
   critical: XCircle,
   unknown: CircleHelp,
   succeeded: CircleCheck,
+  queued: Clock3,
   running: LoaderCircle,
   failed: XCircle,
 };

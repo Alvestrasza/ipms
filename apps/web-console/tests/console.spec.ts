@@ -39,6 +39,10 @@ test("authenticates and renders the tenant-scoped overview", async ({
   await expect(
     page.getByRole("heading", { name: "Infrastructure at a glance" }),
   ).toBeVisible();
+  await expect(page.getByText(/Live Control Plane data/)).toBeVisible();
+  await expect(
+    page.getByRole("article").filter({ hasText: "Physical systems" }),
+  ).toContainText("0");
   await expect(page.getByLabel("Active tenant")).toHaveValue(/[0-9a-f-]{36}/);
   await expect(
     page.getByLabel("Active tenant").locator("option:checked"),

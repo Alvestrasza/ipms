@@ -28,9 +28,10 @@ pnpm dev
 
 Set `IPMS_CONTROL_PLANE_URL` to the private Django origin, then open
 `http://127.0.0.1:3000`. Development rewrites keep browser traffic same-origin;
-the deployed reverse proxy owns `/api/v1/` routing. The current overview still
-contains an explicit preview dataset and does not execute infrastructure
-actions.
+the deployed reverse proxy owns `/api/v1/` routing. The overview uses live
+Control Plane readiness and tenant-scoped discovery jobs. Inventory remains an
+honest empty state until the read-only connectors populate normalized data. No
+current console action changes managed infrastructure.
 
 ## Validation
 

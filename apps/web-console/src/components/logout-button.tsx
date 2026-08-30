@@ -11,7 +11,7 @@ export function LogoutButton({ csrfToken }: { csrfToken: string }) {
   async function logout() {
     setPending(true);
     try {
-      await fetch("/api/v1/auth/logout/", {
+      const response = await fetch("/api/v1/auth/logout/", {
         method: "POST",
         credentials: "same-origin",
         headers: {
@@ -20,9 +20,10 @@ export function LogoutButton({ csrfToken }: { csrfToken: string }) {
         },
         body: "{}",
       });
-    } finally {
+      if (!response.ok) return;
       router.replace("/login");
       router.refresh();
+    } finally {
       setPending(false);
     }
   }
