@@ -72,6 +72,18 @@ inventory operations.
 10. Return only normalized, secret-free failure diagnostics to the tenant
     console and allow an authorized administrator to queue a repeat discovery.
 
+The normalized result includes a versioned detail snapshot for subsystem
+health, fans, temperatures, power supplies and consumption, processors, memory,
+network interfaces, device inventory, storage, firmware, and software. It
+stores selected normalized fields only, never a raw Redfish document. The Web
+Console renders this snapshot server-side and limits client-side behavior to
+the accessible tab selector.
+
+Each individual HTTPS exchange uses the deployment's bounded BMC connection
+timeout. Increasing that value can accommodate slower legacy controllers, but
+does not change the worker's method allowlist, certificate pinning, response
+limits, or target validation.
+
 Collection members and optional resources vary by iLO generation, firmware,
 server power state, installed hardware, and license. Capability detection is
 therefore based on advertised links and schemas rather than a fixed URI list.
@@ -109,6 +121,8 @@ isolates any legacy Smart Storage parsing in a version-specific adapter.
   interrupted-session cleanup tests.
 - A real-device acceptance run that compares selected fields with the iLO UI
   while proving that no managed-infrastructure write request was sent.
+- Snapshot contract tests covering every overview section and persistence
+  through the isolated discovery worker.
 
 ## Implementation Stages
 

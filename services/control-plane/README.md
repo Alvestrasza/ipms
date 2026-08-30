@@ -82,7 +82,12 @@ deployment database.
 - `GET /api/v1/bmc-logs/` and `/api/v1/bmc-logs/export/` expose bounded,
   tenant-scoped, sanitized communication metadata and CSV export.
 - `GET /api/v1/physical-systems/` exposes normalized tenant-owned hardware
-  inventory without raw Redfish payloads.
+  inventory, including the versioned system-overview snapshot, without raw
+  Redfish payloads.
+
+`IPMS_BMC_CONNECT_TIMEOUT_SECONDS` sets the bounded timeout for certificate and
+Redfish HTTPS exchanges. It defaults to `20` and accepts values from `5` to
+`60`; invalid or out-of-range values prevent Control Plane startup.
 
 Platform administrators must also select one tenant. Tenant members can select
 only active tenants for which their membership is active. Inaccessible tenants

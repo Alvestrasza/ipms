@@ -3,6 +3,7 @@ import socket
 from urllib.parse import urlsplit
 
 from cryptography.exceptions import InvalidTag
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -136,6 +137,7 @@ def process_discovery_job(job: DiscoveryJob) -> None:
             RedfishTransport(
                 endpoint.base_url,
                 endpoint.tls_certificate_sha256,
+                timeout=settings.BMC_CONNECT_TIMEOUT_SECONDS,
                 event_callback=_communication_logger(endpoint, job.correlation_id),
             ),
             username,
@@ -177,6 +179,7 @@ def process_discovery_job(job: DiscoveryJob) -> None:
                     "memory_bytes": observation.memory_bytes,
                     "bios_version": observation.bios_version,
                     "bmc_firmware_version": observation.bmc_firmware_version,
+                    "detail_snapshot": observation.detail_snapshot,
                     "discovered_at": completed_at,
                 },
             )

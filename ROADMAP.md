@@ -136,6 +136,10 @@ restore point.
   tenant-scoped BMC communication metadata with severity and time filters plus
   formula-safe CSV export. Credentials, tokens, headers, message arguments,
   and payload bodies are never retained in communication logs.
+- Provide a tenant-scoped BMC detail page backed by a persisted, versioned
+  Redfish snapshot for subsystem health, fans, temperatures, power,
+  processors, memory, network, device inventory, storage, firmware, and
+  software. Optional resources remain explicitly unknown when not reported.
 - Implement a read-only Hyper-V connector for host, cluster, VM, and basic
   resource discovery through a constrained customer-side agent or gateway.
 - Present discovered inventory and connector health in the A-Corp Dark Web
@@ -163,6 +167,8 @@ restore point.
   changed certificate cannot be used without an explicit current decision.
 - BMC communication logs and exports remain tenant-scoped and contain no
   stored credential, token, header, message-argument, or payload content.
+- The BMC detail page presents the last normalized discovery snapshot without
+  issuing live device requests during page or tab navigation.
 - The Hyper-V connector discovers an authorized host or cluster and its VMs
   without executing a state-changing management action.
 - Every discovery run is attributed to a tenant and produces auditable results.

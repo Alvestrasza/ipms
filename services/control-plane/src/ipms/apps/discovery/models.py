@@ -123,6 +123,7 @@ class PhysicalSystem(models.Model):
     memory_bytes = models.PositiveBigIntegerField(blank=True, null=True)
     bios_version = models.CharField(max_length=255, blank=True)
     bmc_firmware_version = models.CharField(max_length=255, blank=True)
+    detail_snapshot = models.JSONField(default=dict, blank=True)
     discovered_at = models.DateTimeField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

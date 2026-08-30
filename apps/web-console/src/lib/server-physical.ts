@@ -65,7 +65,58 @@ export type PhysicalSystem = {
   memory_bytes: number | null;
   bios_version: string;
   bmc_firmware_version: string;
+  detail_snapshot: BmcDetailSnapshot;
   discovered_at: string;
+};
+
+export type DetailStatus = "ok" | "warning" | "critical" | "unknown";
+
+export type DetailInventoryItem = {
+  name: string;
+  model?: string;
+  manufacturer?: string;
+  serial_number?: string;
+  firmware_version?: string;
+  status: DetailStatus;
+  state?: string;
+  [key: string]: string | number | boolean | null | undefined;
+};
+
+export type BmcDetailSnapshot = {
+  schema_version?: number;
+  subsystems?: Array<{
+    key: string;
+    status: DetailStatus;
+    value: "ok" | "redundant" | "warning" | "critical" | "unknown";
+  }>;
+  fans?: Array<{
+    name: string;
+    status: DetailStatus;
+    state?: string;
+    reading?: number | null;
+    units?: string;
+    context?: string;
+  }>;
+  temperatures?: Array<{
+    name: string;
+    status: DetailStatus;
+    reading_celsius?: number | null;
+    upper_caution_celsius?: number | null;
+    upper_critical_celsius?: number | null;
+    context?: string;
+  }>;
+  power?: {
+    consumed_watts?: number | null;
+    capacity_watts?: number | null;
+    supplies?: DetailInventoryItem[];
+  };
+  processors?: DetailInventoryItem[];
+  memory?: DetailInventoryItem[];
+  network?: DetailInventoryItem[];
+  device_inventory?: DetailInventoryItem[];
+  storage?: DetailInventoryItem[];
+  firmware?: DetailInventoryItem[];
+  software?: DetailInventoryItem[];
 };
 
 export async function getPhysicalInfrastructure(tenantId: string) {

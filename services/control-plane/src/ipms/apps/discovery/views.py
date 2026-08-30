@@ -4,6 +4,7 @@ import time
 import uuid
 from datetime import timezone as datetime_timezone
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.http import HttpResponse
@@ -91,7 +92,10 @@ class BmcCertificateProbeView(APIView):
         data = serializer.validated_data
         started = time.monotonic()
         try:
-            observation = probe_bmc_certificate(data["base_url"])
+            observation = probe_bmc_certificate(
+                data["base_url"],
+                timeout=settings.BMC_CONNECT_TIMEOUT_SECONDS,
+            )
         except CertificateProbeError as exc:
             BmcCommunicationLog.objects.create(
                 tenant=request.tenant,
@@ -157,7 +161,10 @@ class BmcConnectorEnrollmentView(APIView):
                 {"confirm_certificate_trust": ["explicit_certificate_trust_required"]}
             )
         try:
-            observation = probe_bmc_certificate(data["base_url"])
+            observation = probe_bmc_certificate(
+                data["base_url"],
+                timeout=settings.BMC_CONNECT_TIMEOUT_SECONDS,
+            )
         except CertificateProbeError as exc:
             raise ValidationError({"certificate": [exc.code]}) from exc
         if observation.fingerprint_sha256 != trust.get("fingerprint_sha256"):

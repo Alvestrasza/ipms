@@ -119,6 +119,7 @@ class PhysicalSystemSerializer(serializers.ModelSerializer):
             "memory_bytes",
             "bios_version",
             "bmc_firmware_version",
+            "detail_snapshot",
             "discovered_at",
         )
         read_only_fields = fields

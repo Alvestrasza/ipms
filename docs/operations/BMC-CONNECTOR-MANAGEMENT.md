@@ -33,6 +33,25 @@ Credentials are encrypted with the appliance master key and are never returned
 to the browser. Enrollment emits an audit event and queues the first read-only
 discovery job.
 
+## System Overview
+
+Select a BMC name to open its tenant-scoped, read-only system overview. The
+page displays the last persisted discovery snapshot; changing a tab does not
+open another session to the BMC. The overview contains subsystem health cards
+and separate views for fans, temperatures, power, processors, memory, network,
+device inventory, storage, firmware, and software.
+
+Unavailable optional data is shown as unknown or empty. IPMS does not infer a
+healthy state merely because an older iLO generation, a firmware version, a
+powered-off server, or a device license omits a resource. Run another discovery
+to refresh the snapshot.
+
+The connector request timeout is controlled by
+`IPMS_BMC_CONNECT_TIMEOUT_SECONDS`. The standalone DEV profile defaults to 20
+seconds and the Control Plane accepts bounded values from 5 through 60 seconds.
+This timeout applies to certificate inspection and Redfish requests; it is not
+an unbounded retry window.
+
 ## Credential Rotation and Removal
 
 The key action replaces the encrypted credential and queues a new discovery.
@@ -62,6 +81,8 @@ device logs. Observability failures cannot interrupt connector operations.
 
 - Active BMCs and their controls are isolated by the selected tenant.
 - A queued discovery succeeds or exposes a stable, non-secret diagnostic.
+- A successful discovery persists a normalized detail snapshot without raw
+  Redfish response bodies.
 - An untrusted certificate requires explicit approval of the displayed leaf.
 - A changed certificate is rejected before credentials are submitted.
 - Removal destroys the secret while preserving sanitized audit history.

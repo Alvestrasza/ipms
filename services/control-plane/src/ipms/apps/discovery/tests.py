@@ -210,6 +210,8 @@ class IloRedfishConnectorTests(TestCase):
                     "RedfishVersion": "1.0.0",
                     "Systems": {"@odata.id": "/redfish/v1/Systems/"},
                     "Managers": {"@odata.id": "/redfish/v1/Managers/"},
+                    "Chassis": {"@odata.id": "/redfish/v1/Chassis/"},
+                    "UpdateService": {"@odata.id": "/redfish/v1/UpdateService/"},
                     "Links": {
                         "Sessions": {
                             "@odata.id": "/redfish/v1/SessionService/Sessions/"
@@ -230,6 +232,151 @@ class IloRedfishConnectorTests(TestCase):
                     "ProcessorSummary": {"Count": 2, "Model": "Fixture CPU"},
                     "MemorySummary": {"TotalSystemMemoryGiB": 128},
                     "BiosVersion": "Fixture BIOS",
+                    "Processors": {"@odata.id": "/redfish/v1/Systems/1/Processors/"},
+                    "Memory": {"@odata.id": "/redfish/v1/Systems/1/Memory/"},
+                    "EthernetInterfaces": {
+                        "@odata.id": "/redfish/v1/Systems/1/EthernetInterfaces/"
+                    },
+                    "Storage": {"@odata.id": "/redfish/v1/Systems/1/Storage/"},
+                    "Links": {
+                        "Chassis": [{"@odata.id": "/redfish/v1/Chassis/1/"}],
+                        "PCIeDevices": [
+                            {"@odata.id": "/redfish/v1/Chassis/1/PCIeDevices/1/"}
+                        ],
+                    },
+                    "Oem": {
+                        "Hp": {
+                            "AggregateHealthStatus": {
+                                "AgentlessManagementService": "OK",
+                                "SmartStorageBattery": "OK",
+                                "FanRedundancy": "Redundant",
+                            }
+                        }
+                    },
+                },
+                "/redfish/v1/Systems/1/Processors/": {
+                    "Members": [{"@odata.id": "/redfish/v1/Systems/1/Processors/1/"}]
+                },
+                "/redfish/v1/Systems/1/Processors/1/": {
+                    "Name": "CPU 1",
+                    "Model": "Fixture CPU",
+                    "Socket": "Proc 1",
+                    "TotalCores": 8,
+                    "TotalThreads": 16,
+                    "MaxSpeedMHz": 3200,
+                    "Status": {"Health": "OK", "State": "Enabled"},
+                },
+                "/redfish/v1/Systems/1/Memory/": {
+                    "Members": [{"@odata.id": "/redfish/v1/Systems/1/Memory/1/"}]
+                },
+                "/redfish/v1/Systems/1/Memory/1/": {
+                    "Name": "DIMM 1",
+                    "DeviceLocator": "PROC 1 DIMM 1",
+                    "CapacityMiB": 32768,
+                    "OperatingSpeedMhz": 2933,
+                    "MemoryDeviceType": "DDR4",
+                    "Status": {"Health": "OK", "State": "Enabled"},
+                },
+                "/redfish/v1/Systems/1/EthernetInterfaces/": {
+                    "Members": [
+                        {"@odata.id": "/redfish/v1/Systems/1/EthernetInterfaces/1/"}
+                    ]
+                },
+                "/redfish/v1/Systems/1/EthernetInterfaces/1/": {
+                    "Name": "Embedded NIC 1",
+                    "MACAddress": "00:00:00:00:00:01",
+                    "SpeedMbps": 1000,
+                    "LinkStatus": "LinkUp",
+                    "Status": {"Health": "OK", "State": "Enabled"},
+                },
+                "/redfish/v1/Systems/1/Storage/": {
+                    "Members": [{"@odata.id": "/redfish/v1/Systems/1/Storage/1/"}]
+                },
+                "/redfish/v1/Systems/1/Storage/1/": {
+                    "Name": "Smart Array",
+                    "Status": {"Health": "OK", "State": "Enabled"},
+                    "Drives": [{"@odata.id": "/redfish/v1/Systems/1/Storage/1/Drives/1/"}],
+                },
+                "/redfish/v1/Systems/1/Storage/1/Drives/1/": {
+                    "Name": "Drive 1",
+                    "Model": "Fixture SSD",
+                    "CapacityBytes": 1000000000,
+                    "Status": {"Health": "OK", "State": "Enabled"},
+                },
+                "/redfish/v1/Chassis/": {
+                    "Members": [{"@odata.id": "/redfish/v1/Chassis/1/"}]
+                },
+                "/redfish/v1/Chassis/1/": {
+                    "Name": "Fixture chassis",
+                    "Thermal": {"@odata.id": "/redfish/v1/Chassis/1/Thermal/"},
+                    "Power": {"@odata.id": "/redfish/v1/Chassis/1/Power/"},
+                },
+                "/redfish/v1/Chassis/1/Thermal/": {
+                    "Fans": [
+                        {
+                            "Name": "Fan 1",
+                            "Reading": 42,
+                            "ReadingUnits": "Percent",
+                            "Status": {"Health": "OK", "State": "Enabled"},
+                        }
+                    ],
+                    "Temperatures": [
+                        {
+                            "Name": "Inlet Ambient",
+                            "ReadingCelsius": 23,
+                            "UpperThresholdCritical": 42,
+                            "Status": {"Health": "OK", "State": "Enabled"},
+                        }
+                    ],
+                    "Redundancy": [
+                        {"Name": "Fan Redundancy", "Status": {"Health": "OK"}}
+                    ],
+                },
+                "/redfish/v1/Chassis/1/Power/": {
+                    "PowerControl": [{"PowerConsumedWatts": 180, "PowerCapacityWatts": 800}],
+                    "PowerSupplies": [
+                        {
+                            "Name": "Power Supply 1",
+                            "PowerCapacityWatts": 800,
+                            "Status": {"Health": "OK", "State": "Enabled"},
+                        }
+                    ],
+                    "Redundancy": [
+                        {"Name": "Power Redundancy", "Status": {"Health": "OK"}}
+                    ],
+                },
+                "/redfish/v1/Chassis/1/PCIeDevices/1/": {
+                    "Name": "Embedded Controller",
+                    "DeviceType": "SingleFunction",
+                    "Status": {"Health": "OK", "State": "Enabled"},
+                },
+                "/redfish/v1/UpdateService/": {
+                    "FirmwareInventory": {
+                        "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/"
+                    },
+                    "SoftwareInventory": {
+                        "@odata.id": "/redfish/v1/UpdateService/SoftwareInventory/"
+                    },
+                },
+                "/redfish/v1/UpdateService/FirmwareInventory/": {
+                    "Members": [
+                        {"@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/1/"}
+                    ]
+                },
+                "/redfish/v1/UpdateService/FirmwareInventory/1/": {
+                    "Name": "System ROM",
+                    "Version": "Fixture ROM 1.0",
+                    "Status": {"Health": "OK", "State": "Enabled"},
+                },
+                "/redfish/v1/UpdateService/SoftwareInventory/": {
+                    "Members": [
+                        {"@odata.id": "/redfish/v1/UpdateService/SoftwareInventory/1/"}
+                    ]
+                },
+                "/redfish/v1/UpdateService/SoftwareInventory/1/": {
+                    "Name": "Agentless Management Service",
+                    "Version": "Fixture AMS 1.0",
+                    "Status": {"Health": "OK", "State": "Enabled"},
                 },
                 "/redfish/v1/Managers/": {
                     "Members": [{"@odata.id": "/redfish/v1/Managers/1/"}]
@@ -244,6 +391,24 @@ class IloRedfishConnectorTests(TestCase):
         self.assertEqual(summary, {"redfish_version": "1.0.0", "system_count": "1"})
         self.assertEqual(asdict(observations[0])["memory_bytes"], 128 * 1024**3)
         self.assertEqual(observations[0].bmc_firmware_version, "iLO 4 fixture")
+        detail = observations[0].detail_snapshot
+        self.assertEqual(detail["schema_version"], 1)
+        self.assertEqual(detail["fans"][0]["reading"], 42)
+        self.assertEqual(detail["temperatures"][0]["reading_celsius"], 23)
+        self.assertEqual(detail["processors"][0]["cores"], 8)
+        self.assertEqual(detail["memory"][0]["capacity_mib"], 32768)
+        self.assertEqual(detail["network"][0]["link_status"], "LinkUp")
+        self.assertEqual(detail["power"]["consumed_watts"], 180)
+        self.assertEqual(detail["firmware"][0]["name"], "System ROM")
+        self.assertEqual(detail["software"][0]["name"], "Agentless Management Service")
+        self.assertEqual(
+            next(
+                item
+                for item in detail["subsystems"]
+                if item["key"] == "fan_redundancy"
+            )["value"],
+            "redundant",
+        )
         self.assertEqual(transport.calls[-1][0], "DELETE")
         self.assertEqual({method for method, _ in transport.calls}, {"GET", "POST", "DELETE"})
 
@@ -670,13 +835,19 @@ class IloPortalEnrollmentTests(TestCase):
         response = self.post(self.admin, self.tenant)
         self.assertEqual(response.status_code, 201)
         getaddrinfo.return_value = [(2, 1, 6, "", ("10.0.0.20", 0))]
-        discover.return_value = (self.fixture_observations(), {"redfish_version": "1.0.0", "system_count": "1"})
+        discover.return_value = (
+            self.fixture_observations(),
+            {"redfish_version": "1.0.0", "system_count": "1"},
+        )
         self.assertEqual(process_discovery_queue(limit=1), 1)
         job = DiscoveryJob.objects.get()
         endpoint = ConnectorEndpoint.objects.get()
         self.assertEqual(job.status, DiscoveryJob.Status.SUCCEEDED)
         self.assertEqual(endpoint.health, ConnectorEndpoint.Health.HEALTHY)
-        self.assertEqual(PhysicalSystem.objects.get().name, "Synthetic host")
+        system = PhysicalSystem.objects.get()
+        self.assertEqual(system.name, "Synthetic host")
+        self.assertEqual(system.detail_snapshot["schema_version"], 1)
+        self.assertEqual(discover.call_args.args[0].timeout, 20)
 
     @patch("ipms.apps.discovery.services.socket.getaddrinfo")
     @patch("ipms.apps.discovery.services.discover_ilo")
@@ -732,5 +903,6 @@ class IloPortalEnrollmentTests(TestCase):
                 memory_bytes=64 * 1024**3,
                 bios_version="Fixture BIOS",
                 bmc_firmware_version="Fixture BMC",
+                detail_snapshot={"schema_version": 1, "subsystems": []},
             )
         ]

@@ -22,8 +22,33 @@ def comma_separated_environment(name: str, *, required: bool = False) -> list[st
     return values
 
 
+def bounded_integer_environment(
+    name: str,
+    *,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    raw_value = os.environ.get(name, str(default)).strip()
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise ImproperlyConfigured(f"Environment variable must be an integer: {name}") from exc
+    if not minimum <= value <= maximum:
+        raise ImproperlyConfigured(
+            f"Environment variable must be between {minimum} and {maximum}: {name}"
+        )
+    return value
+
+
 SECRET_KEY = required_environment("IPMS_SECRET_KEY")
 CONNECTOR_MASTER_KEY = required_environment("IPMS_CONNECTOR_MASTER_KEY")
+BMC_CONNECT_TIMEOUT_SECONDS = bounded_integer_environment(
+    "IPMS_BMC_CONNECT_TIMEOUT_SECONDS",
+    default=20,
+    minimum=5,
+    maximum=60,
+)
 DEBUG = False
 ALLOWED_HOSTS = comma_separated_environment("IPMS_ALLOWED_HOSTS", required=True)
 

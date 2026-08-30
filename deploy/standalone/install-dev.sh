@@ -175,6 +175,9 @@ fi
 if ! grep -q '^IPMS_CONNECTOR_MASTER_KEY=' "$control_plane_env"; then
     echo "IPMS_CONNECTOR_MASTER_KEY=$(openssl rand -base64 32 | tr -d '\n')" >> "$control_plane_env"
 fi
+if ! grep -q '^IPMS_BMC_CONNECT_TIMEOUT_SECONDS=' "$control_plane_env"; then
+    echo "IPMS_BMC_CONNECT_TIMEOUT_SECONDS=20" >> "$control_plane_env"
+fi
 if grep -q '^IPMS_ALLOWED_HOSTS=' "$control_plane_env"; then
     sed -i "s|^IPMS_ALLOWED_HOSTS=.*|IPMS_ALLOWED_HOSTS=${PUBLIC_HOST},127.0.0.1|" "$control_plane_env"
 else

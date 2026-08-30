@@ -371,6 +371,7 @@ class PhysicalSystemObservation:
     memory_bytes: int | None
     bios_version: str
     bmc_firmware_version: str
+    detail_snapshot: dict[str, Any]
 
 
 def _link(document: dict[str, Any], key: str) -> str:
@@ -393,6 +394,441 @@ def _health(value: Any) -> str:
     return normalized if normalized in {"ok", "warning", "critical"} else "unknown"
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _link_values(document: dict[str, Any], key: str) -> list[str]:
+    value = document.get(key)
+    if isinstance(value, dict):
+        path = value.get("@odata.id")
+        return [path] if isinstance(path, str) and path else []
+    if isinstance(value, list):
+        paths = []
+        for item in value:
+            if isinstance(item, dict) and isinstance(item.get("@odata.id"), str):
+                paths.append(item["@odata.id"])
+        return paths
+    return []
+
+
+def _condition(value: Any) -> str:
+    if isinstance(value, dict):
+        value = value.get("HealthRollup") or value.get("Health") or value.get("State")
+    normalized = str(value or "").casefold().replace("_", "").replace(" ", "")
+    if normalized in {"ok", "enabled", "redundant", "fullyredundant", "standbyoffline"}:
+        return "ok"
+    if normalized in {"warning", "degraded", "nonredundant", "starting"}:
+        return "warning"
+    if normalized in {"critical", "failed", "failure", "disabled", "unavailableoffline"}:
+        return "critical"
+    return "unknown"
+
+
+def _combined_condition(values: list[str]) -> str:
+    if "critical" in values:
+        return "critical"
+    if "warning" in values:
+        return "warning"
+    if "ok" in values:
+        return "ok"
+    return "unknown"
+
+
+def _safe_get(transport: RedfishTransport, path: str) -> dict[str, Any]:
+    try:
+        return transport.get(path)
+    except RedfishConnectorError as exc:
+        if exc.code == "redfish_request_failed" and exc.detail.get("http_status") in {
+            404,
+            405,
+        }:
+            return {}
+        raise
+
+
+def _linked_documents(
+    transport: RedfishTransport,
+    document: dict[str, Any],
+    key: str,
+) -> list[dict[str, Any]]:
+    resources: list[dict[str, Any]] = []
+    for path in _link_values(document, key):
+        linked = _safe_get(transport, path)
+        if not linked:
+            continue
+        if isinstance(linked.get("Members"), list):
+            resources.extend(
+                resource
+                for member in _members(linked)
+                if (resource := _safe_get(transport, member))
+            )
+        else:
+            resources.append(linked)
+    return resources
+
+
+def _hpe_oem(document: dict[str, Any]) -> dict[str, Any]:
+    oem = _as_dict(document.get("Oem"))
+    return _as_dict(oem.get("Hpe") or oem.get("Hp"))
+
+
+def _aggregate_lookup(aggregate: dict[str, Any], *names: str) -> Any:
+    normalized = {
+        re.sub(r"[^a-z0-9]", "", str(key).casefold()): value
+        for key, value in aggregate.items()
+    }
+    for name in names:
+        value = normalized.get(re.sub(r"[^a-z0-9]", "", name.casefold()))
+        if value is not None:
+            return value
+    return None
+
+
+def _status_value(condition: str, *, redundant: bool = False) -> str:
+    if redundant and condition == "ok":
+        return "redundant"
+    return condition
+
+
+def _inventory_row(resource: dict[str, Any]) -> dict[str, Any]:
+    status = _condition(resource.get("Status"))
+    return {
+        "name": str(resource.get("Name") or resource.get("Id") or ""),
+        "model": str(resource.get("Model") or resource.get("PartNumber") or ""),
+        "manufacturer": str(resource.get("Manufacturer") or ""),
+        "serial_number": str(resource.get("SerialNumber") or ""),
+        "firmware_version": str(
+            resource.get("FirmwareVersion") or resource.get("Version") or ""
+        ),
+        "status": status,
+        "state": str(_as_dict(resource.get("Status")).get("State") or ""),
+    }
+
+
+def _build_detail_snapshot(
+    transport: RedfishTransport,
+    *,
+    root: dict[str, Any],
+    system: dict[str, Any],
+    manager: dict[str, Any],
+) -> dict[str, Any]:
+    processors = _linked_documents(transport, system, "Processors")
+    memory_modules = _linked_documents(transport, system, "Memory")
+    network_interfaces = _linked_documents(transport, system, "EthernetInterfaces")
+    storage_resources = _linked_documents(transport, system, "Storage")
+    simple_storage = _linked_documents(transport, system, "SimpleStorage")
+
+    system_links = _as_dict(system.get("Links"))
+    chassis_documents = _linked_documents(transport, system_links, "Chassis")
+    if not chassis_documents:
+        chassis_documents = _linked_documents(transport, root, "Chassis")[:1]
+    chassis = chassis_documents[0] if chassis_documents else {}
+    thermal_documents = _linked_documents(transport, chassis, "Thermal")
+    power_documents = _linked_documents(transport, chassis, "Power")
+    thermal = thermal_documents[0] if thermal_documents else {}
+    power = power_documents[0] if power_documents else {}
+
+    fans = []
+    for index, fan in enumerate(_as_list(thermal.get("Fans"))):
+        if not isinstance(fan, dict):
+            continue
+        fans.append(
+            {
+                "name": str(fan.get("Name") or f"Fan {index + 1}"),
+                "status": _condition(fan.get("Status")),
+                "state": str(_as_dict(fan.get("Status")).get("State") or ""),
+                "reading": fan.get("Reading"),
+                "units": str(fan.get("ReadingUnits") or ""),
+                "context": str(fan.get("PhysicalContext") or ""),
+            }
+        )
+
+    temperatures = []
+    for index, sensor in enumerate(_as_list(thermal.get("Temperatures"))):
+        if not isinstance(sensor, dict):
+            continue
+        temperatures.append(
+            {
+                "name": str(sensor.get("Name") or f"Temperature {index + 1}"),
+                "status": _condition(sensor.get("Status")),
+                "reading_celsius": sensor.get("ReadingCelsius"),
+                "upper_caution_celsius": sensor.get("UpperThresholdNonCritical"),
+                "upper_critical_celsius": sensor.get("UpperThresholdCritical"),
+                "context": str(sensor.get("PhysicalContext") or ""),
+            }
+        )
+
+    power_supplies = []
+    for supply in _as_list(power.get("PowerSupplies")):
+        if not isinstance(supply, dict):
+            continue
+        row = _inventory_row(supply)
+        row.update(
+            {
+                "capacity_watts": supply.get("PowerCapacityWatts"),
+                "last_output_watts": supply.get("LastPowerOutputWatts"),
+            }
+        )
+        power_supplies.append(row)
+    power_control = next(
+        (item for item in _as_list(power.get("PowerControl")) if isinstance(item, dict)),
+        {},
+    )
+
+    processor_rows = []
+    for processor in processors:
+        row = _inventory_row(processor)
+        row.update(
+            {
+                "socket": str(processor.get("Socket") or ""),
+                "cores": processor.get("TotalCores"),
+                "threads": processor.get("TotalThreads"),
+                "speed_mhz": processor.get("MaxSpeedMHz") or processor.get("OperatingSpeedMHz"),
+                "architecture": str(processor.get("ProcessorArchitecture") or ""),
+            }
+        )
+        processor_rows.append(row)
+
+    memory_rows = []
+    for module in memory_modules:
+        row = _inventory_row(module)
+        row.update(
+            {
+                "location": str(module.get("DeviceLocator") or module.get("SocketLocator") or ""),
+                "capacity_mib": module.get("CapacityMiB"),
+                "speed_mhz": module.get("OperatingSpeedMhz")
+                or module.get("OperatingSpeedMHz"),
+                "memory_type": str(
+                    module.get("MemoryDeviceType") or module.get("MemoryType") or ""
+                ),
+            }
+        )
+        memory_rows.append(row)
+
+    network_rows = []
+    for interface in network_interfaces:
+        row = _inventory_row(interface)
+        row.update(
+            {
+                "mac_address": str(
+                    interface.get("MACAddress")
+                    or interface.get("PermanentMACAddress")
+                    or ""
+                ),
+                "speed_mbps": interface.get("SpeedMbps"),
+                "link_status": str(interface.get("LinkStatus") or ""),
+                "interface_enabled": interface.get("InterfaceEnabled"),
+            }
+        )
+        network_rows.append(row)
+
+    storage_rows = []
+    device_inventory = []
+    for storage in storage_resources:
+        row = _inventory_row(storage)
+        controllers = _as_list(storage.get("StorageControllers"))
+        if isinstance(controllers, list) and controllers:
+            controller = next((item for item in controllers if isinstance(item, dict)), {})
+            row.update(
+                {
+                    "name": str(controller.get("Name") or row["name"]),
+                    "model": str(controller.get("Model") or row["model"]),
+                    "firmware_version": str(
+                        controller.get("FirmwareVersion") or row["firmware_version"]
+                    ),
+                    "status": (
+                        controller_status
+                        if (controller_status := _condition(controller.get("Status")))
+                        != "unknown"
+                        else row["status"]
+                    ),
+                }
+            )
+        storage_rows.append(row)
+        for drive in _linked_documents(transport, storage, "Drives"):
+            drive_row = _inventory_row(drive)
+            drive_row["device_type"] = "drive"
+            drive_row["capacity_bytes"] = drive.get("CapacityBytes")
+            device_inventory.append(drive_row)
+    for simple in simple_storage:
+        storage_rows.append(_inventory_row(simple))
+        for device in _as_list(simple.get("Devices")):
+            if isinstance(device, dict):
+                device_row = _inventory_row(device)
+                device_row["device_type"] = "storage_device"
+                device_inventory.append(device_row)
+
+    for key in ("PCIeDevices", "PCIeFunctions"):
+        for resource in _linked_documents(transport, system_links, key):
+            row = _inventory_row(resource)
+            row["device_type"] = key
+            device_inventory.append(row)
+
+    firmware_rows: list[dict[str, Any]] = []
+    software_rows: list[dict[str, Any]] = []
+    update_services = _linked_documents(transport, root, "UpdateService")
+    if update_services:
+        update_service = update_services[0]
+        firmware_rows = [
+            _inventory_row(resource)
+            for resource in _linked_documents(transport, update_service, "FirmwareInventory")
+        ]
+        software_rows = [
+            _inventory_row(resource)
+            for resource in _linked_documents(transport, update_service, "SoftwareInventory")
+        ]
+    if not firmware_rows:
+        firmware_rows = [
+            {
+                "name": "System BIOS",
+                "firmware_version": str(system.get("BiosVersion") or ""),
+                "status": _condition(system.get("Status")),
+            },
+            {
+                "name": str(manager.get("Name") or "BMC"),
+                "firmware_version": str(manager.get("FirmwareVersion") or ""),
+                "status": _condition(manager.get("Status")),
+            },
+        ]
+
+    hpe_system = _hpe_oem(system)
+    hpe_chassis = _hpe_oem(chassis)
+    hpe_manager = _hpe_oem(manager)
+    aggregate = _as_dict(
+        hpe_system.get("AggregateHealthStatus")
+        or hpe_chassis.get("AggregateHealthStatus")
+        or hpe_manager.get("AggregateHealthStatus")
+    )
+    batteries = _as_list(hpe_chassis.get("SmartStorageBattery"))
+    battery_conditions = [
+        _condition(item.get("Status")) for item in batteries if isinstance(item, dict)
+    ]
+    fan_conditions = [row["status"] for row in fans]
+    temperature_conditions = [row["status"] for row in temperatures]
+    power_supply_conditions = [row["status"] for row in power_supplies]
+    processor_conditions = [row["status"] for row in processor_rows]
+    memory_conditions = [row["status"] for row in memory_rows]
+    network_conditions = [row["status"] for row in network_rows]
+    storage_conditions = [row["status"] for row in storage_rows]
+
+    def subsystem(
+        key: str,
+        raw: Any,
+        fallback: str,
+        *,
+        redundant: bool = False,
+    ) -> dict[str, str]:
+        condition = _condition(raw) if raw is not None else fallback
+        return {
+            "key": key,
+            "status": condition,
+            "value": _status_value(condition, redundant=redundant),
+        }
+
+    thermal_redundancy = _as_list(thermal.get("Redundancy"))
+    power_redundancy = _as_list(power.get("Redundancy"))
+    subsystems = [
+        subsystem(
+            "agentless_management_service",
+            _aggregate_lookup(aggregate, "AgentlessManagementService", "AgentlessManagement"),
+            "unknown",
+        ),
+        subsystem(
+            "smart_storage_battery_status",
+            _aggregate_lookup(aggregate, "SmartStorageBattery", "SmartStorageBatteryStatus"),
+            _combined_condition(battery_conditions),
+        ),
+        subsystem(
+            "bios_hardware_health",
+            _aggregate_lookup(aggregate, "BiosOrHardwareHealth", "BIOSHardwareHealth"),
+            _condition(system.get("Status")),
+        ),
+        subsystem(
+            "fan_redundancy",
+            _aggregate_lookup(aggregate, "FanRedundancy"),
+            _combined_condition(
+                [
+                    _condition(item.get("Status"))
+                    for item in thermal_redundancy
+                    if isinstance(item, dict)
+                ]
+            ),
+            redundant=bool(thermal_redundancy),
+        ),
+        subsystem(
+            "fans",
+            _aggregate_lookup(aggregate, "Fans"),
+            _combined_condition(fan_conditions),
+        ),
+        subsystem(
+            "memory",
+            _aggregate_lookup(aggregate, "Memory"),
+            _combined_condition(memory_conditions) or _condition(system.get("MemorySummary")),
+        ),
+        subsystem(
+            "network",
+            _aggregate_lookup(aggregate, "Network"),
+            _combined_condition(network_conditions),
+        ),
+        subsystem(
+            "power_status",
+            _aggregate_lookup(aggregate, "PowerStatus", "PowerRedundancy"),
+            _combined_condition(
+                [
+                    _condition(item.get("Status"))
+                    for item in power_redundancy
+                    if isinstance(item, dict)
+                ]
+            ),
+            redundant=bool(power_redundancy),
+        ),
+        subsystem(
+            "power_supplies",
+            _aggregate_lookup(aggregate, "PowerSupplies"),
+            _combined_condition(power_supply_conditions),
+        ),
+        subsystem(
+            "processors",
+            _aggregate_lookup(aggregate, "Processors"),
+            _combined_condition(processor_conditions),
+        ),
+        subsystem(
+            "storage",
+            _aggregate_lookup(aggregate, "Storage"),
+            _combined_condition(storage_conditions),
+        ),
+        subsystem(
+            "temperatures",
+            _aggregate_lookup(aggregate, "Temperatures"),
+            _combined_condition(temperature_conditions),
+        ),
+    ]
+
+    return {
+        "schema_version": 1,
+        "subsystems": subsystems,
+        "fans": fans,
+        "temperatures": temperatures,
+        "power": {
+            "consumed_watts": power_control.get("PowerConsumedWatts"),
+            "capacity_watts": power_control.get("PowerCapacityWatts"),
+            "supplies": power_supplies,
+        },
+        "processors": processor_rows,
+        "memory": memory_rows,
+        "network": network_rows,
+        "device_inventory": device_inventory,
+        "storage": storage_rows,
+        "firmware": firmware_rows,
+        "software": software_rows,
+    }
+
+
 def discover_ilo(
     transport: RedfishTransport,
     username: str,
@@ -411,6 +847,7 @@ def discover_ilo(
     transport.create_session(session_path, username, password)
     try:
         manager_firmware = ""
+        manager: dict[str, Any] = {}
         managers_path = _link(root, "Managers")
         if managers_path:
             manager_members = _members(transport.get(managers_path))
@@ -447,9 +884,19 @@ def discover_ilo(
                     processor_count=processors.get("Count"),
                     processor_model=str(processors.get("Model") or ""),
                     total_cores=processors.get("CoreCount"),
-                    memory_bytes=(round(float(total_gib) * 1024**3) if total_gib is not None else None),
+                    memory_bytes=(
+                        round(float(total_gib) * 1024**3)
+                        if total_gib is not None
+                        else None
+                    ),
                     bios_version=str(system.get("BiosVersion") or ""),
                     bmc_firmware_version=manager_firmware,
+                    detail_snapshot=_build_detail_snapshot(
+                        transport,
+                        root=root,
+                        system=system,
+                        manager=manager,
+                    ),
                 )
             )
         return observations, {

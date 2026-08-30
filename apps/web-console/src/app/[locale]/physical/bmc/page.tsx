@@ -1,6 +1,7 @@
 import { RadioTower } from "lucide-react";
-import type { Metadata } from "next";
+import type { Metadata, Route } from "next";
 import { cookies } from "next/headers";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { BmcActions } from "@/components/bmc-actions";
@@ -94,7 +95,12 @@ export default async function BareMetalControllerPage() {
                     <RadioTower aria-hidden="true" size={16} />
                   </i>
                   <span>
-                    <strong>{connector.display_name}</strong>
+                    <Link
+                      className="connector-detail-link"
+                      href={`/${locale}/physical/bmc/${connector.id}` as Route}
+                    >
+                      <strong>{connector.display_name}</strong>
+                    </Link>
                     <small className="connector-detail">
                       {familyLabels[connector.bmc_family]} ·{" "}
                       {connector.base_url}
