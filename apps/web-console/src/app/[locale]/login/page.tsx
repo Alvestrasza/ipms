@@ -11,7 +11,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: dictionary.login.title };
 }
 
-export default async function LoginPage() {
+export default async function LocalizedLoginPage() {
   const dictionary = getDictionary(await resolveLocale());
   return (
     <main className="login-page">

@@ -23,7 +23,7 @@ test("serves the anonymous sign-in experience without browser errors", async ({
   await page.goto("/");
   await page.waitForLoadState("networkidle");
 
-  await expect(page).toHaveURL(/\/login$/);
+  await expect(page).toHaveURL(/\/en\/login$/);
   await expect(
     page.getByRole("heading", {
       name: "Independent Platform Management System",

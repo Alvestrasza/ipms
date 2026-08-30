@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { Cinzel, Inter } from "next/font/google";
-import { connection } from "next/server";
+import { notFound } from "next/navigation";
 
+import { isLocale, type Locale, SUPPORTED_LOCALES } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionaries";
 import { LocaleProvider } from "@/i18n/locale-provider";
-import { resolveLocale } from "@/i18n/server";
 
-import "./globals.css";
+import "../globals.css";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -35,9 +35,14 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({
   children,
-}: Readonly<{ children: React.ReactNode }>) {
-  await connection();
-  const locale = await resolveLocale();
+  params,
+}: Readonly<{
+  children: React.ReactNode;
+  params: Promise<{ locale: string }>;
+}>) {
+  const { locale: routeLocale } = await params;
+  if (!isLocale(routeLocale)) notFound();
+  const locale = routeLocale.toLowerCase() as Locale;
   const dictionary = getDictionary(locale);
   return (
     <html lang={locale} data-theme="dark" suppressHydrationWarning>
@@ -48,4 +53,8 @@ export default async function RootLayout({
       </body>
     </html>
   );
+}
+
+export function generateStaticParams() {
+  return SUPPORTED_LOCALES.map((locale) => ({ locale }));
 }

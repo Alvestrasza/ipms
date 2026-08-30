@@ -8,7 +8,7 @@ import { useLocale } from "@/i18n/locale-provider";
 
 export function LogoutButton({ csrfToken }: { csrfToken: string }) {
   const router = useRouter();
-  const { dictionary } = useLocale();
+  const { dictionary, locale } = useLocale();
   const [pending, setPending] = useState(false);
 
   async function logout() {
@@ -24,7 +24,7 @@ export function LogoutButton({ csrfToken }: { csrfToken: string }) {
         body: "{}",
       });
       if (!response.ok) return;
-      router.replace("/login");
+      router.replace(`/${locale}/login`);
       router.refresh();
     } finally {
       setPending(false);

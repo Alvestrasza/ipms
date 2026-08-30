@@ -8,7 +8,7 @@ import type { IpmsSession } from "@/lib/auth-types";
 
 export function LoginForm() {
   const router = useRouter();
-  const { dictionary } = useLocale();
+  const { dictionary, locale } = useLocale();
   const [csrfToken, setCsrfToken] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -63,7 +63,7 @@ export function LoginForm() {
         setError(dictionary.login.invalidCredentials);
         return;
       }
-      router.replace("/");
+      router.replace(`/${locale}`);
       router.refresh();
     } catch {
       setError(dictionary.login.controlPlaneUnavailable);
@@ -79,7 +79,7 @@ export function LoginForm() {
       <button
         className="primary-button"
         type="button"
-        onClick={() => router.push("/")}
+        onClick={() => router.push(`/${locale}`)}
       >
         <ArrowRight aria-hidden="true" size={17} />
         {dictionary.login.continueToConsole}

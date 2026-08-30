@@ -62,11 +62,16 @@ future Scale-Out packaging.
 
 ## Localization
 
-The console supports `en` and `de`. It first uses the validated `ipms_locale`
-preference cookie, then evaluates the browser's `Accept-Language` header, and
-falls back to English. The language selector stores only the locale preference
-in a Secure, HttpOnly, SameSite cookie; it does not affect authentication or
-tenant authorization.
+The console supports localized routes below `/en` and `/de`, including
+`/en/login` and `/de/login`. A localized URL is authoritative and can be shared
+without depending on browser state. The language selector replaces the locale
+path segment while preserving the remaining path, query, and fragment.
+
+For an unprefixed request, the routing proxy first uses the validated
+`ipms_locale` preference cookie, then evaluates the browser's
+`Accept-Language` header, and finally falls back to English. Every localized
+response synchronizes the preference in a Secure, HttpOnly, SameSite cookie.
+Locale routing does not affect authentication or tenant authorization.
 
 ## Security Boundary
 

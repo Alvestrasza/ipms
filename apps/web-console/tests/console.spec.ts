@@ -2,19 +2,19 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
 
 async function signIn(page: Page) {
-  await page.goto("/login");
+  await page.goto("/en/login");
   const username = page.getByRole("textbox", { name: "Username" });
   await expect(username).toBeEnabled();
   await username.fill("e2e-admin");
   await page.getByLabel("Password").fill("test-only-password");
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page).toHaveURL("/");
+  await expect(page).toHaveURL("/en");
 }
 
 test("redirects an anonymous console request to sign in", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page).toHaveURL("/login");
+  await expect(page).toHaveURL("/en/login");
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 });
 
@@ -24,11 +24,24 @@ test("falls back to English for an unsupported browser language", async ({
   const context = await browser.newContext({ locale: "fr-FR" });
   const page = await context.newPage();
 
-  await page.goto("/login");
+  await page.goto("/");
+  await expect(page).toHaveURL("/en/login");
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 
   await context.close();
+});
+
+test("keeps API and static asset paths outside locale routing", async ({
+  request,
+}) => {
+  const health = await request.get("/api/health");
+  expect(health.ok()).toBe(true);
+  expect(new URL(health.url()).pathname).toBe("/api/health");
+
+  const emblem = await request.get("/brand/alvestrasza-emblem.png");
+  expect(emblem.ok()).toBe(true);
+  expect(new URL(emblem.url()).pathname).toBe("/brand/alvestrasza-emblem.png");
 });
 
 test("detects German and persists an explicit language change", async ({
@@ -37,7 +50,8 @@ test("detects German and persists an explicit language change", async ({
   const context = await browser.newContext({ locale: "de-DE" });
   const page = await context.newPage();
 
-  await page.goto("/login");
+  await page.goto("/");
+  await expect(page).toHaveURL("/de/login");
   await expect(page.locator("html")).toHaveAttribute("lang", "de");
   await expect(page.getByRole("heading", { name: "Anmelden" })).toBeVisible();
   await expect(page.getByLabel("Sprache").locator("option")).toHaveText([
@@ -46,16 +60,22 @@ test("detects German and persists an explicit language change", async ({
   ]);
 
   await page.getByLabel("Sprache").selectOption("en");
+  await expect(page).toHaveURL("/en/login");
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
 
+  await page.goto("/de/login");
+  await expect(page.locator("html")).toHaveAttribute("lang", "de");
+  await page.goto("/");
+  await expect(page).toHaveURL("/de/login");
+
   await context.close();
 });
 
 test("uses a generic message for invalid credentials", async ({ page }) => {
-  await page.goto("/login");
+  await page.goto("/en/login");
   const username = page.getByRole("textbox", { name: "Username" });
   await expect(username).toBeEnabled();
   await username.fill("unknown");

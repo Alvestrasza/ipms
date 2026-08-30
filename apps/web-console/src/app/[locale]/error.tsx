@@ -2,7 +2,7 @@
 
 import { useLocale } from "@/i18n/locale-provider";
 
-export default function ErrorPage({
+export default function LocalizedErrorPage({
   reset,
 }: {
   error: Error & { digest?: string };

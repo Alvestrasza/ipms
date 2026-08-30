@@ -1,7 +1,6 @@
 export const en = {
   language: {
     label: "Language",
-    changeFailed: "The language preference could not be saved.",
   },
   brand: {
     emblemAlt: "Alvestrasza Corporation emblem",

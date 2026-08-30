@@ -66,12 +66,12 @@ export default async function OverviewPage() {
   const locale = await resolveLocale();
   const dictionary = getDictionary(locale);
   const session = await getServerSession();
-  if (!session?.authenticated) redirect("/login");
+  if (!session?.authenticated) redirect(`/${locale}/login`);
   const tenant = selectedTenant(session, await cookies());
-  if (!tenant) redirect("/login?reason=no-tenant");
+  if (!tenant) redirect(`/${locale}/login?reason=no-tenant`);
 
   const dashboard = await getDashboardData(tenant.id);
-  if (!dashboard.sessionValid) redirect("/login");
+  if (!dashboard.sessionValid) redirect(`/${locale}/login`);
   const checkedAt = formatUtc(
     dashboard.checkedAt,
     locale,

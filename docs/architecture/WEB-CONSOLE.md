@@ -52,18 +52,23 @@ only to loopback or a private application network.
 
 ## Localization
 
-The console supports English and German from the first read-only release.
-Locale resolution happens during server rendering in this order:
+The console supports English and German from the first read-only release. All
+console pages live below an explicit locale segment such as `/en/login`,
+`/de/login`, `/en`, or `/de`. The localized URL is authoritative for rendering,
+metadata, navigation, and links.
+
+Unprefixed requests are redirected in this order:
 
 1. A validated `ipms_locale` preference cookie.
 2. The browser `Accept-Language` header, normalized to a supported base
    language.
 3. English as the deterministic fallback.
 
-The language selector writes only the locale preference to a Secure, HttpOnly,
-SameSite=Lax cookie and reloads the current route so root metadata and the HTML
-`lang` attribute remain consistent. Locale selection never participates in
-authentication, authorization, tenant filtering, or licensing decisions.
+The routing proxy synchronizes every explicit locale to a Secure, HttpOnly,
+SameSite=Lax preference cookie. The language selector replaces only the locale
+path segment and preserves the remaining route, query, and fragment. Locale
+selection never participates in authentication, authorization, tenant
+filtering, or licensing decisions.
 
 Translation dictionaries live in source control and are type-checked against
 the English key set. User-provided names and infrastructure values are never

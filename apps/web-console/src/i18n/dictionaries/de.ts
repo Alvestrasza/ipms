@@ -3,7 +3,6 @@ import type { Dictionary } from "./en";
 export const de = {
   language: {
     label: "Sprache",
-    changeFailed: "Die Spracheinstellung konnte nicht gespeichert werden.",
   },
   brand: {
     emblemAlt: "Emblem der Alvestrasza Corporation",

@@ -1,20 +1,13 @@
 import "server-only";
 
-import { cookies, headers } from "next/headers";
+import { notFound } from "next/navigation";
+import { locale as routeLocale } from "next/root-params";
 import { cache } from "react";
 
-import {
-  DEFAULT_LOCALE,
-  isLocale,
-  LOCALE_COOKIE,
-  type Locale,
-  localeFromAcceptLanguage,
-} from "./config";
+import { isLocale, type Locale } from "./config";
 
 export const resolveLocale = cache(async (): Promise<Locale> => {
-  const cookieLocale = (await cookies()).get(LOCALE_COOKIE)?.value;
-  if (isLocale(cookieLocale)) return cookieLocale.toLowerCase() as Locale;
-
-  const acceptLanguage = (await headers()).get("accept-language");
-  return localeFromAcceptLanguage(acceptLanguage) ?? DEFAULT_LOCALE;
+  const locale = await routeLocale();
+  if (!isLocale(locale)) notFound();
+  return locale.toLowerCase() as Locale;
 });
