@@ -22,6 +22,10 @@ export const metadata: Metadata = {
     template: "%s | IPMS Console",
   },
   description: "Independent Platform Management System",
+  icons: {
+    icon: [{ url: "/brand/alvestrasza-emblem.png", type: "image/png" }],
+    shortcut: "/brand/alvestrasza-emblem.png",
+  },
   robots: { index: false, follow: false },
 };
 

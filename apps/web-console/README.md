@@ -26,6 +26,19 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
+## Live smoke test
+
+Run the anonymous Edge smoke test against an installed environment:
+
+```powershell
+$env:IPMS_LIVE_BASE_URL = "https://ipms-dev.example.invalid"
+$env:IPMS_ALLOW_UNTRUSTED_CERTIFICATE = "1" # Development certificates only.
+pnpm exec playwright test --config playwright.live.config.ts
+```
+
+Do not enable the untrusted-certificate option for customer or production
+acceptance.
+
 Set `IPMS_CONTROL_PLANE_URL` to the private Django origin, then open
 `http://127.0.0.1:3000`. Development rewrites keep browser traffic same-origin;
 the deployed reverse proxy owns `/api/v1/` routing. The overview uses live
