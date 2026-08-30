@@ -1,9 +1,25 @@
+import ipaddress
 import re
-from urllib.parse import urlsplit
 
 from rest_framework import serializers
 
-from .models import ConnectorEndpoint, DiscoveryJob, PhysicalSystem
+from .models import (
+    BmcCommunicationLog,
+    ConnectorEndpoint,
+    DiscoveryJob,
+    PhysicalSystem,
+)
+
+
+HOSTNAME_PATTERN = re.compile(
+    r"^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*"
+    r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
+)
+
+
+def normalized_bmc_origin(address: str, port: int) -> str:
+    hostname = f"[{address}]" if ":" in address else address
+    return f"https://{hostname}{f':{port}' if port != 443 else ''}/"
 
 
 class ConnectorEndpointSerializer(serializers.ModelSerializer):
@@ -16,6 +32,7 @@ class ConnectorEndpointSerializer(serializers.ModelSerializer):
             "id",
             "tenant_id",
             "connector_type",
+            "bmc_family",
             "display_name",
             "base_url",
             "enabled",
@@ -32,45 +49,49 @@ class ConnectorEndpointSerializer(serializers.ModelSerializer):
         return "certificate-pin" if instance.tls_certificate_sha256 else "unconfigured"
 
 
-class IloConnectorEnrollmentSerializer(serializers.Serializer):
+class BmcEndpointSerializer(serializers.Serializer):
+    bmc_family = serializers.ChoiceField(choices=ConnectorEndpoint.BmcFamily.choices)
     display_name = serializers.CharField(max_length=255)
-    base_url = serializers.URLField(max_length=512)
-    certificate_sha256 = serializers.CharField(max_length=95)
+    address = serializers.CharField(max_length=253)
+    port = serializers.IntegerField(min_value=1, max_value=65535, default=443)
+
+    def validate_address(self, value: str) -> str:
+        address = value.strip().rstrip(".")
+        try:
+            return str(ipaddress.ip_address(address))
+        except ValueError:
+            if not HOSTNAME_PATTERN.fullmatch(address):
+                raise serializers.ValidationError(
+                    "A valid IP address or DNS hostname is required."
+                )
+        return address.lower()
+
+    def validate(self, attrs):
+        attrs["base_url"] = normalized_bmc_origin(attrs["address"], attrs["port"])
+        return attrs
+
+
+class BmcCertificateProbeSerializer(BmcEndpointSerializer):
+    pass
+
+
+class BmcConnectorEnrollmentSerializer(BmcEndpointSerializer):
     username = serializers.CharField(max_length=255, write_only=True)
     password = serializers.CharField(max_length=4096, write_only=True, trim_whitespace=False)
-    confirm_read_only = serializers.BooleanField(write_only=True)
-    confirm_certificate_trust = serializers.BooleanField(write_only=True)
+    certificate_trust_token = serializers.CharField(max_length=4096, write_only=True)
+    confirm_certificate_trust = serializers.BooleanField(
+        write_only=True,
+        default=False,
+    )
 
-    def validate_base_url(self, value: str) -> str:
-        parts = urlsplit(value)
-        if parts.scheme != "https" or not parts.hostname or parts.username or parts.password:
-            raise serializers.ValidationError("A credential-free HTTPS URL is required.")
-        if parts.path not in ("", "/") or parts.query or parts.fragment:
-            raise serializers.ValidationError("Only the iLO origin URL is allowed.")
-        try:
-            port = parts.port
-        except ValueError as exc:
-            raise serializers.ValidationError("The HTTPS port is invalid.") from exc
-        hostname = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
-        return f"https://{hostname}{f':{port}' if port else ''}/"
 
-    def validate_certificate_sha256(self, value: str) -> str:
-        fingerprint = value.replace(":", "").lower()
-        if not re.fullmatch(r"[0-9a-f]{64}", fingerprint):
-            raise serializers.ValidationError("The SHA-256 fingerprint is invalid.")
-        return fingerprint
-
-    def validate_confirm_read_only(self, value: bool) -> bool:
-        if not value:
-            raise serializers.ValidationError("Read-only scope confirmation is required.")
-        return value
-
-    def validate_confirm_certificate_trust(self, value: bool) -> bool:
-        if not value:
-            raise serializers.ValidationError(
-                "Explicit certificate fingerprint trust is required."
-            )
-        return value
+class ConnectorCredentialSerializer(serializers.Serializer):
+    username = serializers.CharField(max_length=255, write_only=True)
+    password = serializers.CharField(
+        max_length=4096,
+        write_only=True,
+        trim_whitespace=False,
+    )
 
 class PhysicalSystemSerializer(serializers.ModelSerializer):
     tenant_id = serializers.UUIDField(read_only=True)
@@ -121,5 +142,30 @@ class DiscoveryJobSerializer(serializers.ModelSerializer):
             "created_at",
             "started_at",
             "completed_at",
+        )
+        read_only_fields = fields
+
+
+class BmcCommunicationLogSerializer(serializers.ModelSerializer):
+    connector_id = serializers.UUIDField(read_only=True, allow_null=True)
+
+    class Meta:
+        model = BmcCommunicationLog
+        fields = (
+            "id",
+            "connector_id",
+            "bmc_name",
+            "bmc_family",
+            "severity",
+            "event_type",
+            "method",
+            "resource_path",
+            "http_status",
+            "duration_ms",
+            "error_code",
+            "redfish_error_code",
+            "redfish_message_id",
+            "correlation_id",
+            "occurred_at",
         )
         read_only_fields = fields

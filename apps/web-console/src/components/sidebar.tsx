@@ -6,6 +6,7 @@ import {
   Database,
   LayoutDashboard,
   Network,
+  ScrollText,
   ServerCog,
   Settings,
 } from "lucide-react";
@@ -20,10 +21,13 @@ import { Brand } from "./brand";
 export async function Sidebar({
   activeSection,
 }: {
-  activeSection: "overview" | "physical";
+  activeSection: "overview" | "physical" | "bmc" | "bmc-logs";
 }) {
   const locale = await resolveLocale();
   const dictionary = getDictionary(locale);
+  const physicalExpanded = ["physical", "bmc", "bmc-logs"].includes(
+    activeSection,
+  );
   const navigation = [
     {
       label: dictionary.navigation.overview,
@@ -80,7 +84,7 @@ export async function Sidebar({
             <li key={label}>
               {item.enabled ? (
                 <Link
-                  className={`nav-item ${item.section === activeSection ? "nav-item--active" : ""}`}
+                  className={`nav-item ${item.section === activeSection || (item.section === "physical" && physicalExpanded) ? "nav-item--active" : ""}`}
                   href={item.href as Route}
                   aria-current={
                     item.section === activeSection ? "page" : undefined
@@ -101,6 +105,38 @@ export async function Sidebar({
                   </span>
                 </span>
               )}
+              {item.section === "physical" && physicalExpanded ? (
+                <ul className="nav-tree">
+                  <li>
+                    <Link
+                      className={`nav-subitem ${activeSection === "bmc" ? "nav-subitem--active" : ""}`}
+                      href={`/${locale}/physical/bmc` as Route}
+                      aria-current={
+                        activeSection === "bmc" ? "page" : undefined
+                      }
+                    >
+                      <ServerCog aria-hidden="true" size={15} />
+                      <span>{dictionary.navigation.bmc}</span>
+                    </Link>
+                    {["bmc", "bmc-logs"].includes(activeSection) ? (
+                      <ul className="nav-tree nav-tree--nested">
+                        <li>
+                          <Link
+                            className={`nav-subitem ${activeSection === "bmc-logs" ? "nav-subitem--active" : ""}`}
+                            href={`/${locale}/physical/bmc/logs` as Route}
+                            aria-current={
+                              activeSection === "bmc-logs" ? "page" : undefined
+                            }
+                          >
+                            <ScrollText aria-hidden="true" size={14} />
+                            <span>{dictionary.navigation.bmcLogs}</span>
+                          </Link>
+                        </li>
+                      </ul>
+                    ) : null}
+                  </li>
+                </ul>
+              ) : null}
             </li>
           ))}
         </ul>

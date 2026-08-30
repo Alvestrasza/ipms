@@ -131,19 +131,42 @@ test("opens the tenant-scoped physical infrastructure view", async ({
     page.getByRole("heading", { name: "Physical infrastructure" }),
   ).toBeVisible();
   await expect(page.getByText("No physical systems discovered")).toBeVisible();
-  await expect(page.getByText("No iLO connector enrolled")).toBeVisible();
+  await expect(page.getByText("BMCs")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Bare Metal Controller" }),
+  ).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Physical infrastructure" }),
   ).toHaveAttribute("aria-current", "page");
 });
 
-test("enrolls an iLO connector through the guided portal wizard", async ({
+test("enrolls a BMC through certificate-aware guided portal wizard", async ({
   page,
 }) => {
   await signIn(page);
-  await page.goto("/en/physical");
+  await page.goto("/en/physical/bmc");
   let submittedPassword = "";
-  await page.route("**/api/v1/connectors/ilo/", async (route) => {
+  await page.route("**/api/v1/connectors/bmc/certificate/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        certificate: {
+          fingerprint_sha256: "0".repeat(64),
+          subject: "CN=synthetic-bmc",
+          issuer: "CN=synthetic-test-ca",
+          serial_number: "1",
+          valid_from: "2026-01-01T00:00:00Z",
+          valid_until: "2027-01-01T00:00:00Z",
+          dns_names: ["synthetic-bmc.invalid"],
+          trusted_by_system: false,
+        },
+        requires_explicit_trust: true,
+        certificate_trust_token: "test-only-signed-token",
+      }),
+    });
+  });
+  await page.route("**/api/v1/connectors/bmc/", async (route) => {
     const payload = route.request().postDataJSON();
     submittedPassword = payload.password;
     await route.fulfill({
@@ -156,23 +179,26 @@ test("enrolls an iLO connector through the guided portal wizard", async ({
     });
   });
 
-  await page.getByRole("button", { name: "Add iLO connector" }).click();
-  await page.getByLabel("Display name").fill("Synthetic iLO");
-  await page.getByLabel("iLO HTTPS URL").fill("https://192.0.2.40/");
+  await page.getByRole("button", { name: "Add BMC" }).click();
+  await page.getByLabel("BMC family").selectOption("hpe-ilo4");
   await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page
-    .getByLabel("TLS certificate SHA-256 fingerprint")
-    .fill("0".repeat(64));
-  await page.getByLabel(/I explicitly trust this exact certificate/).check();
+  await page.getByLabel("Display name").fill("Synthetic BMC");
+  await page.getByLabel("Address").fill("192.0.2.40");
+  await page.getByLabel("HTTPS port").fill("443");
   await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByLabel("Read-only iLO user").fill("synthetic-reader");
+  await page.getByLabel("Username").fill("synthetic-reader");
   const password = page.getByLabel("Password", { exact: true });
   await expect(password).toHaveAttribute("type", "password");
   await password.fill("test-only-secret");
-  await page.getByLabel(/I confirm that this iLO account/).check();
-  await page.getByRole("button", { name: "Enroll and discover" }).click();
+  await page.getByRole("button", { name: "Check certificate" }).click();
 
-  await expect(page.getByText(/first discovery job is queued/)).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Trust BMC certificate" }),
+  ).toBeVisible();
+  await expect(page.getByText("CN=synthetic-test-ca")).toBeVisible();
+  await page.getByRole("button", { name: "Trust and add BMC" }).click();
+
+  await expect(page.getByText(/first discovery job is queued/i)).toBeVisible();
   expect(submittedPassword).toBe("test-only-secret");
   await expect(page.getByText("test-only-secret")).toHaveCount(0);
 });

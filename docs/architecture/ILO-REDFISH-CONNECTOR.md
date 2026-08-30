@@ -34,6 +34,10 @@ required for the baseline inventory.
 - Prefer Redfish session authentication. The password is submitted only to the
   session collection, the returned `X-Auth-Token` is held in worker memory, and
   the connector deletes its own session during cleanup.
+- Emit tenant-scoped communication metadata for TLS and Redfish operations.
+  Store method, resource path, status, duration, normalized error identifiers,
+  and correlation only; never store credentials, tokens, headers, message
+  arguments, or payload bodies. Logging failures must not affect discovery.
 - Permit `GET` and `HEAD` for discovery. Permit `POST` only for session creation
   and `DELETE` only for that connector-owned session. Reject `PATCH`, `PUT`, all
   action targets, and redirects to another authority.

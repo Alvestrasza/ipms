@@ -7,8 +7,9 @@ import json
 import re
 import socket
 import ssl
+import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlsplit
 
 
@@ -91,9 +92,11 @@ def _validated_endpoint(base_url: str) -> tuple[str, int]:
     except socket.gaierror as exc:
         raise RedfishConnectorError("dns_failed") from exc
     if not addresses or any(
-        address.is_loopback
+        not address.is_private
+        or address.is_loopback
         or address.is_link_local
         or address.is_multicast
+        or address.is_reserved
         or address.is_unspecified
         for address in addresses
     ):
@@ -108,6 +111,7 @@ class RedfishTransport:
         certificate_sha256: str,
         *,
         timeout: float = 10,
+        event_callback: Callable[[dict[str, str | int]], None] | None = None,
     ) -> None:
         if len(certificate_sha256) != 64:
             raise RedfishConnectorError("invalid_certificate_pin")
@@ -118,8 +122,43 @@ class RedfishTransport:
         self.host, self.port = _validated_endpoint(base_url)
         self.certificate_sha256 = certificate_sha256
         self.timeout = timeout
+        self.event_callback = event_callback
         self.token = ""
         self.session_path = ""
+
+    def _emit_exchange(
+        self,
+        *,
+        method: str,
+        path: str,
+        severity: str,
+        duration_ms: int,
+        http_status: int | None = None,
+        error_code: str = "",
+        detail: dict[str, str | int] | None = None,
+    ) -> None:
+        if self.event_callback is None:
+            return
+        event: dict[str, str | int] = {
+            "event_type": "redfish.exchange",
+            "method": method,
+            "resource_path": path,
+            "severity": severity,
+            "duration_ms": duration_ms,
+        }
+        if http_status is not None:
+            event["http_status"] = http_status
+        if error_code:
+            event["error_code"] = error_code
+        for key in ("redfish_error_code", "redfish_message_id"):
+            value = (detail or {}).get(key)
+            if isinstance(value, str):
+                event[key] = value
+        try:
+            self.event_callback(event)
+        except Exception:
+            # Observability must never alter connector behavior.
+            return
 
     def _connection(self) -> _PinnedHTTPSConnection:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -162,6 +201,7 @@ class RedfishTransport:
             body = json.dumps(payload, separators=(",", ":")).encode()
 
         connection = self._connection()
+        started = time.monotonic()
         try:
             connection.request(normalized_method, path, body=body, headers=headers)
             response = connection.getresponse()
@@ -200,12 +240,61 @@ class RedfishTransport:
             document = json.loads(content) if content else {}
             if not isinstance(document, dict):
                 raise RedfishConnectorError("malformed_response")
+            self._emit_exchange(
+                method=normalized_method,
+                path=path,
+                severity=(
+                    "info" if normalized_method in {"POST", "DELETE"} else "debug"
+                ),
+                duration_ms=round((time.monotonic() - started) * 1000),
+                http_status=response.status,
+            )
             return document, response_headers, response.status
+        except RedfishConnectorError as exc:
+            self._emit_exchange(
+                method=normalized_method,
+                path=path,
+                severity=(
+                    "warning"
+                    if exc.code in {"redirect_rejected", "certificate_pin_mismatch"}
+                    else "error"
+                ),
+                duration_ms=round((time.monotonic() - started) * 1000),
+                http_status=(
+                    exc.detail.get("http_status")
+                    if isinstance(exc.detail.get("http_status"), int)
+                    else None
+                ),
+                error_code=exc.code,
+                detail=exc.detail,
+            )
+            raise
         except (TimeoutError, socket.timeout) as exc:
+            self._emit_exchange(
+                method=normalized_method,
+                path=path,
+                severity="error",
+                duration_ms=round((time.monotonic() - started) * 1000),
+                error_code="connection_timeout",
+            )
             raise RedfishConnectorError("connection_timeout") from exc
         except (ssl.SSLError, OSError) as exc:
+            self._emit_exchange(
+                method=normalized_method,
+                path=path,
+                severity="error",
+                duration_ms=round((time.monotonic() - started) * 1000),
+                error_code="connection_failed",
+            )
             raise RedfishConnectorError("connection_failed") from exc
         except json.JSONDecodeError as exc:
+            self._emit_exchange(
+                method=normalized_method,
+                path=path,
+                severity="error",
+                duration_ms=round((time.monotonic() - started) * 1000),
+                error_code="malformed_response",
+            )
             raise RedfishConnectorError("malformed_response") from exc
         finally:
             connection.close()

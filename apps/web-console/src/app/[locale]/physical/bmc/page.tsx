@@ -1,0 +1,139 @@
+import { RadioTower } from "lucide-react";
+import type { Metadata } from "next";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+
+import { BmcActions } from "@/components/bmc-actions";
+import { BmcWizard } from "@/components/bmc-wizard";
+import { ConnectorOperations } from "@/components/connector-operations";
+import { ConsoleShell } from "@/components/console-shell";
+import { StatusPill } from "@/components/status-pill";
+import { getDictionary } from "@/i18n/dictionaries";
+import { resolveLocale } from "@/i18n/server";
+import { getServerSession } from "@/lib/server-auth";
+import { getPhysicalInfrastructure } from "@/lib/server-physical";
+import { selectedTenant } from "@/lib/tenant-selection";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const dictionary = getDictionary(await resolveLocale());
+  return { title: dictionary.bmc.title };
+}
+
+export default async function BareMetalControllerPage() {
+  const locale = await resolveLocale();
+  const dictionary = getDictionary(locale);
+  const session = await getServerSession();
+  if (!session?.authenticated) redirect(`/${locale}/login`);
+  const tenant = selectedTenant(session, await cookies());
+  if (!tenant) redirect(`/${locale}/login?reason=no-tenant`);
+
+  const infrastructure = await getPhysicalInfrastructure(tenant.id);
+  if (!infrastructure.sessionValid) redirect(`/${locale}/login`);
+  const connectors = infrastructure.connectors.filter(
+    (connector) => connector.connector_type === "ilo-redfish",
+  );
+  const canManage =
+    session.user.is_platform_admin || tenant.role === "tenant_admin";
+  const familyLabels = {
+    "hpe-ilo4": dictionary.bmc.familyIlo4,
+    "hpe-ilo-modern": dictionary.bmc.familyIloModern,
+    "dell-idrac": dictionary.bmc.familyIdrac,
+    "generic-redfish": dictionary.bmc.familyRedfish,
+  };
+
+  return (
+    <ConsoleShell session={session} tenant={tenant} activeSection="bmc">
+      <div
+        className={`preview-notice ${infrastructure.available ? "preview-notice--live" : ""}`}
+        role="status"
+      >
+        <span className="preview-notice__dot" aria-hidden="true" />
+        {infrastructure.available
+          ? dictionary.bmc.liveData
+          : dictionary.bmc.unavailableData}
+      </div>
+
+      <section className="page-heading" aria-labelledby="bmc-heading">
+        <div>
+          <p className="eyebrow">{dictionary.bmc.eyebrow}</p>
+          <h1 id="bmc-heading">{dictionary.bmc.heading}</h1>
+          <p>
+            {dictionary.bmc.descriptionPrefix} {tenant.display_name}.
+          </p>
+        </div>
+        <span className="read-only-badge">Redfish</span>
+      </section>
+
+      <section
+        className="panel connector-card"
+        aria-labelledby="bmc-list-heading"
+      >
+        <div className="panel__header">
+          <div>
+            <p className="eyebrow">{dictionary.physical.connectors}</p>
+            <h2 id="bmc-list-heading">{dictionary.bmc.endpoints}</h2>
+          </div>
+          <span className="panel__metric">
+            <strong>{connectors.length}</strong>
+          </span>
+        </div>
+        {canManage ? (
+          <BmcWizard
+            csrfToken={session.csrf_token}
+            tenantId={tenant.id}
+            locale={locale}
+            copy={dictionary.bmc}
+          />
+        ) : null}
+        {connectors.length ? (
+          connectors.map((connector) => (
+            <div className="connector-entry" key={connector.id}>
+              <div className="connector-row">
+                <span>
+                  <i className="connector-mark connector-mark--ilo">
+                    <RadioTower aria-hidden="true" size={16} />
+                  </i>
+                  <span>
+                    <strong>{connector.display_name}</strong>
+                    <small className="connector-detail">
+                      {familyLabels[connector.bmc_family]} ·{" "}
+                      {connector.base_url}
+                    </small>
+                  </span>
+                </span>
+                <div className="connector-row__status-actions">
+                  <StatusPill
+                    status={connector.health}
+                    label={dictionary.status[connector.health]}
+                  />
+                  {canManage ? (
+                    <BmcActions
+                      connector={connector}
+                      csrfToken={session.csrf_token}
+                      tenantId={tenant.id}
+                      copy={dictionary.bmc}
+                    />
+                  ) : null}
+                </div>
+              </div>
+              <ConnectorOperations
+                connector={connector}
+                csrfToken={session.csrf_token}
+                tenantId={tenant.id}
+                canManage={canManage}
+                locale={locale}
+                copy={dictionary.physical}
+              />
+            </div>
+          ))
+        ) : (
+          <div className="empty-state empty-state--compact">
+            <RadioTower aria-hidden="true" size={24} />
+            <strong>{dictionary.bmc.noEndpoints}</strong>
+            <span>{dictionary.bmc.noEndpointsHint}</span>
+          </div>
+        )}
+      </section>
+    </ConsoleShell>
+  );
+}

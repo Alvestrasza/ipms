@@ -72,9 +72,15 @@ deployment database.
   read-only status for the tenant selected through `X-IPMS-Tenant-ID`.
 - `GET /api/v1/connectors/` exposes a redacted tenant-owned connector
   projection without credential references or certificate pins.
-- `POST /api/v1/connectors/ilo/` enrolls an iLO endpoint and queues its first
-  read-only discovery for tenant or platform administrators. Credential and
-  trust-secret fields are write-only.
+- `POST /api/v1/connectors/bmc/certificate/` probes the endpoint certificate
+  and returns a short-lived, tenant-bound trust decision.
+- `POST /api/v1/connectors/bmc/` enrolls a BMC and queues its first read-only
+  discovery for tenant or platform administrators. Credential and trust-token
+  fields are write-only.
+- `POST /api/v1/connectors/{id}/credentials/` rotates an encrypted credential;
+  `DELETE /api/v1/connectors/{id}/` destroys it and archives the endpoint.
+- `GET /api/v1/bmc-logs/` and `/api/v1/bmc-logs/export/` expose bounded,
+  tenant-scoped, sanitized communication metadata and CSV export.
 - `GET /api/v1/physical-systems/` exposes normalized tenant-owned hardware
   inventory without raw Redfish payloads.
 

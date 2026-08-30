@@ -19,7 +19,7 @@ export async function ConsoleShell({
   children: React.ReactNode;
   session: AuthenticatedSession;
   tenant: TenantSummary;
-  activeSection?: "overview" | "physical";
+  activeSection?: "overview" | "physical" | "bmc" | "bmc-logs";
 }) {
   const dictionary = getDictionary(await resolveLocale());
   const roleLabels = {

@@ -9,7 +9,13 @@ from django.utils import timezone
 from ipms.apps.audit.models import AuditEvent
 
 from .connectors.ilo_redfish import RedfishConnectorError, RedfishTransport, discover_ilo
-from .models import ConnectorEndpoint, ConnectorSecret, DiscoveryJob, PhysicalSystem
+from .models import (
+    BmcCommunicationLog,
+    ConnectorEndpoint,
+    ConnectorSecret,
+    DiscoveryJob,
+    PhysicalSystem,
+)
 from .secrets import load_connector_secret
 
 
@@ -17,6 +23,32 @@ class ConnectorExecutionError(Exception):
     def __init__(self, code: str):
         super().__init__(code)
         self.code = code
+
+
+def _communication_logger(endpoint: ConnectorEndpoint, correlation_id):
+    def record(event: dict[str, str | int]) -> None:
+        BmcCommunicationLog.objects.create(
+            tenant=endpoint.tenant,
+            connector=endpoint,
+            bmc_name=endpoint.display_name,
+            bmc_family=endpoint.bmc_family,
+            severity=str(event.get("severity", BmcCommunicationLog.Severity.INFO)),
+            event_type=str(event.get("event_type", "redfish.exchange")),
+            method=str(event.get("method", "")),
+            resource_path=str(event.get("resource_path", "")),
+            http_status=(
+                int(event["http_status"]) if "http_status" in event else None
+            ),
+            duration_ms=(
+                int(event["duration_ms"]) if "duration_ms" in event else None
+            ),
+            error_code=str(event.get("error_code", "")),
+            redfish_error_code=str(event.get("redfish_error_code", "")),
+            redfish_message_id=str(event.get("redfish_message_id", "")),
+            correlation_id=correlation_id,
+        )
+
+    return record
 
 
 def _validate_private_target(base_url: str) -> None:
@@ -101,7 +133,11 @@ def process_discovery_job(job: DiscoveryJob) -> None:
             secret_id=endpoint.credential_reference,
         )
         observations, summary = discover_ilo(
-            RedfishTransport(endpoint.base_url, endpoint.tls_certificate_sha256),
+            RedfishTransport(
+                endpoint.base_url,
+                endpoint.tls_certificate_sha256,
+                event_callback=_communication_logger(endpoint, job.correlation_id),
+            ),
             username,
             password,
         )

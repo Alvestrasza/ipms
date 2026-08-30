@@ -1,6 +1,11 @@
 from django.contrib import admin
 
-from .models import ConnectorEndpoint, DiscoveryJob, PhysicalSystem
+from .models import (
+    BmcCommunicationLog,
+    ConnectorEndpoint,
+    DiscoveryJob,
+    PhysicalSystem,
+)
 
 
 @admin.register(ConnectorEndpoint)
@@ -34,6 +39,28 @@ class DiscoveryJobAdmin(admin.ModelAdmin):
     list_filter = ("connector_type", "status")
     search_fields = ("requested_by", "correlation_id", "error_code")
     readonly_fields = tuple(field.name for field in DiscoveryJob._meta.fields)
+
+    def has_add_permission(self, request) -> bool:
+        return False
+
+    def has_change_permission(self, request, obj=None) -> bool:
+        return False
+
+    def has_delete_permission(self, request, obj=None) -> bool:
+        return False
+
+
+@admin.register(BmcCommunicationLog)
+class BmcCommunicationLogAdmin(admin.ModelAdmin):
+    list_display = ("occurred_at", "tenant", "bmc_name", "severity", "event_type")
+    list_filter = ("severity", "bmc_family", "event_type")
+    search_fields = (
+        "bmc_name",
+        "resource_path",
+        "error_code",
+        "redfish_message_id",
+    )
+    readonly_fields = tuple(field.name for field in BmcCommunicationLog._meta.fields)
 
     def has_add_permission(self, request) -> bool:
         return False

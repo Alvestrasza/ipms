@@ -11,13 +11,20 @@ from django.utils import timezone
 from ipms.apps.audit.models import AuditEvent
 from ipms.apps.tenancy.models import Tenant, TenantMembership
 
+from .certificates import CertificateObservation, create_certificate_trust_token
 from .connectors.ilo_redfish import (
     RedfishConnectorError,
     RedfishTransport,
     _safe_redfish_error_identifiers,
     discover_ilo,
 )
-from .models import ConnectorEndpoint, ConnectorSecret, DiscoveryJob, PhysicalSystem
+from .models import (
+    BmcCommunicationLog,
+    ConnectorEndpoint,
+    ConnectorSecret,
+    DiscoveryJob,
+    PhysicalSystem,
+)
 from .secrets import load_connector_secret
 from .services import process_discovery_queue
 
@@ -309,7 +316,12 @@ class IloRedfishConnectorTests(TestCase):
         ).encode()
         response.getheaders.return_value = []
         connection.return_value.getresponse.return_value = response
-        transport = RedfishTransport("https://192.0.2.10", "a" * 64)
+        exchanges = []
+        transport = RedfishTransport(
+            "https://192.0.2.10",
+            "a" * 64,
+            event_callback=exchanges.append,
+        )
 
         with self.assertRaises(RedfishConnectorError) as captured:
             transport.request_json(
@@ -324,6 +336,10 @@ class IloRedfishConnectorTests(TestCase):
             "iLO.0.10.UnauthorizedLoginAttempt",
         )
         self.assertNotIn("not-a-secret", str(captured.exception.detail))
+        self.assertEqual(exchanges[0]["error_code"], "authentication_failed")
+        self.assertEqual(exchanges[0]["http_status"], 400)
+        self.assertNotIn("not-a-secret", str(exchanges))
+        self.assertNotIn("Password", str(exchanges))
 
     @patch.object(RedfishTransport, "request_json")
     def test_session_accepts_absolute_location_only_for_same_pinned_authority(
@@ -389,20 +405,41 @@ class IloPortalEnrollmentTests(TestCase):
             user=self.reader,
             role=TenantMembership.Role.READER,
         )
+        self.certificate = CertificateObservation(
+            fingerprint_sha256="ab" * 32,
+            subject="CN=synthetic-bmc",
+            issuer="CN=synthetic-ca",
+            serial_number="01",
+            valid_from="2026-01-01T00:00:00+00:00",
+            valid_until="2027-01-01T00:00:00+00:00",
+            dns_names=("synthetic-bmc.example.invalid",),
+            trusted_by_system=False,
+        )
+        probe = patch(
+            "ipms.apps.discovery.views.probe_bmc_certificate",
+            return_value=self.certificate,
+        )
+        self.probe_certificate = probe.start()
+        self.addCleanup(probe.stop)
         self.payload = {
+            "bmc_family": "hpe-ilo4",
             "display_name": "Synthetic iLO",
-            "base_url": "https://192.0.2.10/",
-            "certificate_sha256": "ab:" * 31 + "ab",
+            "address": "192.0.2.10",
+            "port": 443,
             "username": "readonly-user",
             "password": "test-only-secret",
-            "confirm_read_only": True,
+            "certificate_trust_token": create_certificate_trust_token(
+                tenant_id=str(self.tenant.id),
+                base_url="https://192.0.2.10/",
+                observation=self.certificate,
+            ),
             "confirm_certificate_trust": True,
         }
 
     def post(self, user, tenant, payload=None):
         self.client.force_login(user)
         return self.client.post(
-            reverse("core:ilo-enroll"),
+            reverse("core:bmc-enroll"),
             data=payload or self.payload,
             content_type="application/json",
             headers={"X-IPMS-Tenant-ID": str(tenant.id)},
@@ -442,8 +479,8 @@ class IloPortalEnrollmentTests(TestCase):
         response = self.post(self.admin, self.other_tenant)
         self.assertEqual(response.status_code, 404)
 
-    def test_requires_https_origin_and_read_only_confirmation(self) -> None:
-        payload = {**self.payload, "base_url": "http://192.0.2.10/redfish", "confirm_read_only": False}
+    def test_requires_valid_address_and_port(self) -> None:
+        payload = {**self.payload, "address": "https://192.0.2.10/redfish", "port": 0}
         response = self.post(self.admin, self.tenant, payload)
         self.assertEqual(response.status_code, 400)
         self.assertFalse(ConnectorEndpoint.objects.exists())
@@ -493,6 +530,139 @@ class IloPortalEnrollmentTests(TestCase):
             headers={"X-IPMS-Tenant-ID": str(self.tenant.id)},
         )
         self.assertEqual(response.status_code, 403)
+
+    def test_certificate_probe_returns_display_data_and_signed_token(self) -> None:
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse("core:bmc-certificate-probe"),
+            data={
+                "bmc_family": "hpe-ilo4",
+                "display_name": "Synthetic iLO",
+                "address": "192.0.2.10",
+                "port": 443,
+            },
+            content_type="application/json",
+            headers={"X-IPMS-Tenant-ID": str(self.tenant.id)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        document = response.json()
+        self.assertTrue(document["requires_explicit_trust"])
+        self.assertEqual(
+            document["certificate"]["fingerprint_sha256"],
+            self.certificate.fingerprint_sha256,
+        )
+        self.assertNotIn("password", str(document).lower())
+        self.assertTrue(
+            BmcCommunicationLog.objects.filter(
+                tenant=self.tenant,
+                event_type="tls.certificate_probe",
+            ).exists()
+        )
+
+    def test_tenant_admin_rotates_credentials_and_queues_discovery(self) -> None:
+        self.assertEqual(self.post(self.admin, self.tenant).status_code, 201)
+        endpoint = ConnectorEndpoint.objects.get()
+        DiscoveryJob.objects.all().delete()
+
+        response = self.client.post(
+            reverse("core:connector-credentials", kwargs={"pk": endpoint.id}),
+            data={"username": "replacement", "password": "replacement-secret"},
+            content_type="application/json",
+            headers={"X-IPMS-Tenant-ID": str(self.tenant.id)},
+        )
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(
+            load_connector_secret(
+                tenant_id=self.tenant.id,
+                secret_id=endpoint.credential_reference,
+            ),
+            ("replacement", "replacement-secret"),
+        )
+        self.assertEqual(DiscoveryJob.objects.get().connector, endpoint)
+        self.assertTrue(
+            AuditEvent.objects.filter(action="connector.credentials.rotate").exists()
+        )
+        self.assertNotIn("replacement-secret", str(response.json()))
+
+    def test_removal_destroys_secret_and_hides_connector_inventory(self) -> None:
+        self.assertEqual(self.post(self.admin, self.tenant).status_code, 201)
+        endpoint = ConnectorEndpoint.objects.get()
+        PhysicalSystem.objects.create(
+            tenant=self.tenant,
+            connector=endpoint,
+            source_resource_id="/redfish/v1/Systems/1/",
+            name="Synthetic host",
+            discovered_at=timezone.now(),
+        )
+
+        response = self.client.delete(
+            reverse("core:connector-detail", kwargs={"pk": endpoint.id}),
+            headers={"X-IPMS-Tenant-ID": str(self.tenant.id)},
+        )
+
+        self.assertEqual(response.status_code, 204)
+        endpoint.refresh_from_db()
+        self.assertIsNotNone(endpoint.removed_at)
+        self.assertFalse(endpoint.enabled)
+        self.assertFalse(ConnectorSecret.objects.exists())
+        self.assertEqual(
+            self.client.get(
+                reverse("core:connector-list"),
+                headers={"X-IPMS-Tenant-ID": str(self.tenant.id)},
+            ).json(),
+            [],
+        )
+        self.assertEqual(
+            self.client.get(
+                reverse("core:physical-list"),
+                headers={"X-IPMS-Tenant-ID": str(self.tenant.id)},
+            ).json(),
+            [],
+        )
+        self.assertTrue(AuditEvent.objects.filter(action="connector.remove").exists())
+        self.assertTrue(
+            BmcCommunicationLog.objects.filter(event_type="connector.removed").exists()
+        )
+
+    def test_logs_are_tenant_scoped_filterable_and_csv_safe(self) -> None:
+        BmcCommunicationLog.objects.create(
+            tenant=self.tenant,
+            bmc_name="=synthetic",
+            bmc_family="hpe-ilo4",
+            severity=BmcCommunicationLog.Severity.ERROR,
+            event_type="redfish.exchange",
+            method="GET",
+            resource_path="/redfish/v1/",
+            http_status=500,
+        )
+        BmcCommunicationLog.objects.create(
+            tenant=self.other_tenant,
+            bmc_name="Other tenant BMC",
+            bmc_family="hpe-ilo4",
+            severity=BmcCommunicationLog.Severity.ERROR,
+            event_type="redfish.exchange",
+        )
+        self.client.force_login(self.reader)
+
+        response = self.client.get(
+            reverse("core:bmc-log-list"),
+            {"severity": "error"},
+            headers={"X-IPMS-Tenant-ID": str(self.tenant.id)},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([entry["bmc_name"] for entry in response.json()], ["=synthetic"])
+
+        export = self.client.get(
+            reverse("core:bmc-log-export"),
+            {"severity": "error"},
+            headers={"X-IPMS-Tenant-ID": str(self.tenant.id)},
+        )
+        self.assertEqual(export.status_code, 200)
+        content = export.content.decode()
+        self.assertIn("'=synthetic", content)
+        self.assertNotIn("Other tenant BMC", content)
 
     @patch("ipms.apps.discovery.services.socket.getaddrinfo")
     @patch("ipms.apps.discovery.services.discover_ilo")

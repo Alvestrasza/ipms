@@ -11,6 +11,7 @@ export type ConnectorEndpoint = {
   id: string;
   tenant_id: string;
   connector_type: "ilo-redfish" | "hyper-v";
+  bmc_family: "hpe-ilo4" | "hpe-ilo-modern" | "dell-idrac" | "generic-redfish";
   display_name: string;
   base_url: string;
   enabled: boolean;
@@ -28,6 +29,24 @@ export type ConnectorEndpoint = {
   };
   last_attempt_at: string | null;
   last_success_at: string | null;
+};
+
+export type BmcCommunicationLog = {
+  id: string;
+  connector_id: string | null;
+  bmc_name: string;
+  bmc_family: ConnectorEndpoint["bmc_family"];
+  severity: "debug" | "info" | "warning" | "error";
+  event_type: string;
+  method: string;
+  resource_path: string;
+  http_status: number | null;
+  duration_ms: number | null;
+  error_code: string;
+  redfish_error_code: string;
+  redfish_message_id: string;
+  correlation_id: string | null;
+  occurred_at: string;
 };
 
 export type PhysicalSystem = {
@@ -81,6 +100,43 @@ export async function getPhysicalInfrastructure(tenantId: string) {
       available: false,
       connectors: [],
       systems: [],
+    };
+  }
+}
+
+export async function getBmcLogs(tenantId: string, queryString: string) {
+  const cookie = (await cookies()).toString();
+  const headers = controlPlaneHeaders({ cookie, "X-IPMS-Tenant-ID": tenantId });
+  const suffix = queryString ? `?${queryString}` : "";
+  try {
+    const [connectorsResponse, logsResponse] = await Promise.all([
+      fetch(`${CONTROL_PLANE_URL}/api/v1/connectors/`, {
+        cache: "no-store",
+        headers,
+      }),
+      fetch(`${CONTROL_PLANE_URL}/api/v1/bmc-logs/${suffix}`, {
+        cache: "no-store",
+        headers,
+      }),
+    ]);
+    return {
+      sessionValid:
+        ![401, 403].includes(connectorsResponse.status) &&
+        ![401, 403].includes(logsResponse.status),
+      available: connectorsResponse.ok && logsResponse.ok,
+      connectors: connectorsResponse.ok
+        ? ((await connectorsResponse.json()) as ConnectorEndpoint[])
+        : [],
+      logs: logsResponse.ok
+        ? ((await logsResponse.json()) as BmcCommunicationLog[])
+        : [],
+    };
+  } catch {
+    return {
+      sessionValid: true,
+      available: false,
+      connectors: [],
+      logs: [],
     };
   }
 }

@@ -1,6 +1,7 @@
 import uuid
 
 from django.db import models
+from django.db.models import Q
 
 from ipms.apps.tenancy.models import Tenant
 
@@ -16,6 +17,12 @@ class ConnectorEndpoint(models.Model):
         WARNING = "warning", "Warning"
         CRITICAL = "critical", "Critical"
 
+    class BmcFamily(models.TextChoices):
+        HPE_ILO4 = "hpe-ilo4", "HPE iLO 4"
+        HPE_ILO_MODERN = "hpe-ilo-modern", "HPE iLO 5/6/7"
+        DELL_IDRAC = "dell-idrac", "Dell iDRAC"
+        GENERIC_REDFISH = "generic-redfish", "Generic Redfish"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
         Tenant,
@@ -23,6 +30,11 @@ class ConnectorEndpoint(models.Model):
         related_name="connector_endpoints",
     )
     connector_type = models.CharField(max_length=32, choices=ConnectorType.choices)
+    bmc_family = models.CharField(
+        max_length=32,
+        choices=BmcFamily.choices,
+        default=BmcFamily.HPE_ILO4,
+    )
     display_name = models.CharField(max_length=255)
     base_url = models.URLField(max_length=512)
     credential_reference = models.UUIDField(unique=True, default=uuid.uuid4)
@@ -37,6 +49,8 @@ class ConnectorEndpoint(models.Model):
     last_error_detail = models.JSONField(default=dict, blank=True)
     last_attempt_at = models.DateTimeField(blank=True, null=True)
     last_success_at = models.DateTimeField(blank=True, null=True)
+    removed_at = models.DateTimeField(blank=True, null=True)
+    removed_by = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -45,6 +59,7 @@ class ConnectorEndpoint(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=("tenant", "base_url"),
+                condition=Q(removed_at__isnull=True),
                 name="unique_tenant_connector_url",
             )
         ]
@@ -126,6 +141,61 @@ class PhysicalSystem(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+
+class BmcCommunicationLog(models.Model):
+    class Severity(models.TextChoices):
+        DEBUG = "debug", "Debug"
+        INFO = "info", "Info"
+        WARNING = "warning", "Warning"
+        ERROR = "error", "Error"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.PROTECT,
+        related_name="bmc_communication_logs",
+    )
+    connector = models.ForeignKey(
+        ConnectorEndpoint,
+        on_delete=models.SET_NULL,
+        related_name="communication_logs",
+        blank=True,
+        null=True,
+    )
+    bmc_name = models.CharField(max_length=255)
+    bmc_family = models.CharField(max_length=32)
+    severity = models.CharField(max_length=16, choices=Severity.choices)
+    event_type = models.CharField(max_length=64)
+    method = models.CharField(max_length=12, blank=True)
+    resource_path = models.CharField(max_length=512, blank=True)
+    http_status = models.PositiveSmallIntegerField(blank=True, null=True)
+    duration_ms = models.PositiveIntegerField(blank=True, null=True)
+    error_code = models.CharField(max_length=128, blank=True)
+    redfish_error_code = models.CharField(max_length=128, blank=True)
+    redfish_message_id = models.CharField(max_length=128, blank=True)
+    correlation_id = models.UUIDField(blank=True, null=True)
+    occurred_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-occurred_at",)
+        indexes = [
+            models.Index(
+                fields=("tenant", "-occurred_at"),
+                name="bmc_log_tenant_time_idx",
+            ),
+            models.Index(
+                fields=("tenant", "severity", "-occurred_at"),
+                name="bmc_log_severity_idx",
+            ),
+            models.Index(
+                fields=("connector", "-occurred_at"),
+                name="bmc_log_connector_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.bmc_name}: {self.event_type}"
 
 
 class DiscoveryJob(models.Model):

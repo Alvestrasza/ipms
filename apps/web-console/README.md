@@ -75,10 +75,11 @@ Locale routing does not affect authentication or tenant authorization.
 
 ## Physical Infrastructure
 
-The localized `/en/physical` and `/de/physical` routes display tenant-scoped
-physical-system inventory and redacted iLO connector health from the Control
-Plane. The Web Console never receives connector credentials, credential
-references, certificate pins, session tokens, or raw Redfish payloads.
+The localized physical-infrastructure routes display tenant-scoped normalized
+inventory, BMC management, and sanitized connector communication logs. The
+portal provides guided certificate review, credential rotation, soft removal,
+filtering, and CSV export. It never receives stored connector credentials,
+credential references, session tokens, or raw Redfish payloads.
 
 ## Security Boundary
 
