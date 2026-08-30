@@ -210,7 +210,9 @@ new non-interactive sudo operation before continuing.
 The reference profile disables services and sockets that are unnecessary for
 the current Hyper-V Appliance role, including removable-device management,
 modem management, unused iSCSI and multipath activation, the LXD installer
-socket, and external MOTD news retrieval.
+socket, external MOTD news retrieval, and Apport crash reporting. Apport is
+disabled because it otherwise changes the effective privileged core-dump
+policy after the normal systemd sysctl phase.
 
 This is profile-based, not permanent removal. A future storage connector,
 container runtime, or hardware integration may require a reviewed service to
@@ -271,7 +273,10 @@ test.
 This proves the live reference state only. It does not prove that a clean
 Appliance can reproduce the state. Product acceptance requires the controls to
 be implemented as versioned, idempotent bootstrap code with automated rollback
-tests. That work is tracked in GitHub Issue #11.
+tests. The first implementation and reference-system validation are documented
+in [Ubuntu Appliance Hardening Automation](UBUNTU-HARDENING-AUTOMATION.md).
+Clean-install and unattended-installer evidence remain tracked in GitHub Issue
+#11.
 
 ## Intentional Development Exceptions
 

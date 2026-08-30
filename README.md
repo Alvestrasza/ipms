@@ -16,6 +16,7 @@ maintained in [ROADMAP.md](ROADMAP.md).
 
 - [Alice SSH bootstrap](docs/operations/ALICE-SSH-BOOTSTRAP.md)
 - [Ubuntu Appliance hardening baseline](docs/operations/UBUNTU-APPLIANCE-HARDENING.md)
+- [Ubuntu Appliance hardening automation](docs/operations/UBUNTU-HARDENING-AUTOMATION.md)
 
 ## License
 
