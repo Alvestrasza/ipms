@@ -156,7 +156,7 @@ def process_discovery_queue(*, limit: int = 5) -> int:
     for _ in range(limit):
         with transaction.atomic():
             job = (
-                DiscoveryJob.objects.select_for_update(skip_locked=True)
+                DiscoveryJob.objects.select_for_update(skip_locked=True, of=("self",))
                 .select_related("connector", "connector__tenant")
                 .filter(
                     status=DiscoveryJob.Status.QUEUED,
