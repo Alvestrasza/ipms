@@ -246,6 +246,52 @@ class IloRedfishConnectorTests(TestCase):
                 with self.assertRaisesRegex(RedfishConnectorError, "request_method_rejected"):
                     transport.request_json(method, path)
 
+    @patch.object(RedfishTransport, "request_json")
+    def test_session_accepts_absolute_location_only_for_same_pinned_authority(
+        self, request_json
+    ) -> None:
+        request_json.return_value = (
+            {},
+            {
+                "x-auth-token": "synthetic-token",
+                "location": (
+                    "https://192.0.2.10/redfish/v1/SessionService/Sessions/fixture"
+                ),
+            },
+            201,
+        )
+        transport = RedfishTransport("https://192.0.2.10", "a" * 64)
+
+        transport.create_session(
+            "/redfish/v1/SessionService/Sessions/", "fixture", "not-a-secret"
+        )
+
+        self.assertEqual(
+            transport.session_path,
+            "/redfish/v1/SessionService/Sessions/fixture",
+        )
+
+    @patch.object(RedfishTransport, "request_json")
+    def test_session_rejects_absolute_location_for_another_authority(
+        self, request_json
+    ) -> None:
+        request_json.return_value = (
+            {},
+            {
+                "x-auth-token": "synthetic-token",
+                "location": (
+                    "https://192.0.2.11/redfish/v1/SessionService/Sessions/fixture"
+                ),
+            },
+            201,
+        )
+        transport = RedfishTransport("https://192.0.2.10", "a" * 64)
+
+        with self.assertRaisesRegex(RedfishConnectorError, "session_creation_failed"):
+            transport.create_session(
+                "/redfish/v1/SessionService/Sessions/", "fixture", "not-a-secret"
+            )
+
 
 class IloPortalEnrollmentTests(TestCase):
     def setUp(self) -> None:

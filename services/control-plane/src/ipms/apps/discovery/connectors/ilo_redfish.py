@@ -180,7 +180,22 @@ class RedfishTransport:
         )
         token = headers.get("x-auth-token", "")
         location = headers.get("location", "")
-        if status != 201 or not token or not location.startswith("/redfish/v1/"):
+        session_path = location
+        if location.startswith("https://"):
+            parsed_location = urlsplit(location)
+            location_port = parsed_location.port or 443
+            if (
+                parsed_location.scheme == "https"
+                and parsed_location.hostname
+                and parsed_location.hostname.casefold() == self.host.casefold()
+                and location_port == self.port
+                and not parsed_location.username
+                and not parsed_location.password
+                and not parsed_location.query
+                and not parsed_location.fragment
+            ):
+                session_path = parsed_location.path
+        if status != 201 or not token or not session_path.startswith("/redfish/v1/"):
             raise RedfishConnectorError(
                 "session_creation_failed",
                 {
@@ -190,13 +205,13 @@ class RedfishTransport:
                     "token_state": "present" if token else "missing",
                     "location_state": (
                         "valid"
-                        if location.startswith("/redfish/v1/")
+                        if session_path.startswith("/redfish/v1/")
                         else "missing_or_invalid"
                     ),
                 },
             )
         self.token = token
-        self.session_path = location
+        self.session_path = session_path
 
     def delete_session(self) -> None:
         if not self.session_path:
