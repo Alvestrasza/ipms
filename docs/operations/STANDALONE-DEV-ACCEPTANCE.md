@@ -3,7 +3,7 @@
 ## Acceptance Record
 
 - Date: 2026-08-30
-- Accepted release: `aee04fc6a987412ee4fba2d4aeb721d04d14a66c`
+- Accepted release: `891b85826c4b2fddf6d734343cde55e749bb4810`
 - Target class: hardened Ubuntu 26.04.1 LTS development appliance
 - Deployment model: single-node, immutable application release with persistent
   state below `/srv/ipms`
@@ -40,6 +40,9 @@ repository lockfile and Python project metadata.
   and modes. Their contents were not included in acceptance evidence.
 - Both the direct Control Plane readiness check and the nginx HTTPS readiness
   check returned `{"status":"ok"}`.
+- An authenticated request to the Web Console root returned HTTP 200 and the
+  expected tenant dashboard without redirects. Internal Next.js requests carry
+  the trusted HTTPS forwarding signal required by Django production security.
 - The login response includes a nonce-based script policy, explicit style
   attribute policy, frame denial, object denial, a same-origin referrer policy,
   a restrictive permissions policy, and content-type sniffing protection.
@@ -50,7 +53,8 @@ repository lockfile and Python project metadata.
 
 ## Verification Results
 
-- Django test suite: 25 tests passed.
+- Django test suite: 26 tests passed, including the internal HTTPS proxy
+  regression test.
 - Web Console lint: passed.
 - Web Console TypeScript check: passed.
 - Web Console production build: passed.
@@ -71,6 +75,9 @@ repository lockfile and Python project metadata.
   never printed by the installer. Live authenticated acceptance requires an
   administrator to retrieve it through the verified SSH channel, sign in, set
   a new password, and remove the one-time credential file.
+- The bootstrap application username defaults to `admin`; its password remains
+  unique and randomly generated for every installation. A shared static
+  password is not an accepted deployment mode.
 - Full clean-VM reinstallation acceptance remains deferred until a separate
   disposable VM is available.
 
