@@ -77,6 +77,7 @@ if [[ ! -x "/opt/ipms/node-v${NODE_VERSION}-linux-x64/bin/node" ]]; then
     tar -xJf "${temporary_directory}/${node_archive}" -C /opt/ipms
 fi
 ln -sfn "/opt/ipms/node-v${NODE_VERSION}-linux-x64" /opt/ipms/node-current
+export PATH="/opt/ipms/node-current/bin:${PATH}"
 /opt/ipms/node-current/bin/corepack enable
 /opt/ipms/node-current/bin/corepack prepare "pnpm@${PNPM_VERSION}" --activate
 
@@ -105,7 +106,6 @@ python3 -m venv "${release_directory}/services/control-plane/.venv"
 "${release_directory}/services/control-plane/.venv/bin/python" -m pip install \
     "${release_directory}/services/control-plane"
 
-export PATH="/opt/ipms/node-current/bin:${PATH}"
 export NEXT_TELEMETRY_DISABLED=1
 (
     cd "${release_directory}/apps/web-console"
