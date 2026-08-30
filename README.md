@@ -22,6 +22,10 @@ maintained in [ROADMAP.md](ROADMAP.md).
 
 - [ADR-0001: Appliance encryption, unlock, and recovery policy](docs/architecture/ADR-0001-APPLIANCE-ENCRYPTION-AND-UNLOCK.md)
 
+## Source Layout
+
+- [Django Control Plane](services/control-plane/README.md)
+
 ## License
 
 IPMS is proprietary software. See [LICENSE](LICENSE). Public extension

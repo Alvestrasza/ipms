@@ -70,7 +70,7 @@ IPMS API, Identity, RBAC, Tenant Policy, Licensing, Audit, Job Engine
 
 The first IPMS development appliance uses Ubuntu Server 26.04 LTS. As of the
 initial architecture decision, the reference baseline is Ubuntu 26.04.1 LTS,
-Python 3.14.6, Django 6.1, Next.js 16.3.3 Active LTS, PostgreSQL 18.6, Docker
+Python 3.14.7, Django 6.1, Next.js 16.3.3 Active LTS, PostgreSQL 18.6, Docker
 Engine 29.7.2, and Go 1.27.0.
 
 The baseline is a starting point, not a permanent version freeze. Before every

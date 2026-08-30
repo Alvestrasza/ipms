@@ -5,3 +5,14 @@
 .env
 .env.*
 !.env.example
+
+# Python development and test artifacts
+.venv/
+__pycache__/
+*.py[cod]
+*.sqlite3
+.coverage
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
