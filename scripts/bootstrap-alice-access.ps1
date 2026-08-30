@@ -15,13 +15,15 @@ param(
     [ValidateRange(1, 65535)]
     [int]$Port = 22,
 
-    [string]$PrivateKeyPath = (
-        Join-Path $PSScriptRoot '..\.ssh\alice_ipms_ed25519'
-    )
+    [string]$PrivateKeyPath
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+if ([string]::IsNullOrWhiteSpace($PrivateKeyPath)) {
+    $PrivateKeyPath = Join-Path $PSScriptRoot '..\.ssh\alice_ipms_ed25519'
+}
 
 function Resolve-FullPath {
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -38,7 +40,7 @@ $PublicKeyPath = "$PrivateKeyPath.pub"
 $SshDirectory = Split-Path -Parent $PrivateKeyPath
 $KnownHostsPath = Join-Path $SshDirectory 'known_hosts'
 
-foreach ($commandName in @('ssh', 'ssh-keygen', 'ssh-keyscan')) {
+foreach ($commandName in @('ssh', 'ssh-keygen')) {
     if (-not (Get-Command $commandName -ErrorAction SilentlyContinue)) {
         throw "Required command is unavailable: $commandName"
     }
@@ -57,14 +59,57 @@ if ($publicKey -notmatch '^ssh-ed25519 [A-Za-z0-9+/]+={0,3}(?: .*)?$') {
     throw 'The public key is not a valid OpenSSH Ed25519 public key.'
 }
 
-New-Item -ItemType Directory -Path $SshDirectory -Force | Out-Null
+$knownHostsCandidatePath = Join-Path (
+    [System.IO.Path]::GetTempPath()
+) ("ipms-known-hosts-{0}" -f [Guid]::NewGuid().ToString('N'))
 
-$scanOutput = & ssh-keyscan -p $Port -t ed25519 $HostName 2>$null
-if ($LASTEXITCODE -ne 0 -or -not $scanOutput) {
-    throw "Unable to retrieve the Ed25519 SSH host key from $HostName`:$Port."
+$probeStartInfo = New-Object System.Diagnostics.ProcessStartInfo
+$probeStartInfo.FileName = (Get-Command 'ssh').Source
+$probeStartInfo.Arguments = (
+    '-p {0} -o UserKnownHostsFile="{1}" -o StrictHostKeyChecking=accept-new ' +
+    '-o BatchMode=yes -o PreferredAuthentications=none ' +
+    '-o PubkeyAuthentication=no -o PasswordAuthentication=no ' +
+    '-o KbdInteractiveAuthentication=no -o GSSAPIAuthentication=no ' +
+    '-o ConnectTimeout=10 -o ConnectionAttempts=1 -o LogLevel=ERROR ' +
+    'host-key-probe@{2} exit'
+) -f $Port, $knownHostsCandidatePath, $HostName
+$probeStartInfo.UseShellExecute = $false
+$probeStartInfo.CreateNoWindow = $true
+$probeStartInfo.RedirectStandardOutput = $true
+$probeStartInfo.RedirectStandardError = $true
+
+$probeProcess = New-Object System.Diagnostics.Process
+$probeProcess.StartInfo = $probeStartInfo
+
+try {
+    $null = $probeProcess.Start()
+    $null = $probeProcess.StandardOutput.ReadToEnd()
+    $probeError = $probeProcess.StandardError.ReadToEnd()
+    $probeProcess.WaitForExit()
+    $probeProcess.Dispose()
+
+    if (-not (Test-Path -LiteralPath $knownHostsCandidatePath -PathType Leaf)) {
+        throw (
+            "Unable to retrieve the Ed25519 SSH host key from {0}:{1}. {2}" -f
+                $HostName,
+                $Port,
+                $probeError.Trim()
+        )
+    }
+
+    $scanText = (
+        Get-Content -LiteralPath $knownHostsCandidatePath -Raw
+    ) -replace "`r`n", "`n"
+}
+finally {
+    if (Test-Path -LiteralPath $knownHostsCandidatePath) {
+        [System.IO.File]::Delete($knownHostsCandidatePath)
+    }
 }
 
-$scanText = ($scanOutput -join "`n") + "`n"
+if ($scanText -notmatch '(?m)^[^#\r\n]+\s+ssh-ed25519\s+') {
+    throw "The server did not provide an Ed25519 SSH host key."
+}
 $fingerprintOutput = $scanText | & ssh-keygen -lf - -E sha256
 if ($LASTEXITCODE -ne 0 -or -not $fingerprintOutput) {
     throw 'Unable to calculate the SSH host key fingerprint.'

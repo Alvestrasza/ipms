@@ -28,7 +28,7 @@ sudo ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256
 
 ## Prerequisites
 
-- Windows OpenSSH client tools: `ssh`, `ssh-keygen`, and `ssh-keyscan`
+- Windows OpenSSH client tools: `ssh` and `ssh-keygen`
 - An existing bootstrap account on the target host
 - The bootstrap account is either `root` or can run `sudo`
 - The Ed25519 host-key fingerprint has been verified at the server console
@@ -48,6 +48,12 @@ From the repository root:
 The command requests confirmation before making remote changes. The existing
 bootstrap account may prompt for its SSH and sudo passwords. Neither password
 is stored by the script.
+
+Before requesting credentials, the script performs an isolated SSH handshake
+with all client authentication methods disabled. It stores the offered host key
+in a temporary file, compares its fingerprint with the console-verified value,
+and deletes the temporary file. No password or private key is sent before that
+comparison succeeds.
 
 ## Idempotent Behavior
 
