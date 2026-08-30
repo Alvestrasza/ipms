@@ -25,6 +25,7 @@ maintained in [ROADMAP.md](ROADMAP.md).
 ## Source Layout
 
 - [Django Control Plane](services/control-plane/README.md)
+- [Next.js Web Console](apps/web-console/README.md)
 
 ## License
 

@@ -16,3 +16,10 @@ htmlcov/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+
+# Next.js development and test artifacts
+node_modules/
+.next/
+playwright-report/
+test-results/
+*.tsbuildinfo
