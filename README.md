@@ -9,8 +9,18 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-IPMS is in the architecture and foundation phase. The product roadmap is
-maintained in [ROADMAP.md](ROADMAP.md).
+IPMS is in the v0.1.0 read-only foundation phase. A standalone development
+Appliance currently runs the tenant-aware Django Control Plane, PostgreSQL,
+the multilingual Next.js Web Console, and the isolated connector worker.
+
+The implemented physical-infrastructure foundation includes read-only HPE iLO
+Redfish discovery, portal-managed BMC enrollment, explicit certificate review,
+encrypted write-only credentials, credential rotation, soft removal, safe
+communication metadata, filtering, and CSV export. Dell iDRAC and generic
+Redfish profiles are selectable but require dedicated hardware compatibility
+acceptance before they are described as supported.
+
+The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 
 ## Operations Documentation
 

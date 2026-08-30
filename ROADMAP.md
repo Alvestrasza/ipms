@@ -128,8 +128,14 @@ restore point.
   CPU, memory, storage, network interfaces, and health status.
 - Implement a read-only iLO connector using standard Redfish capabilities;
   vendor-specific extensions remain behind the connector boundary.
-- Provide a multilingual portal wizard for tenant-aware iLO enrollment with
-  encrypted write-only credentials and automatic background discovery.
+- Provide a multilingual portal wizard for tenant-aware BMC enrollment with
+  family selection, automatic TLS certificate inspection, explicit approval
+  for untrusted certificates, encrypted write-only credentials, and automatic
+  background discovery.
+- Provide credential rotation, soft removal with credential destruction, and
+  tenant-scoped BMC communication metadata with severity and time filters plus
+  formula-safe CSV export. Credentials, tokens, headers, message arguments,
+  and payload bodies are never retained in communication logs.
 - Implement a read-only Hyper-V connector for host, cluster, VM, and basic
   resource discovery through a constrained customer-side agent or gateway.
 - Present discovered inventory and connector health in the A-Corp Dark Web
@@ -152,8 +158,11 @@ restore point.
   inventory.
 - The iLO connector discovers a supported Redfish endpoint without executing a
   state-changing Redfish request.
-- A tenant administrator can enroll the iLO connector in the Web Console
-  without console or SSH credential handling.
+- A tenant administrator can enroll and manage the iLO BMC connector in the
+  Web Console without console or SSH credential handling, and an untrusted or
+  changed certificate cannot be used without an explicit current decision.
+- BMC communication logs and exports remain tenant-scoped and contain no
+  stored credential, token, header, message-argument, or payload content.
 - The Hyper-V connector discovers an authorized host or cluster and its VMs
   without executing a state-changing management action.
 - Every discovery run is attributed to a tenant and produces auditable results.
