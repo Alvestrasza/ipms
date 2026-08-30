@@ -246,6 +246,7 @@ systemctl is-active --quiet ipms-web-console
 systemctl is-active --quiet nginx
 curl --fail --silent --show-error \
     --header "Host: ${PUBLIC_HOST}" \
+    --header "X-Forwarded-Proto: https" \
     http://127.0.0.1:8000/api/v1/health/ready/ >/dev/null
 curl --fail --silent --show-error --insecure \
     --resolve "${PUBLIC_HOST}:443:127.0.0.1" \

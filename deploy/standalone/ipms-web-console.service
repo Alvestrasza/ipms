@@ -13,6 +13,7 @@ EnvironmentFile=/srv/ipms/shared/web-console.env
 Environment=NODE_ENV=production
 Environment=NEXT_TELEMETRY_DISABLED=1
 ExecStart=/opt/ipms/node-current/bin/node server.js
+SuccessExitStatus=143
 KillSignal=SIGTERM
 TimeoutStopSec=35
 Restart=on-failure

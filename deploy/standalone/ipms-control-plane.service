@@ -11,7 +11,7 @@ Group=ipms-control-plane
 WorkingDirectory=/srv/ipms/current/services/control-plane
 EnvironmentFile=/srv/ipms/shared/control-plane.env
 Environment=PYTHONPATH=/srv/ipms/current/services/control-plane/src
-ExecStart=/srv/ipms/current/services/control-plane/.venv/bin/gunicorn ipms_control_plane.wsgi:application --bind 127.0.0.1:8000 --workers 3 --timeout 60 --graceful-timeout 30 --access-logfile - --error-logfile -
+ExecStart=/srv/ipms/current/services/control-plane/.venv/bin/gunicorn ipms_control_plane.wsgi:application --bind 127.0.0.1:8000 --workers 3 --timeout 60 --graceful-timeout 30 --no-control-socket --access-logfile - --error-logfile -
 ExecReload=/bin/kill -HUP $MAINPID
 KillSignal=SIGQUIT
 TimeoutStopSec=35
