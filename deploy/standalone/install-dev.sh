@@ -6,7 +6,7 @@ PNPM_VERSION="11.24.0"
 REPOSITORY_URL="https://github.com/Alvestrasza/ipms.git"
 
 usage() {
-    echo "Usage: sudo install-dev.sh --public-host HOST --management-source IP_OR_CIDR --release-ref COMMIT --tenant-slug SLUG --tenant-name NAME --admin-username USER" >&2
+    echo "Usage: sudo install-dev.sh --public-host HOST --management-source IP_OR_CIDR --release-ref COMMIT --tenant-slug SLUG --tenant-name NAME [--admin-username USER]" >&2
     exit 2
 }
 
@@ -15,7 +15,7 @@ MANAGEMENT_SOURCE=""
 RELEASE_REF=""
 TENANT_SLUG=""
 TENANT_NAME=""
-ADMIN_USERNAME=""
+ADMIN_USERNAME="admin"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in

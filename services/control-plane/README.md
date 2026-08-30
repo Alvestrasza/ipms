@@ -86,3 +86,7 @@ PostgreSQL Row-Level Security, tenant-scoped repository/query services,
 authorization tests, restricted database roles, and negative cross-tenant
 tests. The audit model blocks ordinary ORM updates and deletes, but database
 permissions and append-only database controls remain required before release.
+
+The appliance bootstrap uses `admin` as its default initial username and a
+unique randomly generated one-time password. Static product passwords such as
+`admin` are forbidden.

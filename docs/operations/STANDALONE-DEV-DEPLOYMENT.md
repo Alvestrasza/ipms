@@ -44,9 +44,12 @@ sudo bash deploy/standalone/install-dev.sh \
   --management-source 192.0.2.10 \
   --release-ref 0000000000000000000000000000000000000000 \
   --tenant-slug development \
-  --tenant-name "Development" \
-  --admin-username alice
+  --tenant-name "Development"
 ```
+
+The bootstrap username defaults to `admin`. A deployment may override it with
+`--admin-username`, but it must never use a shared or predictable password.
+Every installation generates its own random one-time password.
 
 The source address can be a single address or a deliberately selected CIDR.
 Do not use an unrestricted source for a development appliance.
@@ -66,7 +69,7 @@ After the first successful sign-in, rotate the password interactively:
 sudo bash -c 'set -a; . /srv/ipms/shared/control-plane.env; set +a; \
   export PYTHONPATH=/srv/ipms/current/services/control-plane/src; \
   /srv/ipms/current/services/control-plane/.venv/bin/python \
-  /srv/ipms/current/services/control-plane/manage.py changepassword alice'
+  /srv/ipms/current/services/control-plane/manage.py changepassword admin'
 ```
 
 Then remove the one-time password file through the approved privileged
