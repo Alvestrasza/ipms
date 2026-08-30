@@ -49,8 +49,11 @@ certificate before authentication, and runs the read-only Redfish session.
 The connector card exposes the latest tenant-scoped discovery error and a
 portal action to queue another read-only discovery. Safe diagnostics can
 include the normalized error code, HTTP status, HTTP method, Redfish resource
-path, and attempt time. Credentials, session tokens, certificate bodies,
-response bodies, and raw device logs are never returned to the browser.
+path, bounded Redfish registry identifiers, and attempt time. Registry
+identifiers are restricted to a conservative character set and length.
+Credentials, session tokens, certificate bodies, response text, message
+arguments, response bodies, and raw device logs are never returned to the
+browser.
 
 A certificate-pin mismatch is not resolved by disabling TLS verification. An
 administrator must compare and explicitly approve the new SHA-256 fingerprint.
@@ -63,8 +66,9 @@ This permits private trust models without creating an insecure connector mode.
 - A queued job becomes `succeeded` or reports a stable, non-secret error code.
 - A successful discovery populates normalized hardware inventory.
 - Enrollment and discovery each produce an append-only audit event.
-- No credential, token, certificate body, raw Redfish payload, or private
-  endpoint appears in public issue evidence or application logs.
+- No credential, token, certificate body, raw Redfish payload, response text,
+  message argument, or private endpoint appears in public issue evidence or
+  application logs.
 
 Do not enable insecure TLS, bypass private-target validation, or broaden iLO
 privileges to work around a failed discovery.

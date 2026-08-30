@@ -21,6 +21,8 @@ export type ConnectorEndpoint = {
     method?: string;
     path?: string;
     http_status?: number;
+    redfish_error_code?: string;
+    redfish_message_id?: string;
     token_state?: string;
     location_state?: string;
   };

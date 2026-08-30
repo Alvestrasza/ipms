@@ -4,6 +4,7 @@ import hashlib
 import http.client
 import ipaddress
 import json
+import re
 import socket
 import ssl
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from urllib.parse import urlsplit
 
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_COLLECTION_MEMBERS = 256
+SAFE_REDFISH_IDENTIFIER = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 
 
 class RedfishConnectorError(Exception):
@@ -20,6 +22,37 @@ class RedfishConnectorError(Exception):
         self.code = code
         self.detail = detail or {}
         super().__init__(code)
+
+
+def _safe_redfish_error_identifiers(content: bytes) -> dict[str, str]:
+    """Extract bounded registry identifiers without retaining response content."""
+    try:
+        document = json.loads(content)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return {}
+    if not isinstance(document, dict) or not isinstance(document.get("error"), dict):
+        return {}
+
+    error = document["error"]
+    detail: dict[str, str] = {}
+    error_code = error.get("code")
+    if isinstance(error_code, str) and SAFE_REDFISH_IDENTIFIER.fullmatch(error_code):
+        detail["redfish_error_code"] = error_code
+
+    extended_info = error.get("@Message.ExtendedInfo")
+    if not isinstance(extended_info, list):
+        extended_info = error.get("ExtendedInfo")
+    if isinstance(extended_info, list):
+        for item in extended_info:
+            if not isinstance(item, dict):
+                continue
+            message_id = item.get("MessageId", item.get("MessageID"))
+            if isinstance(message_id, str) and SAFE_REDFISH_IDENTIFIER.fullmatch(
+                message_id
+            ):
+                detail["redfish_message_id"] = message_id
+                break
+    return detail
 
 
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
@@ -139,22 +172,26 @@ class RedfishTransport:
                 raise RedfishConnectorError("response_limit_exceeded")
             response_headers = {key.lower(): value for key, value in response.getheaders()}
             if response.status in (401, 403):
+                detail = {
+                    "method": normalized_method,
+                    "path": path,
+                    "http_status": response.status,
+                }
+                detail.update(_safe_redfish_error_identifiers(content))
                 raise RedfishConnectorError(
                     "authentication_failed",
-                    {
-                        "method": normalized_method,
-                        "path": path,
-                        "http_status": response.status,
-                    },
+                    detail,
                 )
             if response.status >= 400:
+                detail = {
+                    "method": normalized_method,
+                    "path": path,
+                    "http_status": response.status,
+                }
+                detail.update(_safe_redfish_error_identifiers(content))
                 raise RedfishConnectorError(
                     "redfish_request_failed",
-                    {
-                        "method": normalized_method,
-                        "path": path,
-                        "http_status": response.status,
-                    },
+                    detail,
                 )
             document = json.loads(content) if content else {}
             if not isinstance(document, dict):

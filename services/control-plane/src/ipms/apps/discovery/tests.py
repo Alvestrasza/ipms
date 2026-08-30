@@ -1,3 +1,4 @@
+import json
 import uuid
 from dataclasses import asdict
 from unittest.mock import patch
@@ -10,7 +11,12 @@ from django.utils import timezone
 from ipms.apps.audit.models import AuditEvent
 from ipms.apps.tenancy.models import Tenant, TenantMembership
 
-from .connectors.ilo_redfish import RedfishConnectorError, RedfishTransport, discover_ilo
+from .connectors.ilo_redfish import (
+    RedfishConnectorError,
+    RedfishTransport,
+    _safe_redfish_error_identifiers,
+    discover_ilo,
+)
 from .models import ConnectorEndpoint, ConnectorSecret, DiscoveryJob, PhysicalSystem
 from .secrets import load_connector_secret
 from .services import process_discovery_queue
@@ -245,6 +251,47 @@ class IloRedfishConnectorTests(TestCase):
             with self.subTest(method=method):
                 with self.assertRaisesRegex(RedfishConnectorError, "request_method_rejected"):
                     transport.request_json(method, path)
+
+    def test_extracts_only_bounded_redfish_error_identifiers(self) -> None:
+        content = json.dumps(
+            {
+                "error": {
+                    "code": "iLO.0.10.ExtendedInfo",
+                    "message": "must not be retained",
+                    "@Message.ExtendedInfo": [
+                        {
+                            "MessageId": "Base.1.0.SessionLimitExceeded",
+                            "Message": "must not be retained",
+                            "MessageArgs": ["sensitive-value"],
+                        }
+                    ],
+                }
+            }
+        ).encode()
+
+        detail = _safe_redfish_error_identifiers(content)
+
+        self.assertEqual(
+            detail,
+            {
+                "redfish_error_code": "iLO.0.10.ExtendedInfo",
+                "redfish_message_id": "Base.1.0.SessionLimitExceeded",
+            },
+        )
+        self.assertNotIn("sensitive", str(detail))
+
+    def test_rejects_unbounded_or_malformed_error_identifiers(self) -> None:
+        content = json.dumps(
+            {
+                "error": {
+                    "code": "unsafe identifier with spaces",
+                    "@Message.ExtendedInfo": [{"MessageId": "x" * 129}],
+                }
+            }
+        ).encode()
+
+        self.assertEqual(_safe_redfish_error_identifiers(content), {})
+        self.assertEqual(_safe_redfish_error_identifiers(b"not-json"), {})
 
     @patch.object(RedfishTransport, "request_json")
     def test_session_accepts_absolute_location_only_for_same_pinned_authority(

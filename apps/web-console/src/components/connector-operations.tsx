@@ -102,6 +102,22 @@ export function ConnectorOperations({
                 </dd>
               </div>
             ) : null}
+            {detail.redfish_error_code ? (
+              <div>
+                <dt>{copy.redfishErrorCode}</dt>
+                <dd>
+                  <code>{detail.redfish_error_code}</code>
+                </dd>
+              </div>
+            ) : null}
+            {detail.redfish_message_id ? (
+              <div>
+                <dt>{copy.redfishMessageId}</dt>
+                <dd>
+                  <code>{detail.redfish_message_id}</code>
+                </dd>
+              </div>
+            ) : null}
             {detail.token_state ? (
               <div>
                 <dt>{copy.sessionToken}</dt>
