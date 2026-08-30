@@ -6,6 +6,8 @@ server {
     listen [::]:443 ssl;
     server_name @@PUBLIC_HOST@@;
     server_tokens off;
+    proxy_headers_hash_max_size 1024;
+    proxy_headers_hash_bucket_size 128;
 
     ssl_certificate /etc/ipms/tls/server.crt;
     ssl_certificate_key /etc/ipms/tls/server.key;

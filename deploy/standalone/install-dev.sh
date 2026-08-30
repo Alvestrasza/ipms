@@ -235,7 +235,8 @@ install -d -m 0755 /etc/fail2ban/jail.d
 nginx -t
 fail2ban-client -t
 systemctl daemon-reload
-systemctl enable --now fail2ban ipms-control-plane ipms-web-console nginx
+systemctl enable fail2ban ipms-control-plane ipms-web-console nginx
+systemctl restart fail2ban ipms-control-plane ipms-web-console nginx
 ufw allow from "$MANAGEMENT_SOURCE" to any port 443 proto tcp comment "IPMS HTTPS management"
 ufw --force enable
 
@@ -243,7 +244,9 @@ systemctl is-active --quiet postgresql
 systemctl is-active --quiet ipms-control-plane
 systemctl is-active --quiet ipms-web-console
 systemctl is-active --quiet nginx
-curl --fail --silent --show-error http://127.0.0.1:8000/api/v1/health/ready/ >/dev/null
+curl --fail --silent --show-error \
+    --header "Host: ${PUBLIC_HOST}" \
+    http://127.0.0.1:8000/api/v1/health/ready/ >/dev/null
 curl --fail --silent --show-error --insecure \
     --resolve "${PUBLIC_HOST}:443:127.0.0.1" \
     "https://${PUBLIC_HOST}/api/v1/health/ready/" >/dev/null
