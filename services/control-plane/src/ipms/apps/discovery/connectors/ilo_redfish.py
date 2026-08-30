@@ -171,13 +171,17 @@ class RedfishTransport:
             if len(content) > MAX_RESPONSE_BYTES:
                 raise RedfishConnectorError("response_limit_exceeded")
             response_headers = {key.lower(): value for key, value in response.getheaders()}
-            if response.status in (401, 403):
+            registry_detail = _safe_redfish_error_identifiers(content)
+            unauthorized_login = registry_detail.get(
+                "redfish_message_id", ""
+            ).endswith(".UnauthorizedLoginAttempt")
+            if response.status in (401, 403) or unauthorized_login:
                 detail = {
                     "method": normalized_method,
                     "path": path,
                     "http_status": response.status,
                 }
-                detail.update(_safe_redfish_error_identifiers(content))
+                detail.update(registry_detail)
                 raise RedfishConnectorError(
                     "authentication_failed",
                     detail,
@@ -188,7 +192,7 @@ class RedfishTransport:
                     "path": path,
                     "http_status": response.status,
                 }
-                detail.update(_safe_redfish_error_identifiers(content))
+                detail.update(registry_detail)
                 raise RedfishConnectorError(
                     "redfish_request_failed",
                     detail,

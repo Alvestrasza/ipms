@@ -1,7 +1,7 @@
 import json
 import uuid
 from dataclasses import asdict
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -292,6 +292,38 @@ class IloRedfishConnectorTests(TestCase):
 
         self.assertEqual(_safe_redfish_error_identifiers(content), {})
         self.assertEqual(_safe_redfish_error_identifiers(b"not-json"), {})
+
+    @patch.object(RedfishTransport, "_connection")
+    def test_normalizes_ilo4_http_400_unauthorized_login(self, connection) -> None:
+        response = Mock()
+        response.status = 400
+        response.read.return_value = json.dumps(
+            {
+                "error": {
+                    "code": "iLO.0.10.ExtendedInfo",
+                    "@Message.ExtendedInfo": [
+                        {"MessageId": "iLO.0.10.UnauthorizedLoginAttempt"}
+                    ],
+                }
+            }
+        ).encode()
+        response.getheaders.return_value = []
+        connection.return_value.getresponse.return_value = response
+        transport = RedfishTransport("https://192.0.2.10", "a" * 64)
+
+        with self.assertRaises(RedfishConnectorError) as captured:
+            transport.request_json(
+                "POST",
+                "/redfish/v1/SessionService/Sessions/",
+                payload={"UserName": "fixture", "Password": "not-a-secret"},
+            )
+
+        self.assertEqual(captured.exception.code, "authentication_failed")
+        self.assertEqual(
+            captured.exception.detail["redfish_message_id"],
+            "iLO.0.10.UnauthorizedLoginAttempt",
+        )
+        self.assertNotIn("not-a-secret", str(captured.exception.detail))
 
     @patch.object(RedfishTransport, "request_json")
     def test_session_accepts_absolute_location_only_for_same_pinned_authority(
