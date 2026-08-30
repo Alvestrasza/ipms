@@ -3,8 +3,6 @@ import type { Dictionary } from "./en";
 export const de = {
   language: {
     label: "Sprache",
-    english: "Englisch",
-    german: "Deutsch",
     changeFailed: "Die Spracheinstellung konnte nicht gespeichert werden.",
   },
   brand: {

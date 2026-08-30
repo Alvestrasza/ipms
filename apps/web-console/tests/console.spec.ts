@@ -40,6 +40,10 @@ test("detects German and persists an explicit language change", async ({
   await page.goto("/login");
   await expect(page.locator("html")).toHaveAttribute("lang", "de");
   await expect(page.getByRole("heading", { name: "Anmelden" })).toBeVisible();
+  await expect(page.getByLabel("Sprache").locator("option")).toHaveText([
+    "EN",
+    "DE",
+  ]);
 
   await page.getByLabel("Sprache").selectOption("en");
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
