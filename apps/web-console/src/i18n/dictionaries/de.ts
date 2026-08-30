@@ -176,6 +176,8 @@ export const de = {
     errorCode: "Fehlercode",
     httpStatus: "HTTP-Status",
     request: "Redfish-Aufruf",
+    sessionToken: "Session-Token-Header",
+    sessionLocation: "Session-Location-Header",
     lastAttempt: "Letzter Versuch",
     errorLogPrivacy:
       "Zugangsdaten, Session-Token und Antwortinhalte werden niemals in diesem Protokoll ausgegeben.",
@@ -191,6 +193,8 @@ export const de = {
     connectionTimeout: "Die HTTPS-Verbindung hat das Zeitlimit überschritten.",
     redfishRequestFailed:
       "Der iLO hat einen Redfish-Aufruf mit einem Fehler beantwortet. Die sicheren Aufrufdetails stehen unten.",
+    sessionCreationFailed:
+      "Die iLO-Session-Antwort enthielt nicht den Status oder die Header, die das aktuelle Kompatibilitätsprofil erwartet.",
     unsupportedService:
       "Der Endpunkt veröffentlicht nicht alle von diesem Connector benötigten Redfish-Ressourcen.",
     unknownConnectorError:

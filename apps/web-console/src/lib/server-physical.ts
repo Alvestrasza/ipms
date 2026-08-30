@@ -21,6 +21,8 @@ export type ConnectorEndpoint = {
     method?: string;
     path?: string;
     http_status?: number;
+    token_state?: string;
+    location_state?: string;
   };
   last_attempt_at: string | null;
   last_success_at: string | null;

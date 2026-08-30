@@ -169,6 +169,8 @@ export const en = {
     errorCode: "Error code",
     httpStatus: "HTTP status",
     request: "Redfish request",
+    sessionToken: "Session token header",
+    sessionLocation: "Session location header",
     lastAttempt: "Last attempt",
     errorLogPrivacy:
       "Credentials, session tokens, and response bodies are never included in this log.",
@@ -184,6 +186,8 @@ export const en = {
     connectionTimeout: "The HTTPS connection timed out.",
     redfishRequestFailed:
       "The iLO returned an error for a Redfish request. The safe request details are shown below.",
+    sessionCreationFailed:
+      "The iLO session response did not contain the status or headers required by the current compatibility profile.",
     unsupportedService:
       "The endpoint does not advertise the Redfish resources required by this connector.",
     unknownConnectorError:

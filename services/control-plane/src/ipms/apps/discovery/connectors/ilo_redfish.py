@@ -139,7 +139,14 @@ class RedfishTransport:
                 raise RedfishConnectorError("response_limit_exceeded")
             response_headers = {key.lower(): value for key, value in response.getheaders()}
             if response.status in (401, 403):
-                raise RedfishConnectorError("authentication_failed")
+                raise RedfishConnectorError(
+                    "authentication_failed",
+                    {
+                        "method": normalized_method,
+                        "path": path,
+                        "http_status": response.status,
+                    },
+                )
             if response.status >= 400:
                 raise RedfishConnectorError(
                     "redfish_request_failed",
@@ -174,7 +181,20 @@ class RedfishTransport:
         token = headers.get("x-auth-token", "")
         location = headers.get("location", "")
         if status != 201 or not token or not location.startswith("/redfish/v1/"):
-            raise RedfishConnectorError("session_creation_failed")
+            raise RedfishConnectorError(
+                "session_creation_failed",
+                {
+                    "method": "POST",
+                    "path": path,
+                    "http_status": status,
+                    "token_state": "present" if token else "missing",
+                    "location_state": (
+                        "valid"
+                        if location.startswith("/redfish/v1/")
+                        else "missing_or_invalid"
+                    ),
+                },
+            )
         self.token = token
         self.session_path = location
 

@@ -22,6 +22,7 @@ const errorMessageKeys = {
   connection_failed: "connectionFailed",
   connection_timeout: "connectionTimeout",
   redfish_request_failed: "redfishRequestFailed",
+  session_creation_failed: "sessionCreationFailed",
   unsupported_service: "unsupportedService",
 } as const;
 
@@ -99,6 +100,18 @@ export function ConnectorOperations({
                     {detail.method} {detail.path}
                   </code>
                 </dd>
+              </div>
+            ) : null}
+            {detail.token_state ? (
+              <div>
+                <dt>{copy.sessionToken}</dt>
+                <dd>{detail.token_state}</dd>
+              </div>
+            ) : null}
+            {detail.location_state ? (
+              <div>
+                <dt>{copy.sessionLocation}</dt>
+                <dd>{detail.location_state}</dd>
               </div>
             ) : null}
             {connector.last_attempt_at ? (
