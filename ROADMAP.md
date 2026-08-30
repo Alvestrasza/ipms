@@ -66,6 +66,97 @@ IPMS API, Identity, RBAC, Tenant Policy, Licensing, Audit, Job Engine
     +-- Backup Connectors
 ```
 
+## Technology Baseline and Update Policy
+
+The first IPMS development appliance uses Ubuntu Server 26.04 LTS. As of the
+initial architecture decision, the reference baseline is Ubuntu 26.04.1 LTS,
+Python 3.14.6, Django 6.1, Next.js 16.3.3 Active LTS, PostgreSQL 18.6, Docker
+Engine 29.7.2, and Go 1.27.0.
+
+The baseline is a starting point, not a permanent version freeze. Before every
+implementation or release, use the latest supported stable patch version within
+the approved compatibility range and review security advisories. Preview,
+beta, release-candidate, and end-of-life versions are not permitted in
+production.
+
+- Pin exact versions and image digests in reproducible build and deployment
+  manifests.
+- Maintain supported-version ranges separately from build locks.
+- Test framework, database, container, and agent upgrades in CI and a staging
+  appliance before customer deployment.
+- Record upgrades, compatibility changes, and rollback instructions in release
+  notes.
+- Keep data migrations backward-compatible for at least one supported release
+  transition whenever technically possible.
+
+### Application Stack
+
+- **Control Plane:** Python, Django, and Django REST Framework provide tenant
+  policy, authorization, licensing, audit, durable jobs, and the public API.
+- **Web Console:** Next.js and TypeScript provide the A-Corp-themed management
+  interface. The console has no direct database, agent, or connector access.
+- **Data Store:** PostgreSQL stores transactional data. Tenant-aware tables use
+  application authorization and PostgreSQL Row-Level Security as complementary
+  controls.
+- **Agent and Edge Gateway:** Go provides compact customer-deployed binaries
+  with outbound mTLS connections to the Control Plane.
+- **Identity:** OIDC is the integration boundary. Keycloak is the initial
+  reference identity provider, while customer OIDC providers remain supported.
+- **Packaging:** Container images are used for Appliance and Scale-Out
+  components. Rootless execution, minimal base images, signed images, and
+  vulnerability scanning are required before production use.
+
+All privileged write requests terminate at the Django Control Plane. Next.js
+is a presentation layer and must not become an independent authorization or
+licensing boundary.
+
+## v0.1.0: Read-Only Foundation
+
+Version 0.1.0 establishes a secure, single-appliance foundation and proves the
+first two infrastructure connectors. It is deliberately read-only: it must not
+change a customer VM, BMC, host, network device, storage system, backup job, or
+restore point.
+
+### v0.1.0 Goals
+
+- Deploy IPMS on Ubuntu Server 26.04 LTS as a reproducible single-VM Appliance.
+- Scaffold the Django Control Plane, Next.js Web Console, PostgreSQL database,
+  container packaging, and CI quality gates.
+- Establish tenant model, local platform administrator, audit-event model,
+  baseline role model, and API versioning.
+- Implement read-only inventory objects for sites, hosts, clusters, VMs, BMCs,
+  CPU, memory, storage, network interfaces, and health status.
+- Implement a read-only iLO connector using standard Redfish capabilities;
+  vendor-specific extensions remain behind the connector boundary.
+- Implement a read-only Hyper-V connector for host, cluster, VM, and basic
+  resource discovery through a constrained customer-side agent or gateway.
+- Present discovered inventory and connector health in the A-Corp Dark Web
+  Console, with the A-Corp Light token set available from the beginning.
+- Provide test fixtures or simulators for Redfish and Hyper-V discovery; no
+  shared production credentials are used in development or CI.
+- Publish installation, bootstrap, security, update, and rollback guidance for
+  the Appliance.
+
+### v0.1.0 Acceptance Criteria
+
+- A new Appliance can be bootstrapped with the minimum documented inputs.
+- An administrator can create an isolated tenant and view only that tenant's
+  inventory.
+- The iLO connector discovers a supported Redfish endpoint without executing a
+  state-changing Redfish request.
+- The Hyper-V connector discovers an authorized host or cluster and its VMs
+  without executing a state-changing management action.
+- Every discovery run is attributed to a tenant and produces auditable results.
+- The release build passes dependency, secret, static-analysis, and integration
+  checks, and its deployment manifest uses pinned artifacts.
+
+### v0.1.0 Non-Goals
+
+- State-changing VM, iLO, network, storage, backup, or restore operations.
+- Scale-Out migration, customer Cloud tenancy, or a production Edge Gateway
+  rollout.
+- Full monitoring, backup, network, or storage management.
+
 ## Licensing and Editions
 
 - IPMS is proprietary software distributed under an A-Corp agreement or EULA.
