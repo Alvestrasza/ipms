@@ -1,20 +1,16 @@
 import { Bell, CircleUserRound, Search } from "lucide-react";
 
+import { getDictionary } from "@/i18n/dictionaries";
+import { resolveLocale } from "@/i18n/server";
 import type { AuthenticatedSession, TenantSummary } from "@/lib/auth-types";
 
+import { LanguageSwitcher } from "./language-switcher";
 import { LogoutButton } from "./logout-button";
 import { Sidebar } from "./sidebar";
 import { TenantSwitcher } from "./tenant-switcher";
 import { ThemeToggle } from "./theme-toggle";
 
-const roleLabels = {
-  platform_admin: "Platform administrator",
-  tenant_admin: "Tenant administrator",
-  operator: "Operator",
-  reader: "Reader",
-};
-
-export function ConsoleShell({
+export async function ConsoleShell({
   children,
   session,
   tenant,
@@ -23,6 +19,13 @@ export function ConsoleShell({
   session: AuthenticatedSession;
   tenant: TenantSummary;
 }) {
+  const dictionary = getDictionary(await resolveLocale());
+  const roleLabels = {
+    platform_admin: dictionary.shell.platformAdmin,
+    tenant_admin: dictionary.shell.tenantAdmin,
+    operator: dictionary.shell.operator,
+    reader: dictionary.shell.reader,
+  };
   return (
     <div className="console-shell">
       <Sidebar />
@@ -38,18 +41,19 @@ export function ConsoleShell({
               className="search-trigger"
               type="button"
               disabled
-              aria-label="Search will be available in a future release"
+              aria-label={dictionary.shell.searchFuture}
             >
               <Search aria-hidden="true" size={17} />
-              <span>Search infrastructure</span>
+              <span>{dictionary.shell.search}</span>
               <kbd>Ctrl K</kbd>
             </button>
+            <LanguageSwitcher />
             <ThemeToggle />
             <button
               className="icon-button"
               type="button"
               disabled
-              aria-label="Notifications are not available yet"
+              aria-label={dictionary.shell.notificationsFuture}
             >
               <Bell aria-hidden="true" size={18} />
             </button>

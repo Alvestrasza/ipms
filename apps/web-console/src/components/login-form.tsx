@@ -3,11 +3,12 @@
 import { ArrowRight, LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useState } from "react";
-
+import { useLocale } from "@/i18n/locale-provider";
 import type { IpmsSession } from "@/lib/auth-types";
 
 export function LoginForm() {
   const router = useRouter();
+  const { dictionary } = useLocale();
   const [csrfToken, setCsrfToken] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -30,7 +31,7 @@ export function LoginForm() {
         setCsrfToken(session.csrf_token);
       })
       .catch(() => {
-        if (active) setError("The Control Plane is currently unavailable.");
+        if (active) setError(dictionary.login.controlPlaneUnavailable);
       })
       .finally(() => {
         if (active) setIsLoading(false);
@@ -38,7 +39,7 @@ export function LoginForm() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [dictionary.login.controlPlaneUnavailable]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -59,13 +60,13 @@ export function LoginForm() {
         }),
       });
       if (!response.ok) {
-        setError("Sign-in failed. Check your credentials and try again.");
+        setError(dictionary.login.invalidCredentials);
         return;
       }
       router.replace("/");
       router.refresh();
     } catch {
-      setError("The Control Plane is currently unavailable.");
+      setError(dictionary.login.controlPlaneUnavailable);
     } finally {
       setIsSubmitting(false);
     }
@@ -81,7 +82,7 @@ export function LoginForm() {
         onClick={() => router.push("/")}
       >
         <ArrowRight aria-hidden="true" size={17} />
-        Continue to console
+        {dictionary.login.continueToConsole}
       </button>
     );
   }
@@ -89,18 +90,18 @@ export function LoginForm() {
   return (
     <form onSubmit={submit}>
       <label>
-        Username
+        {dictionary.login.username}
         <input
           type="text"
           name="username"
           autoComplete="username"
           required
           disabled={disabled}
-          placeholder="Platform account"
+          placeholder={dictionary.login.usernamePlaceholder}
         />
       </label>
       <label>
-        Password
+        {dictionary.login.password}
         <input
           type="password"
           name="password"
@@ -121,7 +122,7 @@ export function LoginForm() {
         ) : (
           <ArrowRight aria-hidden="true" size={17} />
         )}
-        {isSubmitting ? "Signing in" : "Continue"}
+        {isSubmitting ? dictionary.login.signingIn : dictionary.login.continue}
       </button>
     </form>
   );

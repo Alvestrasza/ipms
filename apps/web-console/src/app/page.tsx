@@ -12,25 +12,22 @@ import { redirect } from "next/navigation";
 
 import { ConsoleShell } from "@/components/console-shell";
 import { StatusPill } from "@/components/status-pill";
+import { documentLocale } from "@/i18n/config";
+import { getDictionary } from "@/i18n/dictionaries";
+import { resolveLocale } from "@/i18n/server";
 import { getServerSession } from "@/lib/server-auth";
 import { type DiscoveryJob, getDashboardData } from "@/lib/server-dashboard";
 import { selectedTenant } from "@/lib/tenant-selection";
 
-const summaryCards = [
-  { label: "Physical systems", value: "0", detail: "Awaiting discovery" },
-  { label: "Virtual machines", value: "0", detail: "Awaiting discovery" },
-  { label: "Network devices", value: "0", detail: "No connector configured" },
-  { label: "Restore points", value: "0", detail: "No backup data available" },
-];
 const summaryIcons = [ServerCog, Boxes, Network, ShieldCheck];
 const connectorNames = {
   "hyper-v": "Hyper-V",
   "ilo-redfish": "iLO Redfish",
 };
 
-function formatUtc(value: string | null) {
-  if (!value) return "Not started";
-  return new Intl.DateTimeFormat("en-GB", {
+function formatUtc(value: string | null, locale: "de" | "en", empty: string) {
+  if (!value) return empty;
+  return new Intl.DateTimeFormat(documentLocale(locale), {
     hour: "2-digit",
     minute: "2-digit",
     timeZone: "UTC",
@@ -66,6 +63,8 @@ function connectorStatus(job: DiscoveryJob | undefined) {
 }
 
 export default async function OverviewPage() {
+  const locale = await resolveLocale();
+  const dictionary = getDictionary(locale);
   const session = await getServerSession();
   if (!session?.authenticated) redirect("/login");
   const tenant = selectedTenant(session, await cookies());
@@ -73,7 +72,33 @@ export default async function OverviewPage() {
 
   const dashboard = await getDashboardData(tenant.id);
   if (!dashboard.sessionValid) redirect("/login");
-  const checkedAt = formatUtc(dashboard.checkedAt);
+  const checkedAt = formatUtc(
+    dashboard.checkedAt,
+    locale,
+    dictionary.overview.notStarted,
+  );
+  const summaryCards = [
+    {
+      label: dictionary.overview.physicalSystems,
+      value: "0",
+      detail: dictionary.overview.awaitingDiscovery,
+    },
+    {
+      label: dictionary.overview.virtualMachines,
+      value: "0",
+      detail: dictionary.overview.awaitingDiscovery,
+    },
+    {
+      label: dictionary.overview.networkDevices,
+      value: "0",
+      detail: dictionary.overview.noConnector,
+    },
+    {
+      label: dictionary.overview.restorePoints,
+      value: "0",
+      detail: dictionary.overview.noBackupData,
+    },
+  ];
   const connectors: DiscoveryJob["connector_type"][] = [
     "hyper-v",
     "ilo-redfish",
@@ -87,23 +112,28 @@ export default async function OverviewPage() {
       >
         <span className="preview-notice__dot" aria-hidden="true" />
         {dashboard.controlPlaneReady
-          ? "Live Control Plane data — no managed infrastructure has been discovered yet."
-          : "Control Plane data is currently unavailable. No cached infrastructure values are shown."}
+          ? dictionary.overview.liveData
+          : dictionary.overview.unavailableData}
       </div>
 
       <section className="page-heading" aria-labelledby="overview-heading">
         <div>
-          <p className="eyebrow">Management overview</p>
-          <h1 id="overview-heading">Infrastructure at a glance</h1>
-          <p>Read-only operational status for {tenant.display_name}.</p>
+          <p className="eyebrow">{dictionary.overview.managementOverview}</p>
+          <h1 id="overview-heading">{dictionary.overview.heading}</h1>
+          <p>
+            {dictionary.overview.tenantStatusPrefix} {tenant.display_name}.
+          </p>
         </div>
         <div className="page-heading__meta">
           <Clock3 aria-hidden="true" size={16} />
-          Control Plane checked {checkedAt}
+          {dictionary.overview.checkedPrefix} {checkedAt}
         </div>
       </section>
 
-      <section className="summary-grid" aria-label="Environment summary">
+      <section
+        className="summary-grid"
+        aria-label={dictionary.overview.environmentSummary}
+      >
         {summaryCards.map((card, index) => {
           const Icon = summaryIcons[index];
           return (
@@ -125,34 +155,34 @@ export default async function OverviewPage() {
         <section className="panel panel--wide" aria-labelledby="health-heading">
           <div className="panel__header">
             <div>
-              <p className="eyebrow">Environment health</p>
-              <h2 id="health-heading">Managed objects</h2>
+              <p className="eyebrow">{dictionary.overview.environmentHealth}</p>
+              <h2 id="health-heading">{dictionary.overview.managedObjects}</h2>
             </div>
             <span className="panel__metric panel__metric--empty">
-              <strong>—</strong> no data
+              <strong>—</strong> {dictionary.overview.noData}
             </span>
           </div>
           <div
             className="health-bar health-bar--empty"
             role="img"
-            aria-label="No managed objects have been discovered"
+            aria-label={dictionary.overview.noObjects}
           />
           <div className="health-legend">
             <span>
-              <i className="legend-dot legend-dot--healthy" /> Healthy{" "}
-              <strong>0</strong>
+              <i className="legend-dot legend-dot--healthy" />
+              {dictionary.overview.healthy} <strong>0</strong>
             </span>
             <span>
-              <i className="legend-dot legend-dot--warning" /> Warning{" "}
-              <strong>0</strong>
+              <i className="legend-dot legend-dot--warning" />
+              {dictionary.overview.warning} <strong>0</strong>
             </span>
             <span>
-              <i className="legend-dot legend-dot--critical" /> Critical{" "}
-              <strong>0</strong>
+              <i className="legend-dot legend-dot--critical" />
+              {dictionary.overview.critical} <strong>0</strong>
             </span>
             <span>
-              <i className="legend-dot legend-dot--unknown" /> Unknown{" "}
-              <strong>0</strong>
+              <i className="legend-dot legend-dot--unknown" />
+              {dictionary.overview.unknown} <strong>0</strong>
             </span>
           </div>
         </section>
@@ -163,8 +193,10 @@ export default async function OverviewPage() {
         >
           <div className="panel__header">
             <div>
-              <p className="eyebrow">Connector activity</p>
-              <h2 id="connector-heading">Discovery services</h2>
+              <p className="eyebrow">{dictionary.overview.connectorActivity}</p>
+              <h2 id="connector-heading">
+                {dictionary.overview.discoveryServices}
+              </h2>
             </div>
             <Activity aria-hidden="true" size={20} />
           </div>
@@ -183,12 +215,15 @@ export default async function OverviewPage() {
                   </i>
                   <strong>{connectorNames[connector]}</strong>
                 </span>
-                <StatusPill status={connectorStatus(latest)} />
+                <StatusPill
+                  status={connectorStatus(latest)}
+                  label={dictionary.status[connectorStatus(latest)]}
+                />
               </div>
             );
           })}
           <p className="connector-footnote">
-            Status reflects the latest discovery job.
+            {dictionary.overview.connectorFootnote}
           </p>
         </section>
       </div>
@@ -199,29 +234,32 @@ export default async function OverviewPage() {
       >
         <div className="panel__header">
           <div>
-            <p className="eyebrow">Operational focus</p>
-            <h2 id="attention-heading">Infrastructure requiring attention</h2>
+            <p className="eyebrow">{dictionary.overview.operationalFocus}</p>
+            <h2 id="attention-heading">
+              {dictionary.overview.attentionHeading}
+            </h2>
           </div>
           <button className="outline-button" type="button" disabled>
-            <RefreshCw aria-hidden="true" size={15} /> Run discovery
+            <RefreshCw aria-hidden="true" size={15} />
+            {dictionary.overview.runDiscovery}
           </button>
         </div>
         <div className="empty-state">
           <ServerCog aria-hidden="true" size={25} />
-          <strong>No inventory data</strong>
-          <span>
-            Read-only iLO and Hyper-V discovery will populate this view.
-          </span>
+          <strong>{dictionary.overview.noInventory}</strong>
+          <span>{dictionary.overview.inventoryHint}</span>
         </div>
       </section>
 
       <section className="panel jobs-panel" aria-labelledby="jobs-heading">
         <div className="panel__header">
           <div>
-            <p className="eyebrow">Read-only operations</p>
-            <h2 id="jobs-heading">Recent discovery jobs</h2>
+            <p className="eyebrow">{dictionary.overview.readOnlyOperations}</p>
+            <h2 id="jobs-heading">{dictionary.overview.recentJobs}</h2>
           </div>
-          <span className="read-only-badge">Read only</span>
+          <span className="read-only-badge">
+            {dictionary.overview.readOnly}
+          </span>
         </div>
         {dashboard.discoveryJobs.length ? (
           <div className="job-list">
@@ -235,9 +273,18 @@ export default async function OverviewPage() {
                   <span>{job.requested_by}</span>
                 </div>
                 <code>{job.id.slice(0, 8)}</code>
-                <span>{formatUtc(job.started_at ?? job.created_at)}</span>
+                <span>
+                  {formatUtc(
+                    job.started_at ?? job.created_at,
+                    locale,
+                    dictionary.overview.notStarted,
+                  )}
+                </span>
                 <span>{duration(job)}</span>
-                <StatusPill status={job.status} />
+                <StatusPill
+                  status={job.status}
+                  label={dictionary.status[job.status]}
+                />
               </article>
             ))}
           </div>
@@ -246,13 +293,13 @@ export default async function OverviewPage() {
             <RefreshCw aria-hidden="true" size={22} />
             <strong>
               {dashboard.jobsAvailable
-                ? "No discovery jobs"
-                : "Discovery jobs unavailable"}
+                ? dictionary.overview.noJobs
+                : dictionary.overview.jobsUnavailable}
             </strong>
             <span>
               {dashboard.jobsAvailable
-                ? "The first connector run will appear here."
-                : "The Control Plane did not return tenant job data."}
+                ? dictionary.overview.firstRunHint
+                : dictionary.overview.jobsUnavailableHint}
             </span>
           </div>
         )}

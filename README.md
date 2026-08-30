@@ -24,6 +24,7 @@ maintained in [ROADMAP.md](ROADMAP.md).
 
 - [ADR-0001: Appliance encryption, unlock, and recovery policy](docs/architecture/ADR-0001-APPLIANCE-ENCRYPTION-AND-UNLOCK.md)
 - [Web Console architecture and security boundary](docs/architecture/WEB-CONSOLE.md)
+- [iLO Redfish connector architecture](docs/architecture/ILO-REDFISH-CONNECTOR.md)
 
 ## Source Layout
 

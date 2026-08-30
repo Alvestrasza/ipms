@@ -250,6 +250,27 @@ a {
   align-items: center;
   gap: 9px;
 }
+.language-switcher,
+.language-switcher label {
+  display: flex;
+  align-items: center;
+}
+.language-switcher label {
+  min-height: 40px;
+  gap: 7px;
+  padding: 0 9px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--surface-panel);
+}
+.language-switcher select {
+  min-height: 38px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
 .tenant-switcher {
   position: relative;
   min-width: 235px;
@@ -853,6 +874,11 @@ td strong {
 }
 .login-card {
   width: min(420px, 100%);
+}
+.login-card__language {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 20px;
 }
 .login-card__icon {
   width: 48px;

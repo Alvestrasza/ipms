@@ -12,6 +12,7 @@ export default defineConfig({
   reporter: "list",
   use: {
     baseURL,
+    locale: "en-US",
     ignoreHTTPSErrors: process.env.IPMS_ALLOW_UNTRUSTED_CERTIFICATE === "1",
     trace: "retain-on-failure",
   },

@@ -1,18 +1,21 @@
 "use client";
 
+import { useLocale } from "@/i18n/locale-provider";
+
 export default function ErrorPage({
   reset,
 }: {
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const { dictionary } = useLocale();
   return (
     <main className="state-page">
-      <p className="eyebrow">Console error</p>
-      <h1>Unable to display this view</h1>
-      <p>The failure was contained. No infrastructure action was executed.</p>
+      <p className="eyebrow">{dictionary.state.errorEyebrow}</p>
+      <h1>{dictionary.state.errorHeading}</h1>
+      <p>{dictionary.state.errorDescription}</p>
       <button className="primary-button" type="button" onClick={reset}>
-        Try again
+        {dictionary.state.tryAgain}
       </button>
     </main>
   );

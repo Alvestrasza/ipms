@@ -33,6 +33,7 @@ test("serves the anonymous sign-in experience without browser errors", async ({
   await expect(page.getByLabel("Username")).toBeEnabled();
   await expect(page.getByLabel("Password")).toBeEnabled();
   await expect(page.getByRole("button", { name: "Continue" })).toBeEnabled();
+  await expect(page.getByLabel("Language")).toHaveValue("en");
   expect(failedResponses).toEqual([]);
   expect(browserErrors).toEqual([]);
 });

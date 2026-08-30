@@ -4,8 +4,11 @@ import { LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { useLocale } from "@/i18n/locale-provider";
+
 export function LogoutButton({ csrfToken }: { csrfToken: string }) {
   const router = useRouter();
+  const { dictionary } = useLocale();
   const [pending, setPending] = useState(false);
 
   async function logout() {
@@ -32,8 +35,8 @@ export function LogoutButton({ csrfToken }: { csrfToken: string }) {
     <button
       className="icon-button"
       type="button"
-      aria-label="Sign out"
-      title="Sign out"
+      aria-label={dictionary.shell.signOut}
+      title={dictionary.shell.signOut}
       disabled={pending}
       onClick={logout}
     >

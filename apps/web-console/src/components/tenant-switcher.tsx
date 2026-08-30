@@ -3,7 +3,7 @@
 import { Building2, ChevronDown } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-
+import { useLocale } from "@/i18n/locale-provider";
 import type { TenantSummary } from "@/lib/auth-types";
 
 export function TenantSwitcher({
@@ -14,6 +14,7 @@ export function TenantSwitcher({
   selectedTenantId: string;
 }) {
   const router = useRouter();
+  const { dictionary } = useLocale();
   const [tenantId, setTenantId] = useState(selectedTenantId);
 
   async function selectTenant(value: string) {
@@ -36,7 +37,7 @@ export function TenantSwitcher({
 
   return (
     <label className="tenant-switcher">
-      <span className="sr-only">Active tenant</span>
+      <span className="sr-only">{dictionary.shell.activeTenant}</span>
       <Building2 aria-hidden="true" size={17} />
       <select
         value={tenantId}

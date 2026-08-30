@@ -1,13 +1,17 @@
 import Link from "next/link";
 
-export default function NotFound() {
+import { getDictionary } from "@/i18n/dictionaries";
+import { resolveLocale } from "@/i18n/server";
+
+export default async function NotFound() {
+  const dictionary = getDictionary(await resolveLocale());
   return (
     <main className="state-page">
       <p className="eyebrow">404</p>
-      <h1>Page not found</h1>
-      <p>The requested console view does not exist.</p>
+      <h1>{dictionary.state.notFoundHeading}</h1>
+      <p>{dictionary.state.notFoundDescription}</p>
       <Link className="primary-button" href="/">
-        Return to overview
+        {dictionary.state.returnOverview}
       </Link>
     </main>
   );

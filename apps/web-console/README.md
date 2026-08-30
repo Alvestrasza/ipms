@@ -11,6 +11,8 @@ or managed infrastructure.
 - React 19
 - TypeScript
 - A-Corp Dark as the default theme and semantic A-Corp Light tokens
+- Server-rendered English and German localization with browser detection,
+  an explicit persisted preference, and English as the fallback
 - Playwright and axe-core browser checks
 - Biome linting and formatting checks; ESLint is deferred because the current
   Next.js plugin chain does not yet accept the supported ESLint 10 line
@@ -57,6 +59,14 @@ pnpm test:e2e
 
 The production build uses Next.js standalone output for the Appliance and
 future Scale-Out packaging.
+
+## Localization
+
+The console supports `en` and `de`. It first uses the validated `ipms_locale`
+preference cookie, then evaluates the browser's `Accept-Language` header, and
+falls back to English. The language selector stores only the locale preference
+in a Secure, HttpOnly, SameSite cookie; it does not affect authentication or
+tenant authorization.
 
 ## Security Boundary
 

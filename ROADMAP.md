@@ -132,6 +132,9 @@ restore point.
   resource discovery through a constrained customer-side agent or gateway.
 - Present discovered inventory and connector health in the A-Corp Dark Web
   Console, with the A-Corp Light token set available from the beginning.
+- Provide server-rendered English and German console localization, detect the
+  browser language, persist an explicit user preference, and use English as the
+  fallback for unsupported or missing language preferences.
 - Provide test fixtures or simulators for Redfish and Hyper-V discovery; no
   shared production credentials are used in development or CI.
 - Publish installation, bootstrap, security, update, and rollback guidance for
@@ -150,6 +153,9 @@ restore point.
 - The Hyper-V connector discovers an authorized host or cluster and its VMs
   without executing a state-changing management action.
 - Every discovery run is attributed to a tenant and produces auditable results.
+- The Web Console renders in English or German without changing authentication
+  or tenant authorization behavior, and unsupported browser languages fall
+  back to English.
 - The release build passes dependency, secret, static-analysis, and integration
   checks, and its deployment manifest uses pinned artifacts.
 

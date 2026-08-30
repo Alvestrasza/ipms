@@ -3,9 +3,12 @@
 import { Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { useLocale } from "@/i18n/locale-provider";
+
 type Theme = "dark" | "light";
 
 export function ThemeToggle() {
+  const { dictionary } = useLocale();
   const [theme, setTheme] = useState<Theme>("dark");
 
   useEffect(() => {
@@ -23,7 +26,9 @@ export function ThemeToggle() {
   }
 
   const nextThemeLabel =
-    theme === "dark" ? "Switch to light theme" : "Switch to dark theme";
+    theme === "dark"
+      ? dictionary.shell.switchToLight
+      : dictionary.shell.switchToDark;
 
   return (
     <button

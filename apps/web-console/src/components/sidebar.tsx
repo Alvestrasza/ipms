@@ -10,27 +10,36 @@ import {
   Settings,
 } from "lucide-react";
 
+import { getDictionary } from "@/i18n/dictionaries";
+import { resolveLocale } from "@/i18n/server";
+
 import { Brand } from "./brand";
 
-const navigation = [
-  { label: "Overview", icon: LayoutDashboard, active: true },
-  { label: "Physical infrastructure", icon: ServerCog },
-  { label: "Virtual infrastructure", icon: Boxes },
-  { label: "Monitoring", icon: Activity },
-  { label: "Network", icon: Network },
-  { label: "Storage", icon: Database },
-  { label: "Backup & restore", icon: ArchiveRestore },
-];
-
-export function Sidebar() {
+export async function Sidebar() {
+  const dictionary = getDictionary(await resolveLocale());
+  const navigation = [
+    {
+      label: dictionary.navigation.overview,
+      icon: LayoutDashboard,
+      active: true,
+    },
+    { label: dictionary.navigation.physical, icon: ServerCog },
+    { label: dictionary.navigation.virtual, icon: Boxes },
+    { label: dictionary.navigation.monitoring, icon: Activity },
+    { label: dictionary.navigation.network, icon: Network },
+    { label: dictionary.navigation.storage, icon: Database },
+    { label: dictionary.navigation.backup, icon: ArchiveRestore },
+  ];
   return (
-    <aside className="sidebar" aria-label="Primary navigation">
+    <aside className="sidebar" aria-label={dictionary.navigation.primary}>
       <div className="sidebar__brand">
         <Brand />
       </div>
 
       <nav className="sidebar__nav">
-        <p className="sidebar__section-label">Workspace</p>
+        <p className="sidebar__section-label">
+          {dictionary.navigation.workspace}
+        </p>
         <ul>
           {navigation.map(({ label, icon: Icon, active }) => (
             <li key={label}>
@@ -45,7 +54,11 @@ export function Sidebar() {
               >
                 <Icon aria-hidden="true" size={18} strokeWidth={1.8} />
                 <span>{label}</span>
-                {!active && <span className="nav-item__soon">Soon</span>}
+                {!active && (
+                  <span className="nav-item__soon">
+                    {dictionary.navigation.soon}
+                  </span>
+                )}
               </span>
             </li>
           ))}
@@ -55,17 +68,17 @@ export function Sidebar() {
       <div className="sidebar__footer">
         <span className="nav-item nav-item--disabled" aria-disabled="true">
           <Building2 aria-hidden="true" size={18} />
-          <span>Tenants</span>
-          <span className="nav-item__soon">Soon</span>
+          <span>{dictionary.navigation.tenants}</span>
+          <span className="nav-item__soon">{dictionary.navigation.soon}</span>
         </span>
         <span className="nav-item nav-item--disabled" aria-disabled="true">
           <Settings aria-hidden="true" size={18} />
-          <span>Administration</span>
-          <span className="nav-item__soon">Soon</span>
+          <span>{dictionary.navigation.administration}</span>
+          <span className="nav-item__soon">{dictionary.navigation.soon}</span>
         </span>
         <div className="sidebar__version">
           <span className="sidebar__version-dot" aria-hidden="true" />
-          IPMS v0.1.0 development
+          {dictionary.navigation.version}
         </div>
       </div>
     </aside>

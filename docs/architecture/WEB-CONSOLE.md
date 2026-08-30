@@ -50,6 +50,26 @@ The external reverse proxy still owns TLS policy, request-size limits, login
 rate limiting, connection timeouts, and public exposure. Next.js and Django bind
 only to loopback or a private application network.
 
+## Localization
+
+The console supports English and German from the first read-only release.
+Locale resolution happens during server rendering in this order:
+
+1. A validated `ipms_locale` preference cookie.
+2. The browser `Accept-Language` header, normalized to a supported base
+   language.
+3. English as the deterministic fallback.
+
+The language selector writes only the locale preference to a Secure, HttpOnly,
+SameSite=Lax cookie and reloads the current route so root metadata and the HTML
+`lang` attribute remain consistent. Locale selection never participates in
+authentication, authorization, tenant filtering, or licensing decisions.
+
+Translation dictionaries live in source control and are type-checked against
+the English key set. User-provided names and infrastructure values are never
+translated. Locale-sensitive presentation such as timestamps uses the resolved
+locale while operational timestamps remain stored and transferred in UTC.
+
 ## Scale-Out Considerations
 
 All web instances must use one build artifact and deployment identifier. Any

@@ -18,6 +18,38 @@ test("redirects an anonymous console request to sign in", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 });
 
+test("falls back to English for an unsupported browser language", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ locale: "fr-FR" });
+  const page = await context.newPage();
+
+  await page.goto("/login");
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+
+  await context.close();
+});
+
+test("detects German and persists an explicit language change", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ locale: "de-DE" });
+  const page = await context.newPage();
+
+  await page.goto("/login");
+  await expect(page.locator("html")).toHaveAttribute("lang", "de");
+  await expect(page.getByRole("heading", { name: "Anmelden" })).toBeVisible();
+
+  await page.getByLabel("Sprache").selectOption("en");
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+
+  await context.close();
+});
+
 test("uses a generic message for invalid credentials", async ({ page }) => {
   await page.goto("/login");
   const username = page.getByRole("textbox", { name: "Username" });

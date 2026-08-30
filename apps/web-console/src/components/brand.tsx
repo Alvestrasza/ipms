@@ -1,16 +1,20 @@
 import Image from "next/image";
 
+import { getDictionary } from "@/i18n/dictionaries";
+import { resolveLocale } from "@/i18n/server";
+
 type BrandProps = {
   compact?: boolean;
 };
 
-export function Brand({ compact = false }: BrandProps) {
+export async function Brand({ compact = false }: BrandProps) {
+  const dictionary = getDictionary(await resolveLocale());
   return (
     <div className={compact ? "brand brand--compact" : "brand"}>
       <Image
         className="brand__emblem"
         src="/brand/alvestrasza-emblem.png"
-        alt="Alvestrasza Corporation emblem"
+        alt={dictionary.brand.emblemAlt}
         width={56}
         height={56}
         priority

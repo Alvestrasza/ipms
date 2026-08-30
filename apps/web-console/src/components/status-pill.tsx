@@ -17,17 +17,6 @@ type Status =
   | "running"
   | "failed";
 
-const labels: Record<Status, string> = {
-  healthy: "Healthy",
-  warning: "Warning",
-  critical: "Critical",
-  unknown: "Unknown",
-  succeeded: "Succeeded",
-  queued: "Queued",
-  running: "Running",
-  failed: "Failed",
-};
-
 const icons = {
   healthy: CircleCheck,
   warning: CircleAlert,
@@ -39,12 +28,18 @@ const icons = {
   failed: XCircle,
 };
 
-export function StatusPill({ status }: { status: Status }) {
+export function StatusPill({
+  status,
+  label,
+}: {
+  status: Status;
+  label: string;
+}) {
   const Icon = icons[status];
   return (
     <span className={`status-pill status-pill--${status}`}>
       <Icon aria-hidden="true" size={14} strokeWidth={2} />
-      {labels[status]}
+      {label}
     </span>
   );
 }

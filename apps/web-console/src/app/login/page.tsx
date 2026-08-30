@@ -1,12 +1,18 @@
 import { LockKeyhole, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Image from "next/image";
-
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { LoginForm } from "@/components/login-form";
+import { getDictionary } from "@/i18n/dictionaries";
+import { resolveLocale } from "@/i18n/server";
 
-export const metadata: Metadata = { title: "Sign in" };
+export async function generateMetadata(): Promise<Metadata> {
+  const dictionary = getDictionary(await resolveLocale());
+  return { title: dictionary.login.title };
+}
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  const dictionary = getDictionary(await resolveLocale());
   return (
     <main className="login-page">
       <section
@@ -16,35 +22,33 @@ export default function LoginPage() {
         <div className="login-brand-panel__content">
           <Image
             src="/brand/alvestrasza-emblem.png"
-            alt="Alvestrasza Corporation emblem"
+            alt={dictionary.brand.emblemAlt}
             width={118}
             height={118}
             priority
           />
-          <p className="eyebrow">Alvestrasza Corporation</p>
-          <h1 id="login-brand-heading">
-            Independent Platform Management System
-          </h1>
-          <p>
-            One secure control plane for physical, virtual, network, storage,
-            monitoring, and backup infrastructure.
-          </p>
+          <p className="eyebrow">{dictionary.login.company}</p>
+          <h1 id="login-brand-heading">{dictionary.login.product}</h1>
+          <p>{dictionary.login.description}</p>
           <div className="login-trust">
-            <ShieldCheck aria-hidden="true" size={18} /> Tenant isolated ·
-            Audited · Read only foundation
+            <ShieldCheck aria-hidden="true" size={18} />
+            {dictionary.login.trust}
           </div>
         </div>
       </section>
       <section className="login-form-panel" aria-labelledby="sign-in-heading">
         <div className="login-card">
+          <div className="login-card__language">
+            <LanguageSwitcher />
+          </div>
           <div className="login-card__icon">
             <LockKeyhole aria-hidden="true" size={22} />
           </div>
-          <p className="eyebrow">IPMS Console</p>
-          <h2 id="sign-in-heading">Sign in</h2>
-          <p>Use your IPMS account to enter the selected environment.</p>
+          <p className="eyebrow">{dictionary.login.console}</p>
+          <h2 id="sign-in-heading">{dictionary.login.heading}</h2>
+          <p>{dictionary.login.prompt}</p>
           <LoginForm />
-          <small>Credentials are handled only by the IPMS Control Plane.</small>
+          <small>{dictionary.login.credentialNote}</small>
         </div>
       </section>
     </main>
