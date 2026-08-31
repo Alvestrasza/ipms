@@ -172,6 +172,9 @@ if [[ ! -f $control_plane_env ]]; then
         echo "IPMS_HSTS_SECONDS=0"
     } > "$control_plane_env"
 fi
+if [[ -s $control_plane_env ]] && [[ $(tail -c 1 "$control_plane_env" | wc -l) -eq 0 ]]; then
+    printf '\n' >> "$control_plane_env"
+fi
 if ! grep -q '^IPMS_CONNECTOR_MASTER_KEY=' "$control_plane_env"; then
     echo "IPMS_CONNECTOR_MASTER_KEY=$(openssl rand -base64 32 | tr -d '\n')" >> "$control_plane_env"
 fi
