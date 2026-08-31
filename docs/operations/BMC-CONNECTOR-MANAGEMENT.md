@@ -41,6 +41,13 @@ open another session to the BMC. The overview contains subsystem health cards
 and separate views for fans, temperatures, power, processors, memory, network,
 device inventory, storage, firmware, and software.
 
+For iLO 4, the Storage view can include Smart Array controllers and logical
+drives from HPE's advertised legacy Smart Storage resources. Physical drives
+and storage enclosures appear in Device Inventory. Capacity, RAID, media type,
+interface type, location, identity, firmware, and health are shown only when
+the controller reports them. The Web Console receives normalized snapshot data
+and never reads OEM resources directly.
+
 Unavailable optional data is shown as unknown or empty. IPMS does not infer a
 healthy state merely because an older iLO generation, a firmware version, a
 powered-off server, or a device license omits a resource. Run another discovery

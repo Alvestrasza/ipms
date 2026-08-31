@@ -126,6 +126,7 @@ export default async function BmcDetailPage({ params }: BmcDetailPageProps) {
           <BmcDetailTabs
             snapshot={system.detail_snapshot ?? {}}
             copy={dictionary.bmcDetail}
+            locale={locale}
           />
         </>
       ) : (

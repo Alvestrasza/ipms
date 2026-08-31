@@ -13,7 +13,7 @@ import {
   Thermometer,
 } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, useState } from "react";
-
+import { documentLocale, type Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type {
   BmcDetailSnapshot,
@@ -64,6 +64,32 @@ function statusBadge(status: DetailStatus, copy: Copy) {
       {copy[status]}
     </span>
   );
+}
+
+function capacity(value: unknown, locale: Locale): ReactNode {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  let amount = value;
+  let unit = 0;
+  while (amount >= 1024 && unit < units.length - 1) {
+    amount /= 1024;
+    unit += 1;
+  }
+  return `${amount.toLocaleString(documentLocale(locale), { maximumFractionDigits: 1 })} ${units[unit]}`;
+}
+
+function deviceTypeLabel(deviceType: unknown, copy: Copy): ReactNode {
+  const labels: Record<string, string> = {
+    drive: copy.drive,
+    logical_drive: copy.logicalDrive,
+    pcie_device: copy.pcieDevice,
+    pcie_function: copy.pcieFunction,
+    physical_drive: copy.physicalDrive,
+    storage_controller: copy.storageController,
+    storage_device: copy.storageDevice,
+    storage_enclosure: copy.storageEnclosure,
+  };
+  return labels[String(deviceType)] ?? value(deviceType);
 }
 
 function DetailTable({
@@ -119,9 +145,11 @@ function inventoryRows(items: DetailInventoryItem[], copy: Copy): TableRow[] {
 export function BmcDetailTabs({
   snapshot,
   copy,
+  locale,
 }: {
   snapshot: BmcDetailSnapshot;
   copy: Copy;
+  locale: Locale;
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("fans");
   const tabs: Array<{ key: TabKey; label: string }> = [
@@ -321,15 +349,74 @@ export function BmcDetailTabs({
         />
       );
     }
+    if (activeTab === "storage") {
+      return (
+        <DetailTable
+          empty={copy.noData}
+          columns={[
+            { key: "name", label: copy.name },
+            { key: "device_type", label: copy.deviceType },
+            { key: "model", label: copy.model },
+            { key: "capacity", label: copy.capacity },
+            { key: "raid", label: copy.raid },
+            { key: "operating_mode", label: copy.operatingMode },
+            { key: "status", label: copy.status },
+          ]}
+          rows={(snapshot.storage ?? []).map((item) => ({
+            name: value(item.name),
+            device_type: deviceTypeLabel(item.device_type, copy),
+            model: value(item.model),
+            capacity: capacity(item.capacity_bytes, locale),
+            raid: value(item.raid),
+            operating_mode: value(item.operating_mode),
+            status: statusBadge(item.status, copy),
+          }))}
+        />
+      );
+    }
+    if (activeTab === "device_inventory") {
+      return (
+        <DetailTable
+          empty={copy.noData}
+          columns={[
+            { key: "name", label: copy.name },
+            { key: "device_type", label: copy.deviceType },
+            { key: "model", label: copy.model },
+            { key: "capacity", label: copy.capacity },
+            { key: "media_type", label: copy.mediaType },
+            { key: "interface_type", label: copy.interfaceType },
+            { key: "location", label: copy.location },
+            { key: "serial_number", label: copy.serialNumber },
+            { key: "status", label: copy.status },
+          ]}
+          rows={(snapshot.device_inventory ?? []).map((item) => ({
+            name: value(item.name),
+            device_type: deviceTypeLabel(item.device_type, copy),
+            model: value(item.model),
+            capacity: capacity(item.capacity_bytes, locale),
+            media_type: value(item.media_type),
+            interface_type: value(item.interface_type),
+            location: value(item.location),
+            serial_number: value(item.serial_number),
+            status: statusBadge(item.status, copy),
+          }))}
+        />
+      );
+    }
     const inventories: Record<
       Exclude<
         TabKey,
-        "fans" | "temperatures" | "power" | "processors" | "memory" | "network"
+        | "fans"
+        | "temperatures"
+        | "power"
+        | "processors"
+        | "memory"
+        | "network"
+        | "storage"
+        | "device_inventory"
       >,
       DetailInventoryItem[]
     > = {
-      device_inventory: snapshot.device_inventory ?? [],
-      storage: snapshot.storage ?? [],
       firmware: snapshot.firmware ?? [],
       software: snapshot.software ?? [],
     };

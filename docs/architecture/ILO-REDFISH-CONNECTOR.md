@@ -63,13 +63,18 @@ inventory operations.
 6. Follow resource links to processors, memory, storage, drives, volumes,
    network interfaces or adapters, thermal data, power data, log summaries, and
    firmware inventory when present.
-7. Normalize stable identity, manufacturer, model, serial number, SKU, UUID,
+7. When an iLO 4 system advertises `Oem.Hp.Links.SmartStorage` or
+   `Oem.Hpe.Links.SmartStorage`, invoke the isolated compatibility adapter. It
+   follows only advertised array-controller, HBA, logical-drive,
+   physical-drive, and enclosure links. Standard DMTF Storage remains
+   preferred whenever it is available.
+8. Normalize stable identity, manufacturer, model, serial number, SKU, UUID,
    power state, health, CPU, memory, storage, network, BMC, and firmware fields.
-8. Record unsupported and inaccessible optional resources as partial-data
+9. Record unsupported and inaccessible optional resources as partial-data
    observations rather than inventing values or failing the entire endpoint.
-9. Persist one tenant-scoped discovery result transaction, update connector
+10. Persist one tenant-scoped discovery result transaction, update connector
    health, emit an audit event, and delete the Redfish session.
-10. Return only normalized, secret-free failure diagnostics to the tenant
+11. Return only normalized, secret-free failure diagnostics to the tenant
     console and allow an authorized administrator to queue a repeat discovery.
 
 The normalized result includes a versioned detail snapshot for subsystem
@@ -104,7 +109,11 @@ read-only acceptance record for that version.
 
 HPE documents that the legacy Smart Storage model used by iLO 4 is deprecated
 with iLO 6 and later. The connector therefore prefers the DMTF Storage model and
-isolates any legacy Smart Storage parsing in a version-specific adapter.
+isolates legacy Smart Storage parsing in a version-specific adapter. The
+adapter normalizes controller and logical-drive rows into the Storage view and
+physical drives plus enclosures into Device Inventory. It retains selected
+capacity, RAID, media, interface, location, firmware, identity, and health
+fields only; no OEM response body is persisted or exposed to the browser.
 
 ## Test Strategy
 
@@ -123,6 +132,9 @@ isolates any legacy Smart Storage parsing in a version-specific adapter.
   while proving that no managed-infrastructure write request was sent.
 - Snapshot contract tests covering every overview section and persistence
   through the isolated discovery worker.
+- iLO 4 Smart Storage fixtures proving advertised-link traversal, collection
+  limits, standard-Storage precedence, health normalization, and a transport
+  method set limited to discovery plus connector-owned session lifecycle.
 
 ## Implementation Stages
 

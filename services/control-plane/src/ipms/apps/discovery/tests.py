@@ -412,6 +412,100 @@ class IloRedfishConnectorTests(TestCase):
         self.assertEqual(transport.calls[-1][0], "DELETE")
         self.assertEqual({method for method, _ in transport.calls}, {"GET", "POST", "DELETE"})
 
+    def test_uses_advertised_ilo4_smart_storage_when_standard_storage_is_absent(
+        self,
+    ) -> None:
+        transport = self.fixture()
+        system = transport.documents["/redfish/v1/Systems/1/"]
+        system.pop("Storage")
+        system["Oem"]["Hp"]["Links"] = {
+            "SmartStorage": {
+                "@odata.id": "/redfish/v1/Systems/1/SmartStorage/"
+            }
+        }
+        transport.documents.update(
+            {
+                "/redfish/v1/Systems/1/SmartStorage/": {
+                    "Status": {"HealthRollUp": "OK", "State": "Enabled"},
+                    "Links": {
+                        "ArrayControllers": {
+                            "@odata.id": "/redfish/v1/Systems/1/SmartStorage/ArrayControllers/"
+                        }
+                    },
+                },
+                "/redfish/v1/Systems/1/SmartStorage/ArrayControllers/": {
+                    "Members": [
+                        {
+                            "@odata.id": "/redfish/v1/Systems/1/SmartStorage/ArrayControllers/1/"
+                        }
+                    ]
+                },
+                "/redfish/v1/Systems/1/SmartStorage/ArrayControllers/1/": {
+                    "Name": "Synthetic Smart Array",
+                    "Model": "Array Fixture",
+                    "BackupPowerSourceStatus": "PresentAndCharged",
+                    "Status": {"Health": "OK", "State": "Enabled"},
+                    "Links": {
+                        "LogicalDrives": {
+                            "@odata.id": "/redfish/v1/Systems/1/SmartStorage/ArrayControllers/1/LogicalDrives/"
+                        },
+                        "DiskDrives": {
+                            "@odata.id": "/redfish/v1/Systems/1/SmartStorage/ArrayControllers/1/DiskDrives/"
+                        },
+                    },
+                },
+                "/redfish/v1/Systems/1/SmartStorage/ArrayControllers/1/LogicalDrives/": {
+                    "Members": [
+                        {
+                            "@odata.id": "/redfish/v1/Systems/1/SmartStorage/ArrayControllers/1/LogicalDrives/1/"
+                        }
+                    ]
+                },
+                "/redfish/v1/Systems/1/SmartStorage/ArrayControllers/1/LogicalDrives/1/": {
+                    "Name": "Logical Drive 1",
+                    "CapacityMiB": 1024,
+                    "Raid": "1",
+                    "Status": {"Health": "OK", "State": "Enabled"},
+                },
+                "/redfish/v1/Systems/1/SmartStorage/ArrayControllers/1/DiskDrives/": {
+                    "Members": [
+                        {
+                            "@odata.id": "/redfish/v1/Systems/1/SmartStorage/ArrayControllers/1/DiskDrives/1/"
+                        }
+                    ]
+                },
+                "/redfish/v1/Systems/1/SmartStorage/ArrayControllers/1/DiskDrives/1/": {
+                    "Name": "Physical Drive 1",
+                    "CapacityGB": 960,
+                    "MediaType": "SSD",
+                    "Status": {"Health": "OK", "State": "Enabled"},
+                },
+            }
+        )
+
+        observations, _ = discover_ilo(transport, "fixture", "not-a-secret")
+
+        detail = observations[0].detail_snapshot
+        self.assertEqual(
+            [item["device_type"] for item in detail["storage"]],
+            ["storage_controller", "logical_drive"],
+        )
+        self.assertEqual(
+            next(
+                item
+                for item in detail["device_inventory"]
+                if item["device_type"] == "physical_drive"
+            )["capacity_bytes"],
+            960_000_000_000,
+        )
+        self.assertEqual(
+            next(
+                item for item in detail["subsystems"] if item["key"] == "storage"
+            )["status"],
+            "ok",
+        )
+        self.assertEqual({method for method, _ in transport.calls}, {"GET", "POST", "DELETE"})
+
     def test_transport_rejects_managed_infrastructure_writes(self) -> None:
         transport = RedfishTransport("https://192.0.2.10", "a" * 64)
         for method, path in (

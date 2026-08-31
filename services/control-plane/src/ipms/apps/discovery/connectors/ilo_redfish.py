@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
+from .ilo4_smart_storage import SmartStorageAdapterError, discover_smart_storage
+
 
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_COLLECTION_MEMBERS = 256
@@ -418,7 +420,15 @@ def _link_values(document: dict[str, Any], key: str) -> list[str]:
 
 def _condition(value: Any) -> str:
     if isinstance(value, dict):
-        value = value.get("HealthRollup") or value.get("Health") or value.get("State")
+        status = value.get("Status")
+        if isinstance(status, dict):
+            value = status
+        value = (
+            value.get("HealthRollup")
+            or value.get("HealthRollUp")
+            or value.get("Health")
+            or value.get("State")
+        )
     normalized = str(value or "").casefold().replace("_", "").replace(" ", "")
     if normalized in {"ok", "enabled", "redundant", "fullyredundant", "standbyoffline"}:
         return "ok"
@@ -663,6 +673,21 @@ def _build_detail_snapshot(
                 device_row["device_type"] = "storage_device"
                 device_inventory.append(device_row)
 
+    try:
+        smart_storage = discover_smart_storage(
+            lambda path: _safe_get(transport, path),
+            system,
+        )
+    except SmartStorageAdapterError as exc:
+        raise RedfishConnectorError(str(exc)) from exc
+    if not storage_rows:
+        storage_rows.extend(smart_storage.storage)
+    if not any(
+        row.get("device_type") in {"drive", "storage_device", "physical_drive"}
+        for row in device_inventory
+    ):
+        device_inventory.extend(smart_storage.device_inventory)
+
     for key in ("PCIeDevices", "PCIeFunctions"):
         for resource in _linked_documents(transport, system_links, key):
             row = _inventory_row(resource)
@@ -708,6 +733,8 @@ def _build_detail_snapshot(
     battery_conditions = [
         _condition(item.get("Status")) for item in batteries if isinstance(item, dict)
     ]
+    if smart_storage.battery_health != "unknown":
+        battery_conditions.append(smart_storage.battery_health)
     fan_conditions = [row["status"] for row in fans]
     temperature_conditions = [row["status"] for row in temperatures]
     power_supply_conditions = [row["status"] for row in power_supplies]
@@ -800,7 +827,11 @@ def _build_detail_snapshot(
         subsystem(
             "storage",
             _aggregate_lookup(aggregate, "Storage"),
-            _combined_condition(storage_conditions),
+            (
+                smart_storage.health
+                if smart_storage.health != "unknown"
+                else _combined_condition(storage_conditions)
+            ),
         ),
         subsystem(
             "temperatures",
