@@ -581,6 +581,9 @@ h2 {
 .health-bar__critical {
   background: var(--color-critical);
 }
+.health-bar__unknown {
+  background: var(--color-text-muted);
+}
 .health-legend {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1128,6 +1131,10 @@ td {
   display: grid;
   gap: 0.85rem;
 }
+.storage-group h3 {
+  margin: 4px 0 10px;
+  font-size: 0.9rem;
+}
 
 .detail-note {
   margin: 0;
@@ -1407,6 +1414,17 @@ td strong {
   width: 30px;
   height: 30px;
 }
+.icon-button--danger {
+  color: var(--color-critical);
+  border-color: color-mix(
+    in srgb,
+    var(--color-critical) 45%,
+    var(--border-default)
+  );
+}
+.icon-button--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-critical) 12%, transparent);
+}
 .danger-button {
   min-height: 36px;
   display: inline-flex;
@@ -1437,6 +1455,17 @@ td strong {
   padding: 20px 10px 7px;
   border: 1px solid var(--border-default);
   border-radius: 5px;
+}
+.log-filters--events {
+  grid-template-columns: minmax(250px, 1fr) minmax(290px, 1.2fr) repeat(
+      4,
+      minmax(135px, 0.7fr)
+    ) auto;
+}
+.event-message {
+  min-width: 320px;
+  max-width: 680px;
+  white-space: normal;
 }
 .log-filters legend {
   padding: 0 4px;

@@ -1,17 +1,12 @@
 "use client";
 
-import { LoaderCircle, RefreshCw, TriangleAlert } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { TriangleAlert } from "lucide-react";
 
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { ConnectorEndpoint } from "@/lib/server-physical";
 
 type Props = {
   connector: ConnectorEndpoint;
-  csrfToken: string;
-  tenantId: string;
-  canManage: boolean;
   locale: "de" | "en";
   copy: Dictionary["physical"];
 };
@@ -26,49 +21,13 @@ const errorMessageKeys = {
   unsupported_service: "unsupportedService",
 } as const;
 
-export function ConnectorOperations({
-  connector,
-  csrfToken,
-  tenantId,
-  canManage,
-  locale,
-  copy,
-}: Props) {
-  const router = useRouter();
-  const [queueing, setQueueing] = useState(false);
-  const [message, setMessage] = useState("");
+export function ConnectorOperations({ connector, locale, copy }: Props) {
   const detail = connector.last_error_detail;
   const errorKey =
     errorMessageKeys[
       connector.last_error_code as keyof typeof errorMessageKeys
     ];
   const explanation = errorKey ? copy[errorKey] : copy.unknownConnectorError;
-
-  async function runDiscovery() {
-    setQueueing(true);
-    setMessage("");
-    try {
-      const response = await fetch(
-        `/api/v1/connectors/${connector.id}/discover/`,
-        {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": csrfToken,
-            "X-IPMS-Tenant-ID": tenantId,
-          },
-          body: "{}",
-        },
-      );
-      setMessage(response.ok ? copy.discoveryQueued : copy.discoveryError);
-      if (response.ok) router.refresh();
-    } catch {
-      setMessage(copy.discoveryError);
-    } finally {
-      setQueueing(false);
-    }
-  }
 
   return (
     <div className="connector-operations">
@@ -145,24 +104,6 @@ export function ConnectorOperations({
           <p className="connector-log__privacy">{copy.errorLogPrivacy}</p>
         </details>
       ) : null}
-      <div className="connector-operations__actions">
-        {canManage ? (
-          <button
-            className="outline-button"
-            type="button"
-            onClick={runDiscovery}
-            disabled={queueing}
-          >
-            {queueing ? (
-              <LoaderCircle className="spin" aria-hidden="true" size={15} />
-            ) : (
-              <RefreshCw aria-hidden="true" size={15} />
-            )}
-            {queueing ? copy.queueingDiscovery : copy.runDiscovery}
-          </button>
-        ) : null}
-        {message ? <span role="status">{message}</span> : null}
-      </div>
     </div>
   );
 }

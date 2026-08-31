@@ -49,6 +49,25 @@ export type BmcCommunicationLog = {
   occurred_at: string;
 };
 
+export type BmcEventLogEntry = {
+  id: string;
+  connector_id: string | null;
+  bmc_name: string;
+  log_type: "ilo_event_log" | "integrated_management_log";
+  source_record_id: string;
+  severity: "info" | "warning" | "critical" | "unknown";
+  message: string;
+  source_created_at: string | null;
+  source_updated_at: string | null;
+  repeat_count: number | null;
+  repaired: boolean | null;
+  event_class: number | null;
+  event_code: number | null;
+  event_number: number | null;
+  record_format: string;
+  last_discovered_at: string;
+};
+
 export type PhysicalSystem = {
   id: string;
   tenant_id: string;
@@ -96,6 +115,8 @@ export type BmcDetailSnapshot = {
     reading?: number | null;
     units?: string;
     context?: string;
+    minimum_reading?: number | null;
+    maximum_reading?: number | null;
   }>;
   temperatures?: Array<{
     name: string;
@@ -108,6 +129,17 @@ export type BmcDetailSnapshot = {
   power?: {
     consumed_watts?: number | null;
     capacity_watts?: number | null;
+    requested_watts?: number | null;
+    average_consumed_watts?: number | null;
+    minimum_consumed_watts?: number | null;
+    maximum_consumed_watts?: number | null;
+    metrics_interval_minutes?: number | null;
+    redundancy?: Array<{
+      mode?: string;
+      status?: DetailStatus;
+      minimum_needed?: number | null;
+      maximum_supported?: number | null;
+    }>;
     supplies?: DetailInventoryItem[];
   };
   processors?: DetailInventoryItem[];
@@ -189,5 +221,37 @@ export async function getBmcLogs(tenantId: string, queryString: string) {
       connectors: [],
       logs: [],
     };
+  }
+}
+
+export async function getBmcEventLogs(tenantId: string, queryString: string) {
+  const cookie = (await cookies()).toString();
+  const headers = controlPlaneHeaders({ cookie, "X-IPMS-Tenant-ID": tenantId });
+  const suffix = queryString ? `?${queryString}` : "";
+  try {
+    const [connectorsResponse, logsResponse] = await Promise.all([
+      fetch(`${CONTROL_PLANE_URL}/api/v1/connectors/`, {
+        cache: "no-store",
+        headers,
+      }),
+      fetch(`${CONTROL_PLANE_URL}/api/v1/bmc-event-logs/${suffix}`, {
+        cache: "no-store",
+        headers,
+      }),
+    ]);
+    return {
+      sessionValid:
+        ![401, 403].includes(connectorsResponse.status) &&
+        ![401, 403].includes(logsResponse.status),
+      available: connectorsResponse.ok && logsResponse.ok,
+      connectors: connectorsResponse.ok
+        ? ((await connectorsResponse.json()) as ConnectorEndpoint[])
+        : [],
+      logs: logsResponse.ok
+        ? ((await logsResponse.json()) as BmcEventLogEntry[])
+        : [],
+    };
+  } catch {
+    return { sessionValid: true, available: false, connectors: [], logs: [] };
   }
 }

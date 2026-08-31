@@ -4,6 +4,8 @@ from ipms.apps.discovery.views import (
     BmcCertificateProbeView,
     BmcCommunicationLogExportView,
     BmcCommunicationLogListView,
+    BmcEventLogEntryListView,
+    BmcEventLogEntryExportView,
     BmcConnectorEnrollmentView,
     ConnectorCredentialView,
     ConnectorDetailView,
@@ -46,6 +48,16 @@ urlpatterns = [
     ),
     path("physical-systems/", PhysicalSystemListView.as_view(), name="physical-list"),
     path("bmc-logs/", BmcCommunicationLogListView.as_view(), name="bmc-log-list"),
+    path(
+        "bmc-event-logs/",
+        BmcEventLogEntryListView.as_view(),
+        name="bmc-event-log-list",
+    ),
+    path(
+        "bmc-event-logs/export/",
+        BmcEventLogEntryExportView.as_view(),
+        name="bmc-event-log-export",
+    ),
     path(
         "bmc-logs/export/",
         BmcCommunicationLogExportView.as_view(),

@@ -29,12 +29,15 @@ def _link(document: dict[str, Any], key: str) -> str:
     value = document.get(key)
     if not isinstance(value, dict):
         return ""
-    path = value.get("@odata.id")
+    path = value.get("@odata.id") or value.get("href")
     return path if isinstance(path, str) else ""
 
 
 def _resource_link(document: dict[str, Any], key: str) -> str:
-    return _link(document, key) or _link(_as_dict(document.get("Links")), key)
+    return _link(document, key) or _link(
+        _as_dict(document.get("Links") or document.get("links")),
+        key,
+    )
 
 
 def _condition(value: Any) -> str:
@@ -75,7 +78,12 @@ def _combined_condition(values: list[str]) -> str:
 
 
 def _members(document: dict[str, Any], *, limit: int) -> list[str]:
-    members = document.get("Members", [])
+    members = document.get("Members")
+    if not isinstance(members, list):
+        members = _as_dict(document.get("Links") or document.get("links")).get(
+            "Member",
+            [],
+        )
     if not isinstance(members, list) or len(members) > limit:
         raise SmartStorageAdapterError("collection_limit_exceeded")
     paths = []
@@ -117,6 +125,8 @@ def _base_row(resource: dict[str, Any], *, device_type: str) -> dict[str, Any]:
         "state": str(status.get("State") or ""),
         "device_type": device_type,
         "location": str(resource.get("Location") or ""),
+        "location_format": str(resource.get("LocationFormat") or ""),
+        "description": str(resource.get("Description") or ""),
         "source": "hpe_ilo4_smart_storage",
     }
 
@@ -139,9 +149,18 @@ def _controller_row(resource: dict[str, Any]) -> dict[str, Any]:
             "operating_mode": str(resource.get("CurrentOperatingMode") or ""),
             "logical_drive_count": resource.get("LogicalDriveCount"),
             "physical_drive_count": resource.get("PhysicalDriveCount"),
+            "array_count": resource.get("ArrayCount"),
             "cache_memory_mib": resource.get("CacheMemorySizeMiB"),
+            "internal_port_count": resource.get("InternalPortCount"),
+            "external_port_count": resource.get("ExternalPortCount"),
+            "hardware_revision": str(resource.get("HardwareRevision") or ""),
             "backup_power_source_status": str(
                 resource.get("BackupPowerSourceStatus") or ""
+            ),
+            "encryption_enabled": resource.get("EncryptionEnabled"),
+            "encryption_locked": resource.get("EncryptionFwLocked"),
+            "encryption_mixed_volumes": resource.get(
+                "EncryptionMixedVolumesEnabled"
             ),
         }
     )
@@ -163,6 +182,13 @@ def _logical_drive_row(resource: dict[str, Any]) -> dict[str, Any]:
             "logical_drive_type": str(resource.get("LogicalDriveType") or ""),
             "drive_access_name": str(resource.get("DriveAccessName") or ""),
             "rebuild_percentage": resource.get("RebuildCompletionPercentage"),
+            "block_size_bytes": resource.get("BlockSizeBytes"),
+            "stripe_size_bytes": resource.get("StripeSizeBytes"),
+            "logical_drive_number": resource.get("LogicalDriveNumber"),
+            "logical_drive_encryption": resource.get("LogicalDriveEncryption"),
+            "volume_unique_identifier": str(
+                resource.get("VolumeUniqueIdentifier") or ""
+            ),
         }
     )
     return row
@@ -177,6 +203,21 @@ def _physical_drive_row(resource: dict[str, Any]) -> dict[str, Any]:
             "interface_type": str(resource.get("InterfaceType") or ""),
             "interface_speed_mbps": resource.get("InterfaceSpeedMbps"),
             "power_on_hours": resource.get("PowerOnHours"),
+            "block_size_bytes": resource.get("BlockSizeBytes"),
+            "rotational_speed_rpm": resource.get("RotationalSpeedRpm"),
+            "temperature_celsius": resource.get("TemperatureCelsius"),
+            "current_temperature_celsius": resource.get(
+                "CurrentTemperatureCelsius"
+            ),
+            "maximum_temperature_celsius": resource.get(
+                "MaximumTemperatureCelsius"
+            ),
+            "predicted_media_life_left_percent": resource.get(
+                "PredictedMediaLifeLeftPercent"
+            ),
+            "uncorrected_read_errors": resource.get("UncorrectedReadErrors"),
+            "uncorrected_write_errors": resource.get("UncorrectedWriteErrors"),
+            "wwid": str(resource.get("WWID") or ""),
         }
     )
     return row
@@ -228,15 +269,13 @@ def discover_smart_storage(
                 limit=MAX_CHILD_RESOURCES,
             )
         )
-        device_rows.extend(
-            _physical_drive_row(resource)
-            for resource in _collection(
-                get,
-                controller,
-                "DiskDrives",
-                limit=MAX_CHILD_RESOURCES,
-            )
+        physical_drives = _collection(
+            get,
+            controller,
+            "DiskDrives",
+            limit=MAX_CHILD_RESOURCES,
         )
+        enclosure_rows = []
         for enclosure in _collection(
             get,
             controller,
@@ -245,7 +284,28 @@ def discover_smart_storage(
         ):
             enclosure_row = _base_row(enclosure, device_type="storage_enclosure")
             enclosure_row["drive_bay_count"] = enclosure.get("DriveBayCount")
-            device_rows.append(enclosure_row)
+            enclosure_row["wwid"] = str(enclosure.get("WWID") or "")
+            enclosure_rows.append(enclosure_row)
+            physical_drives.extend(
+                _collection(
+                    get,
+                    enclosure,
+                    "DiskDrives",
+                    limit=MAX_CHILD_RESOURCES,
+                )
+            )
+        seen_drives: set[tuple[str, str, str]] = set()
+        for resource in physical_drives:
+            identity = (
+                str(resource.get("SerialNumber") or ""),
+                str(resource.get("Location") or ""),
+                str(resource.get("Name") or resource.get("Id") or ""),
+            )
+            if identity in seen_drives:
+                continue
+            seen_drives.add(identity)
+            device_rows.append(_physical_drive_row(resource))
+        device_rows.extend(enclosure_rows)
 
     health = _condition(smart_storage.get("Status"))
     if health == "unknown":

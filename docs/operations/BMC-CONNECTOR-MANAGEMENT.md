@@ -41,12 +41,17 @@ open another session to the BMC. The overview contains subsystem health cards
 and separate views for fans, temperatures, power, processors, memory, network,
 device inventory, storage, firmware, and software.
 
-For iLO 4, the Storage view can include Smart Array controllers and logical
-drives from HPE's advertised legacy Smart Storage resources. Physical drives
-and storage enclosures appear in Device Inventory. Capacity, RAID, media type,
-interface type, location, identity, firmware, and health are shown only when
-the controller reports them. The Web Console receives normalized snapshot data
-and never reads OEM resources directly.
+For iLO 4, the Storage view groups Smart Array controllers, drive enclosures,
+physical disks, and logical disks from HPE's advertised legacy Smart Storage
+resources. Capacity, RAID, media and interface type, location, identity,
+firmware, temperature, and health are shown only when the controller reports
+them. The Web Console receives normalized snapshot data and never reads OEM
+resources directly.
+
+Legacy iLO 4 thermal and power documents provide fan speed, power history,
+redundancy data, and detailed power-supply properties. IPMS prefers explicitly
+reported redundancy. Where iLO 4 omits a fan-redundancy resource, the adapter
+marks redundancy only when multiple installed fans all report a healthy state.
 
 For iLO 4, the Memory view also uses advertised legacy HPE inventory to show
 individual DIMM slots, capacity, speed, type, manufacturer, part number, and
@@ -62,7 +67,7 @@ powered-off server, or a device license omits a resource. Run another discovery
 to refresh the snapshot.
 
 The connector request timeout is controlled by
-`IPMS_BMC_CONNECT_TIMEOUT_SECONDS`. The standalone DEV profile defaults to 20
+`IPMS_BMC_CONNECT_TIMEOUT_SECONDS`. The standalone DEV profile defaults to 45
 seconds and the Control Plane accepts bounded values from 5 through 60 seconds.
 This timeout applies to certificate inspection and Redfish requests; it is not
 an unbounded retry window.
@@ -72,6 +77,9 @@ an unbounded retry window.
 The key action replaces the encrypted credential and queues a new discovery.
 It does not reveal the old username or password.
 
+The refresh action between the key and minus actions queues a new read-only
+discovery without changing connector configuration.
+
 The minus action performs a soft removal: the endpoint disappears from active
 views, queued work is stopped, and the encrypted credential is destroyed.
 Audit events and sanitized communication history remain available for
@@ -79,7 +87,7 @@ accountability. Re-enrollment of the same endpoint is possible afterward.
 
 ## Communication Logs
 
-**Physical infrastructure > Bare Metal Controller > Logs** provides
+**Physical infrastructure > Bare Metal Controller > Communication logs** provides
 tenant-scoped filters for severity, time range, BMC, and text search, plus CSV
 export. The interactive view returns at most 500 recent entries; CSV export is
 bounded to 10,000 filtered entries and protects spreadsheet cells from formula
@@ -92,6 +100,19 @@ store credentials, session tokens, authorization or response headers, request
 or response bodies, certificate bodies, Redfish message arguments, or raw
 device logs. Observability failures cannot interrupt connector operations.
 
+## Device Event Logs
+
+**Physical infrastructure > Bare Metal Controller > Event logs** combines the
+iLO Event Log and Integrated Management Log for every enrolled BMC within the
+selected tenant. The view can filter by log type, severity, BMC, source time,
+and text, and can export up to 10,000 filtered rows as formula-safe CSV.
+
+These device event records are a separate data class from sanitized connector
+communication metadata. IPMS persists the bounded message and the iLO record
+identifiers required for an operator to diagnose hardware events; credentials,
+session material, request bodies, and unrelated Redfish response bodies remain
+excluded. Collection is read-only and refreshes during normal discovery.
+
 ## Validation
 
 - Active BMCs and their controls are isolated by the selected tenant.
@@ -102,6 +123,7 @@ device logs. Observability failures cannot interrupt connector operations.
 - A changed certificate is rejected before credentials are submitted.
 - Removal destroys the secret while preserving sanitized audit history.
 - Logs and CSV export honor tenant and filter boundaries.
+- Device event logs remain tenant-scoped and distinguish IEL from IML records.
 
 Never disable TLS validation, bypass private-target checks, broaden the device
 account beyond read-only access, or publish endpoint details and operational

@@ -199,6 +199,76 @@ class BmcCommunicationLog(models.Model):
         return f"{self.bmc_name}: {self.event_type}"
 
 
+class BmcEventLogEntry(models.Model):
+    class LogType(models.TextChoices):
+        ILO_EVENT_LOG = "ilo_event_log", "iLO Event Log"
+        INTEGRATED_MANAGEMENT_LOG = (
+            "integrated_management_log",
+            "Integrated Management Log",
+        )
+
+    class Severity(models.TextChoices):
+        INFO = "info", "Info"
+        WARNING = "warning", "Warning"
+        CRITICAL = "critical", "Critical"
+        UNKNOWN = "unknown", "Unknown"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.PROTECT,
+        related_name="bmc_event_log_entries",
+    )
+    connector = models.ForeignKey(
+        ConnectorEndpoint,
+        on_delete=models.SET_NULL,
+        related_name="event_log_entries",
+        blank=True,
+        null=True,
+    )
+    bmc_name = models.CharField(max_length=255)
+    log_type = models.CharField(max_length=32, choices=LogType.choices)
+    source_record_id = models.CharField(max_length=255)
+    severity = models.CharField(max_length=16, choices=Severity.choices)
+    message = models.TextField(max_length=8192)
+    source_created_at = models.DateTimeField(blank=True, null=True)
+    source_updated_at = models.DateTimeField(blank=True, null=True)
+    repeat_count = models.PositiveIntegerField(blank=True, null=True)
+    repaired = models.BooleanField(blank=True, null=True)
+    event_class = models.IntegerField(blank=True, null=True)
+    event_code = models.IntegerField(blank=True, null=True)
+    event_number = models.IntegerField(blank=True, null=True)
+    record_format = models.CharField(max_length=64, blank=True)
+    first_discovered_at = models.DateTimeField(auto_now_add=True)
+    last_discovered_at = models.DateTimeField()
+
+    class Meta:
+        ordering = ("-source_created_at", "-last_discovered_at")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("connector", "log_type", "source_record_id"),
+                name="unique_bmc_source_log_entry",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant", "-source_created_at"),
+                name="bmc_event_tenant_time_idx",
+            ),
+            models.Index(
+                fields=("tenant", "severity", "-source_created_at"),
+                name="bmc_event_severity_idx",
+            ),
+            models.Index(
+                fields=("connector", "log_type", "-source_created_at"),
+                name="bmc_event_source_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.bmc_name}: {self.log_type} {self.source_record_id}"
+
+
 class DiscoveryJob(models.Model):
     class ConnectorType(models.TextChoices):
         ILO_REDFISH = "ilo-redfish", "iLO Redfish"

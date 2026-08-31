@@ -152,6 +152,8 @@ Management Agent inventory source will enrich these fields.
 - iLO 4 OEM inventory fixtures proving legacy `href` traversal, DIMM
   normalization, PCI-class Fibre Channel identification, explicit missing-WWN
   provenance, and omission of the OData header only on the compatibility path.
+- iLO 4 event-log fixtures proving bounded, read-only traversal and normalized
+  IEL/IML records without persisting complete Redfish response bodies.
 
 ## Implementation Stages
 

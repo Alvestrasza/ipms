@@ -118,15 +118,13 @@ export default async function BareMetalControllerPage() {
                       csrfToken={session.csrf_token}
                       tenantId={tenant.id}
                       copy={dictionary.bmc}
+                      discoveryCopy={dictionary.physical}
                     />
                   ) : null}
                 </div>
               </div>
               <ConnectorOperations
                 connector={connector}
-                csrfToken={session.csrf_token}
-                tenantId={tenant.id}
-                canManage={canManage}
                 locale={locale}
                 copy={dictionary.physical}
               />

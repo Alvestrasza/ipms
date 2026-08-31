@@ -216,12 +216,24 @@ export function BmcDetailTabs({
             { key: "name", label: copy.name },
             { key: "status", label: copy.status },
             { key: "reading", label: copy.reading },
+            { key: "minimum", label: copy.minimum },
+            { key: "maximum", label: copy.maximum },
+            { key: "state", label: copy.state },
             { key: "context", label: copy.context },
           ]}
           rows={(snapshot.fans ?? []).map((fan) => ({
             name: value(fan.name),
             status: statusBadge(fan.status, copy),
             reading: value(fan.reading, fan.units ? ` ${fan.units}` : ""),
+            minimum: value(
+              fan.minimum_reading,
+              fan.units ? ` ${fan.units}` : "",
+            ),
+            maximum: value(
+              fan.maximum_reading,
+              fan.units ? ` ${fan.units}` : "",
+            ),
+            state: value(fan.state),
             context: value(fan.context),
           }))}
         />
@@ -263,7 +275,37 @@ export function BmcDetailTabs({
               <span>{copy.capacity}</span>
               <strong>{value(power.capacity_watts, " W")}</strong>
             </article>
+            <article>
+              <span>{copy.requestedPower}</span>
+              <strong>{value(power.requested_watts, " W")}</strong>
+            </article>
+            <article>
+              <span>{copy.averagePower}</span>
+              <strong>{value(power.average_consumed_watts, " W")}</strong>
+            </article>
+            <article>
+              <span>{copy.minimumPower}</span>
+              <strong>{value(power.minimum_consumed_watts, " W")}</strong>
+            </article>
+            <article>
+              <span>{copy.maximumPower}</span>
+              <strong>{value(power.maximum_consumed_watts, " W")}</strong>
+            </article>
+            <article>
+              <span>{copy.measurementInterval}</span>
+              <strong>{value(power.metrics_interval_minutes, " min")}</strong>
+            </article>
           </div>
+          {(power.redundancy ?? []).map((item) => (
+            <p
+              className="detail-note"
+              key={`${item.mode}-${item.minimum_needed}-${item.maximum_supported}`}
+            >
+              {copy.redundancy}: {value(item.mode)} · {copy.minimumNeeded}:{" "}
+              {value(item.minimum_needed)} · {copy.maximumSupported}:{" "}
+              {value(item.maximum_supported)}
+            </p>
+          ))}
           <DetailTable
             empty={copy.noData}
             columns={[
@@ -271,8 +313,29 @@ export function BmcDetailTabs({
               { key: "model", label: copy.model },
               { key: "status", label: copy.status },
               { key: "firmware_version", label: copy.firmwareVersion },
+              { key: "bay", label: copy.bay },
+              { key: "capacity", label: copy.capacity },
+              { key: "output", label: copy.outputPower },
+              { key: "input", label: copy.inputVoltage },
+              { key: "type", label: copy.powerSupplyType },
+              { key: "hotplug", label: copy.hotplug },
+              { key: "mismatch", label: copy.mismatch },
             ]}
-            rows={inventoryRows(power.supplies ?? [], copy)}
+            rows={(power.supplies ?? []).map((supply) => ({
+              name: value(supply.name),
+              model: value(supply.model),
+              status: statusBadge(supply.status, copy),
+              firmware_version: value(supply.firmware_version),
+              bay: value(supply.bay_number),
+              capacity: value(supply.capacity_watts, " W"),
+              output: `${[supply.last_output_watts, supply.average_output_watts, supply.maximum_output_watts].map((item) => item ?? "—").join(" / ")} W`,
+              input: value(supply.line_input_voltage, " V"),
+              type: value(
+                supply.power_supply_type || supply.line_input_voltage_type,
+              ),
+              hotplug: value(supply.hotplug_capable),
+              mismatch: value(supply.mismatched),
+            }))}
           />
         </div>
       );
@@ -378,28 +441,68 @@ export function BmcDetailTabs({
       );
     }
     if (activeTab === "storage") {
+      const allStorage = [
+        ...(snapshot.storage ?? []),
+        ...(snapshot.device_inventory ?? []).filter((item) =>
+          ["storage_enclosure", "physical_drive"].includes(
+            String(item.device_type),
+          ),
+        ),
+      ];
+      const groups = [
+        ["storage_controller", copy.storageControllers],
+        ["storage_enclosure", copy.driveEnclosures],
+        ["physical_drive", copy.physicalDisks],
+        ["logical_drive", copy.logicalDisks],
+      ] as const;
       return (
-        <DetailTable
-          empty={copy.noData}
-          columns={[
-            { key: "name", label: copy.name },
-            { key: "device_type", label: copy.deviceType },
-            { key: "model", label: copy.model },
-            { key: "capacity", label: copy.capacity },
-            { key: "raid", label: copy.raid },
-            { key: "operating_mode", label: copy.operatingMode },
-            { key: "status", label: copy.status },
-          ]}
-          rows={(snapshot.storage ?? []).map((item) => ({
-            name: value(item.name),
-            device_type: deviceTypeLabel(item.device_type, copy),
-            model: value(item.model),
-            capacity: capacity(item.capacity_bytes, locale),
-            raid: value(item.raid),
-            operating_mode: value(item.operating_mode),
-            status: statusBadge(item.status, copy),
-          }))}
-        />
+        <div className="detail-stack">
+          {groups.map(([type, heading]) => {
+            const items = allStorage.filter(
+              (item) => item.device_type === type,
+            );
+            return (
+              <section className="storage-group" key={type}>
+                <h3>{heading}</h3>
+                <DetailTable
+                  empty={copy.noData}
+                  columns={[
+                    { key: "name", label: copy.name },
+                    { key: "model", label: copy.model },
+                    { key: "location", label: copy.location },
+                    { key: "capacity", label: copy.capacity },
+                    { key: "raid", label: copy.raid },
+                    { key: "mode", label: copy.operatingMode },
+                    { key: "interface", label: copy.interfaceType },
+                    { key: "speed", label: copy.speed },
+                    { key: "temperature", label: copy.temperature },
+                    { key: "firmware", label: copy.firmwareVersion },
+                    { key: "serial", label: copy.serialNumber },
+                    { key: "status", label: copy.status },
+                  ]}
+                  rows={items.map((item) => ({
+                    name: value(item.name),
+                    model: value(item.model),
+                    location: value(item.location),
+                    capacity: capacity(item.capacity_bytes, locale),
+                    raid: value(item.raid),
+                    mode: value(item.operating_mode || item.logical_drive_type),
+                    interface: value(item.interface_type),
+                    speed: value(item.interface_speed_mbps, " Mbps"),
+                    temperature: value(
+                      item.current_temperature_celsius ||
+                        item.temperature_celsius,
+                      " °C",
+                    ),
+                    firmware: value(item.firmware_version),
+                    serial: value(item.serial_number || item.wwid),
+                    status: statusBadge(item.status, copy),
+                  }))}
+                />
+              </section>
+            );
+          })}
+        </div>
       );
     }
     if (activeTab === "device_inventory") {

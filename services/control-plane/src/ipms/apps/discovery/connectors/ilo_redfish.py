@@ -8,7 +8,7 @@ import re
 import socket
 import ssl
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
@@ -16,6 +16,7 @@ from .ilo4_legacy_inventory import (
     Ilo4LegacyInventoryError,
     discover_ilo4_legacy_inventory,
 )
+from .ilo4_event_logs import Ilo4EventLogError, discover_ilo4_event_logs
 from .ilo4_smart_storage import SmartStorageAdapterError, discover_smart_storage
 
 
@@ -388,6 +389,7 @@ class PhysicalSystemObservation:
     bios_version: str
     bmc_firmware_version: str
     detail_snapshot: dict[str, Any]
+    event_logs: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _link(document: dict[str, Any], key: str) -> str:
@@ -475,6 +477,20 @@ def _safe_get(transport: RedfishTransport, path: str) -> dict[str, Any]:
         raise
 
 
+def _safe_get_ilo4_legacy(
+    transport: RedfishTransport,
+    path: str,
+) -> dict[str, Any]:
+    try:
+        return transport.get_ilo4_legacy(path)
+    except RedfishConnectorError as exc:
+        if exc.code == "redfish_request_failed" and exc.detail.get(
+            "http_status"
+        ) in {404, 405}:
+            return {}
+        raise
+
+
 def _linked_documents(
     transport: RedfishTransport,
     document: dict[str, Any],
@@ -556,6 +572,14 @@ def _build_detail_snapshot(
     power_documents = _linked_documents(transport, chassis, "Power")
     thermal = thermal_documents[0] if thermal_documents else {}
     power = power_documents[0] if power_documents else {}
+    is_ilo4 = "Hp" in _as_dict(system.get("Oem"))
+    if is_ilo4:
+        thermal_path = _link(chassis, "Thermal")
+        power_path = _link(chassis, "Power")
+        if thermal_path:
+            thermal = _safe_get_ilo4_legacy(transport, thermal_path) or thermal
+        if power_path:
+            power = _safe_get_ilo4_legacy(transport, power_path) or power
 
     fans = []
     for index, fan in enumerate(_as_list(thermal.get("Fans"))):
@@ -563,12 +587,22 @@ def _build_detail_snapshot(
             continue
         fans.append(
             {
-                "name": str(fan.get("Name") or f"Fan {index + 1}"),
+                "name": str(
+                    fan.get("Name")
+                    or fan.get("FanName")
+                    or f"Fan {index + 1}"
+                ),
                 "status": _condition(fan.get("Status")),
                 "state": str(_as_dict(fan.get("Status")).get("State") or ""),
-                "reading": fan.get("Reading"),
-                "units": str(fan.get("ReadingUnits") or ""),
-                "context": str(fan.get("PhysicalContext") or ""),
+                "reading": fan.get("Reading") or fan.get("CurrentReading"),
+                "units": str(fan.get("ReadingUnits") or fan.get("Units") or ""),
+                "context": str(
+                    fan.get("PhysicalContext")
+                    or _as_dict(_hpe_oem(fan)).get("Location")
+                    or ""
+                ),
+                "minimum_reading": fan.get("MinReadingRange"),
+                "maximum_reading": fan.get("MaxReadingRange"),
             }
         )
 
@@ -592,12 +626,33 @@ def _build_detail_snapshot(
         if not isinstance(supply, dict):
             continue
         row = _inventory_row(supply)
+        hpe_supply = _hpe_oem(supply)
+        oem_state = str(
+            _as_dict(hpe_supply.get("PowerSupplyStatus")).get("State") or ""
+        )
         row.update(
             {
                 "capacity_watts": supply.get("PowerCapacityWatts"),
                 "last_output_watts": supply.get("LastPowerOutputWatts"),
+                "average_output_watts": hpe_supply.get(
+                    "AveragePowerOutputWatts"
+                ),
+                "maximum_output_watts": hpe_supply.get("MaxPowerOutputWatts"),
+                "line_input_voltage": supply.get("LineInputVoltage"),
+                "line_input_voltage_type": str(
+                    supply.get("LineInputVoltageType") or ""
+                ),
+                "power_supply_type": str(supply.get("PowerSupplyType") or ""),
+                "part_number": str(supply.get("PartNumber") or ""),
+                "spare_part_number": str(supply.get("SparePartNumber") or ""),
+                "bay_number": hpe_supply.get("BayNumber"),
+                "hotplug_capable": hpe_supply.get("HotplugCapable"),
+                "mismatched": hpe_supply.get("Mismatched"),
+                "oem_state": oem_state,
             }
         )
+        if row["status"] == "unknown" and oem_state:
+            row["status"] = _condition(oem_state)
         power_supplies.append(row)
     power_control = next(
         (item for item in _as_list(power.get("PowerControl")) if isinstance(item, dict)),
@@ -700,18 +755,17 @@ def _build_detail_snapshot(
 
     try:
         smart_storage = discover_smart_storage(
-            lambda path: _safe_get(transport, path),
+            (
+                lambda path: _safe_get_ilo4_legacy(transport, path)
+                if is_ilo4
+                else _safe_get(transport, path)
+            ),
             system,
         )
     except SmartStorageAdapterError as exc:
         raise RedfishConnectorError(str(exc)) from exc
-    if not storage_rows:
-        storage_rows.extend(smart_storage.storage)
-    if not any(
-        row.get("device_type") in {"drive", "storage_device", "physical_drive"}
-        for row in device_inventory
-    ):
-        device_inventory.extend(smart_storage.device_inventory)
+    storage_rows.extend(smart_storage.storage)
+    device_inventory.extend(smart_storage.device_inventory)
 
     for key in ("PCIeDevices", "PCIeFunctions"):
         for resource in _linked_documents(transport, system_links, key):
@@ -750,15 +804,18 @@ def _build_detail_snapshot(
     hpe_system = _hpe_oem(system)
     hpe_chassis = _hpe_oem(chassis)
     hpe_manager = _hpe_oem(manager)
-    aggregate = _as_dict(
-        hpe_system.get("AggregateHealthStatus")
-        or hpe_chassis.get("AggregateHealthStatus")
-        or hpe_manager.get("AggregateHealthStatus")
-    )
+    aggregate = {}
+    for source in (hpe_manager, hpe_chassis, hpe_system):
+        aggregate.update(_as_dict(source.get("AggregateHealthStatus")))
     batteries = _as_list(hpe_chassis.get("SmartStorageBattery"))
     battery_conditions = [
         _condition(item.get("Status")) for item in batteries if isinstance(item, dict)
     ]
+    battery_conditions.extend(
+        _condition(item.get("Condition"))
+        for item in _as_list(hpe_system.get("Battery"))
+        if isinstance(item, dict)
+    )
     if smart_storage.battery_health != "unknown":
         battery_conditions.append(smart_storage.battery_health)
     fan_conditions = [row["status"] for row in fans]
@@ -785,6 +842,18 @@ def _build_detail_snapshot(
 
     thermal_redundancy = _as_list(thermal.get("Redundancy"))
     power_redundancy = _as_list(power.get("Redundancy"))
+    fan_redundancy_reported = bool(thermal_redundancy)
+    fan_redundancy_derived = (
+        len(fans) > 1
+        and bool(fan_conditions)
+        and all(condition == "ok" for condition in fan_conditions)
+    )
+    power_redundancy_reported = any(
+        isinstance(item, dict)
+        and isinstance(item.get("RedundancySet"), list)
+        and len(item["RedundancySet"]) >= int(item.get("MinNumNeeded") or 1)
+        for item in power_redundancy
+    )
     subsystems = [
         subsystem(
             "agentless_management_service",
@@ -810,8 +879,10 @@ def _build_detail_snapshot(
                     for item in thermal_redundancy
                     if isinstance(item, dict)
                 ]
-            ),
-            redundant=bool(thermal_redundancy),
+            )
+            if thermal_redundancy
+            else _combined_condition(fan_conditions),
+            redundant=fan_redundancy_reported or fan_redundancy_derived,
         ),
         subsystem(
             "fans",
@@ -837,8 +908,14 @@ def _build_detail_snapshot(
                     for item in power_redundancy
                     if isinstance(item, dict)
                 ]
-            ),
-            redundant=bool(power_redundancy),
+            )
+            if any(
+                _condition(item.get("Status")) != "unknown"
+                for item in power_redundancy
+                if isinstance(item, dict)
+            )
+            else _combined_condition(power_supply_conditions),
+            redundant=power_redundancy_reported,
         ),
         subsystem(
             "power_supplies",
@@ -874,6 +951,29 @@ def _build_detail_snapshot(
         "power": {
             "consumed_watts": power_control.get("PowerConsumedWatts"),
             "capacity_watts": power_control.get("PowerCapacityWatts"),
+            "requested_watts": power_control.get("PowerRequestedWatts"),
+            "average_consumed_watts": _as_dict(
+                power_control.get("PowerMetrics")
+            ).get("AverageConsumedWatts"),
+            "minimum_consumed_watts": _as_dict(
+                power_control.get("PowerMetrics")
+            ).get("MinConsumedWatts"),
+            "maximum_consumed_watts": _as_dict(
+                power_control.get("PowerMetrics")
+            ).get("MaxConsumedWatts"),
+            "metrics_interval_minutes": _as_dict(
+                power_control.get("PowerMetrics")
+            ).get("IntervalInMin"),
+            "redundancy": [
+                {
+                    "mode": str(item.get("Mode") or ""),
+                    "minimum_needed": item.get("MinNumNeeded"),
+                    "maximum_supported": item.get("MaxNumSupported"),
+                    "status": _condition(item.get("Status")),
+                }
+                for item in power_redundancy
+                if isinstance(item, dict)
+            ],
             "supplies": power_supplies,
         },
         "processors": processor_rows,
@@ -905,11 +1005,13 @@ def discover_ilo(
     try:
         manager_firmware = ""
         manager: dict[str, Any] = {}
+        manager_path = ""
         managers_path = _link(root, "Managers")
         if managers_path:
             manager_members = _members(transport.get(managers_path))
             if manager_members:
-                manager = transport.get(manager_members[0])
+                manager_path = manager_members[0]
+                manager = transport.get(manager_path)
                 firmware = manager.get("Firmware", {})
                 current = firmware.get("Current", {}) if isinstance(firmware, dict) else {}
                 manager_firmware = str(
@@ -927,6 +1029,16 @@ def discover_ilo(
             status = system.get("Status", {})
             processors = system.get("ProcessorSummary", {})
             memory = system.get("MemorySummary", {})
+            event_logs: list[dict[str, Any]] = []
+            if "Hp" in _as_dict(system.get("Oem")) and manager_path:
+                try:
+                    event_logs = discover_ilo4_event_logs(
+                        transport.get_ilo4_legacy,
+                        system=transport.get_ilo4_legacy(system_path),
+                        manager=transport.get_ilo4_legacy(manager_path),
+                    ).entries
+                except Ilo4EventLogError as exc:
+                    raise RedfishConnectorError(str(exc)) from exc
             total_gib = memory.get("TotalSystemMemoryGiB")
             observations.append(
                 PhysicalSystemObservation(
@@ -956,6 +1068,7 @@ def discover_ilo(
                         system=system,
                         manager=manager,
                     ),
+                    event_logs=event_logs,
                 )
             )
         return observations, {

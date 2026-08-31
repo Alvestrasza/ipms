@@ -140,6 +140,9 @@ restore point.
   tenant-scoped BMC communication metadata with severity and time filters plus
   formula-safe CSV export. Credentials, tokens, headers, message arguments,
   and payload bodies are never retained in communication logs.
+- Collect tenant-scoped iLO Event Log and Integrated Management Log records in
+  a distinct bounded data model with log-type, severity, BMC, time, and text
+  filters plus formula-safe CSV export.
 - Provide a tenant-scoped BMC detail page backed by a persisted, versioned
   Redfish snapshot for subsystem health, fans, temperatures, power,
   processors, memory, network, device inventory, storage, firmware, and
@@ -171,6 +174,8 @@ restore point.
   changed certificate cannot be used without an explicit current decision.
 - BMC communication logs and exports remain tenant-scoped and contain no
   stored credential, token, header, message-argument, or payload content.
+- iLO Event Log and Integrated Management Log views and exports remain
+  tenant-scoped and are collected only through read requests.
 - The BMC detail page presents the last normalized discovery snapshot without
   issuing live device requests during page or tab navigation.
 - The Hyper-V connector discovers an authorized host or cluster and its VMs

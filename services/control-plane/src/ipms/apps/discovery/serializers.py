@@ -5,6 +5,7 @@ from rest_framework import serializers
 
 from .models import (
     BmcCommunicationLog,
+    BmcEventLogEntry,
     ConnectorEndpoint,
     DiscoveryJob,
     PhysicalSystem,
@@ -168,5 +169,31 @@ class BmcCommunicationLogSerializer(serializers.ModelSerializer):
             "redfish_message_id",
             "correlation_id",
             "occurred_at",
+        )
+        read_only_fields = fields
+
+
+class BmcEventLogEntrySerializer(serializers.ModelSerializer):
+    connector_id = serializers.UUIDField(read_only=True, allow_null=True)
+
+    class Meta:
+        model = BmcEventLogEntry
+        fields = (
+            "id",
+            "connector_id",
+            "bmc_name",
+            "log_type",
+            "source_record_id",
+            "severity",
+            "message",
+            "source_created_at",
+            "source_updated_at",
+            "repeat_count",
+            "repaired",
+            "event_class",
+            "event_code",
+            "event_number",
+            "record_format",
+            "last_discovered_at",
         )
         read_only_fields = fields

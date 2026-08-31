@@ -200,9 +200,11 @@ class FakeRedfishTransport:
 
     def get_ilo4_legacy(self, path: str) -> dict:
         self.calls.append(("GET", path))
-        if path not in self.legacy_documents:
+        if path in self.legacy_documents:
+            return self.legacy_documents[path]
+        if path not in self.documents:
             raise RedfishConnectorError("fixture_missing")
-        return self.legacy_documents[path]
+        return self.documents[path]
 
     def create_session(self, path: str, username: str, password: str) -> None:
         self.calls.append(("POST", path))

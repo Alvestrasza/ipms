@@ -2,6 +2,7 @@ from django.contrib import admin
 
 from .models import (
     BmcCommunicationLog,
+    BmcEventLogEntry,
     ConnectorEndpoint,
     DiscoveryJob,
     PhysicalSystem,
@@ -61,6 +62,29 @@ class BmcCommunicationLogAdmin(admin.ModelAdmin):
         "redfish_message_id",
     )
     readonly_fields = tuple(field.name for field in BmcCommunicationLog._meta.fields)
+
+    def has_add_permission(self, request) -> bool:
+        return False
+
+    def has_change_permission(self, request, obj=None) -> bool:
+        return False
+
+    def has_delete_permission(self, request, obj=None) -> bool:
+        return False
+
+
+@admin.register(BmcEventLogEntry)
+class BmcEventLogEntryAdmin(admin.ModelAdmin):
+    list_display = (
+        "source_created_at",
+        "tenant",
+        "bmc_name",
+        "log_type",
+        "severity",
+    )
+    list_filter = ("log_type", "severity", "repaired")
+    search_fields = ("bmc_name", "message", "source_record_id")
+    readonly_fields = tuple(field.name for field in BmcEventLogEntry._meta.fields)
 
     def has_add_permission(self, request) -> bool:
         return False

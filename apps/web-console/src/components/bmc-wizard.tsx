@@ -47,6 +47,23 @@ function fingerprint(value: string) {
   );
 }
 
+function responseErrorCode(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = responseErrorCode(item);
+      if (found) return found;
+    }
+  }
+  if (value && typeof value === "object") {
+    for (const item of Object.values(value)) {
+      const found = responseErrorCode(item);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 export function BmcWizard({ csrfToken, tenantId, locale, copy }: Props) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
@@ -57,6 +74,23 @@ export function BmcWizard({ csrfToken, tenantId, locale, copy }: Props) {
   const [success, setSuccess] = useState("");
   const [certificateProbe, setCertificateProbe] =
     useState<CertificateProbe | null>(null);
+
+  async function enrollmentError(response: Response) {
+    let code: string | null = null;
+    try {
+      code = responseErrorCode(await response.json());
+    } catch {
+      // The generic localized message remains the safe fallback.
+    }
+    const messages: Record<string, string> = {
+      connection_timeout: copy.connectionTimeout,
+      connection_failed: copy.connectionFailed,
+      authentication_failed: copy.authenticationFailed,
+      duplicate_endpoint: copy.duplicateEndpoint,
+      certificate_pin_mismatch: copy.certificateChanged,
+    };
+    return (code && messages[code]) || copy.addError;
+  }
 
   function resetAndClose() {
     if (busy) return;
@@ -98,7 +132,7 @@ export function BmcWizard({ csrfToken, tenantId, locale, copy }: Props) {
         }),
       });
       if (!response.ok) {
-        setError(copy.addError);
+        setError(await enrollmentError(response));
         return;
       }
       formRef.current?.reset();
@@ -138,7 +172,7 @@ export function BmcWizard({ csrfToken, tenantId, locale, copy }: Props) {
         }),
       });
       if (!response.ok) {
-        setError(copy.addError);
+        setError(await enrollmentError(response));
         return;
       }
       const probe = (await response.json()) as CertificateProbe;

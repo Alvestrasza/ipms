@@ -17,6 +17,7 @@ import { getDictionary } from "@/i18n/dictionaries";
 import { resolveLocale } from "@/i18n/server";
 import { getServerSession } from "@/lib/server-auth";
 import { type DiscoveryJob, getDashboardData } from "@/lib/server-dashboard";
+import { getPhysicalInfrastructure } from "@/lib/server-physical";
 import { selectedTenant } from "@/lib/tenant-selection";
 
 const summaryIcons = [ServerCog, Boxes, Network, ShieldCheck];
@@ -70,8 +71,24 @@ export default async function OverviewPage() {
   const tenant = selectedTenant(session, await cookies());
   if (!tenant) redirect(`/${locale}/login?reason=no-tenant`);
 
-  const dashboard = await getDashboardData(tenant.id);
-  if (!dashboard.sessionValid) redirect(`/${locale}/login`);
+  const [dashboard, infrastructure] = await Promise.all([
+    getDashboardData(tenant.id),
+    getPhysicalInfrastructure(tenant.id),
+  ]);
+  if (!dashboard.sessionValid || !infrastructure.sessionValid)
+    redirect(`/${locale}/login`);
+  const systems = infrastructure.systems;
+  const health = {
+    healthy: systems.filter((system) => system.health === "ok").length,
+    warning: systems.filter((system) => system.health === "warning").length,
+    critical: systems.filter((system) => system.health === "critical").length,
+    unknown: systems.filter((system) => system.health === "unknown").length,
+  };
+  const networkDevices = systems.reduce(
+    (total, system) => total + (system.detail_snapshot.network?.length ?? 0),
+    0,
+  );
+  const attention = systems.filter((system) => system.health !== "ok");
   const checkedAt = formatUtc(
     dashboard.checkedAt,
     locale,
@@ -80,8 +97,10 @@ export default async function OverviewPage() {
   const summaryCards = [
     {
       label: dictionary.overview.physicalSystems,
-      value: "0",
-      detail: dictionary.overview.awaitingDiscovery,
+      value: String(systems.length),
+      detail: infrastructure.available
+        ? dictionary.overview.liveData
+        : dictionary.overview.awaitingDiscovery,
     },
     {
       label: dictionary.overview.virtualMachines,
@@ -90,8 +109,10 @@ export default async function OverviewPage() {
     },
     {
       label: dictionary.overview.networkDevices,
-      value: "0",
-      detail: dictionary.overview.noConnector,
+      value: String(networkDevices),
+      detail: infrastructure.available
+        ? dictionary.overview.liveData
+        : dictionary.overview.noConnector,
     },
     {
       label: dictionary.overview.restorePoints,
@@ -103,6 +124,20 @@ export default async function OverviewPage() {
     "hyper-v",
     "ilo-redfish",
   ];
+  const connectorHealth = (type: DiscoveryJob["connector_type"]) => {
+    const matches = infrastructure.connectors.filter(
+      (connector) => connector.connector_type === type,
+    );
+    if (!matches.length)
+      return connectorStatus(latestConnectorJob(dashboard.discoveryJobs, type));
+    if (matches.some((connector) => connector.health === "critical"))
+      return "critical" as const;
+    if (matches.some((connector) => connector.health === "warning"))
+      return "warning" as const;
+    if (matches.every((connector) => connector.health === "healthy"))
+      return "healthy" as const;
+    return "unknown" as const;
+  };
 
   return (
     <ConsoleShell session={session} tenant={tenant}>
@@ -158,31 +193,63 @@ export default async function OverviewPage() {
               <p className="eyebrow">{dictionary.overview.environmentHealth}</p>
               <h2 id="health-heading">{dictionary.overview.managedObjects}</h2>
             </div>
-            <span className="panel__metric panel__metric--empty">
-              <strong>—</strong> {dictionary.overview.noData}
+            <span className="panel__metric">
+              <strong>{systems.length}</strong>{" "}
+              {dictionary.overview.managedObjects}
             </span>
           </div>
           <div
-            className="health-bar health-bar--empty"
+            className={
+              systems.length ? "health-bar" : "health-bar health-bar--empty"
+            }
             role="img"
             aria-label={dictionary.overview.noObjects}
-          />
+          >
+            {systems.length ? (
+              <>
+                <span
+                  className="health-bar__healthy"
+                  style={{
+                    width: `${(health.healthy / systems.length) * 100}%`,
+                  }}
+                />
+                <span
+                  className="health-bar__warning"
+                  style={{
+                    width: `${(health.warning / systems.length) * 100}%`,
+                  }}
+                />
+                <span
+                  className="health-bar__critical"
+                  style={{
+                    width: `${(health.critical / systems.length) * 100}%`,
+                  }}
+                />
+                <span
+                  className="health-bar__unknown"
+                  style={{
+                    width: `${(health.unknown / systems.length) * 100}%`,
+                  }}
+                />
+              </>
+            ) : null}
+          </div>
           <div className="health-legend">
             <span>
               <i className="legend-dot legend-dot--healthy" />
-              {dictionary.overview.healthy} <strong>0</strong>
+              {dictionary.overview.healthy} <strong>{health.healthy}</strong>
             </span>
             <span>
               <i className="legend-dot legend-dot--warning" />
-              {dictionary.overview.warning} <strong>0</strong>
+              {dictionary.overview.warning} <strong>{health.warning}</strong>
             </span>
             <span>
               <i className="legend-dot legend-dot--critical" />
-              {dictionary.overview.critical} <strong>0</strong>
+              {dictionary.overview.critical} <strong>{health.critical}</strong>
             </span>
             <span>
               <i className="legend-dot legend-dot--unknown" />
-              {dictionary.overview.unknown} <strong>0</strong>
+              {dictionary.overview.unknown} <strong>{health.unknown}</strong>
             </span>
           </div>
         </section>
@@ -201,10 +268,7 @@ export default async function OverviewPage() {
             <Activity aria-hidden="true" size={20} />
           </div>
           {connectors.map((connector) => {
-            const latest = latestConnectorJob(
-              dashboard.discoveryJobs,
-              connector,
-            );
+            const status = connectorHealth(connector);
             return (
               <div className="connector-row" key={connector}>
                 <span>
@@ -215,10 +279,7 @@ export default async function OverviewPage() {
                   </i>
                   <strong>{connectorNames[connector]}</strong>
                 </span>
-                <StatusPill
-                  status={connectorStatus(latest)}
-                  label={dictionary.status[connectorStatus(latest)]}
-                />
+                <StatusPill status={status} label={dictionary.status[status]} />
               </div>
             );
           })}
@@ -239,16 +300,56 @@ export default async function OverviewPage() {
               {dictionary.overview.attentionHeading}
             </h2>
           </div>
-          <button className="outline-button" type="button" disabled>
-            <RefreshCw aria-hidden="true" size={15} />
-            {dictionary.overview.runDiscovery}
-          </button>
         </div>
-        <div className="empty-state">
-          <ServerCog aria-hidden="true" size={25} />
-          <strong>{dictionary.overview.noInventory}</strong>
-          <span>{dictionary.overview.inventoryHint}</span>
-        </div>
+        {attention.length ? (
+          <div className="table-scroll">
+            <table className="inventory-table">
+              <thead>
+                <tr>
+                  <th>{dictionary.physical.name}</th>
+                  <th>{dictionary.physical.model}</th>
+                  <th>{dictionary.physical.power}</th>
+                  <th>{dictionary.physical.health}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {attention.map((system) => {
+                  const status =
+                    system.health === "ok" ? "healthy" : system.health;
+                  return (
+                    <tr key={system.id}>
+                      <td>
+                        <strong>{system.name}</strong>
+                      </td>
+                      <td>{system.model || "—"}</td>
+                      <td>{system.power_state || "—"}</td>
+                      <td>
+                        <StatusPill
+                          status={status}
+                          label={dictionary.status[status]}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="empty-state">
+            <ServerCog aria-hidden="true" size={25} />
+            <strong>
+              {systems.length
+                ? dictionary.overview.noAttention
+                : dictionary.overview.noInventory}
+            </strong>
+            <span>
+              {systems.length
+                ? dictionary.overview.noAttentionHint
+                : dictionary.overview.inventoryHint}
+            </span>
+          </div>
+        )}
       </section>
 
       <section className="panel jobs-panel" aria-labelledby="jobs-heading">

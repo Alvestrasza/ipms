@@ -5,6 +5,7 @@ import {
   Building2,
   Database,
   LayoutDashboard,
+  ListTree,
   Network,
   ScrollText,
   ServerCog,
@@ -21,13 +22,16 @@ import { Brand } from "./brand";
 export async function Sidebar({
   activeSection,
 }: {
-  activeSection: "overview" | "physical" | "bmc" | "bmc-logs";
+  activeSection: "overview" | "physical" | "bmc" | "bmc-logs" | "bmc-events";
 }) {
   const locale = await resolveLocale();
   const dictionary = getDictionary(locale);
-  const physicalExpanded = ["physical", "bmc", "bmc-logs"].includes(
-    activeSection,
-  );
+  const physicalExpanded = [
+    "physical",
+    "bmc",
+    "bmc-logs",
+    "bmc-events",
+  ].includes(activeSection);
   const navigation = [
     {
       label: dictionary.navigation.overview,
@@ -118,7 +122,9 @@ export async function Sidebar({
                       <ServerCog aria-hidden="true" size={15} />
                       <span>{dictionary.navigation.bmc}</span>
                     </Link>
-                    {["bmc", "bmc-logs"].includes(activeSection) ? (
+                    {["bmc", "bmc-logs", "bmc-events"].includes(
+                      activeSection,
+                    ) ? (
                       <ul className="nav-tree nav-tree--nested">
                         <li>
                           <Link
@@ -130,6 +136,20 @@ export async function Sidebar({
                           >
                             <ScrollText aria-hidden="true" size={14} />
                             <span>{dictionary.navigation.bmcLogs}</span>
+                          </Link>
+                        </li>
+                        <li>
+                          <Link
+                            className={`nav-subitem ${activeSection === "bmc-events" ? "nav-subitem--active" : ""}`}
+                            href={`/${locale}/physical/bmc/events` as Route}
+                            aria-current={
+                              activeSection === "bmc-events"
+                                ? "page"
+                                : undefined
+                            }
+                          >
+                            <ListTree aria-hidden="true" size={14} />
+                            <span>{dictionary.navigation.bmcEvents}</span>
                           </Link>
                         </li>
                       </ul>

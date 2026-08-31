@@ -1,17 +1,20 @@
 import ipaddress
 import socket
+from datetime import timezone as datetime_timezone
 from urllib.parse import urlsplit
 
 from cryptography.exceptions import InvalidTag
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 from ipms.apps.audit.models import AuditEvent
 
 from .connectors.ilo_redfish import RedfishConnectorError, RedfishTransport, discover_ilo
 from .models import (
     BmcCommunicationLog,
+    BmcEventLogEntry,
     ConnectorEndpoint,
     ConnectorSecret,
     DiscoveryJob,
@@ -24,6 +27,13 @@ class ConnectorExecutionError(Exception):
     def __init__(self, code: str):
         super().__init__(code)
         self.code = code
+
+
+def _source_datetime(value: str):
+    parsed = parse_datetime(value) if value else None
+    if parsed is not None and timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed, datetime_timezone.utc)
+    return parsed
 
 
 def _communication_logger(endpoint: ConnectorEndpoint, correlation_id):
@@ -158,6 +168,7 @@ def process_discovery_job(job: DiscoveryJob) -> None:
 
     completed_at = timezone.now()
     with transaction.atomic():
+        event_log_count = 0
         for observation in observations:
             PhysicalSystem.objects.update_or_create(
                 connector=endpoint,
@@ -183,6 +194,29 @@ def process_discovery_job(job: DiscoveryJob) -> None:
                     "discovered_at": completed_at,
                 },
             )
+            for entry in observation.event_logs:
+                BmcEventLogEntry.objects.update_or_create(
+                    connector=endpoint,
+                    log_type=entry["log_type"],
+                    source_record_id=entry["source_record_id"],
+                    defaults={
+                        "tenant": endpoint.tenant,
+                        "bmc_name": endpoint.display_name,
+                        "severity": entry["severity"],
+                        "message": entry["message"],
+                        "source_created_at": _source_datetime(entry["created_at"]),
+                        "source_updated_at": _source_datetime(entry["updated_at"]),
+                        "repeat_count": entry["repeat_count"],
+                        "repaired": entry["repaired"],
+                        "event_class": entry["event_class"],
+                        "event_code": entry["event_code"],
+                        "event_number": entry["event_number"],
+                        "record_format": entry["record_format"],
+                        "last_discovered_at": completed_at,
+                    },
+                )
+                event_log_count += 1
+        summary = {**summary, "event_log_count": str(event_log_count)}
         job.status = DiscoveryJob.Status.SUCCEEDED
         job.result_summary = summary
         job.completed_at = completed_at

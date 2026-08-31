@@ -29,6 +29,7 @@ from .certificates import (
 )
 from .models import (
     BmcCommunicationLog,
+    BmcEventLogEntry,
     ConnectorEndpoint,
     ConnectorSecret,
     DiscoveryJob,
@@ -39,6 +40,7 @@ from .secrets import store_connector_secret
 from .serializers import (
     BmcCertificateProbeSerializer,
     BmcCommunicationLogSerializer,
+    BmcEventLogEntrySerializer,
     BmcConnectorEnrollmentSerializer,
     ConnectorCredentialSerializer,
     ConnectorEndpointSerializer,
@@ -396,6 +398,62 @@ class BmcCommunicationLogListView(ListAPIView):
         return _filtered_bmc_logs(self.request)[:500]
 
 
+def _filtered_bmc_event_logs(request):
+    queryset = BmcEventLogEntry.objects.filter(tenant=request.tenant)
+    severities = []
+    for raw in request.query_params.getlist("severity"):
+        severities.extend(value for value in raw.split(",") if value)
+    allowed_severities = {choice for choice, _ in BmcEventLogEntry.Severity.choices}
+    if severities:
+        if any(value not in allowed_severities for value in severities):
+            raise ValidationError({"severity": ["invalid_severity"]})
+        queryset = queryset.filter(severity__in=severities)
+    log_types = []
+    for raw in request.query_params.getlist("log_type"):
+        log_types.extend(value for value in raw.split(",") if value)
+    allowed_log_types = {choice for choice, _ in BmcEventLogEntry.LogType.choices}
+    if log_types:
+        if any(value not in allowed_log_types for value in log_types):
+            raise ValidationError({"log_type": ["invalid_log_type"]})
+        queryset = queryset.filter(log_type__in=log_types)
+    connector = request.query_params.get("connector", "")
+    if connector:
+        try:
+            connector_id = uuid.UUID(connector)
+        except ValueError as exc:
+            raise ValidationError({"connector": ["invalid_connector"]}) from exc
+        queryset = queryset.filter(connector_id=connector_id)
+    for parameter, lookup in (
+        ("from", "source_created_at__gte"),
+        ("to", "source_created_at__lte"),
+    ):
+        raw = request.query_params.get(parameter, "")
+        if raw:
+            parsed = parse_datetime(raw)
+            if parsed is None:
+                raise ValidationError({parameter: ["invalid_datetime"]})
+            if timezone.is_naive(parsed):
+                parsed = timezone.make_aware(parsed, datetime_timezone.utc)
+            queryset = queryset.filter(**{lookup: parsed})
+    query = request.query_params.get("q", "").strip()
+    if query:
+        queryset = queryset.filter(
+            Q(bmc_name__icontains=query)
+            | Q(message__icontains=query)
+            | Q(source_record_id__icontains=query)
+            | Q(record_format__icontains=query)
+        )
+    return queryset
+
+
+class BmcEventLogEntryListView(ListAPIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess)
+    serializer_class = BmcEventLogEntrySerializer
+
+    def get_queryset(self):
+        return _filtered_bmc_event_logs(self.request)[:500]
+
+
 def _csv_safe(value) -> str:
     text = "" if value is None else str(value)
     return f"'{text}" if text.startswith(("=", "+", "-", "@")) else text
@@ -445,6 +503,56 @@ class BmcCommunicationLogExportView(APIView):
             )
         response = HttpResponse(output.getvalue(), content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = 'attachment; filename="ipms-bmc-logs.csv"'
+        response["Cache-Control"] = "private, no-store"
+        return response
+
+
+class BmcEventLogEntryExportView(APIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess)
+
+    def get(self, request):
+        output = io.StringIO(newline="")
+        writer = csv.writer(output)
+        writer.writerow(
+            (
+                "source_created_at",
+                "severity",
+                "bmc",
+                "log_type",
+                "source_record_id",
+                "message",
+                "repeat_count",
+                "repaired",
+                "event_class",
+                "event_code",
+                "event_number",
+                "record_format",
+            )
+        )
+        for entry in _filtered_bmc_event_logs(request)[:10000]:
+            writer.writerow(
+                _csv_safe(value)
+                for value in (
+                    entry.source_created_at.isoformat()
+                    if entry.source_created_at
+                    else "",
+                    entry.severity,
+                    entry.bmc_name,
+                    entry.log_type,
+                    entry.source_record_id,
+                    entry.message,
+                    entry.repeat_count,
+                    entry.repaired,
+                    entry.event_class,
+                    entry.event_code,
+                    entry.event_number,
+                    entry.record_format,
+                )
+            )
+        response = HttpResponse(output.getvalue(), content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = (
+            'attachment; filename="ipms-bmc-event-logs.csv"'
+        )
         response["Cache-Control"] = "private, no-store"
         return response
 
