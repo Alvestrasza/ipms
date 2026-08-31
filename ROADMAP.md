@@ -127,9 +127,11 @@ restore point.
 - Implement read-only inventory objects for sites, hosts, clusters, VMs, BMCs,
   CPU, memory, storage, network interfaces, and health status.
 - Implement a read-only iLO connector using standard Redfish capabilities,
-  with an isolated iLO 4 Smart Storage compatibility adapter that follows only
-  advertised OEM links; all vendor-specific extensions remain behind the
-  connector boundary.
+  with isolated iLO 4 Smart Storage and legacy inventory adapters that follow
+  only advertised OEM links. Normalize DIMM and PCI/Fibre Channel adapter
+  inventory; enrich WWPN and WWNN later through the Hyper-V or Management
+  Agent source because the supported iLO 4 REST API does not expose them. All
+  vendor-specific extensions remain behind the connector boundary.
 - Provide a multilingual portal wizard for tenant-aware BMC enrollment with
   family selection, automatic TLS certificate inspection, explicit approval
   for untrusted certificates, encrypted write-only credentials, and automatic

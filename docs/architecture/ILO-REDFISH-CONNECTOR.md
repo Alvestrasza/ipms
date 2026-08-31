@@ -115,6 +115,20 @@ physical drives plus enclosures into Device Inventory. It retains selected
 capacity, RAID, media, interface, location, firmware, identity, and health
 fields only; no OEM response body is persisted or exposed to the browser.
 
+iLO 4 also advertises pre-Redfish HPE Memory and PCI Device resources. A
+separate read-only inventory adapter follows only those advertised links and
+accepts their legacy `href` member references. Normal Redfish requests retain
+the `OData-Version: 4.0` header; only this compatibility fetch omits the header
+because iLO 4 otherwise hides the pre-Redfish properties. The adapter
+normalizes DIMM location, capacity, speed, type, identity, and state, plus PCI
+device identity and location. Collection and response limits remain enforced.
+
+HPE documents that the supported iLO 4 REST API cannot retrieve a Fibre
+Channel HBA's WWPN. IPMS can therefore identify Fibre Channel adapters from
+their PCI class and inventory but records WWPN and WWNN as unavailable rather
+than inventing values or scraping the iLO web interface. A future host or
+Management Agent inventory source will enrich these fields.
+
 ## Test Strategy
 
 - Contract fixtures for service root, collections, partial resources,
@@ -135,6 +149,9 @@ fields only; no OEM response body is persisted or exposed to the browser.
 - iLO 4 Smart Storage fixtures proving advertised-link traversal, collection
   limits, standard-Storage precedence, health normalization, and a transport
   method set limited to discovery plus connector-owned session lifecycle.
+- iLO 4 OEM inventory fixtures proving legacy `href` traversal, DIMM
+  normalization, PCI-class Fibre Channel identification, explicit missing-WWN
+  provenance, and omission of the OData header only on the compatibility path.
 
 ## Implementation Stages
 
@@ -157,5 +174,6 @@ fields only; no OEM response body is persisted or exposed to the browser.
 - [HPE managing iLO users](https://servermanagementportal.ext.hpe.com/docs/redfishservices/ilos/supplementdocuments/managingusers)
 - [HPE storage data models](https://servermanagementportal.ext.hpe.com/docs/redfishservices/ilos/supplementdocuments/storage)
 - [HPE iLO 4 API reference](https://hewlettpackard.github.io/ilo-rest-api-docs/ilo4/)
+- [HPE: iLO 4 cannot retrieve Fibre Channel WWPN through the RESTful API](https://support.hpe.com/hpesc/public/docDisplay?docId=sf000087648en_us&docLocale=en_US)
 - [HPE iLO 5 documentation](https://servermanagementportal.ext.hpe.com/docs/redfishservices/ilos/ilo5)
 - [HPE iLO 7 documentation](https://servermanagementportal.ext.hpe.com/docs/redfishservices/ilos/ilo7)

@@ -12,6 +12,10 @@ from dataclasses import dataclass
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
+from .ilo4_legacy_inventory import (
+    Ilo4LegacyInventoryError,
+    discover_ilo4_legacy_inventory,
+)
 from .ilo4_smart_storage import SmartStorageAdapterError, discover_smart_storage
 
 
@@ -181,6 +185,7 @@ class RedfishTransport:
         path: str,
         *,
         payload: dict[str, str] | None = None,
+        include_odata_version: bool = True,
     ) -> tuple[dict[str, Any], dict[str, str], int]:
         normalized_method = method.upper()
         if not path.startswith("/redfish/v1/") or "://" in path:
@@ -194,7 +199,9 @@ class RedfishTransport:
         if normalized_method == "DELETE" and path != self.session_path:
             raise RedfishConnectorError("request_method_rejected")
 
-        headers = {"Accept": "application/json", "OData-Version": "4.0"}
+        headers = {"Accept": "application/json"}
+        if include_odata_version:
+            headers["OData-Version"] = "4.0"
         if self.token:
             headers["X-Auth-Token"] = self.token
         body = None
@@ -303,6 +310,13 @@ class RedfishTransport:
 
     def get(self, path: str) -> dict[str, Any]:
         return self.request_json("GET", path)[0]
+
+    def get_ilo4_legacy(self, path: str) -> dict[str, Any]:
+        return self.request_json(
+            "GET",
+            path,
+            include_odata_version=False,
+        )[0]
 
     def create_session(self, path: str, username: str, password: str) -> None:
         _, headers, status = self.request_json(
@@ -637,6 +651,17 @@ def _build_detail_snapshot(
         )
         network_rows.append(row)
 
+    try:
+        legacy_inventory = discover_ilo4_legacy_inventory(
+            transport.get_ilo4_legacy,
+            system,
+        )
+    except Ilo4LegacyInventoryError as exc:
+        raise RedfishConnectorError(str(exc)) from exc
+    if not memory_rows:
+        memory_rows.extend(legacy_inventory.memory)
+    network_rows.extend(legacy_inventory.network)
+
     storage_rows = []
     device_inventory = []
     for storage in storage_resources:
@@ -693,6 +718,7 @@ def _build_detail_snapshot(
             row = _inventory_row(resource)
             row["device_type"] = key
             device_inventory.append(row)
+    device_inventory.extend(legacy_inventory.device_inventory)
 
     firmware_rows: list[dict[str, Any]] = []
     software_rows: list[dict[str, Any]] = []
@@ -896,6 +922,8 @@ def discover_ilo(
         observations = []
         for system_path in _members(transport.get(systems_path)):
             system = transport.get(system_path)
+            if not isinstance(system.get("@odata.id"), str):
+                system = {**system, "@odata.id": system_path}
             status = system.get("Status", {})
             processors = system.get("ProcessorSummary", {})
             memory = system.get("MemorySummary", {})

@@ -384,6 +384,12 @@ export const en = {
     storageEnclosure: "Storage enclosure",
     pcieDevice: "PCIe device",
     pcieFunction: "PCIe function",
+    ethernetInterface: "Ethernet interface",
+    fibreChannelAdapter: "Fibre Channel adapter",
+    wwpn: "WWPN",
+    wwnn: "WWNN",
+    ilo4WwnUnavailable:
+      "iLO 4 identifies the Fibre Channel adapter, but its supported REST API does not expose WWPN or WWNN. These values require a host or management-agent inventory source.",
   },
   status: {
     healthy: "Healthy",

@@ -48,6 +48,14 @@ interface type, location, identity, firmware, and health are shown only when
 the controller reports them. The Web Console receives normalized snapshot data
 and never reads OEM resources directly.
 
+For iLO 4, the Memory view also uses advertised legacy HPE inventory to show
+individual DIMM slots, capacity, speed, type, manufacturer, part number, and
+reported state. Device Inventory includes the advertised PCI devices. Fibre
+Channel adapters are additionally shown in Network with their slot identity.
+The iLO 4 REST API does not expose WWPN or WWNN, so the console labels those
+values as unavailable and explains that host or Management Agent inventory is
+required. IPMS does not scrape the iLO web interface.
+
 Unavailable optional data is shown as unknown or empty. IPMS does not infer a
 healthy state merely because an older iLO generation, a firmware version, a
 powered-off server, or a device license omits a resource. Run another discovery

@@ -182,8 +182,13 @@ class InventoryApiTests(DiscoveryJobApiTests):
 
 
 class FakeRedfishTransport:
-    def __init__(self, documents: dict[str, dict]) -> None:
+    def __init__(
+        self,
+        documents: dict[str, dict],
+        legacy_documents: dict[str, dict] | None = None,
+    ) -> None:
         self.documents = documents
+        self.legacy_documents = legacy_documents or {}
         self.calls: list[tuple[str, str]] = []
         self.session_path = ""
 
@@ -192,6 +197,12 @@ class FakeRedfishTransport:
         if path not in self.documents:
             raise RedfishConnectorError("fixture_missing")
         return self.documents[path]
+
+    def get_ilo4_legacy(self, path: str) -> dict:
+        self.calls.append(("GET", path))
+        if path not in self.legacy_documents:
+            raise RedfishConnectorError("fixture_missing")
+        return self.legacy_documents[path]
 
     def create_session(self, path: str, username: str, password: str) -> None:
         self.calls.append(("POST", path))
@@ -412,6 +423,69 @@ class IloRedfishConnectorTests(TestCase):
         self.assertEqual(transport.calls[-1][0], "DELETE")
         self.assertEqual({method for method, _ in transport.calls}, {"GET", "POST", "DELETE"})
 
+    def test_uses_advertised_ilo4_legacy_memory_and_pci_inventory(self) -> None:
+        transport = self.fixture()
+        system = transport.documents["/redfish/v1/Systems/1/"]
+        system.pop("Memory")
+        system["Oem"]["Hp"]["Links"] = {
+            "Memory": {"@odata.id": "/redfish/v1/Systems/1/Memory/"},
+            "PCIDevices": {"@odata.id": "/redfish/v1/Systems/1/PCIDevices/"},
+        }
+        transport.legacy_documents = {
+            "/redfish/v1/Systems/1/": {
+                "Oem": {
+                    "Hp": {
+                        "links": {
+                            "Memory": {
+                                "href": "/redfish/v1/Systems/1/LegacyMemory/"
+                            },
+                            "PCIDevices": {
+                                "href": "/redfish/v1/Systems/1/LegacyPCI/"
+                            },
+                        }
+                    }
+                }
+            },
+            "/redfish/v1/Systems/1/LegacyMemory/": {
+                "Members": [
+                    {"href": "/redfish/v1/Systems/1/LegacyMemory/1/"}
+                ]
+            },
+            "/redfish/v1/Systems/1/LegacyMemory/1/": {
+                "Name": "DIMM 1",
+                "SocketLocator": "PROC 1 DIMM 1",
+                "SizeMB": 32768,
+                "DIMMStatus": "GoodInUse",
+            },
+            "/redfish/v1/Systems/1/LegacyPCI/": {
+                "links": {
+                    "Member": [
+                        {"href": "/redfish/v1/Systems/1/LegacyPCI/1/"}
+                    ]
+                }
+            },
+            "/redfish/v1/Systems/1/LegacyPCI/1/": {
+                "Name": "Synthetic adapter",
+                "ClassCode": 12,
+                "SubclassCode": 4,
+                "DeviceLocation": "Slot 2",
+            },
+        }
+
+        observations, _ = discover_ilo(transport, "fixture", "not-a-secret")
+
+        detail = observations[0].detail_snapshot
+        self.assertEqual(detail["memory"][0]["capacity_mib"], 32768)
+        self.assertEqual(
+            detail["network"][-1]["device_type"],
+            "fibre_channel_adapter",
+        )
+        self.assertEqual(detail["network"][-1]["wwpn"], "")
+        self.assertEqual(
+            detail["network"][-1]["wwn_source"],
+            "unavailable_in_ilo4_redfish",
+        )
+
     def test_uses_advertised_ilo4_smart_storage_when_standard_storage_is_absent(
         self,
     ) -> None:
@@ -517,6 +591,19 @@ class IloRedfishConnectorTests(TestCase):
             with self.subTest(method=method):
                 with self.assertRaisesRegex(RedfishConnectorError, "request_method_rejected"):
                     transport.request_json(method, path)
+
+    @patch.object(RedfishTransport, "request_json")
+    def test_ilo4_legacy_get_omits_odata_version(self, request_json) -> None:
+        request_json.return_value = ({}, {}, 200)
+        transport = RedfishTransport("https://192.0.2.10", "a" * 64)
+
+        transport.get_ilo4_legacy("/redfish/v1/Systems/1/")
+
+        request_json.assert_called_once_with(
+            "GET",
+            "/redfish/v1/Systems/1/",
+            include_odata_version=False,
+        )
 
     def test_extracts_only_bounded_redfish_error_identifiers(self) -> None:
         content = json.dumps(

@@ -81,6 +81,8 @@ function capacity(value: unknown, locale: Locale): ReactNode {
 function deviceTypeLabel(deviceType: unknown, copy: Copy): ReactNode {
   const labels: Record<string, string> = {
     drive: copy.drive,
+    ethernet_interface: copy.ethernetInterface,
+    fibre_channel_adapter: copy.fibreChannelAdapter,
     logical_drive: copy.logicalDrive,
     pcie_device: copy.pcieDevice,
     pcie_function: copy.pcieFunction,
@@ -307,14 +309,19 @@ export function BmcDetailTabs({
           columns={[
             { key: "name", label: copy.name },
             { key: "location", label: copy.location },
+            { key: "manufacturer", label: copy.manufacturer },
+            { key: "model", label: copy.model },
             { key: "capacity", label: copy.capacity },
             { key: "memory_type", label: copy.memoryType },
             { key: "speed", label: copy.speed },
+            { key: "state", label: copy.state },
             { key: "status", label: copy.status },
           ]}
           rows={(snapshot.memory ?? []).map((module) => ({
             name: value(module.name),
             location: value(module.location),
+            manufacturer: value(module.manufacturer),
+            model: value(module.model),
             capacity: value(
               typeof module.capacity_mib === "number"
                 ? module.capacity_mib / 1024
@@ -323,30 +330,51 @@ export function BmcDetailTabs({
             ),
             memory_type: value(module.memory_type),
             speed: value(module.speed_mhz, " MHz"),
+            state: value(module.state),
             status: statusBadge(module.status, copy),
           }))}
         />
       );
     }
     if (activeTab === "network") {
+      const networkRows = (snapshot.network ?? []).map((item) => ({
+        name: value(item.name),
+        device_type: deviceTypeLabel(
+          item.device_type || "ethernet_interface",
+          copy,
+        ),
+        location: value(item.location),
+        mac: value(item.mac_address),
+        wwpn: value(item.wwpn),
+        wwnn: value(item.wwnn),
+        speed: value(item.speed_mbps, " Mbps"),
+        link: value(item.link_status),
+        status: statusBadge(item.status, copy),
+      }));
+      const hasUnavailableIlo4Wwn = (snapshot.network ?? []).some(
+        (item) => item.wwn_source === "unavailable_in_ilo4_redfish",
+      );
       return (
-        <DetailTable
-          empty={copy.noData}
-          columns={[
-            { key: "name", label: copy.name },
-            { key: "mac", label: copy.macAddress },
-            { key: "speed", label: copy.speed },
-            { key: "link", label: copy.linkStatus },
-            { key: "status", label: copy.status },
-          ]}
-          rows={(snapshot.network ?? []).map((item) => ({
-            name: value(item.name),
-            mac: value(item.mac_address),
-            speed: value(item.speed_mbps, " Mbps"),
-            link: value(item.link_status),
-            status: statusBadge(item.status, copy),
-          }))}
-        />
+        <div className="detail-stack">
+          {hasUnavailableIlo4Wwn ? (
+            <p className="detail-note">{copy.ilo4WwnUnavailable}</p>
+          ) : null}
+          <DetailTable
+            empty={copy.noData}
+            columns={[
+              { key: "name", label: copy.name },
+              { key: "device_type", label: copy.deviceType },
+              { key: "location", label: copy.location },
+              { key: "mac", label: copy.macAddress },
+              { key: "wwpn", label: copy.wwpn },
+              { key: "wwnn", label: copy.wwnn },
+              { key: "speed", label: copy.speed },
+              { key: "link", label: copy.linkStatus },
+              { key: "status", label: copy.status },
+            ]}
+            rows={networkRows}
+          />
+        </div>
       );
     }
     if (activeTab === "storage") {

@@ -395,6 +395,12 @@ export const de = {
     storageEnclosure: "Storage-Gehäuse",
     pcieDevice: "PCIe-Gerät",
     pcieFunction: "PCIe-Funktion",
+    ethernetInterface: "Ethernet-Schnittstelle",
+    fibreChannelAdapter: "Fibre-Channel-Adapter",
+    wwpn: "WWPN",
+    wwnn: "WWNN",
+    ilo4WwnUnavailable:
+      "iLO 4 erkennt den Fibre-Channel-Adapter, stellt WWPN und WWNN über seine unterstützte REST-API jedoch nicht bereit. Diese Werte benötigen eine Inventarisierung über den Host oder Management Agent.",
   },
   status: {
     healthy: "Fehlerfrei",
