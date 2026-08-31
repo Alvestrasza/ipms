@@ -11,7 +11,13 @@ from rest_framework.status import HTTP_503_SERVICE_UNAVAILABLE
 @authentication_classes([])
 @permission_classes([AllowAny])
 def api_information(request: Request) -> Response:
-    return Response({"name": "IPMS Control Plane API", "version": "v1"})
+    return Response(
+        {
+            "name": "IPMS Control Plane API",
+            "version": "v1",
+            "application_version": "0.1.10",
+        }
+    )
 
 
 @api_view(["GET"])

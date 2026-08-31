@@ -13,7 +13,11 @@ class PublicEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             response.json(),
-            {"name": "IPMS Control Plane API", "version": "v1"},
+            {
+                "name": "IPMS Control Plane API",
+                "version": "v1",
+                "application_version": "0.1.10",
+            },
         )
 
     def test_liveness_is_public(self) -> None:

@@ -176,7 +176,12 @@ if ! grep -q '^IPMS_CONNECTOR_MASTER_KEY=' "$control_plane_env"; then
     echo "IPMS_CONNECTOR_MASTER_KEY=$(openssl rand -base64 32 | tr -d '\n')" >> "$control_plane_env"
 fi
 if ! grep -q '^IPMS_CERTIFICATE_PROBE_TOKEN=' "$control_plane_env"; then
-    echo "IPMS_CERTIFICATE_PROBE_TOKEN=$(openssl rand -hex 32)" >> "$control_plane_env"
+    generated_probe_token=$(openssl rand -hex 32)
+    [[ $generated_probe_token =~ ^[0-9a-f]{64}$ ]] || {
+        echo "Unable to generate the certificate probe token." >&2
+        exit 1
+    }
+    printf '%s\n' "IPMS_CERTIFICATE_PROBE_TOKEN=${generated_probe_token}" >> "$control_plane_env"
 fi
 if ! grep -q '^IPMS_CERTIFICATE_PROBE_PORT=' "$control_plane_env"; then
     echo "IPMS_CERTIFICATE_PROBE_PORT=8010" >> "$control_plane_env"
