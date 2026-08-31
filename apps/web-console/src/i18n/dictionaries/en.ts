@@ -54,7 +54,7 @@ export const en = {
     tenants: "Tenants",
     administration: "Administration",
     soon: "Soon",
-    version: "IPMS v0.1.11 development",
+    version: "IPMS v0.1.12 development",
   },
   overview: {
     liveData:

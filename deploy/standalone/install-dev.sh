@@ -198,12 +198,25 @@ else
     echo "IPMS_ALLOWED_HOSTS=${PUBLIC_HOST},127.0.0.1" >> "$control_plane_env"
 fi
 
-certificate_probe_token=$(sed -n 's/^IPMS_CERTIFICATE_PROBE_TOKEN=//p' "$control_plane_env")
-certificate_probe_port=$(sed -n 's/^IPMS_CERTIFICATE_PROBE_PORT=//p' "$control_plane_env")
+certificate_probe_token=$(sed -n 's/^IPMS_CERTIFICATE_PROBE_TOKEN=//p' "$control_plane_env" | tail -n 1)
+certificate_probe_port=$(sed -n 's/^IPMS_CERTIFICATE_PROBE_PORT=//p' "$control_plane_env" | tail -n 1)
 [[ -n $certificate_probe_token && -n $certificate_probe_port ]] || {
     echo "Certificate probe configuration is incomplete." >&2
     exit 1
 }
+# EnvironmentFile and POSIX shell loading both use the last assignment. Collapse
+# legacy duplicate entries so the control plane and isolated helper cannot select
+# different probe credentials.
+sed -i \
+    -e '/^IPMS_CERTIFICATE_PROBE_TOKEN=/d' \
+    -e '/^IPMS_CERTIFICATE_PROBE_PORT=/d' \
+    "$control_plane_env"
+{
+    echo "IPMS_CERTIFICATE_PROBE_TOKEN=${certificate_probe_token}"
+    echo "IPMS_CERTIFICATE_PROBE_PORT=${certificate_probe_port}"
+} >> "$control_plane_env"
+chown root:ipms-control-plane "$control_plane_env"
+chmod 0640 "$control_plane_env"
 certificate_probe_env=/srv/ipms/shared/certificate-probe.env
 install -o root -g ipms-connector-worker -m 0640 /dev/null "$certificate_probe_env"
 {
