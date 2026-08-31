@@ -175,6 +175,12 @@ fi
 if ! grep -q '^IPMS_CONNECTOR_MASTER_KEY=' "$control_plane_env"; then
     echo "IPMS_CONNECTOR_MASTER_KEY=$(openssl rand -base64 32 | tr -d '\n')" >> "$control_plane_env"
 fi
+if ! grep -q '^IPMS_CERTIFICATE_PROBE_TOKEN=' "$control_plane_env"; then
+    echo "IPMS_CERTIFICATE_PROBE_TOKEN=$(openssl rand -hex 32)" >> "$control_plane_env"
+fi
+if ! grep -q '^IPMS_CERTIFICATE_PROBE_PORT=' "$control_plane_env"; then
+    echo "IPMS_CERTIFICATE_PROBE_PORT=8010" >> "$control_plane_env"
+fi
 if ! grep -q '^IPMS_BMC_CONNECT_TIMEOUT_SECONDS=' "$control_plane_env"; then
     echo "IPMS_BMC_CONNECT_TIMEOUT_SECONDS=45" >> "$control_plane_env"
 fi
@@ -183,6 +189,19 @@ if grep -q '^IPMS_ALLOWED_HOSTS=' "$control_plane_env"; then
 else
     echo "IPMS_ALLOWED_HOSTS=${PUBLIC_HOST},127.0.0.1" >> "$control_plane_env"
 fi
+
+certificate_probe_token=$(sed -n 's/^IPMS_CERTIFICATE_PROBE_TOKEN=//p' "$control_plane_env")
+certificate_probe_port=$(sed -n 's/^IPMS_CERTIFICATE_PROBE_PORT=//p' "$control_plane_env")
+[[ -n $certificate_probe_token && -n $certificate_probe_port ]] || {
+    echo "Certificate probe configuration is incomplete." >&2
+    exit 1
+}
+certificate_probe_env=/srv/ipms/shared/certificate-probe.env
+install -o root -g ipms-connector-worker -m 0640 /dev/null "$certificate_probe_env"
+{
+    echo "IPMS_CERTIFICATE_PROBE_TOKEN=${certificate_probe_token}"
+    echo "IPMS_CERTIFICATE_PROBE_PORT=${certificate_probe_port}"
+} > "$certificate_probe_env"
 
 web_console_env=/srv/ipms/shared/web-console.env
 install -o root -g ipms-web -m 0640 /dev/null "$web_console_env"
@@ -215,6 +234,7 @@ control_manage=/srv/ipms/current/services/control-plane/manage.py
 "$control_python" "$control_manage" check --deploy
 
 install -m 0644 "$release_directory/deploy/standalone/ipms-control-plane.service" /etc/systemd/system/ipms-control-plane.service
+install -m 0644 "$release_directory/deploy/standalone/ipms-certificate-probe.service" /etc/systemd/system/ipms-certificate-probe.service
 install -m 0644 "$release_directory/deploy/standalone/ipms-web-console.service" /etc/systemd/system/ipms-web-console.service
 install -m 0644 "$release_directory/deploy/standalone/ipms-connector-worker.service" /etc/systemd/system/ipms-connector-worker.service
 install -m 0644 "$release_directory/deploy/standalone/ipms-connector-worker.timer" /etc/systemd/system/ipms-connector-worker.timer
@@ -251,12 +271,13 @@ install -d -m 0755 /etc/fail2ban/jail.d
 nginx -t
 fail2ban-client -t
 systemctl daemon-reload
-systemctl enable fail2ban ipms-control-plane ipms-web-console ipms-connector-worker.timer nginx
-systemctl restart fail2ban ipms-control-plane ipms-web-console ipms-connector-worker.timer nginx
+systemctl enable fail2ban ipms-certificate-probe ipms-control-plane ipms-web-console ipms-connector-worker.timer nginx
+systemctl restart fail2ban ipms-certificate-probe ipms-control-plane ipms-web-console ipms-connector-worker.timer nginx
 ufw allow from "$MANAGEMENT_SOURCE" to any port 443 proto tcp comment "IPMS HTTPS management"
 ufw --force enable
 
 systemctl is-active --quiet postgresql
+systemctl is-active --quiet ipms-certificate-probe
 systemctl is-active --quiet ipms-control-plane
 systemctl is-active --quiet ipms-web-console
 systemctl is-active --quiet ipms-connector-worker.timer

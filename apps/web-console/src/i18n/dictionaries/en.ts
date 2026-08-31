@@ -249,6 +249,8 @@ export const en = {
     duplicateEndpoint: "This BMC endpoint is already enrolled for the tenant.",
     certificateChanged:
       "The BMC certificate changed during enrollment. Start the certificate check again.",
+    certificateProbeUnavailable:
+      "The isolated certificate-probe service is unavailable. Try again shortly or review the appliance service status.",
     unavailable: "The Control Plane is currently unavailable.",
     certificateHeading: "Trust BMC certificate",
     certificateWarning:

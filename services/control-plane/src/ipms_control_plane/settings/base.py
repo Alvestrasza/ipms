@@ -43,6 +43,13 @@ def bounded_integer_environment(
 
 SECRET_KEY = required_environment("IPMS_SECRET_KEY")
 CONNECTOR_MASTER_KEY = required_environment("IPMS_CONNECTOR_MASTER_KEY")
+CERTIFICATE_PROBE_TOKEN = required_environment("IPMS_CERTIFICATE_PROBE_TOKEN")
+CERTIFICATE_PROBE_PORT = bounded_integer_environment(
+    "IPMS_CERTIFICATE_PROBE_PORT",
+    default=8010,
+    minimum=1024,
+    maximum=65535,
+)
 BMC_CONNECT_TIMEOUT_SECONDS = bounded_integer_environment(
     "IPMS_BMC_CONNECT_TIMEOUT_SECONDS",
     default=20,

@@ -764,7 +764,7 @@ class IloPortalEnrollmentTests(TestCase):
             trusted_by_system=False,
         )
         probe = patch(
-            "ipms.apps.discovery.views.probe_bmc_certificate",
+            "ipms.apps.discovery.views.request_bmc_certificate_probe",
             return_value=self.certificate,
         )
         self.probe_certificate = probe.start()

@@ -258,6 +258,8 @@ export const de = {
       "Dieser BMC-Endpunkt ist für den Mandanten bereits eingebunden.",
     certificateChanged:
       "Das BMC-Zertifikat hat sich während der Einrichtung geändert. Starten Sie die Zertifikatsprüfung erneut.",
+    certificateProbeUnavailable:
+      "Der isolierte Zertifikatsprüfdienst ist nicht verfügbar. Versuchen Sie es gleich erneut oder prüfen Sie den Dienststatus der Appliance.",
     unavailable: "Die Steuerungsebene ist derzeit nicht verfügbar.",
     certificateHeading: "BMC-Zertifikat vertrauen",
     certificateWarning:

@@ -89,6 +89,15 @@ timeout. Increasing that value can accommodate slower legacy controllers, but
 does not change the worker's method allowlist, certificate pinning, response
 limits, or target validation.
 
+Enrollment certificate inspection crosses a narrow localhost boundary rather
+than granting BMC-network egress to the Django Control Plane. A dedicated
+unprivileged probe service accepts authenticated, size-bounded requests on a
+loopback-only port, validates that the resolved target is private and safe,
+performs the TLS handshake, and returns normalized public certificate fields
+or a stable error code. Its systemd sandbox permits only private/ULA target
+networks; the Control Plane retains localhost-only egress. Discovery remains
+isolated in the connector worker.
+
 Collection members and optional resources vary by iLO generation, firmware,
 server power state, installed hardware, and license. Capability detection is
 therefore based on advertised links and schemas rather than a fixed URI list.

@@ -88,6 +88,7 @@ export function BmcWizard({ csrfToken, tenantId, locale, copy }: Props) {
       authentication_failed: copy.authenticationFailed,
       duplicate_endpoint: copy.duplicateEndpoint,
       certificate_pin_mismatch: copy.certificateChanged,
+      certificate_probe_unavailable: copy.certificateProbeUnavailable,
     };
     return (code && messages[code]) || copy.addError;
   }

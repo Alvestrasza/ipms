@@ -88,6 +88,10 @@ deployment database.
 `IPMS_BMC_CONNECT_TIMEOUT_SECONDS` sets the bounded timeout for certificate and
 Redfish HTTPS exchanges. It defaults to `20` and accepts values from `5` to
 `60`; invalid or out-of-range values prevent Control Plane startup.
+The standalone profile sets it to `45`. `IPMS_CERTIFICATE_PROBE_TOKEN` is a
+required deployment secret used only to authenticate the localhost request to
+the isolated certificate-probe service; `IPMS_CERTIFICATE_PROBE_PORT` defaults
+to `8010`.
 
 Platform administrators must also select one tenant. Tenant members can select
 only active tenants for which their membership is active. Inaccessible tenants

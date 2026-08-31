@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import ipaddress
+import json
 import socket
 import ssl
 from dataclasses import asdict, dataclass
@@ -142,6 +144,60 @@ def probe_bmc_certificate(base_url: str, *, timeout: float = 10) -> CertificateO
         dns_names=dns_names[:16],
         trusted_by_system=trusted_by_system,
     )
+
+
+def request_bmc_certificate_probe(
+    base_url: str,
+    *,
+    timeout: float,
+    port: int,
+    token: str,
+) -> CertificateObservation:
+    """Request a probe from the localhost-only, network-isolated helper."""
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout + 5)
+    try:
+        connection.request(
+            "POST",
+            "/probe",
+            body=json.dumps({"base_url": base_url, "timeout": timeout}),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+        )
+        response = connection.getresponse()
+        body = response.read(32 * 1024 + 1)
+    except (OSError, TimeoutError, http.client.HTTPException) as exc:
+        raise CertificateProbeError("certificate_probe_unavailable") from exc
+    finally:
+        connection.close()
+    if len(body) > 32 * 1024:
+        raise CertificateProbeError("certificate_probe_invalid_response")
+    try:
+        document = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CertificateProbeError("certificate_probe_invalid_response") from exc
+    if response.status != 200:
+        code = document.get("error") if isinstance(document, dict) else None
+        safe_code = (
+            code
+            if isinstance(code, str) and len(code) <= 64
+            else "certificate_probe_failed"
+        )
+        raise CertificateProbeError(safe_code)
+    try:
+        return CertificateObservation(
+            fingerprint_sha256=str(document["fingerprint_sha256"]),
+            subject=str(document["subject"]),
+            issuer=str(document["issuer"]),
+            serial_number=str(document["serial_number"]),
+            valid_from=str(document["valid_from"]),
+            valid_until=str(document["valid_until"]),
+            dns_names=tuple(str(value) for value in document.get("dns_names", ()))[:16],
+            trusted_by_system=bool(document["trusted_by_system"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise CertificateProbeError("certificate_probe_invalid_response") from exc
 
 
 def create_certificate_trust_token(

@@ -25,7 +25,7 @@ from .certificates import (
     CertificateProbeError,
     create_certificate_trust_token,
     load_certificate_trust_token,
-    probe_bmc_certificate,
+    request_bmc_certificate_probe,
 )
 from .models import (
     BmcCommunicationLog,
@@ -94,9 +94,11 @@ class BmcCertificateProbeView(APIView):
         data = serializer.validated_data
         started = time.monotonic()
         try:
-            observation = probe_bmc_certificate(
+            observation = request_bmc_certificate_probe(
                 data["base_url"],
                 timeout=settings.BMC_CONNECT_TIMEOUT_SECONDS,
+                port=settings.CERTIFICATE_PROBE_PORT,
+                token=settings.CERTIFICATE_PROBE_TOKEN,
             )
         except CertificateProbeError as exc:
             BmcCommunicationLog.objects.create(
@@ -163,9 +165,11 @@ class BmcConnectorEnrollmentView(APIView):
                 {"confirm_certificate_trust": ["explicit_certificate_trust_required"]}
             )
         try:
-            observation = probe_bmc_certificate(
+            observation = request_bmc_certificate_probe(
                 data["base_url"],
                 timeout=settings.BMC_CONNECT_TIMEOUT_SECONDS,
+                port=settings.CERTIFICATE_PROBE_PORT,
+                token=settings.CERTIFICATE_PROBE_TOKEN,
             )
         except CertificateProbeError as exc:
             raise ValidationError({"certificate": [exc.code]}) from exc

@@ -72,6 +72,18 @@ seconds and the Control Plane accepts bounded values from 5 through 60 seconds.
 This timeout applies to certificate inspection and Redfish requests; it is not
 an unbounded retry window.
 
+The Web Console certificate check is executed by the dedicated
+`ipms-certificate-probe` service. The Control Plane reaches this helper only on
+localhost through an authenticated, bounded JSON request and retains
+`IPAddressDeny=any` with only localhost allowed. The helper has no public
+listener, runs as the unprivileged connector-worker account, and may reach
+only localhost, RFC 1918 networks, and unique-local IPv6 networks. It applies
+the private-target validation before opening a socket and returns only the
+normalized certificate fields needed for the explicit trust decision.
+Its dedicated environment file contains only the loopback port and the shared
+probe-authentication token; database credentials and the connector encryption
+key are not exposed to the helper process.
+
 ## Credential Rotation and Removal
 
 The key action replaces the encrypted credential and queues a new discovery.
