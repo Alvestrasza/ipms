@@ -3,6 +3,43 @@
 ## Current Application Acceptance Update
 
 - Date: 2026-08-31
+- Application version: `0.1.14`
+- Accepted release: `08a0231e977cd0eff01d97b51270d06d3eefd5df`
+- Scope: tenant-scoped physical and virtual Windows Server inventory portal,
+  normalized read-only API, and C++20 Agent contract foundation
+
+The accepted release added separate localized portal routes for physical and
+virtual Windows Server inventory, a tenant-scoped normalized inventory model,
+and a read-only API projection for future Agent and Hyper-V ingestion. Browser
+clients cannot create or modify inventory records, and provider detail
+snapshots are not exposed by the serializer.
+
+Deployment acceptance established:
+
+- 71 Django tests, migration drift detection, and the Django system check
+  passed with isolated test settings;
+- Biome, TypeScript, and the pinned Next.js production build passed;
+- migration `discovery.0008_windowsserver` applied successfully;
+- the active release link and visible application version matched the accepted
+  immutable release;
+- PostgreSQL, certificate probe, Control Plane, Web Console, connector-worker
+  timer, nginx, and Fail2ban were active;
+- Control Plane readiness succeeded; and
+- both new portal routes existed and enforced the authentication boundary.
+
+The C++20 Agent and signed Management Pack contract are source and design
+foundations only. Native Windows compilation, Windows Service installation,
+mTLS enrollment, telemetry ingestion, and real Hyper-V discovery remain
+mandatory acceptance gates before an Agent package is deployed. Authenticated
+browser acceptance also remains open because no current operator credential
+was changed or retrieved during this deployment.
+
+Public evidence excludes hostnames, addresses, credentials, cookies, tokens,
+certificates, fingerprints, tenant identifiers, and raw operational logs.
+
+## BMC Certificate Path Acceptance Update
+
+- Date: 2026-08-31
 - Application version: `0.1.12`
 - Accepted release: `19442a75e321d97521343fe3ab8383dce2f3e736`
 - Scope: BMC enrollment certificate path, visible application version, and
