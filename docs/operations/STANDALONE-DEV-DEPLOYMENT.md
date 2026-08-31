@@ -16,6 +16,8 @@ The installer deploys:
 - the official Node.js 24 LTS archive after SHA-256 verification, plus the
   repository-pinned pnpm version;
 - the Next.js standalone Web Console;
+- a localhost-only certificate-probe helper with narrowly scoped private
+  network egress and no database or connector-master-key access;
 - a separately sandboxed, private-network-only connector worker and timer;
 - nginx as the only HTTPS listener; and
 - systemd sandboxing, UFW source restriction, and Fail2ban for SSH.
@@ -79,16 +81,20 @@ operations process.
 ## Acceptance
 
 ```shell
-sudo systemctl is-active postgresql ipms-control-plane ipms-web-console ipms-connector-worker.timer nginx fail2ban
+sudo systemctl is-active postgresql ipms-certificate-probe ipms-control-plane ipms-web-console ipms-connector-worker.timer nginx fail2ban
 sudo ss -lntp
 sudo ufw status verbose
-curl --fail http://127.0.0.1:8000/api/v1/health/ready/
+curl --fail --header "X-Forwarded-Proto: https" \
+  http://127.0.0.1:8000/api/v1/health/ready/
 curl --fail --insecure --resolve ipms-dev.example.invalid:443:127.0.0.1 \
   https://ipms-dev.example.invalid/api/v1/health/ready/
 ```
 
 Only SSH and HTTPS may listen on non-loopback addresses. PostgreSQL, Gunicorn,
-and Next.js must remain loopback-only.
+Next.js, and the certificate-probe helper must remain loopback-only. The
+Control Plane systemd unit permits only localhost traffic. The certificate
+helper permits localhost and private address ranges, and its dedicated
+environment file contains only one probe token and one port assignment.
 
 ## Release and Rollback Model
 

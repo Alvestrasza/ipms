@@ -1,6 +1,45 @@
 # Standalone Development Acceptance
 
-## Acceptance Record
+## Current Application Acceptance Update
+
+- Date: 2026-08-31
+- Application version: `0.1.12`
+- Accepted release: `19442a75e321d97521343fe3ab8383dce2f3e736`
+- Scope: BMC enrollment certificate path, visible application version, and
+  immutable standalone deployment
+
+The accepted release added a dedicated `ipms-certificate-probe` service. The
+Control Plane retains localhost-only network access and reaches the helper
+through an authenticated, bounded localhost request. The helper runs without
+database credentials or the connector master key and permits only localhost
+and private address ranges.
+
+Deployment acceptance established:
+
+- the active release link resolved to the exact accepted commit;
+- the API information endpoint reported `application_version` `0.1.12`;
+- PostgreSQL, the certificate helper, Control Plane, Web Console, connector
+  timer, nginx, and Fail2ban were active with zero failed systemd units;
+- API readiness and Web Console health succeeded;
+- the Control Plane systemd network policy remained localhost-only;
+- each probe environment contained exactly one token assignment after the
+  installer normalized a legacy duplicate-entry condition; and
+- a read-only live probe through the restricted Control Plane boundary reached
+  an existing connector, returned a certificate fingerprint, and correctly
+  reported that the development certificate was not trusted by the system.
+
+The acceptance probe did not submit credentials, enroll another endpoint,
+rotate a credential, remove a connector, or perform a state-changing BMC
+operation. Interactive enrollment of another target remains an operator
+acceptance step.
+
+Verification for this update included 67 Django tests, installer Bash syntax,
+the pinned Next.js production build, TypeScript validation inside that build,
+API health, service health, systemd network-policy inspection, and the isolated
+live certificate request. Public evidence excluded endpoints, credentials,
+tokens, fingerprints, certificate contents, and raw device responses.
+
+## Initial Appliance Acceptance Record
 
 - Date: 2026-08-30
 - Accepted release: `891b85826c4b2fddf6d734343cde55e749bb4810`
@@ -83,7 +122,10 @@ repository lockfile and Python project metadata.
 
 ## Remaining v0.1.0 Scope
 
-This deployment proves the Web Console, tenant-aware authentication foundation,
-live Control Plane data path, and standalone runtime. It does not complete the
-inventory API, iLO discovery, Hyper-V discovery, customer certificate lifecycle,
-licensing, or scale-out deployment. Their milestone issues remain open.
+The initial deployment proved the Web Console, tenant-aware authentication
+foundation, live Control Plane data path, and standalone runtime. The current
+`0.1.12` deployment additionally proves the isolated BMC certificate path and
+the existing read-only iLO connector path. It does not complete Hyper-V
+discovery, customer certificate lifecycle, licensing, scale-out deployment, or
+the deferred clean-VM installation acceptance. Their milestone issues remain
+open.

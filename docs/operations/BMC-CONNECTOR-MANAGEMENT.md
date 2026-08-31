@@ -84,6 +84,36 @@ Its dedicated environment file contains only the loopback port and the shared
 probe-authentication token; database credentials and the connector encryption
 key are not exposed to the helper process.
 
+The standalone installer derives both service configurations from one token,
+removes duplicate legacy token and port assignments, and then writes the
+minimal helper environment. This normalization is required because systemd and
+shell environment loaders select the last repeated assignment, while an
+unbounded multi-line copy could make the helper select a different value.
+
+## Enrollment Diagnostics
+
+The enrollment API returns stable, non-secret error identifiers. Relevant
+certificate-probe failures include:
+
+- `certificate_probe_unavailable`: the localhost helper is unavailable or did
+  not answer within the bounded timeout;
+- `certificate_probe_forbidden`: the Control Plane and helper authentication
+  configuration is inconsistent;
+- `target_unresolved`: the supplied management name cannot be resolved;
+- `target_not_private`: target validation rejected a non-private or otherwise
+  forbidden destination;
+- `connection_timeout`: the isolated helper could not complete the TLS
+  connection before the configured timeout; and
+- `connection_failed`: the target rejected the connection or TLS negotiation
+  failed before a certificate could be observed.
+
+Do not work around these errors by granting private-network egress to the
+Control Plane. Validate the helper service, its localhost-only listener, the
+single token assignment in each environment file, and the approved
+private-network route instead. Public issue evidence must contain only the
+stable error identifier, application version, immutable commit, and sanitized
+service health.
+
 ## Credential Rotation and Removal
 
 The key action replaces the encrypted credential and queues a new discovery.
@@ -132,6 +162,8 @@ excluded. Collection is read-only and refreshes during normal discovery.
 - A successful discovery persists a normalized detail snapshot without raw
   Redfish response bodies.
 - An untrusted certificate requires explicit approval of the displayed leaf.
+- The Control Plane can complete a probe through the localhost helper while its
+  own systemd unit retains localhost-only network access.
 - A changed certificate is rejected before credentials are submitted.
 - Removal destroys the secret while preserving sanitized audit history.
 - Logs and CSV export honor tenant and filter boundaries.
