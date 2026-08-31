@@ -144,6 +144,108 @@ class PhysicalSystem(models.Model):
         return self.name
 
 
+class WindowsServer(models.Model):
+    class ServerType(models.TextChoices):
+        PHYSICAL = "physical", "Physical"
+        VIRTUAL = "virtual", "Virtual"
+        UNKNOWN = "unknown", "Unknown"
+
+    class InventorySource(models.TextChoices):
+        AGENT = "agent", "IPMS Agent"
+        HYPER_V = "hyper-v", "Hyper-V"
+
+    class Health(models.TextChoices):
+        HEALTHY = "healthy", "Healthy"
+        WARNING = "warning", "Warning"
+        CRITICAL = "critical", "Critical"
+        UNKNOWN = "unknown", "Unknown"
+
+    class AgentState(models.TextChoices):
+        NOT_ENROLLED = "not-enrolled", "Not enrolled"
+        ONLINE = "online", "Online"
+        STALE = "stale", "Stale"
+        OFFLINE = "offline", "Offline"
+        UNKNOWN = "unknown", "Unknown"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.PROTECT,
+        related_name="windows_servers",
+    )
+    connector = models.ForeignKey(
+        ConnectorEndpoint,
+        on_delete=models.PROTECT,
+        related_name="windows_servers",
+        blank=True,
+        null=True,
+    )
+    source_id = models.CharField(max_length=255)
+    inventory_source = models.CharField(
+        max_length=16,
+        choices=InventorySource.choices,
+    )
+    server_type = models.CharField(
+        max_length=16,
+        choices=ServerType.choices,
+        default=ServerType.UNKNOWN,
+    )
+    hostname = models.CharField(max_length=255)
+    fqdn = models.CharField(max_length=255, blank=True)
+    domain_name = models.CharField(max_length=255, blank=True)
+    operating_system = models.CharField(max_length=255, blank=True)
+    os_version = models.CharField(max_length=128, blank=True)
+    os_build = models.CharField(max_length=64, blank=True)
+    architecture = models.CharField(max_length=32, blank=True)
+    manufacturer = models.CharField(max_length=255, blank=True)
+    model = models.CharField(max_length=255, blank=True)
+    serial_number = models.CharField(max_length=255, blank=True)
+    system_uuid = models.CharField(max_length=64, blank=True)
+    logical_processors = models.PositiveIntegerField(blank=True, null=True)
+    memory_bytes = models.PositiveBigIntegerField(blank=True, null=True)
+    cluster_name = models.CharField(max_length=255, blank=True)
+    hypervisor_host = models.CharField(max_length=255, blank=True)
+    agent_version = models.CharField(max_length=64, blank=True)
+    agent_state = models.CharField(
+        max_length=16,
+        choices=AgentState.choices,
+        default=AgentState.UNKNOWN,
+    )
+    health = models.CharField(
+        max_length=16,
+        choices=Health.choices,
+        default=Health.UNKNOWN,
+    )
+    management_packs = models.JSONField(default=list, blank=True)
+    detail_snapshot = models.JSONField(default=dict, blank=True)
+    last_seen_at = models.DateTimeField(blank=True, null=True)
+    discovered_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("hostname",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant", "inventory_source", "source_id"),
+                name="unique_tenant_windows_source",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant", "server_type"),
+                name="windows_tenant_type_idx",
+            ),
+            models.Index(
+                fields=("tenant", "agent_state"),
+                name="windows_tenant_agent_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.fqdn or self.hostname
+
+
 class BmcCommunicationLog(models.Model):
     class Severity(models.TextChoices):
         DEBUG = "debug", "Debug"

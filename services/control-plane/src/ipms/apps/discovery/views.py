@@ -34,6 +34,7 @@ from .models import (
     ConnectorSecret,
     DiscoveryJob,
     PhysicalSystem,
+    WindowsServer,
 )
 from .permissions import CanManageConnectors
 from .secrets import store_connector_secret
@@ -46,6 +47,7 @@ from .serializers import (
     ConnectorEndpointSerializer,
     DiscoveryJobSerializer,
     PhysicalSystemSerializer,
+    WindowsServerSerializer,
 )
 
 
@@ -353,6 +355,18 @@ class PhysicalSystemListView(ListAPIView):
             tenant=self.request.tenant,
             connector__removed_at__isnull=True,
         )
+
+
+class WindowsServerListView(ListAPIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess)
+    serializer_class = WindowsServerSerializer
+
+    def get_queryset(self):
+        queryset = WindowsServer.objects.filter(tenant=self.request.tenant)
+        server_type = self.request.query_params.get("server_type", "")
+        if server_type in WindowsServer.ServerType.values:
+            queryset = queryset.filter(server_type=server_type)
+        return queryset.select_related("connector")
 
 
 def _filtered_bmc_logs(request):

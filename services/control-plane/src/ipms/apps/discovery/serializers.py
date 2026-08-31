@@ -9,6 +9,7 @@ from .models import (
     ConnectorEndpoint,
     DiscoveryJob,
     PhysicalSystem,
+    WindowsServer,
 )
 
 
@@ -121,6 +122,44 @@ class PhysicalSystemSerializer(serializers.ModelSerializer):
             "bios_version",
             "bmc_firmware_version",
             "detail_snapshot",
+            "discovered_at",
+        )
+        read_only_fields = fields
+
+
+class WindowsServerSerializer(serializers.ModelSerializer):
+    tenant_id = serializers.UUIDField(read_only=True)
+    connector_id = serializers.UUIDField(read_only=True, allow_null=True)
+
+    class Meta:
+        model = WindowsServer
+        fields = (
+            "id",
+            "tenant_id",
+            "connector_id",
+            "source_id",
+            "inventory_source",
+            "server_type",
+            "hostname",
+            "fqdn",
+            "domain_name",
+            "operating_system",
+            "os_version",
+            "os_build",
+            "architecture",
+            "manufacturer",
+            "model",
+            "serial_number",
+            "system_uuid",
+            "logical_processors",
+            "memory_bytes",
+            "cluster_name",
+            "hypervisor_host",
+            "agent_version",
+            "agent_state",
+            "health",
+            "management_packs",
+            "last_seen_at",
             "discovered_at",
         )
         read_only_fields = fields

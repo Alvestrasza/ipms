@@ -6,6 +6,7 @@ import {
   Database,
   LayoutDashboard,
   ListTree,
+  MonitorCog,
   Network,
   ScrollText,
   ServerCog,
@@ -19,19 +20,30 @@ import { resolveLocale } from "@/i18n/server";
 
 import { Brand } from "./brand";
 
+export type ActiveSection =
+  | "overview"
+  | "physical"
+  | "physical-servers"
+  | "bmc"
+  | "bmc-logs"
+  | "bmc-events"
+  | "virtual";
+
 export async function Sidebar({
   activeSection,
 }: {
-  activeSection: "overview" | "physical" | "bmc" | "bmc-logs" | "bmc-events";
+  activeSection: ActiveSection;
 }) {
   const locale = await resolveLocale();
   const dictionary = getDictionary(locale);
   const physicalExpanded = [
     "physical",
+    "physical-servers",
     "bmc",
     "bmc-logs",
     "bmc-events",
   ].includes(activeSection);
+  const virtualExpanded = activeSection === "virtual";
   const navigation = [
     {
       label: dictionary.navigation.overview,
@@ -50,7 +62,9 @@ export async function Sidebar({
     {
       label: dictionary.navigation.virtual,
       icon: Boxes,
-      enabled: false as const,
+      href: `/${locale}/virtual`,
+      section: "virtual" as const,
+      enabled: true as const,
     },
     {
       label: dictionary.navigation.monitoring,
@@ -113,6 +127,20 @@ export async function Sidebar({
                 <ul className="nav-tree">
                   <li>
                     <Link
+                      className={`nav-subitem ${activeSection === "physical-servers" ? "nav-subitem--active" : ""}`}
+                      href={`/${locale}/physical/servers` as Route}
+                      aria-current={
+                        activeSection === "physical-servers"
+                          ? "page"
+                          : undefined
+                      }
+                    >
+                      <MonitorCog aria-hidden="true" size={15} />
+                      <span>{dictionary.navigation.physicalServers}</span>
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
                       className={`nav-subitem ${activeSection === "bmc" ? "nav-subitem--active" : ""}`}
                       href={`/${locale}/physical/bmc` as Route}
                       aria-current={
@@ -154,6 +182,20 @@ export async function Sidebar({
                         </li>
                       </ul>
                     ) : null}
+                  </li>
+                </ul>
+              ) : null}
+              {item.section === "virtual" && virtualExpanded ? (
+                <ul className="nav-tree">
+                  <li>
+                    <Link
+                      className="nav-subitem nav-subitem--active"
+                      href={`/${locale}/virtual` as Route}
+                      aria-current="page"
+                    >
+                      <MonitorCog aria-hidden="true" size={15} />
+                      <span>{dictionary.navigation.virtualServers}</span>
+                    </Link>
                   </li>
                 </ul>
               ) : null}

@@ -1,5 +1,7 @@
 # Project-local credentials and host trust data
 .ssh/
+.tools/
+build/
 
 # Local environment and secret files
 .env
@@ -19,6 +21,7 @@ htmlcov/
 
 # Next.js development and test artifacts
 node_modules/
+.pnpm-store/
 .next/
 playwright-report/
 test-results/

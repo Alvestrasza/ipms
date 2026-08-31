@@ -6,7 +6,7 @@ import type { AuthenticatedSession, TenantSummary } from "@/lib/auth-types";
 
 import { LanguageSwitcher } from "./language-switcher";
 import { LogoutButton } from "./logout-button";
-import { Sidebar } from "./sidebar";
+import { type ActiveSection, Sidebar } from "./sidebar";
 import { TenantSwitcher } from "./tenant-switcher";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -19,7 +19,7 @@ export async function ConsoleShell({
   children: React.ReactNode;
   session: AuthenticatedSession;
   tenant: TenantSummary;
-  activeSection?: "overview" | "physical" | "bmc" | "bmc-logs" | "bmc-events";
+  activeSection?: ActiveSection;
 }) {
   const dictionary = getDictionary(await resolveLocale());
   const roleLabels = {

@@ -98,8 +98,8 @@ production.
 - **Data Store:** PostgreSQL stores transactional data. Tenant-aware tables use
   application authorization and PostgreSQL Row-Level Security as complementary
   controls.
-- **Agent and Edge Gateway:** Go provides compact customer-deployed binaries
-  with outbound mTLS connections to the Control Plane.
+- **Agent and Edge Gateway:** C++20 provides native customer-deployed Windows
+  and Linux binaries with outbound mTLS connections to the Control Plane.
 - **Identity:** OIDC is the integration boundary. Keycloak is the initial
   reference identity provider, while customer OIDC providers remain supported.
 - **Packaging:** Container images are used for Appliance and Scale-Out
@@ -147,8 +147,12 @@ restore point.
   Redfish snapshot for subsystem health, fans, temperatures, power,
   processors, memory, network, device inventory, storage, firmware, and
   software. Optional resources remain explicitly unknown when not reported.
+- Establish tenant-scoped read-only inventory views for physical and virtual
+  Windows servers, backed by one normalized API contract for Agent and Hyper-V
+  sources. Browser clients cannot create or modify inventory records.
 - Implement a read-only Hyper-V connector for host, cluster, VM, and basic
-  resource discovery through a constrained customer-side agent or gateway.
+  resource discovery through the C++20 Windows Agent and its signed,
+  built-in `hyper-v-host` Management Pack.
 - Present discovered inventory and connector health in the A-Corp Dark Web
   Console, with the A-Corp Light token set available from the beginning.
 - Provide server-rendered English and German console localization, detect the

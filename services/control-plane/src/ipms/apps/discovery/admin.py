@@ -6,6 +6,7 @@ from .models import (
     ConnectorEndpoint,
     DiscoveryJob,
     PhysicalSystem,
+    WindowsServer,
 )
 
 
@@ -23,6 +24,30 @@ class PhysicalSystemAdmin(admin.ModelAdmin):
     list_filter = ("health", "power_state")
     search_fields = ("name", "model", "serial_number")
     readonly_fields = tuple(field.name for field in PhysicalSystem._meta.fields)
+
+    def has_add_permission(self, request) -> bool:
+        return False
+
+    def has_change_permission(self, request, obj=None) -> bool:
+        return False
+
+    def has_delete_permission(self, request, obj=None) -> bool:
+        return False
+
+
+@admin.register(WindowsServer)
+class WindowsServerAdmin(admin.ModelAdmin):
+    list_display = (
+        "hostname",
+        "tenant",
+        "server_type",
+        "inventory_source",
+        "agent_state",
+        "health",
+    )
+    list_filter = ("server_type", "inventory_source", "agent_state", "health")
+    search_fields = ("hostname", "fqdn", "domain_name", "cluster_name")
+    readonly_fields = tuple(field.name for field in WindowsServer._meta.fields)
 
     def has_add_permission(self, request) -> bool:
         return False

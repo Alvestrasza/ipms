@@ -9,7 +9,7 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-IPMS application build `0.1.12` is in the v0.1.0 read-only foundation phase. A
+IPMS application build `0.1.14` is in the v0.1.0 read-only foundation phase. A
 standalone development
 Appliance currently runs the tenant-aware Django Control Plane, PostgreSQL,
 the multilingual Next.js Web Console, and the isolated connector worker.
@@ -21,6 +21,11 @@ communication metadata, filtering, and CSV export. Dell iDRAC and generic
 Redfish profiles are selectable but require dedicated hardware compatibility
 acceptance before they are described as supported.
 
+The Windows Server portal foundation provides separate tenant-scoped views for
+physical and virtual servers. Its normalized read-only API is prepared for the
+native IPMS Agent and future Hyper-V discovery without exposing an inventory
+write path to browsers.
+
 The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 
 ## Operations Documentation
@@ -31,6 +36,7 @@ The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 - [Standalone development deployment](docs/operations/STANDALONE-DEV-DEPLOYMENT.md)
 - [Standalone development acceptance](docs/operations/STANDALONE-DEV-ACCEPTANCE.md)
 - [Portal-based BMC connector management](docs/operations/BMC-CONNECTOR-MANAGEMENT.md)
+- [Windows Server inventory preparation](docs/operations/WINDOWS-SERVER-INVENTORY.md)
 - [Development versioning](docs/operations/VERSIONING.md)
 
 ## Architecture Decisions
@@ -38,11 +44,14 @@ The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 - [ADR-0001: Appliance encryption, unlock, and recovery policy](docs/architecture/ADR-0001-APPLIANCE-ENCRYPTION-AND-UNLOCK.md)
 - [Web Console architecture and security boundary](docs/architecture/WEB-CONSOLE.md)
 - [iLO Redfish connector architecture](docs/architecture/ILO-REDFISH-CONNECTOR.md)
+- [ADR-0002: Native C++ Agent and Management Pack Trust Model](docs/architecture/ADR-0002-CXX-AGENT-AND-MANAGEMENT-PACKS.md)
+- [Agent contract](docs/architecture/AGENT-CONTRACT.md)
 
 ## Source Layout
 
 - [Django Control Plane](services/control-plane/README.md)
 - [Next.js Web Console](apps/web-console/README.md)
+- [C++20 Agent](agent/README.md)
 
 ## License
 

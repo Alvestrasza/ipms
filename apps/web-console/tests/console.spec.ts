@@ -140,6 +140,43 @@ test("opens the tenant-scoped physical infrastructure view", async ({
   ).toHaveAttribute("aria-current", "page");
 });
 
+test("opens the tenant-scoped physical Windows server inventory", async ({
+  page,
+}) => {
+  await signIn(page);
+
+  await page.getByRole("link", { name: "Physical infrastructure" }).click();
+  await page.getByRole("link", { name: "Windows servers" }).click();
+  await expect(page).toHaveURL("/en/physical/servers");
+  await expect(
+    page.getByRole("heading", { name: "Physical Windows servers" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("No physical Windows servers discovered"),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Windows servers" }),
+  ).toHaveAttribute("aria-current", "page");
+});
+
+test("opens the tenant-scoped virtual Windows server inventory", async ({
+  page,
+}) => {
+  await signIn(page);
+
+  await page.getByRole("link", { name: "Virtual infrastructure" }).click();
+  await expect(page).toHaveURL("/en/virtual");
+  await expect(
+    page.getByRole("heading", { name: "Virtual Windows servers" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("No virtual Windows servers discovered"),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Virtual infrastructure" }),
+  ).toHaveAttribute("aria-current", "page");
+});
+
 test("enrolls a BMC through certificate-aware guided portal wizard", async ({
   page,
 }) => {

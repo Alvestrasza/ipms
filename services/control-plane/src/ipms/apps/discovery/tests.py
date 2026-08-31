@@ -24,9 +24,111 @@ from .models import (
     ConnectorSecret,
     DiscoveryJob,
     PhysicalSystem,
+    WindowsServer,
 )
 from .secrets import load_connector_secret
 from .services import process_discovery_queue
+
+
+class WindowsServerInventoryApiTests(TestCase):
+    def setUp(self) -> None:
+        user_model = get_user_model()
+        self.reader = user_model.objects.create_user(
+            username="windows-reader",
+            password="test-only-password",
+        )
+        self.tenant = Tenant.objects.create(
+            slug="windows-inventory",
+            display_name="Windows inventory",
+        )
+        self.other_tenant = Tenant.objects.create(
+            slug="other-windows-inventory",
+            display_name="Other Windows inventory",
+        )
+        TenantMembership.objects.create(
+            tenant=self.tenant,
+            user=self.reader,
+            role=TenantMembership.Role.READER,
+        )
+        self.physical = WindowsServer.objects.create(
+            tenant=self.tenant,
+            source_id="agent-physical-fixture",
+            inventory_source=WindowsServer.InventorySource.AGENT,
+            server_type=WindowsServer.ServerType.PHYSICAL,
+            hostname="physical-fixture",
+            fqdn="physical-fixture.example.invalid",
+            operating_system="Windows Server",
+            os_version="2025",
+            architecture="x64",
+            logical_processors=16,
+            memory_bytes=64 * 1024**3,
+            agent_state=WindowsServer.AgentState.ONLINE,
+            health=WindowsServer.Health.HEALTHY,
+            management_packs=["windows-server-core"],
+            last_seen_at=timezone.now(),
+            discovered_at=timezone.now(),
+        )
+        self.virtual = WindowsServer.objects.create(
+            tenant=self.tenant,
+            source_id="hyper-v-virtual-fixture",
+            inventory_source=WindowsServer.InventorySource.HYPER_V,
+            server_type=WindowsServer.ServerType.VIRTUAL,
+            hostname="virtual-fixture",
+            hypervisor_host="hypervisor-fixture.example.invalid",
+            cluster_name="cluster-fixture",
+            agent_state=WindowsServer.AgentState.NOT_ENROLLED,
+            health=WindowsServer.Health.UNKNOWN,
+            discovered_at=timezone.now(),
+        )
+        WindowsServer.objects.create(
+            tenant=self.other_tenant,
+            source_id="other-tenant-fixture",
+            inventory_source=WindowsServer.InventorySource.AGENT,
+            server_type=WindowsServer.ServerType.PHYSICAL,
+            hostname="other-tenant-fixture",
+            discovered_at=timezone.now(),
+        )
+        self.url = reverse("core:windows-server-list")
+        self.client.force_login(self.reader)
+
+    def headers(self, tenant: Tenant | None = None) -> dict[str, str]:
+        return {"HTTP_X_IPMS_TENANT_ID": str((tenant or self.tenant).id)}
+
+    def test_reader_lists_only_selected_tenant_inventory(self) -> None:
+        response = self.client.get(self.url, **self.headers())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            {item["hostname"] for item in response.json()},
+            {"physical-fixture", "virtual-fixture"},
+        )
+        self.assertNotIn("detail_snapshot", str(response.json()[0]).lower())
+
+    def test_server_type_filter_prepares_separate_portal_views(self) -> None:
+        response = self.client.get(
+            self.url,
+            {"server_type": WindowsServer.ServerType.PHYSICAL},
+            **self.headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["id"] for item in response.json()], [str(self.physical.id)])
+
+    def test_inventory_api_is_read_only(self) -> None:
+        response = self.client.post(
+            self.url,
+            data={"hostname": "browser-created"},
+            content_type="application/json",
+            **self.headers(),
+        )
+
+        self.assertEqual(response.status_code, 405)
+        self.assertFalse(WindowsServer.objects.filter(hostname="browser-created").exists())
+
+    def test_inaccessible_tenant_is_not_disclosed(self) -> None:
+        response = self.client.get(self.url, **self.headers(self.other_tenant))
+
+        self.assertEqual(response.status_code, 404)
 
 
 class DiscoveryJobApiTests(TestCase):
