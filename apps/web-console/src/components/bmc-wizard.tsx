@@ -282,8 +282,8 @@ export function BmcWizard({ csrfToken, tenantId, locale, copy }: Props) {
                       {copy.familyIloModern}
                     </option>
                     <option value="dell-idrac">{copy.familyIdrac}</option>
-                    <option value="generic-redfish">
-                      {copy.familyRedfish}
+                    <option value="generic-bmc-api">
+                      {copy.familyGenericApi}
                     </option>
                   </select>
                 </label>

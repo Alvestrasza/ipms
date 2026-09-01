@@ -16,7 +16,7 @@ const errorMessageKeys = {
   certificate_pin_mismatch: "certificatePinMismatch",
   connection_failed: "connectionFailed",
   connection_timeout: "connectionTimeout",
-  redfish_request_failed: "redfishRequestFailed",
+  bmc_api_request_failed: "apiRequestFailed",
   session_creation_failed: "sessionCreationFailed",
   unsupported_service: "unsupportedService",
 } as const;
@@ -61,19 +61,19 @@ export function ConnectorOperations({ connector, locale, copy }: Props) {
                 </dd>
               </div>
             ) : null}
-            {detail.redfish_error_code ? (
+            {detail.api_error_code ? (
               <div>
-                <dt>{copy.redfishErrorCode}</dt>
+                <dt>{copy.apiErrorCode}</dt>
                 <dd>
-                  <code>{detail.redfish_error_code}</code>
+                  <code>{detail.api_error_code}</code>
                 </dd>
               </div>
             ) : null}
-            {detail.redfish_message_id ? (
+            {detail.api_message_id ? (
               <div>
-                <dt>{copy.redfishMessageId}</dt>
+                <dt>{copy.apiMessageId}</dt>
                 <dd>
-                  <code>{detail.redfish_message_id}</code>
+                  <code>{detail.api_message_id}</code>
                 </dd>
               </div>
             ) : null}

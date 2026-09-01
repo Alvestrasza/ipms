@@ -18,6 +18,34 @@ HOSTNAME_PATTERN = re.compile(
     r"^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*"
     r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
 )
+INTERNAL_PROTOCOL_PATTERN = re.compile("redfish", re.IGNORECASE)
+
+
+def neutralize_public_protocol_text(value: str) -> str:
+    return INTERNAL_PROTOCOL_PATTERN.sub("bmc_api", value)
+
+
+def neutralize_public_protocol_details(value):
+    if isinstance(value, dict):
+        return {
+            neutralize_public_protocol_text(str(key)): neutralize_public_protocol_details(
+                item
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [neutralize_public_protocol_details(item) for item in value]
+    if isinstance(value, str):
+        return neutralize_public_protocol_text(value)
+    return value
+
+
+def public_connector_type(value: str) -> str:
+    return "bmc-api" if value == ConnectorEndpoint.ConnectorType.ILO_REDFISH else value
+
+
+def public_bmc_family(value: str) -> str:
+    return "generic-bmc-api" if value == ConnectorEndpoint.BmcFamily.GENERIC_REDFISH else value
 
 
 def normalized_bmc_origin(address: str, port: int) -> str:
@@ -27,7 +55,11 @@ def normalized_bmc_origin(address: str, port: int) -> str:
 
 class ConnectorEndpointSerializer(serializers.ModelSerializer):
     tenant_id = serializers.UUIDField(read_only=True)
+    connector_type = serializers.SerializerMethodField()
+    bmc_family = serializers.SerializerMethodField()
     trust_mode = serializers.SerializerMethodField()
+    last_error_code = serializers.SerializerMethodField()
+    last_error_detail = serializers.SerializerMethodField()
 
     class Meta:
         model = ConnectorEndpoint
@@ -51,9 +83,28 @@ class ConnectorEndpointSerializer(serializers.ModelSerializer):
     def get_trust_mode(self, instance: ConnectorEndpoint) -> str:
         return "certificate-pin" if instance.tls_certificate_sha256 else "unconfigured"
 
+    def get_connector_type(self, instance: ConnectorEndpoint) -> str:
+        return public_connector_type(instance.connector_type)
+
+    def get_bmc_family(self, instance: ConnectorEndpoint) -> str:
+        return public_bmc_family(instance.bmc_family)
+
+    def get_last_error_code(self, instance: ConnectorEndpoint) -> str:
+        return neutralize_public_protocol_text(instance.last_error_code)
+
+    def get_last_error_detail(self, instance: ConnectorEndpoint) -> dict:
+        return neutralize_public_protocol_details(instance.last_error_detail)
+
 
 class BmcEndpointSerializer(serializers.Serializer):
-    bmc_family = serializers.ChoiceField(choices=ConnectorEndpoint.BmcFamily.choices)
+    bmc_family = serializers.ChoiceField(
+        choices=(
+            ConnectorEndpoint.BmcFamily.HPE_ILO4,
+            ConnectorEndpoint.BmcFamily.HPE_ILO_MODERN,
+            ConnectorEndpoint.BmcFamily.DELL_IDRAC,
+            "generic-bmc-api",
+        )
+    )
     display_name = serializers.CharField(max_length=255)
     address = serializers.CharField(max_length=253)
     port = serializers.IntegerField(min_value=1, max_value=65535, default=443)
@@ -68,6 +119,11 @@ class BmcEndpointSerializer(serializers.Serializer):
                     "A valid IP address or DNS hostname is required."
                 )
         return address.lower()
+
+    def validate_bmc_family(self, value: str) -> str:
+        if value == "generic-bmc-api":
+            return ConnectorEndpoint.BmcFamily.GENERIC_REDFISH
+        return value
 
     def validate(self, attrs):
         attrs["base_url"] = normalized_bmc_origin(attrs["address"], attrs["port"])
@@ -99,6 +155,7 @@ class ConnectorCredentialSerializer(serializers.Serializer):
 class PhysicalSystemSerializer(serializers.ModelSerializer):
     tenant_id = serializers.UUIDField(read_only=True)
     connector_id = serializers.UUIDField(read_only=True)
+    detail_snapshot = serializers.SerializerMethodField()
 
     class Meta:
         model = PhysicalSystem
@@ -106,7 +163,6 @@ class PhysicalSystemSerializer(serializers.ModelSerializer):
             "id",
             "tenant_id",
             "connector_id",
-            "source_resource_id",
             "name",
             "manufacturer",
             "model",
@@ -126,6 +182,9 @@ class PhysicalSystemSerializer(serializers.ModelSerializer):
             "discovered_at",
         )
         read_only_fields = fields
+
+    def get_detail_snapshot(self, instance: PhysicalSystem) -> dict:
+        return neutralize_public_protocol_details(instance.detail_snapshot)
 
 
 class WindowsServerSerializer(serializers.ModelSerializer):
@@ -197,6 +256,10 @@ class WindowsServerDetailSerializer(WindowsServerSerializer):
 
 class DiscoveryJobSerializer(serializers.ModelSerializer):
     tenant_id = serializers.UUIDField(read_only=True)
+    connector_type = serializers.SerializerMethodField()
+    result_summary = serializers.SerializerMethodField()
+    error_code = serializers.SerializerMethodField()
+    error_detail = serializers.SerializerMethodField()
 
     class Meta:
         model = DiscoveryJob
@@ -216,9 +279,27 @@ class DiscoveryJobSerializer(serializers.ModelSerializer):
         )
         read_only_fields = fields
 
+    def get_connector_type(self, instance: DiscoveryJob) -> str:
+        return public_connector_type(instance.connector_type)
+
+    def get_result_summary(self, instance: DiscoveryJob) -> dict:
+        return neutralize_public_protocol_details(instance.result_summary)
+
+    def get_error_code(self, instance: DiscoveryJob) -> str:
+        return neutralize_public_protocol_text(instance.error_code)
+
+    def get_error_detail(self, instance: DiscoveryJob) -> dict:
+        return neutralize_public_protocol_details(instance.error_detail)
+
 
 class BmcCommunicationLogSerializer(serializers.ModelSerializer):
     connector_id = serializers.UUIDField(read_only=True, allow_null=True)
+    bmc_family = serializers.SerializerMethodField()
+    event_type = serializers.SerializerMethodField()
+    resource_path = serializers.SerializerMethodField()
+    error_code = serializers.SerializerMethodField()
+    api_error_code = serializers.SerializerMethodField()
+    api_message_id = serializers.SerializerMethodField()
 
     class Meta:
         model = BmcCommunicationLog
@@ -234,16 +315,37 @@ class BmcCommunicationLogSerializer(serializers.ModelSerializer):
             "http_status",
             "duration_ms",
             "error_code",
-            "redfish_error_code",
-            "redfish_message_id",
+            "api_error_code",
+            "api_message_id",
             "correlation_id",
             "occurred_at",
         )
         read_only_fields = fields
 
+    def get_bmc_family(self, instance: BmcCommunicationLog) -> str:
+        return public_bmc_family(instance.bmc_family)
+
+    def get_event_type(self, instance: BmcCommunicationLog) -> str:
+        return neutralize_public_protocol_text(instance.event_type)
+
+    def get_resource_path(self, instance: BmcCommunicationLog) -> str:
+        return neutralize_public_protocol_text(instance.resource_path)
+
+    def get_error_code(self, instance: BmcCommunicationLog) -> str:
+        return neutralize_public_protocol_text(instance.error_code)
+
+    def get_api_error_code(self, instance: BmcCommunicationLog) -> str:
+        return neutralize_public_protocol_text(instance.redfish_error_code)
+
+    def get_api_message_id(self, instance: BmcCommunicationLog) -> str:
+        return neutralize_public_protocol_text(instance.redfish_message_id)
+
 
 class BmcEventLogEntrySerializer(serializers.ModelSerializer):
     connector_id = serializers.UUIDField(read_only=True, allow_null=True)
+    source_record_id = serializers.SerializerMethodField()
+    message = serializers.SerializerMethodField()
+    record_format = serializers.SerializerMethodField()
 
     class Meta:
         model = BmcEventLogEntry
@@ -266,3 +368,12 @@ class BmcEventLogEntrySerializer(serializers.ModelSerializer):
             "last_discovered_at",
         )
         read_only_fields = fields
+
+    def get_message(self, instance: BmcEventLogEntry) -> str:
+        return neutralize_public_protocol_text(instance.message)
+
+    def get_source_record_id(self, instance: BmcEventLogEntry) -> str:
+        return neutralize_public_protocol_text(instance.source_record_id)
+
+    def get_record_format(self, instance: BmcEventLogEntry) -> str:
+        return neutralize_public_protocol_text(instance.record_format)

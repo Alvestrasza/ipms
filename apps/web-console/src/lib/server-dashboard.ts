@@ -10,7 +10,7 @@ import {
 export type DiscoveryJob = {
   id: string;
   tenant_id: string;
-  connector_type: "ilo-redfish" | "hyper-v";
+  connector_type: "bmc-api" | "hyper-v";
   status: "queued" | "running" | "succeeded" | "failed";
   requested_by: string;
   result_summary: Record<string, unknown>;

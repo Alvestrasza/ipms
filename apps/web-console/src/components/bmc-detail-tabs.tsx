@@ -415,7 +415,9 @@ export function BmcDetailTabs({
         status: statusBadge(item.status, copy),
       }));
       const hasUnavailableIlo4Wwn = (snapshot.network ?? []).some(
-        (item) => item.wwn_source === "unavailable_in_ilo4_redfish",
+        (item) =>
+          typeof item.wwn_source === "string" &&
+          item.wwn_source.startsWith("unavailable_in_ilo4_"),
       );
       return (
         <div className="detail-stack">
@@ -575,7 +577,7 @@ export function BmcDetailTabs({
       >
         <div className="panel__header">
           <div>
-            <p className="eyebrow">Redfish</p>
+            <p className="eyebrow">BMC API</p>
             <h2 id="subsystem-heading">{copy.subsystems}</h2>
           </div>
         </div>

@@ -47,7 +47,7 @@ export default async function BmcDetailPage({ params }: BmcDetailPageProps) {
   if (!infrastructure.sessionValid) redirect(`/${locale}/login`);
   const connector = infrastructure.connectors.find(
     (candidate) =>
-      candidate.id === id && candidate.connector_type === "ilo-redfish",
+      candidate.id === id && candidate.connector_type === "bmc-api",
   );
   if (!connector) notFound();
   const system = infrastructure.systems.find(

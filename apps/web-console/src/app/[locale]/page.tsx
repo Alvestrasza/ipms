@@ -2,12 +2,14 @@ import {
   Activity,
   Boxes,
   Clock3,
-  Network,
+  RadioTower,
   RefreshCw,
   ServerCog,
   ShieldCheck,
 } from "lucide-react";
+import type { Route } from "next";
 import { cookies } from "next/headers";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { ConsoleShell } from "@/components/console-shell";
@@ -18,12 +20,13 @@ import { resolveLocale } from "@/i18n/server";
 import { getServerSession } from "@/lib/server-auth";
 import { type DiscoveryJob, getDashboardData } from "@/lib/server-dashboard";
 import { getPhysicalInfrastructure } from "@/lib/server-physical";
+import { getWindowsServers } from "@/lib/server-windows";
 import { selectedTenant } from "@/lib/tenant-selection";
 
-const summaryIcons = [ServerCog, Boxes, Network, ShieldCheck];
+const summaryIcons = [ServerCog, Boxes, RadioTower, ShieldCheck];
 const connectorNames = {
   "hyper-v": "Hyper-V",
-  "ilo-redfish": "iLO Redfish",
+  "bmc-api": "BMC API",
 };
 
 function formatUtc(value: string | null, locale: "de" | "en", empty: string) {
@@ -71,24 +74,73 @@ export default async function OverviewPage() {
   const tenant = selectedTenant(session, await cookies());
   if (!tenant) redirect(`/${locale}/login?reason=no-tenant`);
 
-  const [dashboard, infrastructure] = await Promise.all([
-    getDashboardData(tenant.id),
-    getPhysicalInfrastructure(tenant.id),
-  ]);
-  if (!dashboard.sessionValid || !infrastructure.sessionValid)
+  const [dashboard, infrastructure, physicalWindows, virtualWindows] =
+    await Promise.all([
+      getDashboardData(tenant.id),
+      getPhysicalInfrastructure(tenant.id),
+      getWindowsServers(tenant.id, "physical"),
+      getWindowsServers(tenant.id, "virtual"),
+    ]);
+  if (
+    !dashboard.sessionValid ||
+    !infrastructure.sessionValid ||
+    !physicalWindows.sessionValid ||
+    !virtualWindows.sessionValid
+  )
     redirect(`/${locale}/login`);
   const systems = infrastructure.systems;
-  const health = {
-    healthy: systems.filter((system) => system.health === "ok").length,
-    warning: systems.filter((system) => system.health === "warning").length,
-    critical: systems.filter((system) => system.health === "critical").length,
-    unknown: systems.filter((system) => system.health === "unknown").length,
+  const agentStateLabels = {
+    "not-enrolled": dictionary.windowsServers.notEnrolled,
+    online: dictionary.windowsServers.online,
+    stale: dictionary.windowsServers.stale,
+    offline: dictionary.windowsServers.offline,
+    unknown: dictionary.windowsServers.unknown,
   };
-  const networkDevices = systems.reduce(
-    (total, system) => total + (system.detail_snapshot.network?.length ?? 0),
-    0,
+  const managedSystems = [
+    ...systems.map((system) => ({
+      id: `bmc-${system.id}`,
+      name: system.name,
+      model: system.model,
+      type: dictionary.overview.bmcManagedServer,
+      state: system.power_state,
+      health: system.health === "ok" ? ("healthy" as const) : system.health,
+      href: `/${locale}/physical/bmc/${system.connector_id}` as Route,
+    })),
+    ...physicalWindows.servers.map((server) => ({
+      id: `windows-${server.id}`,
+      name: server.fqdn || server.hostname,
+      model: server.model,
+      type: dictionary.overview.physicalWindowsServer,
+      state: agentStateLabels[server.agent_state],
+      health: server.health,
+      href: `/${locale}/physical/servers/${server.id}` as Route,
+    })),
+    ...virtualWindows.servers.map((server) => ({
+      id: `windows-${server.id}`,
+      name: server.fqdn || server.hostname,
+      model: server.model,
+      type: dictionary.overview.virtualWindowsServer,
+      state: agentStateLabels[server.agent_state],
+      health: server.health,
+      href: `/${locale}/virtual/${server.id}` as Route,
+    })),
+  ];
+  const health = {
+    healthy: managedSystems.filter((system) => system.health === "healthy")
+      .length,
+    warning: managedSystems.filter((system) => system.health === "warning")
+      .length,
+    critical: managedSystems.filter((system) => system.health === "critical")
+      .length,
+    unknown: managedSystems.filter((system) => system.health === "unknown")
+      .length,
+  };
+  const bmcCount = infrastructure.connectors.filter(
+    (connector) => connector.connector_type === "bmc-api",
+  ).length;
+  const attention = managedSystems.filter(
+    (system) => system.health !== "healthy",
   );
-  const attention = systems.filter((system) => system.health !== "ok");
   const checkedAt = formatUtc(
     dashboard.checkedAt,
     locale,
@@ -97,21 +149,24 @@ export default async function OverviewPage() {
   const summaryCards = [
     {
       label: dictionary.overview.physicalSystems,
-      value: String(systems.length),
-      detail: infrastructure.available
+      value: String(systems.length + physicalWindows.servers.length),
+      detail:
+        infrastructure.available && physicalWindows.available
+          ? dictionary.overview.liveData
+          : dictionary.overview.awaitingDiscovery,
+    },
+    {
+      label: dictionary.overview.virtualMachines,
+      value: String(virtualWindows.servers.length),
+      detail: virtualWindows.available
         ? dictionary.overview.liveData
         : dictionary.overview.awaitingDiscovery,
     },
     {
-      label: dictionary.overview.virtualMachines,
-      value: "0",
-      detail: dictionary.overview.awaitingDiscovery,
-    },
-    {
-      label: dictionary.overview.networkDevices,
-      value: String(networkDevices),
+      label: dictionary.overview.bareMetalControllers,
+      value: String(bmcCount),
       detail: infrastructure.available
-        ? dictionary.overview.liveData
+        ? dictionary.overview.enrolledBmcEndpoints
         : dictionary.overview.noConnector,
     },
     {
@@ -120,10 +175,7 @@ export default async function OverviewPage() {
       detail: dictionary.overview.noBackupData,
     },
   ];
-  const connectors: DiscoveryJob["connector_type"][] = [
-    "hyper-v",
-    "ilo-redfish",
-  ];
+  const connectors: DiscoveryJob["connector_type"][] = ["hyper-v", "bmc-api"];
   const connectorHealth = (type: DiscoveryJob["connector_type"]) => {
     const matches = infrastructure.connectors.filter(
       (connector) => connector.connector_type === type,
@@ -194,41 +246,43 @@ export default async function OverviewPage() {
               <h2 id="health-heading">{dictionary.overview.managedObjects}</h2>
             </div>
             <span className="panel__metric">
-              <strong>{systems.length}</strong>{" "}
+              <strong>{managedSystems.length}</strong>{" "}
               {dictionary.overview.managedObjects}
             </span>
           </div>
           <div
             className={
-              systems.length ? "health-bar" : "health-bar health-bar--empty"
+              managedSystems.length
+                ? "health-bar"
+                : "health-bar health-bar--empty"
             }
             role="img"
             aria-label={dictionary.overview.noObjects}
           >
-            {systems.length ? (
+            {managedSystems.length ? (
               <>
                 <span
                   className="health-bar__healthy"
                   style={{
-                    width: `${(health.healthy / systems.length) * 100}%`,
+                    width: `${(health.healthy / managedSystems.length) * 100}%`,
                   }}
                 />
                 <span
                   className="health-bar__warning"
                   style={{
-                    width: `${(health.warning / systems.length) * 100}%`,
+                    width: `${(health.warning / managedSystems.length) * 100}%`,
                   }}
                 />
                 <span
                   className="health-bar__critical"
                   style={{
-                    width: `${(health.critical / systems.length) * 100}%`,
+                    width: `${(health.critical / managedSystems.length) * 100}%`,
                   }}
                 />
                 <span
                   className="health-bar__unknown"
                   style={{
-                    width: `${(health.unknown / systems.length) * 100}%`,
+                    width: `${(health.unknown / managedSystems.length) * 100}%`,
                   }}
                 />
               </>
@@ -273,7 +327,7 @@ export default async function OverviewPage() {
               <div className="connector-row" key={connector}>
                 <span>
                   <i
-                    className={`connector-mark ${connector === "ilo-redfish" ? "connector-mark--ilo" : ""}`}
+                    className={`connector-mark ${connector === "bmc-api" ? "connector-mark--ilo" : ""}`}
                   >
                     {connector === "hyper-v" ? "H" : "i"}
                   </i>
@@ -307,26 +361,28 @@ export default async function OverviewPage() {
               <thead>
                 <tr>
                   <th>{dictionary.physical.name}</th>
+                  <th>{dictionary.overview.systemType}</th>
                   <th>{dictionary.physical.model}</th>
-                  <th>{dictionary.physical.power}</th>
+                  <th>{dictionary.overview.state}</th>
                   <th>{dictionary.physical.health}</th>
                 </tr>
               </thead>
               <tbody>
                 {attention.map((system) => {
-                  const status =
-                    system.health === "ok" ? "healthy" : system.health;
                   return (
                     <tr key={system.id}>
                       <td>
-                        <strong>{system.name}</strong>
+                        <Link href={system.href}>
+                          <strong>{system.name}</strong>
+                        </Link>
                       </td>
+                      <td>{system.type}</td>
                       <td>{system.model || "—"}</td>
-                      <td>{system.power_state || "—"}</td>
+                      <td>{system.state || "—"}</td>
                       <td>
                         <StatusPill
-                          status={status}
-                          label={dictionary.status[status]}
+                          status={system.health}
+                          label={dictionary.status[system.health]}
                         />
                       </td>
                     </tr>
@@ -339,12 +395,12 @@ export default async function OverviewPage() {
           <div className="empty-state">
             <ServerCog aria-hidden="true" size={25} />
             <strong>
-              {systems.length
+              {managedSystems.length
                 ? dictionary.overview.noAttention
                 : dictionary.overview.noInventory}
             </strong>
             <span>
-              {systems.length
+              {managedSystems.length
                 ? dictionary.overview.noAttentionHint
                 : dictionary.overview.inventoryHint}
             </span>

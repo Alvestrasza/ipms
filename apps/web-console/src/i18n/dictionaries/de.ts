@@ -62,11 +62,10 @@ export const de = {
     tenants: "Mandanten",
     administration: "Administration",
     soon: "Bald",
-    version: "IPMS v0.1.25 Entwicklung",
+    version: "IPMS v0.1.26 Entwicklung",
   },
   overview: {
-    liveData:
-      "Live-Daten der Steuerungsebene — es wurde noch keine verwaltete Infrastruktur erkannt.",
+    liveData: "Live-Inventar- und Betriebsdaten des ausgewählten Mandanten.",
     unavailableData:
       "Die Daten der Steuerungsebene sind derzeit nicht verfügbar. Es werden keine zwischengespeicherten Infrastrukturwerte angezeigt.",
     managementOverview: "Managementübersicht",
@@ -77,13 +76,19 @@ export const de = {
     environmentSummary: "Umgebungsübersicht",
     physicalSystems: "Physische Systeme",
     virtualMachines: "Virtuelle Maschinen",
-    networkDevices: "Netzwerkgeräte",
+    bareMetalControllers: "Bare Metal Controller",
+    enrolledBmcEndpoints: "Eingebundene BMC-Endpunkte",
     restorePoints: "Wiederherstellungspunkte",
     awaitingDiscovery: "Erkennung ausstehend",
     noConnector: "Kein Connector konfiguriert",
     noBackupData: "Keine Backup-Daten verfügbar",
     environmentHealth: "Umgebungszustand",
-    managedObjects: "Verwaltete Objekte",
+    managedObjects: "Verwaltete Inventareinträge",
+    systemType: "Typ",
+    state: "Status",
+    bmcManagedServer: "BMC-verwalteter Server",
+    physicalWindowsServer: "Physischer Windows Server",
+    virtualWindowsServer: "Virtueller Windows Server",
     noData: "keine Daten",
     noObjects: "Es wurden noch keine verwalteten Objekte erkannt",
     healthy: "Fehlerfrei",
@@ -97,9 +102,9 @@ export const de = {
     attentionHeading: "Infrastruktur mit Handlungsbedarf",
     runDiscovery: "Erkennung starten",
     noInventory: "Keine Inventardaten",
-    noAttention: "Kein physisches System benötigt Aufmerksamkeit",
+    noAttention: "Kein verwaltetes System benötigt Aufmerksamkeit",
     noAttentionHint:
-      "Alle erkannten physischen Systeme melden derzeit einen gesunden Zustand.",
+      "Alle erkannten Systeme melden derzeit einen gesunden Zustand.",
     inventoryHint:
       "Die schreibgeschützte iLO- und Hyper-V-Erkennung füllt diese Ansicht.",
     readOnlyOperations: "Schreibgeschützte Vorgänge",
@@ -142,13 +147,13 @@ export const de = {
     noSystems: "Keine physischen Systeme erkannt",
     noSystemsHint: "Die erste erfolgreiche BMC-Erkennung füllt diese Tabelle.",
     connectors: "Connector-Konfiguration",
-    iloEndpoints: "iLO-Redfish-Endpunkte",
+    iloEndpoints: "iLO-Endpunkte",
     noConnectors: "Kein iLO-Connector eingebunden",
     noConnectorsHint:
       "Binden Sie einen schreibgeschützten iLO-Endpunkt ein, um die Erkennung zu beginnen.",
     addConnector: "iLO-Connector hinzufügen",
     wizardEyebrow: "Geführte Einrichtung",
-    wizardHeading: "iLO-Redfish-Connector hinzufügen",
+    wizardHeading: "iLO-Connector hinzufügen",
     closeWizard: "Connector-Assistent schließen",
     wizardProgress: "Fortschritt der Connector-Einrichtung",
     stepEndpoint: "Endpunkt",
@@ -183,9 +188,9 @@ export const de = {
     errorLog: "Letzter Erkennungsfehler",
     errorCode: "Fehlercode",
     httpStatus: "HTTP-Status",
-    request: "Redfish-Aufruf",
-    redfishErrorCode: "Redfish-Fehlercode",
-    redfishMessageId: "Redfish-Message-ID",
+    request: "BMC-API-Aufruf",
+    apiErrorCode: "BMC-API-Fehlercode",
+    apiMessageId: "BMC-API-Message-ID",
     sessionToken: "Session-Token-Header",
     sessionLocation: "Session-Location-Header",
     lastAttempt: "Letzter Versuch",
@@ -201,12 +206,12 @@ export const de = {
       "Das präsentierte Zertifikat stimmt nicht mehr mit dem ausdrücklich vertrauten Fingerabdruck überein.",
     connectionFailed: "IPMS konnte die HTTPS-Verbindung nicht herstellen.",
     connectionTimeout: "Die HTTPS-Verbindung hat das Zeitlimit überschritten.",
-    redfishRequestFailed:
-      "Der BMC hat einen Redfish-Aufruf mit einem Fehler beantwortet. Die sicheren Aufrufdetails stehen unten.",
+    apiRequestFailed:
+      "Der BMC hat einen API-Aufruf mit einem Fehler beantwortet. Die sicheren Aufrufdetails stehen unten.",
     sessionCreationFailed:
       "Die BMC-Session-Antwort enthielt nicht den Status oder die Header, die das aktuelle Kompatibilitätsprofil erwartet.",
     unsupportedService:
-      "Der Endpunkt veröffentlicht nicht alle von diesem Connector benötigten Redfish-Ressourcen.",
+      "Der Endpunkt stellt nicht alle von diesem Connector benötigten API-Ressourcen bereit.",
     unknownConnectorError:
       "Der Connector hat einen normalisierten Fehler gemeldet. Der folgende Code dient der Diagnose.",
   },
@@ -363,7 +368,7 @@ export const de = {
     familyIlo4: "HPE iLO 4",
     familyIloModern: "HPE iLO 5/6/7",
     familyIdrac: "Dell iDRAC",
-    familyRedfish: "Generisches Redfish",
+    familyGenericApi: "Generische BMC-API",
     name: "Anzeigename",
     address: "Adresse",
     addressHint:
@@ -433,7 +438,7 @@ export const de = {
     eyebrow: "Connector-Beobachtbarkeit",
     heading: "BMC-Kommunikationslogs",
     description:
-      "Filtern Sie sichere Redfish- und TLS-Austauschmetadaten. Zugangsdaten, Token, Header und Payload-Inhalte werden niemals gespeichert.",
+      "Filtern Sie sichere BMC-API- und TLS-Austauschmetadaten. Zugangsdaten, Token, Header und Payload-Inhalte werden niemals gespeichert.",
     filters: "Logfilter",
     severity: "Severity",
     allSeverities: "Alle Severities",
@@ -460,7 +465,7 @@ export const de = {
     details: "Details",
     noLogs: "Keine BMC-Logeinträge entsprechen diesen Filtern",
     noLogsHint:
-      "Zertifikatsprüfungen und Redfish-Erkennungsvorgänge erscheinen hier.",
+      "Zertifikatsprüfungen und BMC-API-Erkennungsvorgänge erscheinen hier.",
     showingLimit:
       "Es werden bis zu 500 der neuesten Einträge angezeigt. Der CSV-Export enthält bis zu 10.000 gefilterte Einträge.",
   },
@@ -510,7 +515,7 @@ export const de = {
     back: "Zurück zu den Bare Metal Controllern",
     eyebrow: "Systeminformationen",
     headingSuffix: "Zustandsübersicht",
-    snapshot: "Schreibgeschützter Redfish-Snapshot",
+    snapshot: "Schreibgeschützter BMC-API-Snapshot",
     lastDiscovery: "Letzte Erkennung",
     systemModel: "Systemmodell",
     serialNumber: "Seriennummer",

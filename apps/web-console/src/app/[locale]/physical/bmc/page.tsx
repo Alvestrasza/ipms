@@ -31,7 +31,7 @@ export default async function BareMetalControllerPage() {
   const infrastructure = await getPhysicalInfrastructure(tenant.id);
   if (!infrastructure.sessionValid) redirect(`/${locale}/login`);
   const connectors = infrastructure.connectors.filter(
-    (connector) => connector.connector_type === "ilo-redfish",
+    (connector) => connector.connector_type === "bmc-api",
   );
   const canManage =
     session.user.is_platform_admin || tenant.role === "tenant_admin";
@@ -39,7 +39,7 @@ export default async function BareMetalControllerPage() {
     "hpe-ilo4": dictionary.bmc.familyIlo4,
     "hpe-ilo-modern": dictionary.bmc.familyIloModern,
     "dell-idrac": dictionary.bmc.familyIdrac,
-    "generic-redfish": dictionary.bmc.familyRedfish,
+    "generic-bmc-api": dictionary.bmc.familyGenericApi,
   };
 
   return (
@@ -62,7 +62,7 @@ export default async function BareMetalControllerPage() {
             {dictionary.bmc.descriptionPrefix} {tenant.display_name}.
           </p>
         </div>
-        <span className="read-only-badge">Redfish</span>
+        <span className="read-only-badge">BMC API</span>
       </section>
 
       <section

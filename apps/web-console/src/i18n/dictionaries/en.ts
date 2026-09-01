@@ -56,11 +56,10 @@ export const en = {
     tenants: "Tenants",
     administration: "Administration",
     soon: "Soon",
-    version: "IPMS v0.1.25 development",
+    version: "IPMS v0.1.26 development",
   },
   overview: {
-    liveData:
-      "Live Control Plane data — no managed infrastructure has been discovered yet.",
+    liveData: "Live tenant-scoped inventory and operational data.",
     unavailableData:
       "Control Plane data is currently unavailable. No cached infrastructure values are shown.",
     managementOverview: "Management overview",
@@ -71,13 +70,19 @@ export const en = {
     environmentSummary: "Environment summary",
     physicalSystems: "Physical systems",
     virtualMachines: "Virtual machines",
-    networkDevices: "Network devices",
+    bareMetalControllers: "Bare Metal Controllers",
+    enrolledBmcEndpoints: "Enrolled BMC endpoints",
     restorePoints: "Restore points",
     awaitingDiscovery: "Awaiting discovery",
     noConnector: "No connector configured",
     noBackupData: "No backup data available",
     environmentHealth: "Environment health",
-    managedObjects: "Managed objects",
+    managedObjects: "Managed inventory records",
+    systemType: "Type",
+    state: "State",
+    bmcManagedServer: "BMC-managed server",
+    physicalWindowsServer: "Physical Windows server",
+    virtualWindowsServer: "Virtual Windows server",
     noData: "no data",
     noObjects: "No managed objects have been discovered",
     healthy: "Healthy",
@@ -91,9 +96,8 @@ export const en = {
     attentionHeading: "Infrastructure requiring attention",
     runDiscovery: "Run discovery",
     noInventory: "No inventory data",
-    noAttention: "No physical systems require attention",
-    noAttentionHint:
-      "All discovered physical systems currently report a healthy state.",
+    noAttention: "No managed systems require attention",
+    noAttentionHint: "All discovered systems currently report a healthy state.",
     inventoryHint:
       "Read-only iLO and Hyper-V discovery will populate this view.",
     readOnlyOperations: "Read-only operations",
@@ -136,13 +140,13 @@ export const en = {
     noSystemsHint:
       "The first successful BMC discovery will populate this table.",
     connectors: "Connector configuration",
-    iloEndpoints: "iLO Redfish endpoints",
+    iloEndpoints: "iLO endpoints",
     noConnectors: "No iLO connector enrolled",
     noConnectorsHint:
       "Enroll and validate a read-only iLO endpoint to begin discovery.",
     addConnector: "Add iLO connector",
     wizardEyebrow: "Guided enrollment",
-    wizardHeading: "Add an iLO Redfish connector",
+    wizardHeading: "Add an iLO connector",
     closeWizard: "Close connector wizard",
     wizardProgress: "Connector enrollment progress",
     stepEndpoint: "Endpoint",
@@ -176,9 +180,9 @@ export const en = {
     errorLog: "Last discovery error",
     errorCode: "Error code",
     httpStatus: "HTTP status",
-    request: "Redfish request",
-    redfishErrorCode: "Redfish error code",
-    redfishMessageId: "Redfish message ID",
+    request: "BMC API request",
+    apiErrorCode: "BMC API error code",
+    apiMessageId: "BMC API message ID",
     sessionToken: "Session token header",
     sessionLocation: "Session location header",
     lastAttempt: "Last attempt",
@@ -194,12 +198,12 @@ export const en = {
       "The presented certificate no longer matches the explicitly trusted fingerprint.",
     connectionFailed: "IPMS could not establish the HTTPS connection.",
     connectionTimeout: "The HTTPS connection timed out.",
-    redfishRequestFailed:
-      "The BMC returned an error for a Redfish request. The safe request details are shown below.",
+    apiRequestFailed:
+      "The BMC returned an API error. The safe request details are shown below.",
     sessionCreationFailed:
       "The BMC session response did not contain the status or headers required by the current compatibility profile.",
     unsupportedService:
-      "The endpoint does not advertise the Redfish resources required by this connector.",
+      "The endpoint does not provide the API resources required by this connector.",
     unknownConnectorError:
       "The connector reported a normalized error. Use the code below for diagnosis.",
   },
@@ -353,7 +357,7 @@ export const en = {
     familyIlo4: "HPE iLO 4",
     familyIloModern: "HPE iLO 5/6/7",
     familyIdrac: "Dell iDRAC",
-    familyRedfish: "Generic Redfish",
+    familyGenericApi: "Generic BMC API",
     name: "Display name",
     address: "Address",
     addressHint:
@@ -421,7 +425,7 @@ export const en = {
     eyebrow: "Connector observability",
     heading: "BMC communication logs",
     description:
-      "Filter safe Redfish and TLS exchange metadata. Credentials, tokens, headers, and payload bodies are never stored.",
+      "Filter safe BMC API and TLS exchange metadata. Credentials, tokens, headers, and payload bodies are never stored.",
     filters: "Log filters",
     severity: "Severity",
     allSeverities: "All severities",
@@ -448,7 +452,7 @@ export const en = {
     details: "Details",
     noLogs: "No BMC log entries match these filters",
     noLogsHint:
-      "Certificate checks and Redfish discovery exchanges will appear here.",
+      "Certificate checks and BMC API discovery exchanges will appear here.",
     showingLimit:
       "Showing up to 500 newest entries. CSV export includes up to 10,000 filtered entries.",
   },
@@ -497,7 +501,7 @@ export const en = {
     back: "Back to Bare Metal Controllers",
     eyebrow: "System Information",
     headingSuffix: "Health Summary",
-    snapshot: "Read-only Redfish snapshot",
+    snapshot: "Read-only BMC API snapshot",
     lastDiscovery: "Last discovery",
     systemModel: "System model",
     serialNumber: "Serial number",

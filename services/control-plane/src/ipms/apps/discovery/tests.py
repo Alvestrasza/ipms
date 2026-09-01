@@ -279,6 +279,8 @@ class DiscoveryJobApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()), 1)
         self.assertEqual(response.json()[0]["id"], str(self.job.id))
+        self.assertEqual(response.json()[0]["connector_type"], "bmc-api")
+        self.assertNotIn("redfish", json.dumps(response.json()).lower())
         self.assertNotIn("parameters", response.json()[0])
 
     def test_tenant_reader_can_list_jobs_for_own_tenant(self) -> None:
@@ -359,6 +361,10 @@ class InventoryApiTests(DiscoveryJobApiTests):
             name="Fixture server",
             serial_number="SYNTHETIC",
             health=PhysicalSystem.Health.OK,
+            detail_snapshot={
+                "redfish_version": "1.0.0",
+                "wwn_source": "unavailable_in_ilo4_redfish",
+            },
             discovered_at=timezone.now(),
         )
 
@@ -367,14 +373,19 @@ class InventoryApiTests(DiscoveryJobApiTests):
         response = self.client.get(reverse("core:connector-list"), **self.tenant_header())
         self.assertEqual(response.status_code, 200)
         projection = response.json()[0]
+        self.assertEqual(projection["connector_type"], "bmc-api")
         self.assertNotIn("credential_reference", projection)
         self.assertNotIn("tls_certificate_sha256", projection)
+        self.assertNotIn("redfish", json.dumps(projection).lower())
 
     def test_physical_inventory_is_tenant_scoped(self) -> None:
         self.client.force_login(self.tenant_reader)
         response = self.client.get(reverse("core:physical-list"), **self.tenant_header())
         self.assertEqual(response.status_code, 200)
         self.assertEqual([item["id"] for item in response.json()], [str(self.system.id)])
+        self.assertNotIn("source_resource_id", response.json()[0])
+        self.assertEqual(response.json()[0]["detail_snapshot"]["bmc_api_version"], "1.0.0")
+        self.assertNotIn("redfish", json.dumps(response.json()).lower())
 
     def test_inventory_write_is_not_available(self) -> None:
         self.client.force_login(self.platform_admin)
@@ -1022,6 +1033,26 @@ class IloPortalEnrollmentTests(TestCase):
         self.assertNotIn("test-only-secret", serialized)
         self.assertNotIn("credential_reference", serialized)
         self.assertNotIn("certificate_sha256", serialized)
+        self.assertEqual(document["connector"]["connector_type"], "bmc-api")
+        self.assertNotIn("redfish", json.dumps(document).lower())
+
+    def test_generic_bmc_api_name_is_mapped_to_internal_compatibility_profile(self) -> None:
+        response = self.post(
+            self.admin,
+            self.tenant,
+            {**self.payload, "bmc_family": "generic-bmc-api"},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(
+            ConnectorEndpoint.objects.get().bmc_family,
+            ConnectorEndpoint.BmcFamily.GENERIC_REDFISH,
+        )
+        self.assertEqual(
+            response.json()["connector"]["bmc_family"],
+            "generic-bmc-api",
+        )
+        self.assertNotIn("redfish", json.dumps(response.json()).lower())
 
     def test_reader_cannot_enroll_connector(self) -> None:
         response = self.post(self.reader, self.tenant)
@@ -1189,6 +1220,9 @@ class IloPortalEnrollmentTests(TestCase):
             method="GET",
             resource_path="/redfish/v1/",
             http_status=500,
+            error_code="redfish_request_failed",
+            redfish_error_code="Redfish.Error",
+            redfish_message_id="Redfish.Message",
         )
         BmcCommunicationLog.objects.create(
             tenant=self.other_tenant,
@@ -1206,6 +1240,10 @@ class IloPortalEnrollmentTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual([entry["bmc_name"] for entry in response.json()], ["=synthetic"])
+        self.assertEqual(response.json()[0]["event_type"], "bmc_api.exchange")
+        self.assertIn("api_error_code", response.json()[0])
+        self.assertIn("api_message_id", response.json()[0])
+        self.assertNotIn("redfish", json.dumps(response.json()).lower())
 
         export = self.client.get(
             reverse("core:bmc-log-export"),
@@ -1216,6 +1254,8 @@ class IloPortalEnrollmentTests(TestCase):
         content = export.content.decode()
         self.assertIn("'=synthetic", content)
         self.assertNotIn("Other tenant BMC", content)
+        self.assertIn("api_error_code", content)
+        self.assertNotIn("redfish", content.lower())
 
     @patch("ipms.apps.discovery.services.socket.getaddrinfo")
     @patch("ipms.apps.discovery.services.discover_ilo")

@@ -27,10 +27,23 @@ query is never the default.
 
 ## Current Read-Only Data
 
-The overview consumes live Control Plane readiness and tenant-scoped discovery
-job responses. Inventory counts remain zero until normalized inventory and the
-read-only iLO Redfish and Hyper-V connectors are implemented. The console does
-not substitute preview or cached numbers when the Control Plane is unavailable.
+The overview consumes live Control Plane readiness, tenant-scoped discovery
+jobs, BMC-managed hardware, and Agent-reported physical and virtual Windows
+inventory. Summary cards distinguish physical systems, virtual machines,
+enrolled BMC endpoints, and restore points. The health distribution and
+attention table combine all currently managed inventory records and link each
+record to its appropriate detail view.
+
+The product surface uses capability and vendor terminology such as BMC, iLO,
+iDRAC, Hyper-V, and API. Connector transport protocols, internal model names,
+resource identifiers, and compatibility-profile identifiers are implementation
+details. They must not be rendered by the Web Console or returned by public API
+and CSV projections. Internal identifiers may remain stable where changing them
+would require a data migration, but serializers must translate and sanitize
+them at the trust boundary.
+
+The console does not substitute preview or cached numbers when the Control
+Plane is unavailable.
 
 Connector activity reflects only the latest discovery-job outcome. It is not
 yet a full connector-health or managed-device-health signal.

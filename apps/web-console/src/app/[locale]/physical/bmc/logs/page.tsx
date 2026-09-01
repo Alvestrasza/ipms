@@ -188,8 +188,8 @@ export default async function BmcLogsPage({
               <tbody>
                 {data.logs.map((entry) => {
                   const detail =
-                    entry.redfish_message_id ||
-                    entry.redfish_error_code ||
+                    entry.api_message_id ||
+                    entry.api_error_code ||
                     entry.error_code;
                   return (
                     <tr key={entry.id}>

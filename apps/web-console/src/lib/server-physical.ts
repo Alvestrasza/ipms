@@ -10,8 +10,8 @@ import {
 export type ConnectorEndpoint = {
   id: string;
   tenant_id: string;
-  connector_type: "ilo-redfish" | "hyper-v";
-  bmc_family: "hpe-ilo4" | "hpe-ilo-modern" | "dell-idrac" | "generic-redfish";
+  connector_type: "bmc-api" | "hyper-v";
+  bmc_family: "hpe-ilo4" | "hpe-ilo-modern" | "dell-idrac" | "generic-bmc-api";
   display_name: string;
   base_url: string;
   enabled: boolean;
@@ -22,8 +22,8 @@ export type ConnectorEndpoint = {
     method?: string;
     path?: string;
     http_status?: number;
-    redfish_error_code?: string;
-    redfish_message_id?: string;
+    api_error_code?: string;
+    api_message_id?: string;
     token_state?: string;
     location_state?: string;
   };
@@ -43,8 +43,8 @@ export type BmcCommunicationLog = {
   http_status: number | null;
   duration_ms: number | null;
   error_code: string;
-  redfish_error_code: string;
-  redfish_message_id: string;
+  api_error_code: string;
+  api_message_id: string;
   correlation_id: string | null;
   occurred_at: string;
 };

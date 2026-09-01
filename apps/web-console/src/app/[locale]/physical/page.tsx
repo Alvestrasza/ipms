@@ -51,7 +51,7 @@ export default async function PhysicalInfrastructurePage() {
     (system) => system.health === "ok",
   ).length;
   const bmcConnectors = infrastructure.connectors.filter(
-    (connector) => connector.connector_type === "ilo-redfish",
+    (connector) => connector.connector_type === "bmc-api",
   );
 
   return (

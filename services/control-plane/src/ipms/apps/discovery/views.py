@@ -51,6 +51,8 @@ from .serializers import (
     WindowsServerDetailSerializer,
     WindowsServerSerializer,
     WindowsServerTelemetrySerializer,
+    neutralize_public_protocol_text,
+    public_bmc_family,
 )
 
 
@@ -521,8 +523,8 @@ class BmcCommunicationLogExportView(APIView):
                 "http_status",
                 "duration_ms",
                 "error_code",
-                "redfish_error_code",
-                "redfish_message_id",
+                "api_error_code",
+                "api_message_id",
                 "correlation_id",
             )
         )
@@ -533,15 +535,15 @@ class BmcCommunicationLogExportView(APIView):
                     entry.occurred_at.isoformat(),
                     entry.severity,
                     entry.bmc_name,
-                    entry.bmc_family,
-                    entry.event_type,
+                    public_bmc_family(entry.bmc_family),
+                    neutralize_public_protocol_text(entry.event_type),
                     entry.method,
-                    entry.resource_path,
+                    neutralize_public_protocol_text(entry.resource_path),
                     entry.http_status,
                     entry.duration_ms,
-                    entry.error_code,
-                    entry.redfish_error_code,
-                    entry.redfish_message_id,
+                    neutralize_public_protocol_text(entry.error_code),
+                    neutralize_public_protocol_text(entry.redfish_error_code),
+                    neutralize_public_protocol_text(entry.redfish_message_id),
                     entry.correlation_id,
                 )
             )
@@ -583,14 +585,14 @@ class BmcEventLogEntryExportView(APIView):
                     entry.severity,
                     entry.bmc_name,
                     entry.log_type,
-                    entry.source_record_id,
-                    entry.message,
+                    neutralize_public_protocol_text(entry.source_record_id),
+                    neutralize_public_protocol_text(entry.message),
                     entry.repeat_count,
                     entry.repaired,
                     entry.event_class,
                     entry.event_code,
                     entry.event_number,
-                    entry.record_format,
+                    neutralize_public_protocol_text(entry.record_format),
                 )
             )
         response = HttpResponse(output.getvalue(), content_type="text/csv; charset=utf-8")
