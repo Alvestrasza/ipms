@@ -1,4 +1,5 @@
 import base64
+import binascii
 import hashlib
 import os
 import re
@@ -248,18 +249,37 @@ def _issue_leaf(*, issuer_key, issuer_cert, public_key, common_name, san, eku, l
 
 
 def validate_agent_csr(csr_pem: str):
-    csr_pem = csr_pem.replace(
-        "-----BEGIN NEW CERTIFICATE REQUEST-----",
-        "-----BEGIN CERTIFICATE REQUEST-----",
-    ).replace(
-        "-----END NEW CERTIFICATE REQUEST-----",
-        "-----END CERTIFICATE REQUEST-----",
-    )
     if len(csr_pem.encode("utf-8")) > 16_384:
         raise ValidationError("The CSR exceeds the maximum size.")
     try:
-        csr = x509.load_pem_x509_csr(csr_pem.encode("ascii"))
-    except (ValueError, UnicodeEncodeError) as exc:
+        ascii_csr = csr_pem.encode("ascii").decode("ascii").strip()
+        allowed_wrappers = (
+            (
+                "-----BEGIN CERTIFICATE REQUEST-----",
+                "-----END CERTIFICATE REQUEST-----",
+            ),
+            (
+                "-----BEGIN NEW CERTIFICATE REQUEST-----",
+                "-----END NEW CERTIFICATE REQUEST-----",
+            ),
+        )
+        wrapper = next(
+            (
+                (begin, end)
+                for begin, end in allowed_wrappers
+                if ascii_csr.startswith(begin) and ascii_csr.endswith(end)
+            ),
+            None,
+        )
+        if wrapper is None:
+            raise ValueError("Unsupported CSR wrapper")
+        begin, end = wrapper
+        encoded = ascii_csr[len(begin) : -len(end)]
+        if "-----" in encoded:
+            raise ValueError("Nested CSR wrapper")
+        der = base64.b64decode("".join(encoded.split()), validate=True)
+        csr = x509.load_der_x509_csr(der)
+    except (ValueError, UnicodeEncodeError, binascii.Error) as exc:
         raise ValidationError("The CSR is not valid PEM.") from exc
     if not csr.is_signature_valid:
         raise ValidationError("The CSR signature is invalid.")
