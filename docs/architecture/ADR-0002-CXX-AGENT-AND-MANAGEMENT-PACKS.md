@@ -8,7 +8,7 @@ Accepted.
 
 The IPMS Agent is implemented in C++20. It has one portable core and small Windows and Linux platform hosts. On Windows, the installed `IPMS Agent` service runs as LocalSystem. On Linux, its equivalent runs under a dedicated systemd service identity unless a documented capability requires another privilege boundary.
 
-The agent uses outbound mTLS to the Control Plane. It is not remotely reachable by default and does not provide a remote shell, PowerShell bridge, SSH service, script runner, or general command-execution interface.
+The agent initiates one persistent, bidirectional mTLS channel to the IPMS Agent Gateway on TCP 9419. The Control Plane uses that established stream to push signed Pack assignments, bounded inventory requests, certificate-rotation instructions, and signed update manifests. It never opens a connection to an agent. Managed systems therefore expose no inbound Agent Gateway listener and no remote shell, PowerShell bridge, SSH service, script runner, or general command-execution interface.
 
 Management Packs are signed, versioned policy declarations. A pack may only activate capabilities compiled into the agent release. Packs cannot carry native code, scripts, arbitrary command lines, certificates, or credentials. The Control Plane validates tenant, device identity, license, pack signature, version compatibility, dependencies, and capability allowlists before an assignment is offered. The agent repeats signature, identity, compatibility, and dependency validation before activation.
 
@@ -22,5 +22,6 @@ Management Packs are signed, versioned policy declarations. A pack may only acti
 
 - C++ provides native Windows and Linux binaries without a managed runtime.
 - LocalSystem remains a local API privilege only; server policy cannot expand it into arbitrary remote execution.
+- TCP 9419 is the on-premises Agent Gateway firewall contract. A future Cloud profile may explicitly select TCP 443 as an egress fallback without changing this default.
 - Agent binary updates require a separately signed, versioned installer and rollback path. A pack assignment cannot add new executable functionality.
 - v0.1.0 remains read-only. State-changing packs require a separate ADR, authorization model, audit events, acceptance tests, and license policy.

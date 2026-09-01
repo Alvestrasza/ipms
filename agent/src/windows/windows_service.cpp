@@ -32,7 +32,9 @@ void WINAPI service_main(DWORD, LPWSTR*) {
   report(SERVICE_START_PENDING);
   stop_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
   if (stop_event == nullptr) { report(SERVICE_STOPPED, GetLastError()); return; }
-  // Local-only collection until an enrolled, mTLS-authenticated transport exists.
+  // The future mTLS transport is agent-initiated to TCP/9419 and bidirectional.
+  // It accepts only signed pack assignments, inventory requests, update manifests,
+  // and certificate-rotation messages; it never exposes an inbound listener.
   (void)ipms::agent::windows::collect_windows_server_core_inventory_json();
   report(SERVICE_RUNNING);
   WaitForSingleObject(stop_event, INFINITE);

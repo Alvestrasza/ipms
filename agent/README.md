@@ -4,6 +4,20 @@ The IPMS Agent is a native C++20 service for customer-managed Windows and Linux 
 
 The initial implementation contains the pack registry and the read-only `windows-server-core` pack. The Windows executable can run in an interactive diagnostic mode with `--console` or as the `IPMS Agent` Windows service. It does not yet enroll, persist data, or send inventory to a Control Plane; those operations remain deliberately blocked until the enrollment and transport contracts are implemented.
 
+## Agent gateway
+
+The Agent will initiate one persistent, mutually authenticated TLS connection
+to the IPMS Agent Gateway on **TCP 9419**. It is bidirectional after
+authentication: the Agent submits inventory and status while the gateway may
+send signed Management Pack assignments, bounded collection requests,
+certificate-rotation instructions, and signed update manifests. The Agent
+never opens an inbound listener and never accepts commands, scripts, binaries,
+or arbitrary update payloads through this channel.
+
+TCP 9419 is the on-premises default. A future Cloud profile may use TCP 443
+only as an explicitly configured egress fallback; it does not change the
+on-premises gateway default.
+
 ## Build
 
 Build with a current CMake release and a C++20 compiler. On Windows, use a Developer PowerShell for Visual Studio:

@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(ipms_agent VERSION 0.1.13 LANGUAGES CXX)
+project(ipms_agent VERSION 0.1.15 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_library(ipms_agent_core STATIC src/management_pack.cpp)
+add_library(ipms_agent_core STATIC src/gateway_contract.cpp src/management_pack.cpp)
 target_include_directories(ipms_agent_core PUBLIC include)
 target_compile_features(ipms_agent_core PUBLIC cxx_std_20)
 

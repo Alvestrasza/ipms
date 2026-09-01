@@ -9,7 +9,7 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-IPMS application build `0.1.14` is in the v0.1.0 read-only foundation phase. A
+IPMS application build `0.1.15` is in the v0.1.0 read-only foundation phase. A
 standalone development
 Appliance currently runs the tenant-aware Django Control Plane, PostgreSQL,
 the multilingual Next.js Web Console, and the isolated connector worker.
@@ -45,6 +45,7 @@ The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 - [Web Console architecture and security boundary](docs/architecture/WEB-CONSOLE.md)
 - [iLO Redfish connector architecture](docs/architecture/ILO-REDFISH-CONNECTOR.md)
 - [ADR-0002: Native C++ Agent and Management Pack Trust Model](docs/architecture/ADR-0002-CXX-AGENT-AND-MANAGEMENT-PACKS.md)
+- [ADR-0003: Agent PKI and Enrollment Trust Model](docs/architecture/ADR-0003-AGENT-PKI-AND-ENROLLMENT.md)
 - [Agent contract](docs/architecture/AGENT-CONTRACT.md)
 
 ## Source Layout

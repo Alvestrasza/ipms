@@ -1,3 +1,4 @@
+#include "ipms/agent/gateway_contract.hpp"
 #include "ipms/agent/windows_core_pack.hpp"
 
 #include <windows.h>
@@ -58,6 +59,7 @@ std::string collect_windows_server_core_inventory_json() {
   GlobalMemoryStatusEx(&memory);
   std::ostringstream json;
   json << "{\"schema_version\":\"1\",\"pack\":\"windows-server-core\","
+       << "\"agent_gateway_port\":" << ipms::agent::k_default_agent_gateway_port << ","
        << "\"hostname\":\"" << json_escape(utf8(computer_name())) << "\","
        << "\"os_product\":\"" << json_escape(utf8(registry_string(L"ProductName"))) << "\","
        << "\"os_build\":\"" << json_escape(utf8(registry_string(L"CurrentBuildNumber"))) << "\","
