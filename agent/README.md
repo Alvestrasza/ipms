@@ -2,7 +2,7 @@
 
 The IPMS Agent is a native C++20 service for customer-managed Windows and Linux systems. It will establish an outbound, mutually authenticated connection to the IPMS Control Plane and collect only capabilities explicitly assigned to the enrolled device.
 
-The initial implementation contains the pack registry and the read-only `windows-server-core` pack. The Windows executable can run in inventory-only diagnostic mode with `--console`, perform one bounded connection cycle with `--run-once`, or run as the `IPMS Agent` Windows service. Version 0.1.17 enrolls with a non-exportable LocalMachine ECDSA P-256 key, validates the one-time Gateway certificate pin, installs the dedicated Agent trust chain, and sends bounded inventory through TLS 1.3 and mTLS. Version 0.1.27 adds installed Windows Server roles, role services, and features to that inventory.
+The initial implementation contains the pack registry and the read-only `windows-server-core` pack. The Windows executable can run in inventory-only diagnostic mode with `--console`, perform one bounded connection cycle with `--run-once`, or run as the `IPMS Agent` Windows service. Version 0.1.17 enrolls with a non-exportable LocalMachine ECDSA P-256 key, validates the one-time Gateway certificate pin, installs the dedicated Agent trust chain, and sends bounded inventory through TLS 1.3 and mTLS. Version 0.1.27 adds installed Windows Server roles, role services, and features to that inventory. Version 0.1.28 makes the installer language-independent, automatically omits shell integration on Windows Server Core, and rolls back newly created service artifacts when installation fails.
 
 ## Installed roles and features
 

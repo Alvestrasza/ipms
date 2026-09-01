@@ -39,6 +39,19 @@ encryption and cannot be configured for plaintext messages. No request field
 can supply a command, script, executable, destination path, or installation
 argument.
 
+The package and worker use well-known Windows security identifiers so the
+fixed installation is independent of the operating-system language. Shell
+integration is omitted automatically on Windows Server Core. Package
+extraction, service installation, enrollment import, and service start are
+separate bounded phases. A deployment-owned marker permits rollback only for
+the directory created by that job.
+
+On a retry, the worker may repair an older incomplete portal installation only
+when all fixed evidence matches: expected install path and file set, stopped
+`LocalSystem` service with the expected binary path, no Agent state or pending
+enrollment, and no uninstall registration. A complete, changed, running, or
+otherwise ambiguous installation fails closed and remains untouched.
+
 The worker deletes the encrypted bootstrap credential after the first attempt,
 whether the attempt succeeds or fails. Failed jobs also invalidate the unused
 enrollment token. Successful jobs leave only the server-side token digest until
@@ -59,6 +72,8 @@ Windows remote-management path exists only for initial installation.
 - A certificate or transport approval cannot be replayed for another tenant,
   endpoint, port, or transport and expires after ten minutes.
 - A failed attempt requires the administrator to submit the credentials again.
+- An interrupted new installation is rolled back when deployment ownership is
+  proven; ambiguous existing Agent state is never overwritten.
 - The standalone worker can reach only localhost and private address ranges.
 - Agent deployment is not customer-release-ready until the package is delivered
   as a signed installer and clean-VM acceptance has passed.

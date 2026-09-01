@@ -2,22 +2,22 @@
 
 ## Scope and current status
 
-This runbook covers the native C++20 IPMS Agent foundation for Windows Server
-and Windows test systems. Application build `0.1.16` provides:
+This runbook covers the native C++20 IPMS Agent for Windows Server and Windows
+test systems. Agent build `0.1.28` provides:
 
 - the `IPMS Agent` Windows service, installed as `LocalSystem`;
 - the `windows-server-core` and `hyper-v-host` built-in read-only Management
   Pack declarations;
 - a native `IPMS Agent Configuration` application;
-- Programs and Features, Control Panel, and Start Menu integration; and
+- Programs and Features registration plus optional Control Panel and Start
+  Menu integration on systems with the Windows shell; and
 - local configuration for the Management Server hostname, TCP port, and PKI
   trust mode.
 
-This is not an end-to-end Agent release. Device enrollment, device-key
-generation, persistent TCP 9419 mTLS transport, server-side inventory
-ingestion, durable local telemetry queueing, signed update execution, and real
-Hyper-V collection remain incomplete. The configuration application therefore
-reports `Not enrolled` and does not claim connectivity.
+The Agent supports one-time enrollment with a non-exportable LocalMachine key,
+outbound TCP 9419 mTLS transport, server-side inventory ingestion, and bounded
+Windows and Hyper-V inventory collection. Signed update execution and a
+release-grade MSI or equivalent installer remain incomplete.
 
 ## Build outputs
 
@@ -61,14 +61,17 @@ elevated PowerShell:
 
 The two executables must reside in the same installation directory. The
 installer refuses to overwrite an existing service; a supported in-place
-upgrade workflow is still pending.
+upgrade workflow is still pending. It uses well-known Windows security
+identifiers rather than localized account names. If any step fails after
+creating the service, it removes only the service and registrations created by
+that invocation.
 
 The service is registered with automatic start and the Windows built-in
 `LocalSystem` identity. Installing as `LocalSystem` permits the read-only host
 and Hyper-V APIs planned by the compiled capability registry; it does not
 authorize arbitrary commands, scripts, PowerShell, SSH, or a remote shell.
 
-## Windows shell integration
+## Windows shell integration and Server Core
 
 The installer registers the following local entry points:
 
@@ -77,6 +80,12 @@ The installer registers the following local entry points:
 | Programs and Features | `IPMS Agent`, A-Corp icon, publisher, version, website, computed size, Modify and Uninstall actions |
 | All Control Panel Items | `IPMS Agent Configuration` with the A-Corp icon |
 | Start Menu | `IPMS Agent Configuration` shortcut |
+
+`-ShellIntegration Auto` is the default. It disables the Control Panel and
+Start Menu registrations when `InstallationType` is `Server Core` or Explorer
+is unavailable. The service, protected configuration directory, enrollment
+importer, and uninstall registration remain available. Operators may select
+`Enabled` or `Disabled` explicitly for controlled tests.
 
 Programs and Features uses `https://www.alvestrasza.com` as the publisher
 information URL. `EstimatedSize` is calculated in KiB from the service
@@ -136,13 +145,12 @@ Get-Acl "$env:ProgramData\Alvestrasza\IPMS Agent" |
   Format-List Owner, AccessToString
 ```
 
-Acceptance for the initial workstation test proved native compilation of the
-service, configuration UI, embedded resources, and contract tests; LocalSystem
-service registration; protected configuration-directory creation; Programs
-and Features metadata; and Control Panel namespace registration. The service
-was deliberately left stopped because enrollment and transport are not yet
-implemented. This is workstation acceptance, not a signed installer or
-production-service acceptance.
+Acceptance must distinguish workstation shell integration from Server Core
+service operation. Both require native compilation, contract tests,
+`LocalSystem` registration, protected configuration storage, one-time
+enrollment, service start, and an mTLS inventory cycle. Workstation acceptance
+also verifies the optional Control Panel and Start Menu entry points. This does
+not constitute signed-installer or production acceptance.
 
 ## Uninstall and preservation
 

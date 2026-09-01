@@ -32,10 +32,10 @@ if (Test-Path -LiteralPath (Join-Path $directory 'agent-state.json')) {
 
 if ($PSCmdlet.ShouldProcess($destination, 'Import one-time Agent enrollment into the protected LocalSystem directory')) {
     New-Item -ItemType Directory -Path $directory -Force | Out-Null
-    & icacls.exe $directory /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' 'BUILTIN\Administrators:(OI)(CI)F' | Out-Null
+    & icacls.exe $directory /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "icacls.exe failed with exit code $LASTEXITCODE." }
     Copy-Item -LiteralPath $source -Destination $destination
-    & icacls.exe $destination /inheritance:r /grant:r 'SYSTEM:F' 'BUILTIN\Administrators:F' | Out-Null
+    & icacls.exe $destination /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "icacls.exe failed with exit code $LASTEXITCODE." }
 }
 

@@ -66,10 +66,11 @@ def _artifact() -> Path:
     return artifact
 
 
-def _execute_checked(client, script: str, *, failure_code: str) -> None:
-    _, _, had_errors = client.execute_ps(script)
+def _execute_checked(client, script: str, *, failure_code: str) -> str:
+    output, _, had_errors = client.execute_ps(script)
     if had_errors:
         raise RemoteDeploymentStepError(failure_code)
+    return str(output)
 
 
 def _powershell_single_quoted(value: str) -> str:
@@ -81,6 +82,119 @@ def _staging_path_assignment(deployment_id) -> str:
     return (
         "$staging = Join-Path -Path $env:ProgramData -ChildPath "
         f"{_powershell_single_quoted(child_path)}; "
+    )
+
+
+def _agent_path_assignments() -> str:
+    return (
+        "$install = Join-Path $env:ProgramFiles 'Alvestrasza\\IPMS Agent'; "
+        "$agentBinary = Join-Path $install 'ipms-agent.exe'; "
+        "$configuration = Join-Path $env:ProgramData 'Alvestrasza\\IPMS Agent'; "
+        "$state = Join-Path $configuration 'agent-state.json'; "
+        "$enrollment = Join-Path $configuration 'enrollment.json'; "
+        "$uninstallKey = 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion"
+        "\\Uninstall\\IPMSAgent'; "
+    )
+
+
+def _incomplete_install_assessment() -> str:
+    return _agent_path_assignments() + (
+        "$service = Get-CimInstance -ClassName Win32_Service "
+        "-Filter \"Name='IPMS Agent'\" -ErrorAction SilentlyContinue; "
+        "$allowedFiles = @('import-windows-agent-enrollment.ps1', "
+        "'install-windows-agent.ps1', 'ipms-agent-config.exe', "
+        "'ipms-agent.exe', 'ipms-agent-import-enrollment.ps1', "
+        "'ipms-agent-uninstall.ps1', 'uninstall-windows-agent.ps1'); "
+        "$unexpectedFiles = @(); "
+        "if (Test-Path -LiteralPath $install) { "
+        "$unexpectedFiles = @(Get-ChildItem -LiteralPath $install -Force | "
+        "Where-Object { $_.Name -notin $allowedFiles }) }; "
+        "$serviceBinary = if ($service) "
+        "{ ([string]$service.PathName).Trim().Trim([char]34) } else { '' }; "
+        "$isIncomplete = $null -ne $service -and "
+        "$serviceBinary -ieq $agentBinary -and "
+        "$service.StartName -eq 'LocalSystem' -and "
+        "$service.State -eq 'Stopped' -and "
+        "(Test-Path -LiteralPath $install) -and "
+        "$unexpectedFiles.Count -eq 0 -and "
+        "-not (Test-Path -LiteralPath $state) -and "
+        "-not (Test-Path -LiteralPath $enrollment) -and "
+        "-not (Test-Path -LiteralPath $uninstallKey); "
+    )
+
+
+def _incomplete_install_guard_script() -> str:
+    return (
+        "$ErrorActionPreference = 'Stop'; "
+        + _incomplete_install_assessment()
+        + "if ($service -and -not $isIncomplete) "
+        "{ throw 'An existing Agent is not an incomplete portal installation.' }"
+    )
+
+
+def _incomplete_install_repair_script() -> str:
+    return (
+        "$ErrorActionPreference = 'Stop'; "
+        + _incomplete_install_assessment()
+        + "if ($service) { "
+        "if (-not $isIncomplete) { throw 'The Agent state changed before repair.' }; "
+        "& sc.exe delete 'IPMS Agent' | Out-Null; "
+        "if ($LASTEXITCODE -ne 0) { throw 'Incomplete service removal failed.' }; "
+        "$serviceRemovalDeadline = [DateTime]::UtcNow.AddSeconds(5); "
+        "do { Start-Sleep -Milliseconds 100; "
+        "$remainingService = Get-Service -Name 'IPMS Agent' "
+        "-ErrorAction SilentlyContinue } "
+        "while ($remainingService -and [DateTime]::UtcNow -lt $serviceRemovalDeadline); "
+        "if ($remainingService) { throw 'Incomplete service removal timed out.' }; "
+        "Remove-Item -LiteralPath $install -Recurse -Force; "
+        "$shortcut = Join-Path $env:ProgramData "
+        "'Microsoft\\Windows\\Start Menu\\Programs\\IPMS Agent'; "
+        "Remove-Item -LiteralPath $shortcut -Recurse -Force "
+        "-ErrorAction SilentlyContinue; "
+        "$configurationChildren = @(Get-ChildItem -LiteralPath $configuration "
+        "-Force -ErrorAction SilentlyContinue); "
+        "if ($configurationChildren.Count -eq 0) "
+        "{ Remove-Item -LiteralPath $configuration -Force -ErrorAction SilentlyContinue }; "
+        "Write-Output 'IPMS_INCOMPLETE_REPAIR=1' "
+        "} else { Write-Output 'IPMS_INCOMPLETE_REPAIR=0' }"
+    )
+
+
+def _deployment_rollback_script(deployment_id) -> str:
+    owner = _powershell_single_quoted(str(deployment_id))
+    return (
+        "$ErrorActionPreference = 'Continue'; "
+        + _agent_path_assignments()
+        + "$ownerFile = Join-Path $install '.ipms-deployment-owner'; "
+        f"$expectedOwner = {owner}; "
+        "$ownsInstall = (Test-Path -LiteralPath $ownerFile) -and "
+        "((Get-Content -LiteralPath $ownerFile -Raw -ErrorAction SilentlyContinue).Trim() "
+        "-eq $expectedOwner); "
+        "if ($ownsInstall -and -not (Test-Path -LiteralPath $state)) { "
+        "$service = Get-CimInstance -ClassName Win32_Service "
+        "-Filter \"Name='IPMS Agent'\" -ErrorAction SilentlyContinue; "
+        "$serviceBinary = if ($service) "
+        "{ ([string]$service.PathName).Trim().Trim([char]34) } else { '' }; "
+        "if ($service -and $serviceBinary -ieq $agentBinary) { "
+        "Stop-Service -Name 'IPMS Agent' -Force -ErrorAction SilentlyContinue; "
+        "& sc.exe delete 'IPMS Agent' | Out-Null }; "
+        "Remove-Item -LiteralPath $uninstallKey -Recurse -Force "
+        "-ErrorAction SilentlyContinue; "
+        "$controlPanelGuid = '{4B13D2F1-A647-4D4E-B0D7-7EE33E72F691}'; "
+        "$controlPanelClass = \"HKLM:\\Software\\Classes\\CLSID\\$controlPanelGuid\"; "
+        "$controlPanelNamespace = \"HKLM:\\Software\\Microsoft\\Windows"
+        "\\CurrentVersion\\Explorer\\ControlPanel\\NameSpace\\$controlPanelGuid\"; "
+        "$shortcut = Join-Path $env:ProgramData "
+        "'Microsoft\\Windows\\Start Menu\\Programs\\IPMS Agent'; "
+        "Remove-Item -LiteralPath $controlPanelNamespace -Recurse -Force "
+        "-ErrorAction SilentlyContinue; "
+        "Remove-Item -LiteralPath $controlPanelClass -Recurse -Force "
+        "-ErrorAction SilentlyContinue; "
+        "Remove-Item -LiteralPath $shortcut -Recurse -Force "
+        "-ErrorAction SilentlyContinue; "
+        "Remove-Item -LiteralPath $enrollment -Force -ErrorAction SilentlyContinue; "
+        "Remove-Item -LiteralPath $install -Recurse -Force "
+        "-ErrorAction SilentlyContinue }"
     )
 
 
@@ -143,7 +257,13 @@ def _http_origin(address: str, port: int) -> str:
     return f"http://{host}:{port}/wsman"
 
 
-def _audit(deployment: WindowsAgentDeployment, *, outcome: str, error_code: str = ""):
+def _audit(
+    deployment: WindowsAgentDeployment,
+    *,
+    outcome: str,
+    error_code: str = "",
+    recovered_incomplete_install: bool = False,
+):
     details = {
         "target_address": deployment.target_address,
         "target_port": deployment.target_port,
@@ -152,6 +272,8 @@ def _audit(deployment: WindowsAgentDeployment, *, outcome: str, error_code: str 
     }
     if error_code:
         details["error_code"] = error_code
+    if recovered_incomplete_install:
+        details["recovered_incomplete_install"] = True
     AuditEvent.objects.create(
         tenant=deployment.tenant,
         actor="ipms-agent-deployment-worker",
@@ -168,6 +290,7 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
     secret_row = None
     staging_path_assignment = _staging_path_assignment(deployment.id)
     succeeded = False
+    recovered_incomplete_install = False
     error_code = ""
     stage = "initialization"
     try:
@@ -255,12 +378,15 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
         )
         _execute_checked(
             client,
-            staging_path_assignment
-            + "$ErrorActionPreference = 'Stop'; "
-            + "if (Get-Service -Name 'IPMS Agent' -ErrorAction SilentlyContinue) "
-            + "{ throw 'The IPMS Agent service already exists.' }",
+            _incomplete_install_guard_script(),
             failure_code="remote_agent_already_installed",
         )
+        repair_output = _execute_checked(
+            client,
+            _incomplete_install_repair_script(),
+            failure_code="remote_incomplete_agent_repair_failed",
+        )
+        recovered_incomplete_install = "IPMS_INCOMPLETE_REPAIR=1" in repair_output
         _execute_checked(
             client,
             staging_path_assignment
@@ -309,37 +435,65 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
             client.copy(str(enrollment_path), remote_enrollment)
 
         stage = "install"
-        deploy_script = staging_path_assignment + (
+        owner = _powershell_single_quoted(str(deployment.id))
+        extract_script = staging_path_assignment + (
             "$ErrorActionPreference = 'Stop'; "
             "$install = Join-Path $env:ProgramFiles 'Alvestrasza\\IPMS Agent'; "
-            "try { "
             "if (Test-Path -LiteralPath $install) "
             "{ throw 'The IPMS Agent directory already exists.' }; "
             "New-Item -ItemType Directory -Path $install -Force | Out-Null; "
+            f"Set-Content -LiteralPath (Join-Path $install '.ipms-deployment-owner') "
+            f"-Value {owner} -NoNewline; "
             "Expand-Archive -LiteralPath (Join-Path $staging 'agent.zip') "
-            "-DestinationPath $install; "
-            "& (Join-Path $install 'install-windows-agent.ps1') "
-            "-BinaryPath (Join-Path $install 'ipms-agent.exe') "
-            "-ConfigBinaryPath (Join-Path $install 'ipms-agent-config.exe') "
-            "-StartMode Automatic; "
-            "& (Join-Path $install 'import-windows-agent-enrollment.ps1') "
-            "-EnrollmentDocument (Join-Path $staging 'enrollment.json'); "
-            "Start-Service -Name 'IPMS Agent'; "
-            "$service = Get-Service -Name 'IPMS Agent'; "
-            "if ($service.Status -ne 'Running') { throw 'Agent did not start.' } "
-            "} finally { Remove-Item -LiteralPath $staging -Recurse -Force "
-            "-ErrorAction SilentlyContinue }"
+            "-DestinationPath $install"
         )
         _execute_checked(
             client,
-            deploy_script,
-            failure_code="remote_install_failed",
+            extract_script,
+            failure_code="remote_package_extract_failed",
+        )
+        _execute_checked(
+            client,
+            "$ErrorActionPreference = 'Stop'; "
+            "$install = Join-Path $env:ProgramFiles 'Alvestrasza\\IPMS Agent'; "
+            "& (Join-Path $install 'install-windows-agent.ps1') "
+            "-BinaryPath (Join-Path $install 'ipms-agent.exe') "
+            "-ConfigBinaryPath (Join-Path $install 'ipms-agent-config.exe') "
+            "-StartMode Automatic -ShellIntegration Auto",
+            failure_code="remote_service_install_failed",
+        )
+        stage = "enrollment"
+        _execute_checked(
+            client,
+            staging_path_assignment
+            + "$ErrorActionPreference = 'Stop'; "
+            + "$install = Join-Path $env:ProgramFiles 'Alvestrasza\\IPMS Agent'; "
+            + "& (Join-Path $install 'import-windows-agent-enrollment.ps1') "
+            + "-EnrollmentDocument (Join-Path $staging 'enrollment.json')",
+            failure_code="remote_enrollment_import_failed",
+        )
+        stage = "start"
+        _execute_checked(
+            client,
+            "$ErrorActionPreference = 'Stop'; "
+            "Start-Service -Name 'IPMS Agent'; "
+            "$service = Get-Service -Name 'IPMS Agent'; "
+            "if ($service.Status -ne 'Running') { throw 'Agent did not start.' }; "
+            "$install = Join-Path $env:ProgramFiles 'Alvestrasza\\IPMS Agent'; "
+            "Remove-Item -LiteralPath (Join-Path $install '.ipms-deployment-owner') "
+            "-Force",
+            failure_code="remote_service_start_failed",
         )
         succeeded = True
     except Exception as exc:  # Safe error codes only; never persist remote output.
         error_code = _safe_error_code(exc, stage=stage)
     finally:
         if client is not None:
+            if not succeeded:
+                try:
+                    client.execute_ps(_deployment_rollback_script(deployment.id))
+                except Exception:
+                    pass
             try:
                 client.execute_ps(
                     staging_path_assignment
@@ -369,6 +523,7 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
                 else AuditEvent.Outcome.FAILED
             ),
             error_code=error_code,
+            recovered_incomplete_install=recovered_incomplete_install,
         )
 
 

@@ -4,9 +4,9 @@ set -euo pipefail
 NODE_VERSION="24.20.0"
 PNPM_VERSION="11.24.0"
 REPOSITORY_URL="https://github.com/Alvestrasza/ipms.git"
-AGENT_PACKAGE_NAME="ipms-agent-windows-x64-0.1.27.zip"
-AGENT_PACKAGE_SHA256="9004ef8697396b4d2ab4e941765723bd61f9ac2d5adc7c64bffde3f4e5c12a18"
-AGENT_PACKAGE_URL="https://github.com/Alvestrasza/ipms/releases/download/v0.1.28/${AGENT_PACKAGE_NAME}"
+AGENT_PACKAGE_NAME="ipms-agent-windows-x64-0.1.28.zip"
+AGENT_PACKAGE_SHA256="3f9671e3b43d8f4a6d0f04c03a7400b6305f70aae07f5062b81ba27d74925937"
+AGENT_PACKAGE_URL="https://github.com/Alvestrasza/ipms/releases/download/v0.1.34/${AGENT_PACKAGE_NAME}"
 
 usage() {
     echo "Usage: sudo install-dev.sh --public-host HOST --management-source IP_OR_CIDR --release-ref COMMIT --tenant-slug SLUG --tenant-name NAME [--admin-username USER]" >&2

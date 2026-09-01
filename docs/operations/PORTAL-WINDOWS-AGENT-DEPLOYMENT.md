@@ -2,8 +2,8 @@
 
 ## Scope
 
-IPMS 0.1.33 provides a development-grade portal bootstrap for Windows Agent
-0.1.27. The workflow is tenant-scoped, audited, connection-approved, and
+IPMS 0.1.34 provides a development-grade portal bootstrap for Windows Agent
+0.1.28. The workflow is tenant-scoped, audited, connection-approved, and
 limited to a fixed installation operation. It is not a general-purpose remote
 execution feature.
 
@@ -17,7 +17,8 @@ execution feature.
 - The HTTP fallback requires NTLM and fail-closed WS-Man message encryption. It
   is not equivalent to HTTPS because it provides no TLS server identity.
 - The supplied account is a local administrator on the target.
-- No existing `IPMS Agent` service or Agent installation directory is present.
+- No complete `IPMS Agent` installation is present. A narrowly identified
+  incomplete portal installation may be repaired automatically before retry.
 - The Appliance contains the pinned Windows Agent package whose SHA-256 digest
   matches its deployment configuration.
 
@@ -58,17 +59,28 @@ text can contain sensitive details and are intentionally not persisted by IPMS.
 Audit events record tenant, actor, target endpoint, approved transport,
 certificate trust mode, job identifier, outcome, and a bounded error code only.
 The bounded error distinguishes initialization, package validation, endpoint
-preflight, remote staging, transfer, and fixed installation phases without
-persisting exception messages or remote protocol output.
+preflight, remote staging, transfer, extraction, service installation,
+enrollment import, and service start without persisting exception messages or
+remote protocol output.
 Remote staging uses a quoted `ProgramData` child path and well-known Windows
 security identifiers so paths with spaces and localized group names behave
 consistently. Administrator-token, existing-service, directory-creation, and
 ACL failures have separate bounded error codes.
+
+Agent 0.1.28 also uses well-known security identifiers inside the package. It
+detects Windows Server Core and skips Start Menu and Control Panel shell
+integration while retaining the service and uninstall registration. A failed
+new installation is rolled back only when the deployment-owned marker and the
+expected service path prove ownership. An older incomplete installation is
+eligible for repair only when the expected stopped `LocalSystem` service,
+fixed file set, absent enrollment and state, and absent uninstall registration
+all match. Any other existing installation fails closed and remains untouched.
 
 The worker repeats the approved preflight before decrypting and using the
 credential. HTTPS certificate pins must still match. HTTP always uses NTLM with
 `encryption="always"`; disabling WS-Man message encryption is not supported.
 
 The current development package is hash-pinned but not Authenticode-signed and
-is not an MSI. Code signing, a signed installer, clean-VM acceptance, upgrade,
-rollback, and interrupted-copy recovery remain release gates.
+is not an MSI. Code signing, a signed installer, clean-VM acceptance, and a
+supported in-place upgrade remain release gates. The bounded development
+rollback and incomplete-install recovery do not replace those release gates.
