@@ -3,7 +3,7 @@ import { Bell, CircleUserRound, Search } from "lucide-react";
 import { getDictionary } from "@/i18n/dictionaries";
 import { resolveLocale } from "@/i18n/server";
 import type { AuthenticatedSession, TenantSummary } from "@/lib/auth-types";
-
+import { AddSystemDialog } from "./add-system-dialog";
 import { LanguageSwitcher } from "./language-switcher";
 import { LogoutButton } from "./logout-button";
 import { type ActiveSection, Sidebar } from "./sidebar";
@@ -21,7 +21,8 @@ export async function ConsoleShell({
   tenant: TenantSummary;
   activeSection?: ActiveSection;
 }) {
-  const dictionary = getDictionary(await resolveLocale());
+  const locale = await resolveLocale();
+  const dictionary = getDictionary(locale);
   const roleLabels = {
     platform_admin: dictionary.shell.platformAdmin,
     tenant_admin: dictionary.shell.tenantAdmin,
@@ -39,6 +40,17 @@ export async function ConsoleShell({
             selectedTenantId={tenant.id}
           />
           <div className="topbar__tools">
+            <AddSystemDialog
+              csrfToken={session.csrf_token}
+              tenantId={tenant.id}
+              locale={locale}
+              canManage={
+                tenant.role === "platform_admin" ||
+                tenant.role === "tenant_admin"
+              }
+              copy={dictionary.addSystem}
+              bmcCopy={dictionary.bmc}
+            />
             <button
               className="search-trigger"
               type="button"

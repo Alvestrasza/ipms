@@ -81,7 +81,7 @@ operations process.
 ## Acceptance
 
 ```shell
-sudo systemctl is-active postgresql ipms-certificate-probe ipms-control-plane ipms-web-console ipms-connector-worker.timer nginx fail2ban
+sudo systemctl is-active postgresql ipms-certificate-probe ipms-control-plane ipms-web-console ipms-connector-worker.timer ipms-agent-deployment-worker.timer ipms-agent-gateway nginx fail2ban
 sudo ss -lntp
 sudo ufw status verbose
 curl --fail --header "X-Forwarded-Proto: https" \
@@ -93,7 +93,8 @@ curl --fail --insecure --resolve ipms-dev.example.invalid:443:127.0.0.1 \
 Only SSH and HTTPS may listen on non-loopback addresses. PostgreSQL, Gunicorn,
 Next.js, and the certificate-probe helper must remain loopback-only. The
 Control Plane systemd unit permits only localhost traffic. The certificate
-helper permits localhost and private address ranges, and its dedicated
+helper and fixed Agent deployment worker permit localhost and private address
+ranges, and the helper's dedicated
 environment file contains only one probe token and one port assignment.
 
 ## Release and Rollback Model

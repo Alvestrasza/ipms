@@ -324,6 +324,21 @@ class ManagedAgentPkiTests(TestCase):
                 "hypervisor_host": "hypervisor.example.invalid",
                 "logical_processors": 4,
                 "memory_total_bytes": 8 * 1024**3,
+                "installed_roles_features_status": "collected",
+                "installed_roles_features": [
+                    {
+                        "name": "Web-Server",
+                        "display_name": "Web Server (IIS)",
+                        "parent_name": "",
+                        "type": "role",
+                    },
+                    {
+                        "name": "Web-Common-Http",
+                        "display_name": "Common HTTP Features",
+                        "parent_name": "Web-Server",
+                        "type": "role-service",
+                    },
+                ],
                 "network_interfaces": [
                     {
                         "interface_id": "fixture-interface",
@@ -356,6 +371,11 @@ class ManagedAgentPkiTests(TestCase):
         self.assertEqual(server.model, "Virtual Machine")
         self.assertEqual(server.hypervisor_host, "hypervisor.example.invalid")
         self.assertEqual(server.network_interfaces[0]["name"], "Ethernet")
+        self.assertEqual(server.installed_roles_features_status, "collected")
+        self.assertEqual(
+            [item["name"] for item in server.installed_roles_features],
+            ["Web-Common-Http", "Web-Server"],
+        )
         self.assertEqual(server.agent_state, WindowsServer.AgentState.ONLINE)
         self.assertEqual(server.management_packs, ["windows-server-core"])
         with self.assertRaises(ValidationError):
@@ -374,6 +394,26 @@ class ManagedAgentPkiTests(TestCase):
             confirm_inventory(
                 enrollment,
                 agent_version="0.1.23",
+                inventory=invalid_inventory,
+            )
+
+        invalid_inventory["machine_type"] = "virtual"
+        invalid_inventory["installed_roles_features_status"] = "unavailable"
+        invalid_inventory["installed_roles_features"] = [
+            {
+                "name": "DNS",
+                "display_name": "DNS Server",
+                "parent_name": "",
+                "type": "role",
+            }
+        ]
+        with self.assertRaisesMessage(
+            ValidationError,
+            "must not report roles or features",
+        ):
+            confirm_inventory(
+                enrollment,
+                agent_version="0.1.27",
                 inventory=invalid_inventory,
             )
 

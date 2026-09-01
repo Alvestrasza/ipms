@@ -10,6 +10,12 @@ This contract defines the boundary between IPMS Control Plane and an enrolled IP
 - The agent initiates one persistent mTLS connection to the IPMS Agent Gateway on TCP 9419. The server authenticates the device and the agent authenticates the Control Plane certificate chain.
 - The authenticated connection is bidirectional. The Agent submits inventory, health, job status, acknowledgements, and audit-safe errors; the Gateway may send only signed Management Pack assignments, bounded inventory requests, certificate-rotation instructions, and signed agent-update manifests.
 - Managed systems do not accept inbound Agent Gateway connections. The Control Plane pushes messages through the Agent-initiated stream; it never dials an agent.
+
+The portal bootstrap in ADR-0005 is a narrowly scoped installation exception,
+not an Agent transport change. A dedicated worker may use trusted HTTPS Windows
+remote management once to install the pinned Agent package and import a
+short-lived enrollment. It cannot run operator-supplied commands or scripts,
+and the installed Agent still exposes no inbound listener.
 - Enrollment, certificate renewal, revocation, and endpoint migration are durable, auditable operations. A revoked or expired identity sends no data and accepts no policy.
 - Inventory is bounded, correlated, batched, retry-safe, and queued locally only for a documented retention period. Secrets and raw event contents are excluded from telemetry and diagnostic logs.
 
@@ -35,7 +41,7 @@ An update message is a signed manifest, not an executable payload. The Agent ver
 
 | Pack | Capabilities | Access |
 | --- | --- | --- |
-| `windows-server-core` | OS, hardware, storage, and network inventory | Read-only |
+| `windows-server-core` | OS, hardware, storage, network, and installed role/feature inventory | Read-only |
 | `hyper-v-host` | Hyper-V host, VM, and virtual-network inventory | Read-only |
 
 `hyper-v-host` requires `windows-server-core`. Both packs are available only on Windows and neither performs a state-changing Hyper-V operation.
@@ -45,6 +51,14 @@ ten-second current utilization sample. Live telemetry is limited to native,
 read-only CPU, physical-memory, and fixed-volume counters. The v0.1.0 Control
 Plane retains only the latest sample per system; historical telemetry requires
 the later dedicated telemetry storage boundary.
+
+Installed Windows Server roles and features are five-minute configuration
+inventory. The Agent queries the native Server Manager management provider and
+reports only entries whose provider state is installed. Each entry is bounded
+to a stable name, localized display name, parent name, and the normalized type
+`role`, `role-service`, or `feature`. A separate collection status distinguishes
+a successfully collected empty list from an unavailable provider and from an
+older Agent that did not report this capability.
 
 ## Control-plane requirements
 

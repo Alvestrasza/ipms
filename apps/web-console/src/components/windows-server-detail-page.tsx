@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  Boxes,
   Cpu,
   MonitorCog,
   Network,
@@ -123,6 +124,12 @@ export async function WindowsServerDetailPage({
     server.inventory_source === "agent"
       ? dictionary.windowsServers.sourceAgent
       : dictionary.windowsServers.sourceHyperV;
+  const installedRolesFeatures = server.installed_roles_features ?? [];
+  const roleFeatureTypeLabels = {
+    role: copy.roleType,
+    "role-service": copy.roleServiceType,
+    feature: copy.featureType,
+  };
 
   return (
     <ConsoleShell
@@ -259,6 +266,59 @@ export async function WindowsServerDetailPage({
             <dd>{formatMemory(server.memory_bytes)}</dd>
           </div>
         </dl>
+      </section>
+
+      <section
+        className="panel network-inventory"
+        aria-labelledby="roles-features-heading"
+      >
+        <div className="bmc-identity__title">
+          <span className="connector-mark">
+            <Boxes aria-hidden="true" size={18} />
+          </span>
+          <div>
+            <strong id="roles-features-heading">{copy.rolesFeatures}</strong>
+            <small>{copy.rolesFeaturesHint}</small>
+          </div>
+        </div>
+        {server.installed_roles_features_status === "unavailable" ? (
+          <p className="network-inventory__empty">
+            {copy.rolesFeaturesUnavailable}
+          </p>
+        ) : server.installed_roles_features_status !== "collected" ? (
+          <p className="network-inventory__empty">
+            {copy.rolesFeaturesNotReported}
+          </p>
+        ) : installedRolesFeatures.length === 0 ? (
+          <p className="network-inventory__empty">{copy.noRolesFeatures}</p>
+        ) : (
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>{copy.roleFeatureName}</th>
+                  <th>{copy.roleFeatureType}</th>
+                  <th>{copy.roleFeatureTechnicalName}</th>
+                  <th>{copy.roleFeatureParent}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {installedRolesFeatures.map((feature) => (
+                  <tr key={feature.name}>
+                    <td>
+                      <strong>{feature.display_name}</strong>
+                    </td>
+                    <td>{roleFeatureTypeLabels[feature.type]}</td>
+                    <td>
+                      <code>{feature.name}</code>
+                    </td>
+                    <td>{display(feature.parent_name)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       <WindowsServerTelemetry

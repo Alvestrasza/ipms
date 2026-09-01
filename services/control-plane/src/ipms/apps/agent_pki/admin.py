@@ -7,6 +7,8 @@ from .models import (
     AgentIssuer,
     AgentPkiPolicy,
     AgentRevocation,
+    WindowsAgentDeployment,
+    WindowsAgentDeploymentSecret,
 )
 
 
@@ -64,3 +66,20 @@ class AgentEnrollmentTokenAdmin(ReadOnlyAgentPkiAdmin):
 @admin.register(AgentRevocation)
 class AgentRevocationAdmin(ReadOnlyAgentPkiAdmin):
     list_display = ("enrollment", "tenant", "reason", "revoked_at", "revoked_by")
+
+
+@admin.register(WindowsAgentDeployment)
+class WindowsAgentDeploymentAdmin(ReadOnlyAgentPkiAdmin):
+    list_display = (
+        "display_name",
+        "tenant",
+        "target_address",
+        "status",
+        "created_at",
+    )
+
+
+@admin.register(WindowsAgentDeploymentSecret)
+class WindowsAgentDeploymentSecretAdmin(ReadOnlyAgentPkiAdmin):
+    list_display = ("deployment", "tenant", "created_at")
+    exclude = ("nonce", "ciphertext")

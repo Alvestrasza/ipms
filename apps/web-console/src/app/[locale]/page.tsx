@@ -152,14 +152,14 @@ export default async function OverviewPage() {
       value: String(systems.length + physicalWindows.servers.length),
       detail:
         infrastructure.available && physicalWindows.available
-          ? dictionary.overview.liveData
+          ? dictionary.overview.inventoryCurrent
           : dictionary.overview.awaitingDiscovery,
     },
     {
       label: dictionary.overview.virtualMachines,
       value: String(virtualWindows.servers.length),
       detail: virtualWindows.available
-        ? dictionary.overview.liveData
+        ? dictionary.overview.inventoryCurrent
         : dictionary.overview.awaitingDiscovery,
     },
     {
@@ -193,16 +193,6 @@ export default async function OverviewPage() {
 
   return (
     <ConsoleShell session={session} tenant={tenant}>
-      <div
-        className={`preview-notice ${dashboard.controlPlaneReady ? "preview-notice--live" : ""}`}
-        role="status"
-      >
-        <span className="preview-notice__dot" aria-hidden="true" />
-        {dashboard.controlPlaneReady
-          ? dictionary.overview.liveData
-          : dictionary.overview.unavailableData}
-      </div>
-
       <section className="page-heading" aria-labelledby="overview-heading">
         <div>
           <p className="eyebrow">{dictionary.overview.managementOverview}</p>

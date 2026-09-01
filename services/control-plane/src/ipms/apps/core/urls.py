@@ -1,5 +1,10 @@
 from django.urls import include, path
 
+from ipms.apps.agent_pki.views import (
+    WindowsAgentDeploymentDetailView,
+    WindowsAgentDeploymentListCreateView,
+)
+
 from ipms.apps.discovery.views import (
     BmcCertificateProbeView,
     BmcCommunicationLogExportView,
@@ -27,6 +32,16 @@ urlpatterns = [
     path("health/live/", views.liveness, name="liveness"),
     path("health/ready/", views.readiness, name="readiness"),
     path("auth/", include("ipms.apps.tenancy.urls")),
+    path(
+        "agents/windows/deployments/",
+        WindowsAgentDeploymentListCreateView.as_view(),
+        name="windows-agent-deployment-list",
+    ),
+    path(
+        "agents/windows/deployments/<uuid:pk>/",
+        WindowsAgentDeploymentDetailView.as_view(),
+        name="windows-agent-deployment-detail",
+    ),
     path("connectors/", ConnectorEndpointListView.as_view(), name="connector-list"),
     path("connectors/bmc/", BmcConnectorEnrollmentView.as_view(), name="bmc-enroll"),
     path(

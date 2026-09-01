@@ -9,7 +9,7 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-IPMS application build `0.1.26` is in the v0.1.0 read-only foundation phase. A
+IPMS application build `0.1.28` is in the v0.1.0 read-only foundation phase. A
 standalone development
 Appliance currently runs the tenant-aware Django Control Plane, PostgreSQL,
 the multilingual Next.js Web Console, and the isolated connector worker.
@@ -41,6 +41,7 @@ The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 - [Windows Agent installation and local configuration](docs/operations/WINDOWS-AGENT-INSTALLATION.md)
 - [Windows Agent 0.1.16 foundation acceptance](docs/operations/WINDOWS-AGENT-0.1.16-ACCEPTANCE.md)
 - [Windows Agent 0.1.17 enrollment and inventory](docs/operations/WINDOWS-AGENT-0.1.17-ENROLLMENT.md)
+- [Portal Windows Agent deployment](docs/operations/PORTAL-WINDOWS-AGENT-DEPLOYMENT.md)
 - [Development versioning](docs/operations/VERSIONING.md)
 
 ## Architecture Decisions
@@ -51,6 +52,7 @@ The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 - [ADR-0002: Native C++ Agent and Management Pack Trust Model](docs/architecture/ADR-0002-CXX-AGENT-AND-MANAGEMENT-PACKS.md)
 - [ADR-0003: Agent PKI and Enrollment Trust Model](docs/architecture/ADR-0003-AGENT-PKI-AND-ENROLLMENT.md)
 - [ADR-0004: Local Agent Configuration and Control Panel Integration](docs/architecture/ADR-0004-LOCAL-AGENT-CONFIGURATION.md)
+- [ADR-0005: Portal Windows Agent Deployment](docs/architecture/ADR-0005-PORTAL-WINDOWS-AGENT-DEPLOYMENT.md)
 - [Agent contract](docs/architecture/AGENT-CONTRACT.md)
 
 ## Source Layout

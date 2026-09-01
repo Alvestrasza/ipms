@@ -44,6 +44,64 @@ export const de = {
     switchToDark: "Zum dunklen Design wechseln",
     signOut: "Abmelden",
   },
+  addSystem: {
+    addSystem: "System hinzufügen",
+    permissionRequired:
+      "Zum Hinzufügen eines Systems sind Mandantenadministratorrechte erforderlich",
+    eyebrow: "Infrastruktur einbinden",
+    heading: "System hinzufügen",
+    description: "Wählen Sie den Verwaltungsweg für das neue System.",
+    close: "Schließen",
+    bmc: "Bare Metal Controller",
+    bmcHint: "Ein iLO, iDRAC oder eine andere unterstützte BMC-API einbinden.",
+    windows: "Windows-System",
+    windowsHint: "Den IPMS Windows Agent installieren und sicher einbinden.",
+    windowsEyebrow: "Sichere Agent-Bereitstellung",
+    windowsHeading: "Windows-System hinzufügen",
+    name: "Anzeigename",
+    address: "DNS-Name oder IP-Adresse",
+    port: "HTTPS-Port",
+    username: "Administrativer Benutzername",
+    password: "Passwort",
+    credentialNote:
+      "IPMS verschlüsselt diese Zugangsdaten nur, bis der isolierte Bereitstellungsdienst den Auftrag verarbeitet. Nach dem ersten Versuch werden sie gelöscht; sie werden weder an den Browser zurückgegeben noch vom Agent gespeichert.",
+    winrmRequirement:
+      "Erfordert eine sichere Windows-Remoteverwaltung über HTTPS mit einem Zertifikat, dem die IPMS-Appliance vertraut. Das Ziel muss in einem privaten Netzwerk liegen und der Benutzer muss lokaler Administrator sein.",
+    back: "Zurück",
+    deploy: "Agent bereitstellen",
+    queuing: "Bereitstellung wird eingereiht",
+    unavailable: "Die Steuerungsebene ist derzeit nicht erreichbar.",
+    certificateUntrusted:
+      "Die IPMS-Appliance vertraut dem Windows-HTTPS-Zertifikat nicht. Installieren Sie die ausstellende CA auf der Appliance oder ersetzen Sie das Zertifikat des Zielsystems.",
+    certificateChanged:
+      "Das Windows-HTTPS-Zertifikat hat sich vor der Bereitstellung geändert.",
+    connectionTimeout: "Das Windows-System hat nicht rechtzeitig geantwortet.",
+    connectionFailed: "Der Windows-HTTPS-Endpunkt ist nicht erreichbar.",
+    targetUnresolved:
+      "Der Name des Windows-Systems konnte nicht aufgelöst werden.",
+    targetNotPrivate:
+      "Die Agent-Bereitstellung ist auf Ziele in privaten Netzwerken beschränkt.",
+    alreadyPending:
+      "Für dieses Windows-System ist bereits eine Bereitstellung ausstehend.",
+    pkiUnavailable:
+      "Die Agent-PKI ist für den ausgewählten Mandanten nicht bereit.",
+    authenticationFailed: "Die Windows-Authentifizierung ist fehlgeschlagen.",
+    remoteManagementFailed:
+      "Der feste Windows-Installationsauftrag ist fehlgeschlagen.",
+    packageUnavailable:
+      "Das festgelegte Windows-Agent-Paket ist nicht verfügbar.",
+    packageInvalid:
+      "Die Integritätsprüfung des Windows-Agent-Pakets ist fehlgeschlagen.",
+    deploymentFailed: "Der Windows Agent konnte nicht bereitgestellt werden.",
+    deploymentInProgress:
+      "Der isolierte Dienst prüft das Ziel und führt den fest definierten Installationsauftrag aus.",
+    deploymentSucceeded:
+      "Der Agent-Dienst wurde installiert und gestartet. Das Inventar erscheint nach Abschluss der mTLS-Einbindung.",
+    statusQueued: "Bereitstellung eingereiht",
+    statusRunning: "Bereitstellung läuft",
+    statusSucceeded: "Bereitstellung erfolgreich",
+    statusFailed: "Bereitstellung fehlgeschlagen",
+  },
   navigation: {
     primary: "Hauptnavigation",
     workspace: "Arbeitsbereich",
@@ -62,12 +120,10 @@ export const de = {
     tenants: "Mandanten",
     administration: "Administration",
     soon: "Bald",
-    version: "IPMS v0.1.26 Entwicklung",
+    version: "IPMS v0.1.28 Entwicklung",
   },
   overview: {
-    liveData: "Live-Inventar- und Betriebsdaten des ausgewählten Mandanten.",
-    unavailableData:
-      "Die Daten der Steuerungsebene sind derzeit nicht verfügbar. Es werden keine zwischengespeicherten Infrastrukturwerte angezeigt.",
+    inventoryCurrent: "Aktuelles Inventar",
     managementOverview: "Managementübersicht",
     heading: "Infrastruktur im Überblick",
     tenantStatusPrefix: "Schreibgeschützter Betriebsstatus für",
@@ -305,6 +361,22 @@ export const de = {
     hypervisorHost: "Hypervisor-Host",
     logicalProcessors: "Logische Prozessoren",
     memory: "Arbeitsspeicher",
+    rolesFeatures: "Installierte Rollen und Features",
+    rolesFeaturesHint:
+      "Nur von Windows Server als installiert gemeldete Rollen, Rollendienste und Features",
+    rolesFeaturesUnavailable:
+      "Das Rollen- und Featureinventar von Windows Server ist auf diesem System nicht verfügbar.",
+    rolesFeaturesNotReported:
+      "Diese Agentversion hat noch kein Rollen- und Featureinventar gemeldet.",
+    noRolesFeatures:
+      "Es wurden keine installierten Rollen oder Features gemeldet.",
+    roleFeatureName: "Anzeigename",
+    roleFeatureType: "Typ",
+    roleFeatureTechnicalName: "Technischer Name",
+    roleFeatureParent: "Übergeordnet",
+    roleType: "Rolle",
+    roleServiceType: "Rollendienst",
+    featureType: "Feature",
     network: "Netzwerkkonfiguration",
     networkHint:
       "Aktuelle, vom Agent gemeldete Konfiguration aller Windows-Netzwerkkarten",

@@ -38,6 +38,58 @@ export const en = {
     switchToDark: "Switch to dark theme",
     signOut: "Sign out",
   },
+  addSystem: {
+    addSystem: "Add System",
+    permissionRequired:
+      "Tenant administrator access is required to add a system",
+    eyebrow: "Infrastructure enrollment",
+    heading: "Add a system",
+    description: "Select the management path for the new system.",
+    close: "Close",
+    bmc: "Bare Metal Controller",
+    bmcHint: "Enroll an iLO, iDRAC, or another supported BMC API.",
+    windows: "Windows system",
+    windowsHint: "Install and enroll the IPMS Windows Agent.",
+    windowsEyebrow: "Secure Agent deployment",
+    windowsHeading: "Add a Windows system",
+    name: "Display name",
+    address: "DNS name or IP address",
+    port: "HTTPS port",
+    username: "Administrative username",
+    password: "Password",
+    credentialNote:
+      "IPMS encrypts these credentials only until the isolated deployment worker consumes the job. They are destroyed after the first attempt and are never returned to the browser or stored by the Agent.",
+    winrmRequirement:
+      "Requires secure Windows remote management over HTTPS with a certificate trusted by the IPMS Appliance. The target must be on a private network and the account must be a local administrator.",
+    back: "Back",
+    deploy: "Deploy Agent",
+    queuing: "Queuing deployment",
+    unavailable: "The Control Plane is currently unavailable.",
+    certificateUntrusted:
+      "The Windows HTTPS certificate is not trusted by the IPMS Appliance. Install the issuing CA on the Appliance or replace the target certificate.",
+    certificateChanged:
+      "The Windows HTTPS certificate changed before deployment.",
+    connectionTimeout: "The Windows system did not answer before the timeout.",
+    connectionFailed: "The Windows HTTPS endpoint could not be reached.",
+    targetUnresolved: "The Windows system name could not be resolved.",
+    targetNotPrivate:
+      "Agent deployment is restricted to private network targets.",
+    alreadyPending: "A deployment for this Windows system is already pending.",
+    pkiUnavailable: "Agent PKI is not ready for the selected tenant.",
+    authenticationFailed: "Windows authentication failed.",
+    remoteManagementFailed: "The fixed Windows installation job failed.",
+    packageUnavailable: "The pinned Windows Agent package is unavailable.",
+    packageInvalid: "The Windows Agent package failed its integrity check.",
+    deploymentFailed: "The Windows Agent could not be deployed.",
+    deploymentInProgress:
+      "The isolated worker is validating the target and running the fixed installation job.",
+    deploymentSucceeded:
+      "The Agent service was installed and started. Inventory appears after mTLS enrollment completes.",
+    statusQueued: "Deployment queued",
+    statusRunning: "Deployment running",
+    statusSucceeded: "Deployment succeeded",
+    statusFailed: "Deployment failed",
+  },
   navigation: {
     primary: "Primary navigation",
     workspace: "Workspace",
@@ -56,12 +108,10 @@ export const en = {
     tenants: "Tenants",
     administration: "Administration",
     soon: "Soon",
-    version: "IPMS v0.1.26 development",
+    version: "IPMS v0.1.28 development",
   },
   overview: {
-    liveData: "Live tenant-scoped inventory and operational data.",
-    unavailableData:
-      "Control Plane data is currently unavailable. No cached infrastructure values are shown.",
+    inventoryCurrent: "Current inventory",
     managementOverview: "Management overview",
     heading: "Infrastructure at a glance",
     tenantStatusPrefix: "Read-only operational status for",
@@ -295,6 +345,21 @@ export const en = {
     hypervisorHost: "Hypervisor host",
     logicalProcessors: "Logical processors",
     memory: "Memory",
+    rolesFeatures: "Installed roles and features",
+    rolesFeaturesHint:
+      "Only roles, role services, and features reported as installed by Windows Server",
+    rolesFeaturesUnavailable:
+      "Windows Server role and feature inventory is unavailable on this system.",
+    rolesFeaturesNotReported:
+      "This Agent version has not reported role and feature inventory yet.",
+    noRolesFeatures: "No installed roles or features were reported.",
+    roleFeatureName: "Display name",
+    roleFeatureType: "Type",
+    roleFeatureTechnicalName: "Technical name",
+    roleFeatureParent: "Parent",
+    roleType: "Role",
+    roleServiceType: "Role service",
+    featureType: "Feature",
     network: "Network configuration",
     networkHint:
       "Current configuration reported for every Windows network adapter",

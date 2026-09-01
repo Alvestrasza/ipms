@@ -19,6 +19,10 @@ type Props = {
   tenantId: string;
   locale: "de" | "en";
   copy: Dictionary["bmc"];
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  showTrigger?: boolean;
+  showSuccessMessage?: boolean;
 };
 
 type Certificate = {
@@ -64,16 +68,31 @@ function responseErrorCode(value: unknown): string | null {
   return null;
 }
 
-export function BmcWizard({ csrfToken, tenantId, locale, copy }: Props) {
+export function BmcWizard({
+  csrfToken,
+  tenantId,
+  locale,
+  copy,
+  open: controlledOpen,
+  onOpenChange,
+  showTrigger = true,
+  showSuccessMessage = true,
+}: Props) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
   const [step, setStep] = useState(1);
   const [busy, setBusy] = useState<"checking" | "adding" | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [certificateProbe, setCertificateProbe] =
     useState<CertificateProbe | null>(null);
+  const open = controlledOpen ?? internalOpen;
+
+  function setOpen(nextOpen: boolean) {
+    if (controlledOpen === undefined) setInternalOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  }
 
   async function enrollmentError(response: Response) {
     let code: string | null = null;
@@ -210,19 +229,21 @@ export function BmcWizard({ csrfToken, tenantId, locale, copy }: Props) {
 
   return (
     <div className="wizard-launch">
-      {success ? (
+      {showSuccessMessage && success ? (
         <p className="form-success" role="status">
           {success}
         </p>
       ) : null}
-      <button
-        className="primary-button"
-        type="button"
-        onClick={() => setOpen(true)}
-      >
-        <Plus aria-hidden="true" size={16} />
-        {copy.addBmc}
-      </button>
+      {showTrigger ? (
+        <button
+          className="primary-button"
+          type="button"
+          onClick={() => setOpen(true)}
+        >
+          <Plus aria-hidden="true" size={16} />
+          {copy.addBmc}
+        </button>
+      ) : null}
 
       {open ? (
         <div className="modal-backdrop">

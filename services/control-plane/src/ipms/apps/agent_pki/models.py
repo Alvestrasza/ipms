@@ -200,6 +200,74 @@ class AgentEnrollmentToken(models.Model):
         ]
 
 
+class WindowsAgentDeployment(models.Model):
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Queued"
+        RUNNING = "running", "Running"
+        SUCCEEDED = "succeeded", "Succeeded"
+        FAILED = "failed", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.PROTECT,
+        related_name="windows_agent_deployments",
+    )
+    enrollment = models.OneToOneField(
+        AgentEnrollment,
+        on_delete=models.PROTECT,
+        related_name="windows_deployment",
+    )
+    display_name = models.CharField(max_length=255)
+    target_address = models.CharField(max_length=253)
+    target_port = models.PositiveIntegerField(
+        default=5986,
+        validators=(MinValueValidator(1), MaxValueValidator(65535)),
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.QUEUED,
+    )
+    requested_by = models.CharField(max_length=255)
+    certificate_fingerprint_sha256 = models.CharField(max_length=64)
+    error_code = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(blank=True, null=True)
+    completed_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(
+                fields=("tenant", "-created_at"),
+                name="agent_deploy_tenant_time",
+            ),
+            models.Index(
+                fields=("status", "created_at"),
+                name="agent_deploy_status_time",
+            ),
+        ]
+
+
+class WindowsAgentDeploymentSecret(models.Model):
+    deployment = models.OneToOneField(
+        WindowsAgentDeployment,
+        primary_key=True,
+        on_delete=models.CASCADE,
+        related_name="secret",
+    )
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.PROTECT,
+        related_name="windows_agent_deployment_secrets",
+    )
+    nonce = models.BinaryField()
+    ciphertext = models.BinaryField()
+    key_version = models.PositiveSmallIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
 class AgentRevocation(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(

@@ -2,7 +2,21 @@
 
 The IPMS Agent is a native C++20 service for customer-managed Windows and Linux systems. It will establish an outbound, mutually authenticated connection to the IPMS Control Plane and collect only capabilities explicitly assigned to the enrolled device.
 
-The initial implementation contains the pack registry and the read-only `windows-server-core` pack. The Windows executable can run in inventory-only diagnostic mode with `--console`, perform one bounded connection cycle with `--run-once`, or run as the `IPMS Agent` Windows service. Version 0.1.17 enrolls with a non-exportable LocalMachine ECDSA P-256 key, validates the one-time Gateway certificate pin, installs the dedicated Agent trust chain, and sends bounded inventory through TLS 1.3 and mTLS.
+The initial implementation contains the pack registry and the read-only `windows-server-core` pack. The Windows executable can run in inventory-only diagnostic mode with `--console`, perform one bounded connection cycle with `--run-once`, or run as the `IPMS Agent` Windows service. Version 0.1.17 enrolls with a non-exportable LocalMachine ECDSA P-256 key, validates the one-time Gateway certificate pin, installs the dedicated Agent trust chain, and sends bounded inventory through TLS 1.3 and mTLS. Version 0.1.27 adds installed Windows Server roles, role services, and features to that inventory.
+
+## Installed roles and features
+
+The Windows core pack queries the native `MSFT_ServerFeature` provider in
+`Root\Windows\ServerManager`. It requests `State = 1` and emits only installed
+roles, role services, and features. The payload contains the stable feature
+name, localized display name, parent name, and normalized type. It never sends
+available, removed, or unknown entries and never invokes PowerShell.
+
+Collection has an explicit state. `collected` means the returned list is a
+complete bounded observation, including a legitimate empty list. `unavailable`
+means the Server Manager provider could not be queried, and `not-reported`
+preserves compatibility with older Agents. Provider failures therefore cannot
+silently erase previously understood meaning by masquerading as an empty host.
 
 ## Local configuration
 

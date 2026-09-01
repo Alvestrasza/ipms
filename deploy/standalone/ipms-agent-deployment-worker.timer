@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the IPMS fixed Windows Agent deployment worker
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=10s
+AccuracySec=1s
+Unit=ipms-agent-deployment-worker.service
+
+[Install]
+WantedBy=timers.target

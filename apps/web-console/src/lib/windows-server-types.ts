@@ -34,6 +34,13 @@ export type WindowsFixedVolume = {
   used_percent: number;
 };
 
+export type WindowsInstalledRoleFeature = {
+  name: string;
+  display_name: string;
+  parent_name: string;
+  type: "role" | "role-service" | "feature";
+};
+
 export type WindowsServerTelemetry = {
   server_id: string;
   cpu_used_percent: number;
@@ -71,6 +78,11 @@ export type WindowsServer = {
   agent_state: "not-enrolled" | "online" | "stale" | "offline" | "unknown";
   health: "healthy" | "warning" | "critical" | "unknown";
   management_packs: string[];
+  installed_roles_features_status?:
+    | "not-reported"
+    | "collected"
+    | "unavailable";
+  installed_roles_features?: WindowsInstalledRoleFeature[];
   last_seen_at: string | null;
   discovered_at: string;
   network_interfaces?: WindowsNetworkInterface[];

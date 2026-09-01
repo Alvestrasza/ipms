@@ -248,6 +248,8 @@ class WindowsServerDetailSerializer(WindowsServerSerializer):
 
     class Meta(WindowsServerSerializer.Meta):
         fields = WindowsServerSerializer.Meta.fields + (
+            "installed_roles_features_status",
+            "installed_roles_features",
             "network_interfaces",
             "latest_telemetry",
         )

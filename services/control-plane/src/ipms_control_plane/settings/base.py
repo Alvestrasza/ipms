@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -44,6 +45,9 @@ def bounded_integer_environment(
 SECRET_KEY = required_environment("IPMS_SECRET_KEY")
 CONNECTOR_MASTER_KEY = required_environment("IPMS_CONNECTOR_MASTER_KEY")
 AGENT_PKI_MASTER_KEY = required_environment("IPMS_AGENT_PKI_MASTER_KEY")
+AGENT_DEPLOYMENT_MASTER_KEY = required_environment(
+    "IPMS_AGENT_DEPLOYMENT_MASTER_KEY"
+)
 CERTIFICATE_PROBE_TOKEN = required_environment("IPMS_CERTIFICATE_PROBE_TOKEN")
 CERTIFICATE_PROBE_PORT = bounded_integer_environment(
     "IPMS_CERTIFICATE_PROBE_PORT",
@@ -57,6 +61,30 @@ BMC_CONNECT_TIMEOUT_SECONDS = bounded_integer_environment(
     minimum=5,
     maximum=60,
 )
+AGENT_DEPLOYMENT_CONNECT_TIMEOUT_SECONDS = bounded_integer_environment(
+    "IPMS_AGENT_DEPLOYMENT_CONNECT_TIMEOUT_SECONDS",
+    default=30,
+    minimum=5,
+    maximum=120,
+)
+AGENT_DEPLOYMENT_READ_TIMEOUT_SECONDS = bounded_integer_environment(
+    "IPMS_AGENT_DEPLOYMENT_READ_TIMEOUT_SECONDS",
+    default=180,
+    minimum=30,
+    maximum=600,
+)
+AGENT_WINDOWS_PACKAGE_PATH = required_environment("IPMS_AGENT_WINDOWS_PACKAGE_PATH")
+AGENT_WINDOWS_PACKAGE_SHA256 = required_environment(
+    "IPMS_AGENT_WINDOWS_PACKAGE_SHA256"
+).lower()
+if not re.fullmatch(r"[0-9a-f]{64}", AGENT_WINDOWS_PACKAGE_SHA256):
+    raise ImproperlyConfigured(
+        "IPMS_AGENT_WINDOWS_PACKAGE_SHA256 must be a SHA-256 digest."
+    )
+AGENT_DEPLOYMENT_CA_BUNDLE = os.environ.get(
+    "IPMS_AGENT_DEPLOYMENT_CA_BUNDLE",
+    "/etc/ssl/certs/ca-certificates.crt",
+).strip()
 DEBUG = False
 ALLOWED_HOSTS = comma_separated_environment("IPMS_ALLOWED_HOSTS", required=True)
 

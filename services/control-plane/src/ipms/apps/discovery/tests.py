@@ -66,6 +66,15 @@ class WindowsServerInventoryApiTests(TestCase):
             agent_state=WindowsServer.AgentState.ONLINE,
             health=WindowsServer.Health.HEALTHY,
             management_packs=["windows-server-core"],
+            installed_roles_features_status=WindowsServer.RolesFeaturesStatus.COLLECTED,
+            installed_roles_features=[
+                {
+                    "name": "DNS",
+                    "display_name": "DNS Server",
+                    "parent_name": "",
+                    "type": "role",
+                }
+            ],
             last_seen_at=timezone.now(),
             discovered_at=timezone.now(),
         )
@@ -174,6 +183,8 @@ class WindowsServerInventoryApiTests(TestCase):
         self.assertEqual(response.json()["server_type"], "virtual")
         self.assertNotIn("detail_snapshot", response.json())
         self.assertEqual(response.json()["network_interfaces"][0]["name"], "Ethernet")
+        self.assertEqual(response.json()["installed_roles_features_status"], "not-reported")
+        self.assertEqual(response.json()["installed_roles_features"], [])
         self.assertEqual(response.json()["latest_telemetry"]["cpu_used_percent"], 25)
 
     def test_detail_returns_null_when_current_telemetry_is_not_available(self) -> None:
@@ -184,6 +195,8 @@ class WindowsServerInventoryApiTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.json()["latest_telemetry"])
+        self.assertEqual(response.json()["installed_roles_features_status"], "collected")
+        self.assertEqual(response.json()["installed_roles_features"][0]["name"], "DNS")
 
     def test_reader_cannot_retrieve_another_tenant_system(self) -> None:
         other_system = WindowsServer.objects.get(hostname="other-tenant-fixture")

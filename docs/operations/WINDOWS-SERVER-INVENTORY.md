@@ -2,7 +2,7 @@
 
 ## Scope
 
-IPMS `0.1.25` provides tenant-scoped read-only portal inventory and detail
+IPMS `0.1.27` provides tenant-scoped read-only portal inventory and detail
 views for physical and virtual Windows systems. Native Agent enrollment and
 bounded inventory ingestion are available; Hyper-V provider discovery and all
 state-changing Windows or virtualization operations remain outside this
@@ -35,6 +35,8 @@ The normalized record prepares these fields:
 - manufacturer, model, serial number, and system UUID;
 - logical processor count and total memory;
 - bounded Windows network-interface configuration;
+- installed Windows Server roles, role services, and features, with explicit
+  collected, unavailable, or not-yet-reported state;
 - Hyper-V cluster and host placement;
 - Agent version, connection state, management-pack state, and last-seen time;
   and
@@ -58,9 +60,16 @@ tenant and device identity, normalize bounded fields, reject stale sequences,
 and write audit attribution. It must not reuse the public list endpoint or add
 an arbitrary command, PowerShell, script, shell, or remote-execution channel.
 
+The Agent reads installed roles and features directly from
+`MSFT_ServerFeature` in `Root\Windows\ServerManager`, requesting only provider
+state `1` (installed). It does not run `Get-WindowsFeature` or any other
+PowerShell command. The Control Plane accepts no more than 512 unique entries,
+validates their exact schema and type, stores them on the certificate-bound
+tenant record, and exposes them only through the tenant-scoped detail API.
+
 ## Current acceptance boundary
 
-The following are accepted through `0.1.25`:
+The following are accepted through `0.1.27`:
 
 - localized physical and virtual Windows Server navigation;
 - live empty states that distinguish unavailable data from an empty inventory;
@@ -68,10 +77,13 @@ The following are accepted through `0.1.25`:
   Hyper-V placement;
 - read-only system detail pages for identity, platform, resources, Agent state,
   inventory source, Management Packs, and timestamps;
+- a read-only installed roles and features table that distinguishes successful
+  empty collection, unavailable collection, and older Agent inventory;
 - a current-sample-only telemetry surface for CPU, memory, and fixed-volume
   utilization, refreshed by the portal every ten seconds;
 - a tenant-filtered read-only list and detail API and database migration; and
 - negative API coverage for cross-tenant access and browser writes.
 
+Native provider acceptance on a representative Windows Server 2025 system,
 Hyper-V collection, search, lifecycle operations, and production support remain
 future work.

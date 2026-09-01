@@ -1,0 +1,39 @@
+[Unit]
+Description=IPMS Fixed Windows Agent Deployment Worker
+After=network-online.target postgresql.service ipms-certificate-probe.service
+Wants=network-online.target
+Requires=postgresql.service ipms-certificate-probe.service
+
+[Service]
+Type=oneshot
+User=ipms-agent-deployment-worker
+Group=ipms-agent-deployment-worker
+WorkingDirectory=/srv/ipms/current/services/control-plane
+EnvironmentFile=/srv/ipms/shared/control-plane.env
+Environment=PYTHONPATH=/srv/ipms/current/services/control-plane/src
+ExecStart=/srv/ipms/current/services/control-plane/.venv/bin/python /srv/ipms/current/services/control-plane/manage.py process_agent_deployment_queue --limit 2
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectHostname=true
+ProtectClock=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow=10.0.0.0/8
+IPAddressAllow=172.16.0.0/12
+IPAddressAllow=192.168.0.0/16
+IPAddressAllow=fc00::/7
+SystemCallArchitectures=native
+

@@ -837,6 +837,40 @@ def _bounded_network_interfaces(value: object) -> list[dict]:
     return result
 
 
+def _bounded_installed_roles_features(value: object) -> list[dict]:
+    if not isinstance(value, list) or len(value) > 512:
+        raise ValidationError("The Agent installed roles and features list is invalid.")
+    result = []
+    names = set()
+    allowed_types = {"role", "role-service", "feature"}
+    for feature in value:
+        if not isinstance(feature, dict) or set(feature) != {
+            "name",
+            "display_name",
+            "parent_name",
+            "type",
+        }:
+            raise ValidationError("The Agent installed role or feature is invalid.")
+        name = _bounded_object_string(feature, "name", 255)
+        display_name = _bounded_object_string(feature, "display_name", 255)
+        parent_name = _bounded_object_string(feature, "parent_name", 255)
+        feature_type = _bounded_object_string(feature, "type", 16)
+        if not name or not display_name or feature_type not in allowed_types:
+            raise ValidationError("The Agent installed role or feature is invalid.")
+        if name in names:
+            raise ValidationError("The Agent installed role or feature is duplicated.")
+        names.add(name)
+        result.append(
+            {
+                "name": name,
+                "display_name": display_name,
+                "parent_name": parent_name,
+                "type": feature_type,
+            }
+        )
+    return sorted(result, key=lambda item: item["name"])
+
+
 @transaction.atomic
 def confirm_inventory(
     enrollment: AgentEnrollment,
@@ -870,6 +904,22 @@ def confirm_inventory(
     network_interfaces = _bounded_network_interfaces(
         inventory.get("network_interfaces", [])
     )
+    roles_features_status = inventory.get(
+        "installed_roles_features_status",
+        WindowsServer.RolesFeaturesStatus.NOT_REPORTED,
+    )
+    if roles_features_status not in WindowsServer.RolesFeaturesStatus.values:
+        raise ValidationError("The Agent installed roles and features status is invalid.")
+    installed_roles_features = _bounded_installed_roles_features(
+        inventory.get("installed_roles_features", [])
+    )
+    if (
+        roles_features_status != WindowsServer.RolesFeaturesStatus.COLLECTED
+        and installed_roles_features
+    ):
+        raise ValidationError(
+            "The Agent must not report roles or features without a collected status."
+        )
     if machine_type not in {"", *WindowsServer.ServerType.values}:
         raise ValidationError("The Agent machine type is invalid.")
     logical_processors = inventory.get("logical_processors")
@@ -908,6 +958,8 @@ def confirm_inventory(
             "agent_state": WindowsServer.AgentState.ONLINE,
             "health": WindowsServer.Health.HEALTHY,
             "management_packs": ["windows-server-core"],
+            "installed_roles_features_status": roles_features_status,
+            "installed_roles_features": installed_roles_features,
             "network_interfaces": network_interfaces,
             "detail_snapshot": {
                 "schema_version": "1",

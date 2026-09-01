@@ -2,6 +2,8 @@
 #include "ipms/agent/gateway_contract.hpp"
 #include "ipms/agent/management_pack.hpp"
 
+#include <algorithm>
+
 int main() {
   const ipms::agent::AgentConfiguration configuration{L"management.example.invalid", 9419, ipms::agent::TrustMode::ipms_managed};
   if (!ipms::agent::is_valid_agent_configuration(configuration)) return 1;
@@ -21,5 +23,9 @@ int main() {
   if (packs[1].dependencies.size() != 1) return 13;
   if (packs[1].dependencies[0] != "windows-server-core") return 14;
   for (const auto& pack : packs) if (!ipms::agent::is_valid_pack_assignment(pack)) return 15;
+  if (std::find(
+          packs[0].capabilities.begin(),
+          packs[0].capabilities.end(),
+          "windows.roles-features") == packs[0].capabilities.end()) return 16;
   return 0;
 }

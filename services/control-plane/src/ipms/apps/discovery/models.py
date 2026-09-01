@@ -167,6 +167,11 @@ class WindowsServer(models.Model):
         OFFLINE = "offline", "Offline"
         UNKNOWN = "unknown", "Unknown"
 
+    class RolesFeaturesStatus(models.TextChoices):
+        NOT_REPORTED = "not-reported", "Not reported"
+        COLLECTED = "collected", "Collected"
+        UNAVAILABLE = "unavailable", "Unavailable"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
         Tenant,
@@ -217,6 +222,12 @@ class WindowsServer(models.Model):
         default=Health.UNKNOWN,
     )
     management_packs = models.JSONField(default=list, blank=True)
+    installed_roles_features_status = models.CharField(
+        max_length=16,
+        choices=RolesFeaturesStatus.choices,
+        default=RolesFeaturesStatus.NOT_REPORTED,
+    )
+    installed_roles_features = models.JSONField(default=list, blank=True)
     network_interfaces = models.JSONField(default=list, blank=True)
     detail_snapshot = models.JSONField(default=dict, blank=True)
     last_seen_at = models.DateTimeField(blank=True, null=True)

@@ -9,11 +9,14 @@
 #include <wrl/client.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <cwctype>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -138,6 +141,28 @@ bool wmi_bool(IWbemClassObject* object, const wchar_t* property) {
   return boolean;
 }
 
+std::optional<std::uint32_t> wmi_uint32(
+    IWbemClassObject* object,
+    const wchar_t* property) {
+  VARIANT value{};
+  VariantInit(&value);
+  const HRESULT result = object->Get(property, 0, &value, nullptr, nullptr);
+  std::optional<std::uint32_t> number;
+  if (SUCCEEDED(result)) {
+    switch (value.vt) {
+      case VT_UI1: number = value.bVal; break;
+      case VT_I1: if (value.cVal >= 0) number = static_cast<std::uint32_t>(value.cVal); break;
+      case VT_UI2: number = value.uiVal; break;
+      case VT_I2: if (value.iVal >= 0) number = static_cast<std::uint32_t>(value.iVal); break;
+      case VT_UI4: number = value.ulVal; break;
+      case VT_I4: if (value.lVal >= 0) number = static_cast<std::uint32_t>(value.lVal); break;
+      default: break;
+    }
+  }
+  VariantClear(&value);
+  return number;
+}
+
 Microsoft::WRL::ComPtr<IWbemClassObject> query_first(
     IWbemServices* services,
     const wchar_t* query) {
@@ -247,6 +272,153 @@ windows_identity read_windows_identity() {
     identity.part_of_domain = part_of_domain || !identity.domain.empty();
   }
   return identity;
+}
+
+struct installed_server_feature {
+  std::wstring unique_name;
+  std::wstring display_name;
+  std::wstring parent_name;
+  std::string type;
+};
+
+std::optional<std::vector<installed_server_feature>> read_installed_server_features() {
+  com_scope com;
+  if (!com.initialized) return std::nullopt;
+  const HRESULT security = CoInitializeSecurity(
+      nullptr,
+      -1,
+      nullptr,
+      nullptr,
+      RPC_C_AUTHN_LEVEL_DEFAULT,
+      RPC_C_IMP_LEVEL_IMPERSONATE,
+      nullptr,
+      EOAC_NONE,
+      nullptr);
+  if (FAILED(security) && security != RPC_E_TOO_LATE) return std::nullopt;
+
+  Microsoft::WRL::ComPtr<IWbemLocator> locator;
+  if (FAILED(CoCreateInstance(
+          CLSID_WbemLocator,
+          nullptr,
+          CLSCTX_INPROC_SERVER,
+          IID_PPV_ARGS(&locator)))) {
+    return std::nullopt;
+  }
+  BSTR namespace_path = SysAllocString(L"ROOT\\Windows\\ServerManager");
+  if (namespace_path == nullptr) return std::nullopt;
+  Microsoft::WRL::ComPtr<IWbemServices> services;
+  const HRESULT connection = locator->ConnectServer(
+      namespace_path,
+      nullptr,
+      nullptr,
+      nullptr,
+      0,
+      nullptr,
+      nullptr,
+      &services);
+  SysFreeString(namespace_path);
+  if (FAILED(connection) || !services) return std::nullopt;
+  if (FAILED(CoSetProxyBlanket(
+          services.Get(),
+          RPC_C_AUTHN_WINNT,
+          RPC_C_AUTHZ_NONE,
+          nullptr,
+          RPC_C_AUTHN_LEVEL_CALL,
+          RPC_C_IMP_LEVEL_IMPERSONATE,
+          nullptr,
+          EOAC_NONE))) {
+    return std::nullopt;
+  }
+
+  BSTR language = SysAllocString(L"WQL");
+  BSTR statement = SysAllocString(
+      L"SELECT UniqueName, DisplayName, ParentName, Type, State "
+      L"FROM MSFT_ServerFeature WHERE State = 1");
+  if (language == nullptr || statement == nullptr) {
+    if (language != nullptr) SysFreeString(language);
+    if (statement != nullptr) SysFreeString(statement);
+    return std::nullopt;
+  }
+  Microsoft::WRL::ComPtr<IEnumWbemClassObject> rows;
+  const HRESULT query_result = services->ExecQuery(
+      language,
+      statement,
+      WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
+      nullptr,
+      &rows);
+  SysFreeString(language);
+  SysFreeString(statement);
+  if (FAILED(query_result) || !rows) return std::nullopt;
+
+  std::vector<installed_server_feature> features;
+  for (;;) {
+    Microsoft::WRL::ComPtr<IWbemClassObject> row;
+    ULONG returned = 0;
+    const HRESULT next = rows->Next(
+        5'000,
+        1,
+        row.ReleaseAndGetAddressOf(),
+        &returned);
+    if (next == WBEM_S_FALSE) break;
+    if (next == WBEM_S_TIMEDOUT || FAILED(next) || returned == 0 || !row) {
+      return std::nullopt;
+    }
+    const auto state = wmi_uint32(row.Get(), L"State");
+    const auto type = wmi_uint32(row.Get(), L"Type");
+    const auto unique_name = wmi_string(row.Get(), L"UniqueName");
+    if (!state || *state != 1U || !type || unique_name.empty()) continue;
+    std::string normalized_type;
+    switch (*type) {
+      case 0: normalized_type = "role"; break;
+      case 1: normalized_type = "role-service"; break;
+      case 2: normalized_type = "feature"; break;
+      default: continue;
+    }
+    if (features.size() >= 512) return std::nullopt;
+    auto display_name = wmi_string(row.Get(), L"DisplayName");
+    if (display_name.empty()) display_name = unique_name;
+    const auto parent_name = wmi_string(row.Get(), L"ParentName");
+    if (unique_name.size() > 255 || display_name.size() > 255 ||
+        parent_name.size() > 255) {
+      return std::nullopt;
+    }
+    features.push_back({
+        unique_name,
+        std::move(display_name),
+        parent_name,
+        normalized_type,
+    });
+  }
+  std::sort(features.begin(), features.end(), [](const auto& left, const auto& right) {
+    return left.unique_name < right.unique_name;
+  });
+  features.erase(
+      std::unique(features.begin(), features.end(), [](const auto& left, const auto& right) {
+        return left.unique_name == right.unique_name;
+      }),
+      features.end());
+  return features;
+}
+
+std::string installed_server_features_json(bool& collected) {
+  const auto features = read_installed_server_features();
+  collected = false;
+  if (!features) return "[]";
+  constexpr std::streamoff k_max_serialized_feature_bytes = 32'768;
+  std::ostringstream json;
+  json << '[';
+  for (std::size_t index = 0; index < features->size(); ++index) {
+    if (index != 0) json << ',';
+    const auto& feature = (*features)[index];
+    json << "{\"name\":\"" << json_escape(utf8(feature.unique_name))
+         << "\",\"display_name\":\"" << json_escape(utf8(feature.display_name))
+         << "\",\"parent_name\":\"" << json_escape(utf8(feature.parent_name))
+         << "\",\"type\":\"" << feature.type << "\"}";
+    if (json.tellp() > k_max_serialized_feature_bytes) return "[]";
+  }
+  json << ']';
+  collected = true;
+  return json.str();
 }
 
 std::wstring fqdn(const std::wstring& hostname, const windows_identity& identity) {
@@ -443,6 +615,8 @@ std::string collect_windows_server_core_inventory_json() {
   const auto physical_host = registry_string_at(
       L"SOFTWARE\\Microsoft\\Virtual Machine\\Guest\\Parameters",
       L"PhysicalHostNameFullyQualified");
+  bool roles_features_collected = false;
+  const auto roles_features = installed_server_features_json(roles_features_collected);
   std::ostringstream json;
   json << "{\"schema_version\":\"1\",\"pack\":\"windows-server-core\","
        << "\"agent_gateway_port\":" << ipms::agent::k_default_agent_gateway_port << ","
@@ -460,6 +634,9 @@ std::string collect_windows_server_core_inventory_json() {
        << "\"hypervisor_host\":\"" << json_escape(utf8(physical_host)) << "\","
        << "\"logical_processors\":" << system_info.dwNumberOfProcessors << ","
        << "\"memory_total_bytes\":" << memory.ullTotalPhys << ","
+       << "\"installed_roles_features_status\":\""
+       << (roles_features_collected ? "collected" : "unavailable") << "\","
+       << "\"installed_roles_features\":" << roles_features << ","
        << "\"network_interfaces\":" << network_interfaces_json() << "}";
   return json.str();
 }

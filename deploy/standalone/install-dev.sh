@@ -4,6 +4,9 @@ set -euo pipefail
 NODE_VERSION="24.20.0"
 PNPM_VERSION="11.24.0"
 REPOSITORY_URL="https://github.com/Alvestrasza/ipms.git"
+AGENT_PACKAGE_NAME="ipms-agent-windows-x64-0.1.27.zip"
+AGENT_PACKAGE_SHA256="9004ef8697396b4d2ab4e941765723bd61f9ac2d5adc7c64bffde3f4e5c12a18"
+AGENT_PACKAGE_URL="https://github.com/Alvestrasza/ipms/releases/download/v0.1.28/${AGENT_PACKAGE_NAME}"
 
 usage() {
     echo "Usage: sudo install-dev.sh --public-host HOST --management-source IP_OR_CIDR --release-ref COMMIT --tenant-slug SLUG --tenant-name NAME [--admin-username USER]" >&2
@@ -89,8 +92,10 @@ getent group ipms-connector-worker >/dev/null || groupadd --system ipms-connecto
 id ipms-connector-worker >/dev/null 2>&1 || useradd --system --gid ipms-connector-worker --home-dir /nonexistent --shell /usr/sbin/nologin ipms-connector-worker
 getent group ipms-agent-gateway >/dev/null || groupadd --system ipms-agent-gateway
 id ipms-agent-gateway >/dev/null 2>&1 || useradd --system --gid ipms-agent-gateway --home-dir /nonexistent --shell /usr/sbin/nologin ipms-agent-gateway
+getent group ipms-agent-deployment-worker >/dev/null || groupadd --system ipms-agent-deployment-worker
+id ipms-agent-deployment-worker >/dev/null 2>&1 || useradd --system --gid ipms-agent-deployment-worker --home-dir /nonexistent --shell /usr/sbin/nologin ipms-agent-deployment-worker
 getent group ipms-runtime >/dev/null || groupadd --system ipms-runtime
-for runtime_user in postgres ipms-control-plane ipms-web ipms-connector-worker ipms-agent-gateway; do
+for runtime_user in postgres ipms-control-plane ipms-web ipms-connector-worker ipms-agent-gateway ipms-agent-deployment-worker; do
     usermod --append --groups ipms-runtime "$runtime_user"
 done
 
@@ -98,6 +103,18 @@ install -d -m 0755 /srv/ipms/releases /srv/ipms/shared /srv/ipms/data
 chown root:ipms-runtime /srv/ipms
 chmod 0710 /srv/ipms
 install -d -o ipms-web -g ipms-web -m 0750 /srv/ipms/shared/web-cache
+install -d -o root -g ipms-runtime -m 0750 /srv/ipms/shared/agent-artifacts
+agent_package="/srv/ipms/shared/agent-artifacts/${AGENT_PACKAGE_NAME}"
+if [[ ! -f $agent_package ]] || ! echo "${AGENT_PACKAGE_SHA256}  ${agent_package}" | sha256sum --check --status; then
+    agent_package_download="${agent_package}.download"
+    curl --fail --silent --show-error --location \
+        "$AGENT_PACKAGE_URL" \
+        --output "$agent_package_download"
+    echo "${AGENT_PACKAGE_SHA256}  ${agent_package_download}" | sha256sum --check --strict -
+    mv "$agent_package_download" "$agent_package"
+fi
+chown root:ipms-runtime "$agent_package"
+chmod 0640 "$agent_package"
 release_directory="/srv/ipms/releases/${RELEASE_REF}"
 if [[ ! -d $release_directory ]]; then
     staging_directory="/srv/ipms/releases/.${RELEASE_REF}.staging"
@@ -183,6 +200,17 @@ fi
 if ! grep -q '^IPMS_AGENT_PKI_MASTER_KEY=' "$control_plane_env"; then
     echo "IPMS_AGENT_PKI_MASTER_KEY=$(openssl rand -base64 32 | tr -d '\n')" >> "$control_plane_env"
 fi
+if ! grep -q '^IPMS_AGENT_DEPLOYMENT_MASTER_KEY=' "$control_plane_env"; then
+    echo "IPMS_AGENT_DEPLOYMENT_MASTER_KEY=$(openssl rand -base64 32 | tr -d '\n')" >> "$control_plane_env"
+fi
+sed -i \
+    -e '/^IPMS_AGENT_WINDOWS_PACKAGE_PATH=/d' \
+    -e '/^IPMS_AGENT_WINDOWS_PACKAGE_SHA256=/d' \
+    "$control_plane_env"
+{
+    echo "IPMS_AGENT_WINDOWS_PACKAGE_PATH=${agent_package}"
+    echo "IPMS_AGENT_WINDOWS_PACKAGE_SHA256=${AGENT_PACKAGE_SHA256}"
+} >> "$control_plane_env"
 if ! grep -q '^IPMS_CERTIFICATE_PROBE_TOKEN=' "$control_plane_env"; then
     generated_probe_token=$(openssl rand -hex 32)
     [[ $generated_probe_token =~ ^[0-9a-f]{64}$ ]] || {
@@ -303,6 +331,8 @@ install -m 0644 "$release_directory/deploy/standalone/ipms-certificate-probe.ser
 install -m 0644 "$release_directory/deploy/standalone/ipms-web-console.service" /etc/systemd/system/ipms-web-console.service
 install -m 0644 "$release_directory/deploy/standalone/ipms-connector-worker.service" /etc/systemd/system/ipms-connector-worker.service
 install -m 0644 "$release_directory/deploy/standalone/ipms-connector-worker.timer" /etc/systemd/system/ipms-connector-worker.timer
+install -m 0644 "$release_directory/deploy/standalone/ipms-agent-deployment-worker.service" /etc/systemd/system/ipms-agent-deployment-worker.service
+install -m 0644 "$release_directory/deploy/standalone/ipms-agent-deployment-worker.timer" /etc/systemd/system/ipms-agent-deployment-worker.timer
 install -m 0644 "$release_directory/deploy/standalone/ipms-agent-gateway-material.service" /etc/systemd/system/ipms-agent-gateway-material.service
 install -m 0644 "$release_directory/deploy/standalone/ipms-agent-gateway.service" /etc/systemd/system/ipms-agent-gateway.service
 install -m 0644 "$release_directory/deploy/standalone/ipms-agent-pki-expiry.service" /etc/systemd/system/ipms-agent-pki-expiry.service
@@ -340,8 +370,8 @@ install -d -m 0755 /etc/fail2ban/jail.d
 nginx -t
 fail2ban-client -t
 systemctl daemon-reload
-systemctl enable fail2ban ipms-certificate-probe ipms-control-plane ipms-web-console ipms-connector-worker.timer ipms-agent-gateway-material ipms-agent-gateway ipms-agent-pki-expiry.timer nginx
-systemctl restart fail2ban ipms-certificate-probe ipms-control-plane ipms-web-console ipms-connector-worker.timer ipms-agent-pki-expiry.timer nginx
+systemctl enable fail2ban ipms-certificate-probe ipms-control-plane ipms-web-console ipms-connector-worker.timer ipms-agent-deployment-worker.timer ipms-agent-gateway-material ipms-agent-gateway ipms-agent-pki-expiry.timer nginx
+systemctl restart fail2ban ipms-certificate-probe ipms-control-plane ipms-web-console ipms-connector-worker.timer ipms-agent-deployment-worker.timer ipms-agent-pki-expiry.timer nginx
 systemctl restart ipms-agent-gateway-material ipms-agent-gateway
 ufw allow from "$MANAGEMENT_SOURCE" to any port 443 proto tcp comment "IPMS HTTPS management"
 ufw allow from "$MANAGEMENT_SOURCE" to any port 9419 proto tcp comment "IPMS Agent Gateway"
@@ -352,6 +382,7 @@ systemctl is-active --quiet ipms-certificate-probe
 systemctl is-active --quiet ipms-control-plane
 systemctl is-active --quiet ipms-web-console
 systemctl is-active --quiet ipms-connector-worker.timer
+systemctl is-active --quiet ipms-agent-deployment-worker.timer
 systemctl is-active --quiet ipms-agent-gateway-material
 systemctl is-active --quiet ipms-agent-gateway
 systemctl is-active --quiet ipms-agent-pki-expiry.timer
