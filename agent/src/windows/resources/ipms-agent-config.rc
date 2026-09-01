@@ -1,0 +1,4 @@
+#include "resource.h"
+
+IDI_IPMS_AGENT ICON "alvestrasza-agent.ico"
+1 RT_MANIFEST "ipms-agent-config.manifest"

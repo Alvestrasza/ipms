@@ -1,9 +1,14 @@
+#include "ipms/agent/configuration.hpp"
 #include "ipms/agent/gateway_contract.hpp"
 #include "ipms/agent/management_pack.hpp"
 
 #include <cassert>
 
 int main() {
+  const ipms::agent::AgentConfiguration configuration{L"management.example.invalid", 9419, ipms::agent::TrustMode::ipms_managed};
+  assert(ipms::agent::is_valid_agent_configuration(configuration));
+  assert(ipms::agent::trust_mode_name(ipms::agent::TrustMode::external_issuing_ca) == L"external_issuing_ca");
+  assert(ipms::agent::parse_trust_mode(L"external_certificates") == ipms::agent::TrustMode::external_certificates);
   const ipms::agent::AgentGatewayConfig gateway{"management.example.invalid"};
   assert(gateway.port == 9419);
   assert(ipms::agent::is_valid_gateway_config(gateway));

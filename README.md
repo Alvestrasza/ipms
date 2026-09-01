@@ -38,6 +38,8 @@ The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 - [Portal-based BMC connector management](docs/operations/BMC-CONNECTOR-MANAGEMENT.md)
 - [Windows Server inventory preparation](docs/operations/WINDOWS-SERVER-INVENTORY.md)
 - [Agent PKI and mTLS Gateway operations](docs/operations/AGENT-PKI-AND-GATEWAY.md)
+- [Windows Agent installation and local configuration](docs/operations/WINDOWS-AGENT-INSTALLATION.md)
+- [Windows Agent 0.1.16 foundation acceptance](docs/operations/WINDOWS-AGENT-0.1.16-ACCEPTANCE.md)
 - [Development versioning](docs/operations/VERSIONING.md)
 
 ## Architecture Decisions
@@ -47,6 +49,7 @@ The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 - [iLO Redfish connector architecture](docs/architecture/ILO-REDFISH-CONNECTOR.md)
 - [ADR-0002: Native C++ Agent and Management Pack Trust Model](docs/architecture/ADR-0002-CXX-AGENT-AND-MANAGEMENT-PACKS.md)
 - [ADR-0003: Agent PKI and Enrollment Trust Model](docs/architecture/ADR-0003-AGENT-PKI-AND-ENROLLMENT.md)
+- [ADR-0004: Local Agent Configuration and Control Panel Integration](docs/architecture/ADR-0004-LOCAL-AGENT-CONFIGURATION.md)
 - [Agent contract](docs/architecture/AGENT-CONTRACT.md)
 
 ## Source Layout

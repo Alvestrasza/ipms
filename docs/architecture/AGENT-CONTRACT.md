@@ -16,6 +16,13 @@ This contract defines the boundary between IPMS Control Plane and an enrolled IP
 Agent identity, certificate profiles, trust modes, recovery, and external-CA
 integration are defined by [ADR-0003](ADR-0003-AGENT-PKI-AND-ENROLLMENT.md).
 
+On Windows, the local **IPMS Agent Configuration** application stores the
+gateway hostname, port, and selected trust mode atomically in the protected
+Agent configuration directory. This local configuration does not replace
+enrollment. Until mTLS enrollment exists, the application must report that no
+certificate is enrolled and must not claim a connected state. Its local UI
+contract is defined by [ADR-0004](ADR-0004-LOCAL-AGENT-CONFIGURATION.md).
+
 ## Management Pack declaration
 
 A management-pack assignment contains a pack ID, immutable version, minimum agent version, target device identity, tenant, expiry, dependency set, explicitly allowed built-in capabilities, collection cadence, signature, and correlation ID. The agent rejects an assignment that is unsigned, expired, assigned to another device or tenant, incompatible, cyclic, or outside its compiled capability registry.
