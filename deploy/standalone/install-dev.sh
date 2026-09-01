@@ -4,17 +4,18 @@ set -euo pipefail
 NODE_VERSION="24.20.0"
 PNPM_VERSION="11.24.0"
 REPOSITORY_URL="https://github.com/Alvestrasza/ipms.git"
-AGENT_PACKAGE_NAME="ipms-agent-windows-x64-0.1.29.zip"
-AGENT_PACKAGE_SHA256="ea5266b1e144b91666ea14a48c7d5682f9b1a743ca1b7f9080eeeda10c0cc518"
-AGENT_PACKAGE_URL="https://github.com/Alvestrasza/ipms/releases/download/v0.1.36/${AGENT_PACKAGE_NAME}"
+AGENT_PACKAGE_NAME="ipms-agent-windows-x64-0.1.30.zip"
+AGENT_PACKAGE_SHA256="7b1450412596d49f9835039d1b02d94045c3dcdf6bc344cb5eceb499bed70fe6"
+AGENT_PACKAGE_URL="https://github.com/Alvestrasza/ipms/releases/download/v0.1.37/${AGENT_PACKAGE_NAME}"
 
 usage() {
-    echo "Usage: sudo install-dev.sh --public-host HOST --management-source IP_OR_CIDR --release-ref COMMIT --tenant-slug SLUG --tenant-name NAME [--admin-username USER]" >&2
+    echo "Usage: sudo install-dev.sh --public-host HOST --management-source IP_OR_CIDR --agent-source IP_OR_CIDR [--agent-source IP_OR_CIDR ...] --release-ref COMMIT --tenant-slug SLUG --tenant-name NAME [--admin-username USER]" >&2
     exit 2
 }
 
 PUBLIC_HOST=""
 MANAGEMENT_SOURCE=""
+AGENT_SOURCES=()
 RELEASE_REF=""
 TENANT_SLUG=""
 TENANT_NAME=""
@@ -24,6 +25,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --public-host) PUBLIC_HOST="${2:-}"; shift 2 ;;
         --management-source) MANAGEMENT_SOURCE="${2:-}"; shift 2 ;;
+        --agent-source) AGENT_SOURCES+=("${2:-}"); shift 2 ;;
         --release-ref) RELEASE_REF="${2:-}"; shift 2 ;;
         --tenant-slug) TENANT_SLUG="${2:-}"; shift 2 ;;
         --tenant-name) TENANT_NAME="${2:-}"; shift 2 ;;
@@ -35,6 +37,10 @@ done
 [[ $EUID -eq 0 ]] || { echo "Run this installer as root." >&2; exit 1; }
 [[ $PUBLIC_HOST =~ ^[A-Za-z0-9.-]+$ ]] || usage
 [[ $MANAGEMENT_SOURCE =~ ^[0-9A-Fa-f:./]+$ ]] || usage
+[[ ${#AGENT_SOURCES[@]} -gt 0 ]] || usage
+for source in "${AGENT_SOURCES[@]}"; do
+    [[ $source =~ ^[0-9A-Fa-f:./]+$ ]] || usage
+done
 [[ $RELEASE_REF =~ ^[0-9a-f]{40}$ ]] || usage
 [[ $TENANT_SLUG =~ ^[a-z0-9-]+$ ]] || usage
 [[ $ADMIN_USERNAME =~ ^[A-Za-z0-9@.+_-]+$ ]] || usage
@@ -374,7 +380,9 @@ systemctl enable fail2ban ipms-certificate-probe ipms-control-plane ipms-web-con
 systemctl restart fail2ban ipms-certificate-probe ipms-control-plane ipms-web-console ipms-connector-worker.timer ipms-agent-deployment-worker.timer ipms-agent-pki-expiry.timer nginx
 systemctl restart ipms-agent-gateway-material ipms-agent-gateway
 ufw allow from "$MANAGEMENT_SOURCE" to any port 443 proto tcp comment "IPMS HTTPS management"
-ufw allow from "$MANAGEMENT_SOURCE" to any port 9419 proto tcp comment "IPMS Agent Gateway"
+for source in "${AGENT_SOURCES[@]}"; do
+    ufw allow from "$source" to any port 9419 proto tcp comment "IPMS Agent Gateway"
+done
 ufw --force enable
 
 systemctl is-active --quiet postgresql

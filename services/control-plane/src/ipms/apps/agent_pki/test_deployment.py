@@ -32,14 +32,18 @@ from .services import bootstrap_managed_pki, create_enrollment_token
 
 
 class WindowsAgentDeploymentScriptTests(TestCase):
-    def test_legacy_repair_remains_limited_to_stopped_unenrolled_agent(self) -> None:
-        assessment = _incomplete_install_assessment()
+    def test_legacy_repair_remains_limited_to_owned_unenrolled_agent(self) -> None:
+        owner_id = "11111111-1111-1111-1111-111111111111"
+        assessment = _incomplete_install_assessment((owner_id,))
 
+        self.assertIn(f"$knownOwnerIds = @('{owner_id}')", assessment)
         self.assertIn("$service.StartName -eq 'LocalSystem'", assessment)
-        self.assertIn("$service.State -eq 'Stopped'", assessment)
+        self.assertIn("$service.State -in @('Stopped', 'Running')", assessment)
         self.assertIn("$serviceBinary -ieq $agentBinary", assessment)
         self.assertIn("-not (Test-Path -LiteralPath $state)", assessment)
-        self.assertIn("-not (Test-Path -LiteralPath $enrollment)", assessment)
+        self.assertNotIn("-not (Test-Path -LiteralPath $enrollment)", assessment)
+        self.assertIn("$ownerMatches", assessment)
+        self.assertIn("[Guid]::TryParse", assessment)
         self.assertIn("$unexpectedFiles.Count -eq 0", assessment)
         self.assertIn("$registrationMatches", assessment)
         self.assertIn("InstallLocation", assessment)
@@ -52,6 +56,7 @@ class WindowsAgentDeploymentScriptTests(TestCase):
         self.assertIn("Remove-Item -LiteralPath $controlPanelNamespace", repair)
         self.assertIn("Remove-Item -LiteralPath $controlPanelClass", repair)
         self.assertIn("Remove-Item -LiteralPath $install", repair)
+        self.assertIn("Stop-Service -Name 'IPMS Agent'", repair)
         self.assertIn("IPMS_INCOMPLETE_REPAIR=1", repair)
 
 

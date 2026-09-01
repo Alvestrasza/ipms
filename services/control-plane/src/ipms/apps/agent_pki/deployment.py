@@ -89,6 +89,7 @@ def _agent_path_assignments() -> str:
     return (
         "$install = Join-Path $env:ProgramFiles 'Alvestrasza\\IPMS Agent'; "
         "$agentBinary = Join-Path $install 'ipms-agent.exe'; "
+        "$ownerFile = Join-Path $install '.ipms-deployment-owner'; "
         "$configuration = Join-Path $env:ProgramData 'Alvestrasza\\IPMS Agent'; "
         "$state = Join-Path $configuration 'agent-state.json'; "
         "$enrollment = Join-Path $configuration 'enrollment.json'; "
@@ -97,8 +98,12 @@ def _agent_path_assignments() -> str:
     )
 
 
-def _incomplete_install_assessment() -> str:
-    return _agent_path_assignments() + (
+def _incomplete_install_assessment(known_owner_ids=()) -> str:
+    owners = ", ".join(
+        _powershell_single_quoted(str(owner_id).lower())
+        for owner_id in known_owner_ids
+    )
+    return _agent_path_assignments() + f"$knownOwnerIds = @({owners}); " + (
         "$service = Get-CimInstance -ClassName Win32_Service "
         "-Filter \"Name='IPMS Agent'\" -ErrorAction SilentlyContinue; "
         "$allowedFiles = @('.ipms-deployment-owner', "
@@ -118,33 +123,50 @@ def _incomplete_install_assessment() -> str:
         "($uninstallRegistration.DisplayName -eq 'IPMS Agent' -and "
         "([string]$uninstallRegistration.InstallLocation).TrimEnd([char]92) "
         "-ieq $install.TrimEnd([char]92)); "
+        "$ownerValue = if (Test-Path -LiteralPath $ownerFile) "
+        "{ (Get-Content -LiteralPath $ownerFile -Raw -ErrorAction Stop).Trim() } "
+        "else { '' }; "
+        "$ownerId = [Guid]::Empty; "
+        "$ownerIsGuid = [Guid]::TryParse($ownerValue, [ref]$ownerId); "
+        "$ownerMatches = $ownerIsGuid -and "
+        "$knownOwnerIds -contains $ownerValue.ToLowerInvariant(); "
         "$isIncomplete = $null -ne $service -and "
         "$serviceBinary -ieq $agentBinary -and "
         "$service.StartName -eq 'LocalSystem' -and "
-        "$service.State -eq 'Stopped' -and "
+        "$service.State -in @('Stopped', 'Running') -and "
         "(Test-Path -LiteralPath $install) -and "
         "$unexpectedFiles.Count -eq 0 -and "
         "-not (Test-Path -LiteralPath $state) -and "
-        "-not (Test-Path -LiteralPath $enrollment) -and "
+        "$ownerMatches -and "
         "$registrationMatches; "
     )
 
 
-def _incomplete_install_guard_script() -> str:
+def _incomplete_install_guard_script(known_owner_ids=()) -> str:
     return (
         "$ErrorActionPreference = 'Stop'; "
-        + _incomplete_install_assessment()
+        + _incomplete_install_assessment(known_owner_ids)
         + "if ($service -and -not $isIncomplete) "
         "{ throw 'An existing Agent is not an incomplete portal installation.' }"
     )
 
 
-def _incomplete_install_repair_script() -> str:
+def _incomplete_install_repair_script(known_owner_ids=()) -> str:
     return (
         "$ErrorActionPreference = 'Stop'; "
-        + _incomplete_install_assessment()
+        + _incomplete_install_assessment(known_owner_ids)
         + "if ($service) { "
         "if (-not $isIncomplete) { throw 'The Agent state changed before repair.' }; "
+        "if ($service.State -eq 'Running') { "
+        "Stop-Service -Name 'IPMS Agent' -Force -ErrorAction Stop; "
+        "$serviceStopDeadline = [DateTime]::UtcNow.AddSeconds(10); "
+        "do { Start-Sleep -Milliseconds 100; "
+        "$service = Get-CimInstance -ClassName Win32_Service "
+        "-Filter \"Name='IPMS Agent'\" -ErrorAction SilentlyContinue } "
+        "while ($service -and $service.State -ne 'Stopped' -and "
+        "[DateTime]::UtcNow -lt $serviceStopDeadline); "
+        "if ($service -and $service.State -ne 'Stopped') "
+        "{ throw 'Incomplete service stop timed out.' } }; "
         "& sc.exe delete 'IPMS Agent' | Out-Null; "
         "if ($LASTEXITCODE -ne 0) { throw 'Incomplete service removal failed.' }; "
         "$serviceRemovalDeadline = [DateTime]::UtcNow.AddSeconds(5); "
@@ -382,6 +404,14 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
             deployment.target_address,
             **client_options,
         )
+        known_owner_ids = tuple(
+            WindowsAgentDeployment.objects.filter(
+                tenant_id=deployment.tenant_id,
+                target_address__iexact=deployment.target_address,
+            )
+            .exclude(id=deployment.id)
+            .values_list("id", flat=True)
+        )
         stage = "staging"
         _execute_checked(
             client,
@@ -395,12 +425,12 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
         )
         _execute_checked(
             client,
-            _incomplete_install_guard_script(),
+            _incomplete_install_guard_script(known_owner_ids),
             failure_code="remote_agent_already_installed",
         )
         repair_output = _execute_checked(
             client,
-            _incomplete_install_repair_script(),
+            _incomplete_install_repair_script(known_owner_ids),
             failure_code="remote_incomplete_agent_repair_failed",
         )
         recovered_incomplete_install = "IPMS_INCOMPLETE_REPAIR=1" in repair_output

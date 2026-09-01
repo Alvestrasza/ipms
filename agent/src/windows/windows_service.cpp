@@ -37,8 +37,8 @@ void WINAPI service_main(DWORD, LPWSTR*) {
   unsigned telemetry_cycles = 30;
   do {
     if (telemetry_cycles >= 30) {
-      (void)ipms::agent::windows::run_inventory_cycle();
-      telemetry_cycles = 0;
+      const auto inventory = ipms::agent::windows::run_inventory_cycle();
+      telemetry_cycles = inventory.succeeded ? 0 : 30;
     }
     (void)ipms::agent::windows::run_telemetry_cycle();
     ++telemetry_cycles;
