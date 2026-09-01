@@ -22,6 +22,7 @@
   --border-strong: rgba(197, 205, 208, 0.24);
   --shadow-panel: 0 18px 44px rgba(0, 0, 0, 0.2);
   --sidebar-width: 270px;
+  --topbar-height: 72px;
   color-scheme: dark;
 }
 
@@ -1465,7 +1466,7 @@ td strong {
 
 .modal-backdrop {
   position: fixed;
-  inset: 0;
+  inset: var(--topbar-height) 0 0 var(--sidebar-width);
   z-index: 60;
   display: grid;
   place-items: center;
@@ -2137,6 +2138,7 @@ td strong {
     gap: 12px;
   }
   .modal-backdrop {
+    inset: 0;
     padding: 10px;
   }
   .form-grid--endpoint {
