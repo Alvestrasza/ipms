@@ -248,6 +248,13 @@ def _issue_leaf(*, issuer_key, issuer_cert, public_key, common_name, san, eku, l
 
 
 def validate_agent_csr(csr_pem: str):
+    csr_pem = csr_pem.replace(
+        "-----BEGIN NEW CERTIFICATE REQUEST-----",
+        "-----BEGIN CERTIFICATE REQUEST-----",
+    ).replace(
+        "-----END NEW CERTIFICATE REQUEST-----",
+        "-----END CERTIFICATE REQUEST-----",
+    )
     if len(csr_pem.encode("utf-8")) > 16_384:
         raise ValidationError("The CSR exceeds the maximum size.")
     try:
