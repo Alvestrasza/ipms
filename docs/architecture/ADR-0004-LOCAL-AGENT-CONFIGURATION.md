@@ -44,10 +44,10 @@ creates that directory with access limited to `SYSTEM` and local
 Administrators. No private key, enrollment secret, or complete certificate
 material is placed in the UI or settings file.
 
-The initial UI is deliberately honest: Gateway enrollment and mTLS validation
-are not implemented yet, so it reports **Not enrolled** rather than a
-simulated connection state. Saving a hostname, port, or trust mode is local
-configuration only.
+From 0.1.17, the UI derives a minimal enrolled/not-enrolled indication from the
+protected public Agent state. Gateway enrollment and mTLS are owned by the
+LocalSystem service. Saving a hostname, port, or trust mode remains a local
+configuration action and never exports or replaces private key material.
 
 ## Consequences
 

@@ -12,6 +12,7 @@ from django.core.exceptions import ValidationError
 
 
 MAX_MESSAGE_BYTES = 65_536
+MAX_HTTP_HEADER_BYTES = 16_384
 ALLOWED_AGENT_MESSAGES = {
     "hello",
     "inventory",
@@ -46,13 +47,121 @@ def build_tls_context(runtime_directory: Path) -> ssl.SSLContext:
         runtime_directory / "gateway.key",
     )
     context.load_verify_locations(cafile=runtime_directory / "agent-trust.pem")
-    context.set_alpn_protocols(["ipms-agent/1"])
+    context.set_alpn_protocols(["ipms-agent/1", "http/1.1"])
     return context
 
 
 async def _reply(writer: asyncio.StreamWriter, document: dict) -> None:
     writer.write(json.dumps(document, separators=(",", ":")).encode() + b"\n")
     await writer.drain()
+
+
+def _parse_http_request(header: bytes) -> tuple[str, dict[str, str], int]:
+    if (
+        not header
+        or len(header) > MAX_HTTP_HEADER_BYTES
+        or not header.endswith(b"\r\n\r\n")
+    ):
+        raise ValidationError("The Agent Gateway HTTP header is invalid.")
+    try:
+        lines = header[:-4].decode("ascii").split("\r\n")
+        method, path, version = lines[0].split(" ")
+    except (UnicodeDecodeError, ValueError, IndexError) as exc:
+        raise ValidationError("The Agent Gateway HTTP request line is invalid.") from exc
+    if method != "POST" or version != "HTTP/1.1" or path not in {
+        "/v1/enroll",
+        "/v1/inventory",
+    }:
+        raise ValidationError("The Agent Gateway HTTP route is invalid.")
+    headers: dict[str, str] = {}
+    for line in lines[1:]:
+        if ":" not in line:
+            raise ValidationError("The Agent Gateway HTTP header is invalid.")
+        name, value = line.split(":", 1)
+        name = name.strip().lower()
+        value = value.strip()
+        if not name or name in headers:
+            raise ValidationError("The Agent Gateway HTTP header is duplicated.")
+        headers[name] = value
+    if headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
+        raise ValidationError("The Agent Gateway HTTP content type is invalid.")
+    if "transfer-encoding" in headers:
+        raise ValidationError("Chunked Agent Gateway requests are not accepted.")
+    try:
+        content_length = int(headers["content-length"])
+    except (KeyError, ValueError) as exc:
+        raise ValidationError("The Agent Gateway HTTP content length is invalid.") from exc
+    if not 1 <= content_length <= MAX_MESSAGE_BYTES:
+        raise ValidationError("The Agent Gateway HTTP body size is invalid.")
+    return path, headers, content_length
+
+
+async def _http_reply(writer: asyncio.StreamWriter, status: int, document: dict) -> None:
+    body = json.dumps(document, separators=(",", ":")).encode()
+    reason = "OK" if status == 200 else "Bad Request"
+    writer.write(
+        f"HTTP/1.1 {status} {reason}\r\n"
+        "Content-Type: application/json\r\n"
+        f"Content-Length: {len(body)}\r\n"
+        "Connection: close\r\n\r\n".encode()
+        + body
+    )
+    await writer.drain()
+
+
+async def _handle_http_connection(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    peer_certificate: bytes | None,
+) -> None:
+    from ipms.apps.agent_pki.services import (
+        confirm_inventory,
+        enroll_agent,
+        validate_peer_certificate,
+    )
+
+    header = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=15)
+    path, _, content_length = _parse_http_request(header)
+    body = await asyncio.wait_for(reader.readexactly(content_length), timeout=30)
+    document = _bounded_json(body)
+    if path == "/v1/enroll":
+        if peer_certificate:
+            raise ValidationError("Enrollment does not accept an existing client certificate.")
+        if document.get("type") != "enroll":
+            raise ValidationError("The enrollment message is invalid.")
+        enrollment, certificate, chain = await sync_to_async(enroll_agent)(
+            raw_token=str(document.get("bootstrap_token", "")),
+            csr_pem=str(document.get("csr_pem", "")),
+        )
+        await _http_reply(
+            writer,
+            200,
+            {
+                "type": "enrollment_complete",
+                "device_uri": enrollment.device_uri,
+                "certificate_pem": certificate,
+                "certificate_chain_pem": chain,
+            },
+        )
+        return
+    if not peer_certificate:
+        raise ValidationError("A client certificate is required.")
+    enrollment = await sync_to_async(validate_peer_certificate)(peer_certificate)
+    if (
+        document.get("type") != "inventory"
+        or document.get("device_uri") != enrollment.device_uri
+    ):
+        raise ValidationError("The inventory identity is invalid.")
+    await sync_to_async(confirm_inventory)(
+        enrollment,
+        inventory=document.get("inventory"),
+        agent_version=str(document.get("agent_version", "")),
+    )
+    await _http_reply(
+        writer,
+        200,
+        {"type": "accepted", "correlation_id": document.get("correlation_id")},
+    )
 
 
 async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -67,9 +176,15 @@ async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.Stream
     ssl_object = writer.get_extra_info("ssl_object")
     enrollment = None
     try:
-        if ssl_object is None or ssl_object.selected_alpn_protocol() != "ipms-agent/1":
+        if ssl_object is None or ssl_object.selected_alpn_protocol() not in {
+            "ipms-agent/1",
+            "http/1.1",
+        }:
             raise ValidationError("The Agent Gateway ALPN is invalid.")
         peer_certificate = ssl_object.getpeercert(binary_form=True)
+        if ssl_object.selected_alpn_protocol() == "http/1.1":
+            await _handle_http_connection(reader, writer, peer_certificate)
+            return
         line = await asyncio.wait_for(reader.readline(), timeout=15)
         document = _bounded_json(line)
         if not peer_certificate:
@@ -96,7 +211,11 @@ async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.Stream
             if document.get("device_uri") != enrollment.device_uri:
                 raise ValidationError("The message device URI does not match the certificate.")
             if document["type"] == "inventory":
-                await sync_to_async(confirm_inventory)(enrollment)
+                await sync_to_async(confirm_inventory)(
+                    enrollment,
+                    inventory=document.get("inventory"),
+                    agent_version=str(document.get("agent_version", "")),
+                )
             if document["type"] == "certificate_renewal":
                 certificate, chain = await sync_to_async(renew_agent_certificate)(
                     enrollment=enrollment,
@@ -124,7 +243,14 @@ async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.Stream
             "Agent Gateway request rejected",
             extra={"peer": str(peer), "reason": exc.__class__.__name__},
         )
-        await _reply(writer, {"type": "rejected", "code": "identity_or_policy_rejected"})
+        if ssl_object is not None and ssl_object.selected_alpn_protocol() == "http/1.1":
+            await _http_reply(
+                writer,
+                400,
+                {"type": "rejected", "code": "identity_or_policy_rejected"},
+            )
+        else:
+            await _reply(writer, {"type": "rejected", "code": "identity_or_policy_rejected"})
     except Exception:
         logger.exception("Agent Gateway connection failed", extra={"peer": str(peer)})
     finally:

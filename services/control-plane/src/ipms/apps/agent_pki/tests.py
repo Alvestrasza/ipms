@@ -16,6 +16,7 @@ from django.core.management.base import CommandError
 from django.test import TestCase
 
 from ipms.apps.audit.models import AuditEvent
+from ipms.apps.discovery.models import WindowsServer
 from ipms.apps.tenancy.models import Tenant
 
 from .crypto import (
@@ -23,13 +24,14 @@ from .crypto import (
     create_managed_hierarchy,
     issue_agent_certificate,
 )
-from .gateway import _bounded_json, build_tls_context
+from .gateway import _bounded_json, _parse_http_request, build_tls_context
 from .models import AgentEnrollment, AgentEnrollmentToken, AgentIssuer, AgentPkiPolicy
 from .services import (
     bootstrap_managed_pki,
     configure_external_certificate_pki,
     configure_external_issuing_pki,
     create_enrollment_token,
+    confirm_inventory,
     enroll_agent,
     export_gateway_runtime,
     import_external_agent_certificate,
@@ -223,6 +225,51 @@ class ManagedAgentPkiTests(TestCase):
             _bounded_json(json.dumps(["hello"]).encode())
         with self.assertRaises(ValidationError):
             _bounded_json(b"{" + b"x" * 65_536)
+
+    def test_http_compatibility_route_is_strict_and_bounded(self) -> None:
+        path, headers, length = _parse_http_request(
+            b"POST /v1/inventory HTTP/1.1\r\n"
+            b"Host: gateway.example.invalid\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: 42\r\n\r\n"
+        )
+        self.assertEqual(path, "/v1/inventory")
+        self.assertEqual(headers["host"], "gateway.example.invalid")
+        self.assertEqual(length, 42)
+        with self.assertRaises(ValidationError):
+            _parse_http_request(
+                b"GET /v1/inventory HTTP/1.1\r\nContent-Length: 1\r\n\r\n"
+            )
+
+    def test_inventory_updates_only_the_certificate_tenant_server(self) -> None:
+        enrollment, raw_token, _ = create_enrollment_token(
+            tenant=self.tenant,
+            display_name="Inventory Agent",
+            actor="test-operator",
+        )
+        enrollment, _, _ = enroll_agent(raw_token=raw_token, csr_pem=create_csr()[1])
+        confirm_inventory(
+            enrollment,
+            agent_version="0.1.17",
+            inventory={
+                "schema_version": "1",
+                "pack": "windows-server-core",
+                "agent_gateway_port": 9419,
+                "hostname": "windows-test",
+                "os_product": "Windows Server",
+                "os_build": "26100",
+                "architecture": "x64",
+                "logical_processors": 4,
+                "memory_total_bytes": 8 * 1024**3,
+            },
+        )
+        server = WindowsServer.objects.get(source_id=enrollment.device_uri)
+        self.assertEqual(server.tenant, self.tenant)
+        self.assertEqual(server.hostname, "windows-test")
+        self.assertEqual(server.agent_state, WindowsServer.AgentState.ONLINE)
+        self.assertEqual(server.management_packs, ["windows-server-core"])
+        with self.assertRaises(ValidationError):
+            confirm_inventory(enrollment, agent_version="0.1.17", inventory={})
 
     def test_managed_issuer_rotation_keeps_overlap_and_supports_rollback(self) -> None:
         old_issuer = AgentIssuer.objects.get(

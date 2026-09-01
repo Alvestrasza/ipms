@@ -728,13 +728,79 @@ def renew_agent_certificate(*, enrollment: AgentEnrollment, csr_pem: str):
     return enrollment.certificate_pem, issuer.certificate_pem + issuer.chain_pem
 
 
+def _bounded_inventory_string(
+    inventory: dict,
+    name: str,
+    maximum: int,
+    *,
+    required: bool = False,
+) -> str:
+    value = inventory.get(name, "")
+    if not isinstance(value, str) or len(value) > maximum or (required and not value.strip()):
+        raise ValidationError(f"The Agent inventory field is invalid: {name}.")
+    return value.strip()
+
+
 @transaction.atomic
-def confirm_inventory(enrollment: AgentEnrollment) -> None:
+def confirm_inventory(
+    enrollment: AgentEnrollment,
+    *,
+    inventory: object,
+    agent_version: str,
+) -> None:
+    from ipms.apps.discovery.models import WindowsServer
+
+    if not isinstance(inventory, dict) or len(inventory) > 32:
+        raise ValidationError("The Agent inventory document is invalid.")
+    if (
+        inventory.get("schema_version") != "1"
+        or inventory.get("pack") != "windows-server-core"
+    ):
+        raise ValidationError("The Agent inventory schema or Management Pack is invalid.")
+    if not isinstance(agent_version, str) or not 1 <= len(agent_version) <= 64:
+        raise ValidationError("The Agent version is invalid.")
+    hostname = _bounded_inventory_string(inventory, "hostname", 255, required=True)
+    os_product = _bounded_inventory_string(inventory, "os_product", 255)
+    os_build = _bounded_inventory_string(inventory, "os_build", 64)
+    architecture = _bounded_inventory_string(inventory, "architecture", 32)
+    logical_processors = inventory.get("logical_processors")
+    memory_bytes = inventory.get("memory_total_bytes")
+    gateway_port = inventory.get("agent_gateway_port")
+    if not isinstance(logical_processors, int) or not 1 <= logical_processors <= 65_535:
+        raise ValidationError("The Agent logical processor count is invalid.")
+    if not isinstance(memory_bytes, int) or not 1 <= memory_bytes <= 2**63 - 1:
+        raise ValidationError("The Agent memory size is invalid.")
+    if not isinstance(gateway_port, int) or not 1 <= gateway_port <= 65_535:
+        raise ValidationError("The Agent Gateway port is invalid.")
     now = timezone.now()
     updates = {"last_seen_at": now}
     if enrollment.first_inventory_at is None:
         updates["first_inventory_at"] = now
     AgentEnrollment.objects.filter(id=enrollment.id).update(**updates)
+    WindowsServer.objects.update_or_create(
+        tenant=enrollment.tenant,
+        inventory_source=WindowsServer.InventorySource.AGENT,
+        source_id=enrollment.device_uri,
+        defaults={
+            "server_type": WindowsServer.ServerType.PHYSICAL,
+            "hostname": hostname,
+            "operating_system": os_product,
+            "os_build": os_build,
+            "architecture": architecture,
+            "logical_processors": logical_processors,
+            "memory_bytes": memory_bytes,
+            "agent_version": agent_version,
+            "agent_state": WindowsServer.AgentState.ONLINE,
+            "health": WindowsServer.Health.HEALTHY,
+            "management_packs": ["windows-server-core"],
+            "detail_snapshot": {
+                "schema_version": "1",
+                "agent_gateway_port": gateway_port,
+            },
+            "last_seen_at": now,
+            "discovered_at": now,
+        },
+    )
 
 
 @transaction.atomic

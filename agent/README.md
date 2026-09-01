@@ -2,7 +2,7 @@
 
 The IPMS Agent is a native C++20 service for customer-managed Windows and Linux systems. It will establish an outbound, mutually authenticated connection to the IPMS Control Plane and collect only capabilities explicitly assigned to the enrolled device.
 
-The initial implementation contains the pack registry and the read-only `windows-server-core` pack. The Windows executable can run in an interactive diagnostic mode with `--console` or as the `IPMS Agent` Windows service. It does not yet enroll, persist data, or send inventory to a Control Plane; those operations remain deliberately blocked until the enrollment and transport contracts are implemented.
+The initial implementation contains the pack registry and the read-only `windows-server-core` pack. The Windows executable can run in inventory-only diagnostic mode with `--console`, perform one bounded connection cycle with `--run-once`, or run as the `IPMS Agent` Windows service. Version 0.1.17 enrolls with a non-exportable LocalMachine ECDSA P-256 key, validates the one-time Gateway certificate pin, installs the dedicated Agent trust chain, and sends bounded inventory through TLS 1.3 and mTLS.
 
 ## Local configuration
 
@@ -17,6 +17,10 @@ and built-in packs. An administrator can set the Management Server hostname,
 the dedicated gateway port (default `9419`), and the future PKI trust mode.
 
 Settings are written atomically to `%ProgramData%\Alvestrasza\IPMS Agent\agent-settings.ini`.
+The versioned enrollment importer places a one-time bootstrap document into the
+same protected directory without displaying its secret. The service consumes
+and removes it after successful enrollment. See
+`docs/operations/WINDOWS-AGENT-0.1.17-ENROLLMENT.md` for the complete flow.
 The installer restricts that directory to `SYSTEM` and local Administrators.
 The configuration application never displays or exports private keys. Until
 Gateway enrollment is implemented, it truthfully reports `Not enrolled`; saving

@@ -23,6 +23,17 @@ std::filesystem::path configuration_path() {
   return base / L"Alvestrasza" / L"IPMS Agent" / L"agent-settings.ini";
 }
 
+std::filesystem::path state_path() {
+  return configuration_path().parent_path() / L"agent-state.json";
+}
+
+std::wstring enrollment_state() {
+  std::ifstream input(state_path(), std::ios::binary);
+  if (!input) return L"Not enrolled";
+  const std::string document((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+  return document.find("\"device_uri\":\"urn:ipms:agent:") != std::string::npos ? L"Enrolled" : L"State unavailable";
+}
+
 std::wstring trim(std::wstring value) {
   const auto first = value.find_first_not_of(L" \t\r\n");
   if (first == std::wstring::npos) return L"";
@@ -118,7 +129,7 @@ void render_configuration(HWND window) {
   std::wostringstream overview;
   overview << L"Service: " << service_state() << L"\r\n"
            << L"Gateway channel: agent-initiated, bidirectional mTLS\r\n"
-           << L"Certificate: Not enrolled (PKI and Gateway pending)\r\n"
+           << L"Certificate: " << enrollment_state() << L"\r\n"
            << L"Active built-in packs: windows-server-core, hyper-v-host\r\n"
            << L"Configuration file: " << configuration_path().wstring();
   set_text(window, k_overview, overview.str());
@@ -148,7 +159,7 @@ void save_from_window(HWND window) {
     return;
   }
   render_configuration(window);
-  MessageBoxW(window, L"Settings were saved atomically. mTLS validation starts after enrollment support is installed.", L"IPMS Agent Configuration", MB_ICONINFORMATION);
+  MessageBoxW(window, L"Settings were saved atomically. The Agent validates them during its next mTLS cycle.", L"IPMS Agent Configuration", MB_ICONINFORMATION);
 }
 
 LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param) {

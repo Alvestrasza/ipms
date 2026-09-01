@@ -117,7 +117,18 @@ def main() -> None:
                 "type": "inventory",
                 "device_uri": device_uri,
                 "correlation_id": "synthetic-acceptance",
-                "inventory": {},
+                "agent_version": "synthetic-acceptance",
+                "inventory": {
+                    "schema_version": "1",
+                    "pack": "windows-server-core",
+                    "agent_gateway_port": port,
+                    "hostname": "synthetic-acceptance.invalid",
+                    "os_product": "Synthetic Windows Server",
+                    "os_build": "0",
+                    "architecture": "x64",
+                    "logical_processors": 1,
+                    "memory_total_bytes": 1,
+                },
             }
             stream.sendall(json.dumps(inventory, separators=(",", ":")).encode() + b"\n")
             inventory_response = receive_document(stream)

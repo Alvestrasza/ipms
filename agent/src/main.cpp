@@ -5,6 +5,7 @@
 
 #ifdef _WIN32
 #include "ipms/agent/windows_core_pack.hpp"
+#include "ipms/agent/windows_transport.hpp"
 namespace ipms::agent::windows { int run_windows_service(); }
 #else
 namespace ipms::agent::linux { int run_linux_service(); }
@@ -12,9 +13,15 @@ namespace ipms::agent::linux { int run_linux_service(); }
 
 int main(int argc, char** argv) {
   const bool console = argc == 2 && std::string_view(argv[1]) == "--console";
+  const bool run_once = argc == 2 && std::string_view(argv[1]) == "--run-once";
   for (const auto& pack : ipms::agent::builtin_management_packs()) if (!ipms::agent::is_valid_pack_assignment(pack)) return 2;
 #ifdef _WIN32
   if (console) { std::cout << ipms::agent::windows::collect_windows_server_core_inventory_json() << '\n'; return 0; }
+  if (run_once) {
+    const auto result = ipms::agent::windows::run_inventory_cycle();
+    std::wcout << result.message << L'\n';
+    return result.succeeded ? 0 : 3;
+  }
   return ipms::agent::windows::run_windows_service();
 #else
   (void)console;

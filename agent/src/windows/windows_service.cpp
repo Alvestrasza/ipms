@@ -1,6 +1,7 @@
 #include <windows.h>
 
 #include "ipms/agent/windows_core_pack.hpp"
+#include "ipms/agent/windows_transport.hpp"
 
 namespace {
 SERVICE_STATUS_HANDLE status_handle = nullptr;
@@ -32,12 +33,10 @@ void WINAPI service_main(DWORD, LPWSTR*) {
   report(SERVICE_START_PENDING);
   stop_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
   if (stop_event == nullptr) { report(SERVICE_STOPPED, GetLastError()); return; }
-  // The future mTLS transport is agent-initiated to TCP/9419 and bidirectional.
-  // It accepts only signed pack assignments, inventory requests, update manifests,
-  // and certificate-rotation messages; it never exposes an inbound listener.
-  (void)ipms::agent::windows::collect_windows_server_core_inventory_json();
   report(SERVICE_RUNNING);
-  WaitForSingleObject(stop_event, INFINITE);
+  do {
+    (void)ipms::agent::windows::run_inventory_cycle();
+  } while (WaitForSingleObject(stop_event, 300'000) == WAIT_TIMEOUT);
   CloseHandle(stop_event);
   report(SERVICE_STOPPED);
 }

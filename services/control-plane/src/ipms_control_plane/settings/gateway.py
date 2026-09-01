@@ -21,6 +21,7 @@ INSTALLED_APPS = [
     "ipms.apps.tenancy",
     "ipms.apps.audit",
     "ipms.apps.agent_pki",
+    "ipms.apps.discovery",
 ]
 DATABASES = {
     "default": {

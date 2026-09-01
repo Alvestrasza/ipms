@@ -9,7 +9,7 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-IPMS application build `0.1.16` is in the v0.1.0 read-only foundation phase. A
+IPMS application build `0.1.17` is in the v0.1.0 read-only foundation phase. A
 standalone development
 Appliance currently runs the tenant-aware Django Control Plane, PostgreSQL,
 the multilingual Next.js Web Console, and the isolated connector worker.
@@ -40,6 +40,7 @@ The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 - [Agent PKI and mTLS Gateway operations](docs/operations/AGENT-PKI-AND-GATEWAY.md)
 - [Windows Agent installation and local configuration](docs/operations/WINDOWS-AGENT-INSTALLATION.md)
 - [Windows Agent 0.1.16 foundation acceptance](docs/operations/WINDOWS-AGENT-0.1.16-ACCEPTANCE.md)
+- [Windows Agent 0.1.17 enrollment and inventory](docs/operations/WINDOWS-AGENT-0.1.17-ENROLLMENT.md)
 - [Development versioning](docs/operations/VERSIONING.md)
 
 ## Architecture Decisions
