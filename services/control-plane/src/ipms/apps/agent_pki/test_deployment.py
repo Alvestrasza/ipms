@@ -15,7 +15,7 @@ from ipms.apps.discovery.certificates import (
 )
 from ipms.apps.tenancy.models import Tenant, TenantMembership
 
-from .deployment import process_deployment
+from .deployment import _staging_path_assignment, process_deployment
 from .deployment_approval import create_windows_deployment_approval
 from .deployment_secrets import load_deployment_secret, store_deployment_secret
 from .models import (
@@ -322,6 +322,23 @@ class WindowsAgentDeploymentWorkerTests(TestCase):
         self.assertNotIn("test-only-password", str(client.mock_calls))
         client_type.assert_called_once()
         self.assertTrue(client_type.call_args.kwargs["ssl"])
+        staging_assignment = _staging_path_assignment(self.deployment.id)
+        self.assertIn(
+            "Join-Path -Path $env:ProgramData -ChildPath "
+            "'Alvestrasza\\IPMS Agent\\Staging\\",
+            staging_assignment,
+        )
+        self.assertNotIn("$env:ProgramData\\Alvestrasza", staging_assignment)
+        executed_scripts = [
+            call.args[0] for call in client.execute_ps.call_args_list
+        ]
+        self.assertTrue(any("*S-1-5-18" in script for script in executed_scripts))
+        self.assertTrue(
+            any("*S-1-5-32-544" in script for script in executed_scripts)
+        )
+        self.assertFalse(
+            any("BUILTIN\\Administrators" in script for script in executed_scripts)
+        )
 
     @patch("ipms.apps.agent_pki.deployment.request_bmc_certificate_probe")
     @patch("pypsrp.client.Client")
@@ -397,7 +414,7 @@ class WindowsAgentDeploymentWorkerTests(TestCase):
 
     @patch("ipms.apps.agent_pki.deployment.request_windows_http_probe")
     @patch("pypsrp.client.Client")
-    def test_remote_staging_failure_uses_bounded_stage_code(
+    def test_remote_admin_check_failure_uses_bounded_step_code(
         self,
         client_type,
         http_probe,
@@ -429,7 +446,53 @@ class WindowsAgentDeploymentWorkerTests(TestCase):
 
         self.deployment.refresh_from_db()
         self.assertEqual(self.deployment.status, WindowsAgentDeployment.Status.FAILED)
-        self.assertEqual(self.deployment.error_code, "remote_staging_failed")
+        self.assertEqual(
+            self.deployment.error_code,
+            "remote_administrator_required",
+        )
+        self.assertFalse(WindowsAgentDeploymentSecret.objects.exists())
+        self.assertFalse(AgentEnrollmentToken.objects.exists())
+
+    @patch("ipms.apps.agent_pki.deployment.request_windows_http_probe")
+    @patch("pypsrp.client.Client")
+    def test_remote_acl_failure_uses_bounded_step_code(
+        self,
+        client_type,
+        http_probe,
+    ):
+        self.deployment.transport = WindowsAgentDeployment.Transport.HTTP
+        self.deployment.target_port = 5985
+        self.deployment.certificate_trust_mode = (
+            WindowsAgentDeployment.CertificateTrustMode.NONE
+        )
+        self.deployment.certificate_fingerprint_sha256 = ""
+        self.deployment.save(
+            update_fields=(
+                "transport",
+                "target_port",
+                "certificate_trust_mode",
+                "certificate_fingerprint_sha256",
+            )
+        )
+        http_probe.return_value = WindowsHttpObservation(reachable=True)
+        client = Mock()
+        client.execute_ps.side_effect = (
+            ("", [], False),
+            ("", [], False),
+            ("", [], False),
+            ("", [], True),
+        )
+        client_type.return_value = client
+
+        with override_settings(
+            AGENT_WINDOWS_PACKAGE_PATH=str(self.package),
+            AGENT_WINDOWS_PACKAGE_SHA256=self.package_digest,
+        ):
+            process_deployment(self.deployment)
+
+        self.deployment.refresh_from_db()
+        self.assertEqual(self.deployment.status, WindowsAgentDeployment.Status.FAILED)
+        self.assertEqual(self.deployment.error_code, "remote_staging_acl_failed")
         self.assertFalse(WindowsAgentDeploymentSecret.objects.exists())
         self.assertFalse(AgentEnrollmentToken.objects.exists())
 

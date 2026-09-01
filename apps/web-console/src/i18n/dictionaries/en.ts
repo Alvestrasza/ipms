@@ -103,6 +103,14 @@ export const en = {
     packageInvalid: "The Windows Agent package failed its integrity check.",
     remoteStagingFailed:
       "The remote staging directory could not be prepared. Verify administrative rights and endpoint policy.",
+    remoteAdministratorRequired:
+      "The credentials were accepted, but the remote session does not have an elevated local administrator token.",
+    remoteAgentAlreadyInstalled:
+      "An IPMS Agent service already exists on the Windows system.",
+    remoteStagingDirectoryFailed:
+      "The protected Agent staging directory could not be created on the Windows system.",
+    remoteStagingAclFailed:
+      "The protected permissions for the Agent staging directory could not be applied.",
     remoteTransferFailed:
       "The Windows Agent package could not be transferred to the target.",
     remoteInstallFailed:
@@ -143,7 +151,7 @@ export const en = {
     tenants: "Tenants",
     administration: "Administration",
     soon: "Soon",
-    version: "IPMS v0.1.32 development",
+    version: "IPMS v0.1.33 development",
   },
   overview: {
     inventoryCurrent: "Current inventory",

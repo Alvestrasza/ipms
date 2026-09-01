@@ -72,6 +72,18 @@ def _execute_checked(client, script: str, *, failure_code: str) -> None:
         raise RemoteDeploymentStepError(failure_code)
 
 
+def _powershell_single_quoted(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _staging_path_assignment(deployment_id) -> str:
+    child_path = f"Alvestrasza\\IPMS Agent\\Staging\\{deployment_id}"
+    return (
+        "$staging = Join-Path -Path $env:ProgramData -ChildPath "
+        f"{_powershell_single_quoted(child_path)}; "
+    )
+
+
 def _safe_error_code(exc: Exception, *, stage: str) -> str:
     names = {error_type.__name__ for error_type in type(exc).__mro__}
     if names & {
@@ -154,10 +166,7 @@ def _audit(deployment: WindowsAgentDeployment, *, outcome: str, error_code: str 
 def process_deployment(deployment: WindowsAgentDeployment) -> None:
     client = None
     secret_row = None
-    remote_staging = (
-        "$env:ProgramData\\Alvestrasza\\IPMS Agent\\Staging\\"
-        f"{deployment.id}"
-    )
+    staging_path_assignment = _staging_path_assignment(deployment.id)
     succeeded = False
     error_code = ""
     stage = "initialization"
@@ -234,24 +243,39 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
             **client_options,
         )
         stage = "staging"
-        staging_path = (
-            f"$staging = {remote_staging}; "
-            "$ErrorActionPreference = 'Stop'; "
-            "if (-not ([Security.Principal.WindowsPrincipal] "
-            "[Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole("
-            "[Security.Principal.WindowsBuiltInRole]::Administrator)) "
-            "{ throw 'Administrative access is required.' }; "
-            "if (Get-Service -Name 'IPMS Agent' -ErrorAction SilentlyContinue) "
-            "{ throw 'The IPMS Agent service already exists.' }; "
-            "New-Item -ItemType Directory -Path $staging -Force | Out-Null; "
-            "& icacls.exe $staging /inheritance:r /grant:r "
-            "'SYSTEM:(OI)(CI)F' 'BUILTIN\\Administrators:(OI)(CI)F' | Out-Null; "
-            "if ($LASTEXITCODE -ne 0) { throw 'Staging ACL failed.' }"
+        _execute_checked(
+            client,
+            staging_path_assignment
+            + "$ErrorActionPreference = 'Stop'; "
+            + "if (-not ([Security.Principal.WindowsPrincipal] "
+            + "[Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole("
+            + "[Security.Principal.WindowsBuiltInRole]::Administrator)) "
+            + "{ throw 'Administrative access is required.' }",
+            failure_code="remote_administrator_required",
         )
         _execute_checked(
             client,
-            staging_path,
-            failure_code="remote_staging_failed",
+            staging_path_assignment
+            + "$ErrorActionPreference = 'Stop'; "
+            + "if (Get-Service -Name 'IPMS Agent' -ErrorAction SilentlyContinue) "
+            + "{ throw 'The IPMS Agent service already exists.' }",
+            failure_code="remote_agent_already_installed",
+        )
+        _execute_checked(
+            client,
+            staging_path_assignment
+            + "$ErrorActionPreference = 'Stop'; "
+            + "New-Item -ItemType Directory -Path $staging -Force | Out-Null",
+            failure_code="remote_staging_directory_failed",
+        )
+        _execute_checked(
+            client,
+            staging_path_assignment
+            + "$ErrorActionPreference = 'Stop'; "
+            + "& icacls.exe $staging /inheritance:r /grant:r "
+            + "'*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null; "
+            + "if ($LASTEXITCODE -ne 0) { throw 'Staging ACL failed.' }",
+            failure_code="remote_staging_acl_failed",
         )
 
         stage = "transfer"
@@ -285,8 +309,7 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
             client.copy(str(enrollment_path), remote_enrollment)
 
         stage = "install"
-        deploy_script = (
-            f"$staging = {remote_staging}; "
+        deploy_script = staging_path_assignment + (
             "$ErrorActionPreference = 'Stop'; "
             "$install = Join-Path $env:ProgramFiles 'Alvestrasza\\IPMS Agent'; "
             "try { "
@@ -319,7 +342,8 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
         if client is not None:
             try:
                 client.execute_ps(
-                    f"Remove-Item -LiteralPath {remote_staging} -Recurse -Force "
+                    staging_path_assignment
+                    + "Remove-Item -LiteralPath $staging -Recurse -Force "
                     "-ErrorAction SilentlyContinue"
                 )
             except Exception:

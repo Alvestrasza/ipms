@@ -115,6 +115,14 @@ export const de = {
       "Die Integritätsprüfung des Windows-Agent-Pakets ist fehlgeschlagen.",
     remoteStagingFailed:
       "Das Remote-Staging-Verzeichnis konnte nicht vorbereitet werden. Prüfen Sie Administratorrechte und Endpunktrichtlinien.",
+    remoteAdministratorRequired:
+      "Die Zugangsdaten wurden akzeptiert, aber die Remotesitzung besitzt kein erhöhtes lokales Administratortoken.",
+    remoteAgentAlreadyInstalled:
+      "Auf dem Windows-System ist bereits ein IPMS-Agent-Dienst vorhanden.",
+    remoteStagingDirectoryFailed:
+      "Das geschützte Agent-Staging-Verzeichnis konnte auf dem Windows-System nicht erstellt werden.",
+    remoteStagingAclFailed:
+      "Die geschützten Berechtigungen für das Agent-Staging-Verzeichnis konnten nicht gesetzt werden.",
     remoteTransferFailed:
       "Das Windows-Agent-Paket konnte nicht auf das Ziel übertragen werden.",
     remoteInstallFailed:
@@ -155,7 +163,7 @@ export const de = {
     tenants: "Mandanten",
     administration: "Administration",
     soon: "Bald",
-    version: "IPMS v0.1.32 Entwicklung",
+    version: "IPMS v0.1.33 Entwicklung",
   },
   overview: {
     inventoryCurrent: "Aktuelles Inventar",
