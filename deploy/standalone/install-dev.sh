@@ -259,6 +259,7 @@ install -o root -g ipms-agent-gateway -m 0640 /dev/null "$agent_gateway_env"
     echo "IPMS_AGENT_GATEWAY_RUNTIME_DIRECTORY=/run/ipms-agent-gateway"
     echo "IPMS_AGENT_GATEWAY_BIND=0.0.0.0"
     echo "IPMS_AGENT_GATEWAY_PORT=9419"
+    echo "IPMS_AGENT_GATEWAY_TENANT_SLUG=${TENANT_SLUG}"
 } > "$agent_gateway_env"
 
 initial_password_file=/srv/ipms/shared/initial-admin-password
