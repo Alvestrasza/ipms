@@ -62,7 +62,7 @@ export const de = {
     tenants: "Mandanten",
     administration: "Administration",
     soon: "Bald",
-    version: "IPMS v0.1.17 Entwicklung",
+    version: "IPMS v0.1.18 Entwicklung",
   },
   overview: {
     liveData:

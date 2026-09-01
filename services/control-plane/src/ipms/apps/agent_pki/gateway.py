@@ -239,10 +239,12 @@ async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.Stream
                 return
             document = _bounded_json(line)
     except (ValidationError, asyncio.TimeoutError) as exc:
-        logger.warning(
-            "Agent Gateway request rejected",
-            extra={"peer": str(peer), "reason": exc.__class__.__name__},
+        reason = (
+            "; ".join(exc.messages)
+            if isinstance(exc, ValidationError)
+            else "Gateway request timeout"
         )
+        logger.warning("Agent Gateway request rejected: %s", reason, extra={"peer": str(peer)})
         if ssl_object is not None and ssl_object.selected_alpn_protocol() == "http/1.1":
             await _http_reply(
                 writer,
