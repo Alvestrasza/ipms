@@ -2,7 +2,7 @@
 
 ## Scope
 
-IPMS 0.1.31 provides a development-grade portal bootstrap for Windows Agent
+IPMS 0.1.32 provides a development-grade portal bootstrap for Windows Agent
 0.1.27. The workflow is tenant-scoped, audited, connection-approved, and
 limited to a fixed installation operation. It is not a general-purpose remote
 execution feature.
@@ -57,6 +57,9 @@ Do not enable protocol debug logging in production. Remote output and exception
 text can contain sensitive details and are intentionally not persisted by IPMS.
 Audit events record tenant, actor, target endpoint, approved transport,
 certificate trust mode, job identifier, outcome, and a bounded error code only.
+The bounded error distinguishes initialization, package validation, endpoint
+preflight, remote staging, transfer, and fixed installation phases without
+persisting exception messages or remote protocol output.
 
 The worker repeats the approved preflight before decrypting and using the
 credential. HTTPS certificate pins must still match. HTTP always uses NTLM with

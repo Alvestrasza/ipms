@@ -21,6 +21,20 @@ from .deployment_secrets import load_deployment_secret
 from .models import WindowsAgentDeployment
 
 
+class AgentPackageUnavailableError(Exception):
+    pass
+
+
+class AgentPackageIntegrityError(Exception):
+    pass
+
+
+class RemoteDeploymentStepError(Exception):
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(code)
+
+
 def _claim_next_deployment() -> WindowsAgentDeployment | None:
     with transaction.atomic():
         deployment = (
@@ -41,35 +55,64 @@ def _claim_next_deployment() -> WindowsAgentDeployment | None:
 
 def _artifact() -> Path:
     artifact = Path(settings.AGENT_WINDOWS_PACKAGE_PATH)
-    if not artifact.is_file():
-        raise FileNotFoundError("Agent package unavailable")
-    digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+    try:
+        if not artifact.is_file():
+            raise AgentPackageUnavailableError
+        digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+    except OSError as exc:
+        raise AgentPackageUnavailableError from exc
     if digest != settings.AGENT_WINDOWS_PACKAGE_SHA256:
-        raise ValueError("Agent package integrity check failed")
+        raise AgentPackageIntegrityError
     return artifact
 
 
-def _execute_checked(client, script: str) -> None:
+def _execute_checked(client, script: str, *, failure_code: str) -> None:
     _, _, had_errors = client.execute_ps(script)
     if had_errors:
-        raise RuntimeError("Remote fixed deployment step failed")
+        raise RemoteDeploymentStepError(failure_code)
 
 
-def _safe_error_code(exc: Exception) -> str:
-    name = type(exc).__name__
-    if name in {"AuthenticationError", "InvalidCredentialsError"}:
+def _safe_error_code(exc: Exception, *, stage: str) -> str:
+    names = {error_type.__name__ for error_type in type(exc).__mro__}
+    if names & {
+        "AuthenticationError",
+        "CredentialsExpiredError",
+        "InvalidCredentialError",
+        "InvalidCredentialsError",
+        "NoCredentialError",
+        "SpnegoError",
+    }:
         return "authentication_failed"
-    if name in {"ConnectTimeout", "ReadTimeout", "TimeoutError"}:
+    if names & {"ConnectTimeout", "ReadTimeout", "TimeoutError"}:
         return "connection_timeout"
     if isinstance(exc, CertificateProbeError):
         return exc.code
-    if isinstance(exc, FileNotFoundError):
+    if isinstance(exc, AgentPackageUnavailableError):
         return "agent_package_unavailable"
-    if isinstance(exc, ValueError):
+    if isinstance(exc, AgentPackageIntegrityError):
         return "agent_package_invalid"
-    if name in {"WinRMTransportError", "WSManFaultError", "ConnectionError"}:
+    if isinstance(exc, RemoteDeploymentStepError):
+        return exc.code
+    if names & {
+        "ConnectionError",
+        "WSManFaultError",
+        "WinRMError",
+        "WinRMTransportError",
+    }:
         return "remote_management_failed"
-    return "deployment_failed"
+    safe_stages = {
+        "initialization",
+        "package",
+        "preflight",
+        "staging",
+        "transfer",
+        "install",
+    }
+    return (
+        f"deployment_{stage}_failed"
+        if stage in safe_stages
+        else "deployment_failed"
+    )
 
 
 def _https_origin(address: str, port: int) -> str:
@@ -117,9 +160,11 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
     )
     succeeded = False
     error_code = ""
+    stage = "initialization"
     try:
         secret_row = deployment.secret
         secret = load_deployment_secret(secret_row)
+        stage = "package"
         artifact = _artifact()
         client_options = {
             "username": secret["username"],
@@ -130,6 +175,7 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
             "read_timeout": settings.AGENT_DEPLOYMENT_READ_TIMEOUT_SECONDS,
             "no_proxy": True,
         }
+        stage = "preflight"
         if deployment.transport == WindowsAgentDeployment.Transport.HTTPS:
             observation = request_bmc_certificate_probe(
                 _https_origin(
@@ -187,6 +233,7 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
             deployment.target_address,
             **client_options,
         )
+        stage = "staging"
         staging_path = (
             f"$staging = {remote_staging}; "
             "$ErrorActionPreference = 'Stop'; "
@@ -201,8 +248,13 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
             "'SYSTEM:(OI)(CI)F' 'BUILTIN\\Administrators:(OI)(CI)F' | Out-Null; "
             "if ($LASTEXITCODE -ne 0) { throw 'Staging ACL failed.' }"
         )
-        _execute_checked(client, staging_path)
+        _execute_checked(
+            client,
+            staging_path,
+            failure_code="remote_staging_failed",
+        )
 
+        stage = "transfer"
         with tempfile.TemporaryDirectory(prefix="ipms-agent-deployment-") as temp:
             enrollment_path = Path(temp) / "enrollment.json"
             policy = deployment.tenant.agent_pki_policy
@@ -232,6 +284,7 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
             client.copy(str(artifact), remote_package)
             client.copy(str(enrollment_path), remote_enrollment)
 
+        stage = "install"
         deploy_script = (
             f"$staging = {remote_staging}; "
             "$ErrorActionPreference = 'Stop'; "
@@ -254,10 +307,14 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
             "} finally { Remove-Item -LiteralPath $staging -Recurse -Force "
             "-ErrorAction SilentlyContinue }"
         )
-        _execute_checked(client, deploy_script)
+        _execute_checked(
+            client,
+            deploy_script,
+            failure_code="remote_install_failed",
+        )
         succeeded = True
     except Exception as exc:  # Safe error codes only; never persist remote output.
-        error_code = _safe_error_code(exc)
+        error_code = _safe_error_code(exc, stage=stage)
     finally:
         if client is not None:
             try:

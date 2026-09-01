@@ -101,6 +101,14 @@ export const en = {
     remoteManagementFailed: "The fixed Windows installation job failed.",
     packageUnavailable: "The pinned Windows Agent package is unavailable.",
     packageInvalid: "The Windows Agent package failed its integrity check.",
+    remoteStagingFailed:
+      "The remote staging directory could not be prepared. Verify administrative rights and endpoint policy.",
+    remoteTransferFailed:
+      "The Windows Agent package could not be transferred to the target.",
+    remoteInstallFailed:
+      "The fixed Windows Agent installation step failed on the target.",
+    deploymentInitializationFailed:
+      "The isolated deployment worker could not initialize this job.",
     deploymentFailed: "The Windows Agent could not be deployed.",
     approvalExpired:
       "The connection approval expired. Check the endpoint again.",
@@ -135,7 +143,7 @@ export const en = {
     tenants: "Tenants",
     administration: "Administration",
     soon: "Soon",
-    version: "IPMS v0.1.31 development",
+    version: "IPMS v0.1.32 development",
   },
   overview: {
     inventoryCurrent: "Current inventory",

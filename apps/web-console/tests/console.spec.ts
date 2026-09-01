@@ -235,8 +235,8 @@ test("requires explicit approval for the Windows HTTP fallback", async ({
       contentType: "application/json",
       body: JSON.stringify({
         id: "00000000-0000-0000-0000-000000000011",
-        status: "succeeded",
-        error_code: "",
+        status: "failed",
+        error_code: "remote_staging_failed",
       }),
     });
   });
@@ -277,7 +277,10 @@ test("requires explicit approval for the Windows HTTP fallback", async ({
     .getByRole("button", { name: "Use HTTP fallback and deploy" })
     .click();
 
-  await expect(page.getByText("Deployment succeeded")).toBeVisible();
+  await expect(page.getByText("Deployment failed")).toBeVisible();
+  await expect(
+    page.getByText(/remote staging directory could not be prepared/i),
+  ).toBeVisible();
   expect(deploymentPayload).toMatchObject({
     transport: "http",
     port: 5985,

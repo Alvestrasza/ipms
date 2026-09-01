@@ -395,6 +395,44 @@ class WindowsAgentDeploymentWorkerTests(TestCase):
         self.assertEqual(client_type.call_args.kwargs["auth"], "ntlm")
         self.assertEqual(client_type.call_args.kwargs["encryption"], "always")
 
+    @patch("ipms.apps.agent_pki.deployment.request_windows_http_probe")
+    @patch("pypsrp.client.Client")
+    def test_remote_staging_failure_uses_bounded_stage_code(
+        self,
+        client_type,
+        http_probe,
+    ):
+        self.deployment.transport = WindowsAgentDeployment.Transport.HTTP
+        self.deployment.target_port = 5985
+        self.deployment.certificate_trust_mode = (
+            WindowsAgentDeployment.CertificateTrustMode.NONE
+        )
+        self.deployment.certificate_fingerprint_sha256 = ""
+        self.deployment.save(
+            update_fields=(
+                "transport",
+                "target_port",
+                "certificate_trust_mode",
+                "certificate_fingerprint_sha256",
+            )
+        )
+        http_probe.return_value = WindowsHttpObservation(reachable=True)
+        client = Mock()
+        client.execute_ps.return_value = ("", [], True)
+        client_type.return_value = client
+
+        with override_settings(
+            AGENT_WINDOWS_PACKAGE_PATH=str(self.package),
+            AGENT_WINDOWS_PACKAGE_SHA256=self.package_digest,
+        ):
+            process_deployment(self.deployment)
+
+        self.deployment.refresh_from_db()
+        self.assertEqual(self.deployment.status, WindowsAgentDeployment.Status.FAILED)
+        self.assertEqual(self.deployment.error_code, "remote_staging_failed")
+        self.assertFalse(WindowsAgentDeploymentSecret.objects.exists())
+        self.assertFalse(AgentEnrollmentToken.objects.exists())
+
     @patch("ipms.apps.agent_pki.deployment.request_bmc_certificate_probe")
     def test_failure_still_destroys_transient_secret(self, probe):
         probe.return_value = CertificateObservation(

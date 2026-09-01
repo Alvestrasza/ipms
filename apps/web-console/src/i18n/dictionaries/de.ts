@@ -113,6 +113,14 @@ export const de = {
       "Das festgelegte Windows-Agent-Paket ist nicht verfügbar.",
     packageInvalid:
       "Die Integritätsprüfung des Windows-Agent-Pakets ist fehlgeschlagen.",
+    remoteStagingFailed:
+      "Das Remote-Staging-Verzeichnis konnte nicht vorbereitet werden. Prüfen Sie Administratorrechte und Endpunktrichtlinien.",
+    remoteTransferFailed:
+      "Das Windows-Agent-Paket konnte nicht auf das Ziel übertragen werden.",
+    remoteInstallFailed:
+      "Der fest definierte Installationsschritt für den Windows Agent ist auf dem Ziel fehlgeschlagen.",
+    deploymentInitializationFailed:
+      "Der isolierte Deployment-Worker konnte diesen Auftrag nicht initialisieren.",
     deploymentFailed: "Der Windows Agent konnte nicht bereitgestellt werden.",
     approvalExpired:
       "Die Verbindungsbestätigung ist abgelaufen. Prüfen Sie den Endpunkt erneut.",
@@ -147,7 +155,7 @@ export const de = {
     tenants: "Mandanten",
     administration: "Administration",
     soon: "Bald",
-    version: "IPMS v0.1.31 Entwicklung",
+    version: "IPMS v0.1.32 Entwicklung",
   },
   overview: {
     inventoryCurrent: "Aktuelles Inventar",
