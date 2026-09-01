@@ -8,10 +8,15 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from ipms.apps.audit.models import AuditEvent
-from ipms.apps.discovery.certificates import CertificateObservation
+from ipms.apps.discovery.certificates import (
+    CertificateObservation,
+    CertificateProbeError,
+    WindowsHttpObservation,
+)
 from ipms.apps.tenancy.models import Tenant, TenantMembership
 
 from .deployment import process_deployment
+from .deployment_approval import create_windows_deployment_approval
 from .deployment_secrets import load_deployment_secret, store_deployment_secret
 from .models import (
     AgentEnrollmentToken,
@@ -63,10 +68,26 @@ class WindowsAgentDeploymentApiTests(TestCase):
         )
         self.probe = probe.start()
         self.addCleanup(probe.stop)
+        http_probe = patch(
+            "ipms.apps.agent_pki.views.request_windows_http_probe",
+            return_value=WindowsHttpObservation(reachable=True),
+        )
+        self.http_probe = http_probe.start()
+        self.addCleanup(http_probe.stop)
         self.payload = {
             "display_name": "Synthetic Windows Server",
             "address": "windows.example.invalid",
             "port": 5986,
+            "transport": WindowsAgentDeployment.Transport.HTTPS,
+            "approval_token": create_windows_deployment_approval(
+                tenant_id=str(self.tenant.id),
+                address="windows.example.invalid",
+                port=5986,
+                transport=WindowsAgentDeployment.Transport.HTTPS,
+                fingerprint_sha256=self.certificate.fingerprint_sha256,
+                trusted_by_system=True,
+            ),
+            "confirm_connection": True,
             "username": "example\\administrator",
             "password": "test-only-password",
         }
@@ -104,21 +125,122 @@ class WindowsAgentDeploymentApiTests(TestCase):
             AuditEvent.objects.filter(action="agent.windows_deployment.queue").exists()
         )
 
+    def test_preflight_returns_certificate_and_scoped_approval(self) -> None:
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse("core:windows-agent-deployment-preflight"),
+            data={
+                "address": "windows.example.invalid",
+                "https_port": 5986,
+                "allow_http_fallback": True,
+            },
+            content_type="application/json",
+            headers={"X-IPMS-Tenant-ID": str(self.tenant.id)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["transport"], "https")
+        self.assertEqual(
+            response.json()["certificate"]["fingerprint_sha256"],
+            self.certificate.fingerprint_sha256,
+        )
+        self.assertNotIn(self.payload["password"], str(response.json()))
+
+    def test_preflight_offers_http_message_encryption_fallback(self) -> None:
+        self.probe.side_effect = CertificateProbeError("connection_failed")
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse("core:windows-agent-deployment-preflight"),
+            data={
+                "address": "windows.example.invalid",
+                "https_port": 5986,
+                "allow_http_fallback": True,
+            },
+            content_type="application/json",
+            headers={"X-IPMS-Tenant-ID": str(self.tenant.id)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["transport"], "http")
+        self.assertEqual(response.json()["port"], 5985)
+        self.assertEqual(response.json()["https_error_code"], "connection_failed")
+        self.http_probe.assert_called_once()
+
     def test_reader_cannot_queue_deployment(self) -> None:
         response = self.post(self.reader)
         self.assertEqual(response.status_code, 403)
         self.assertFalse(WindowsAgentDeployment.objects.exists())
 
-    def test_untrusted_winrm_certificate_is_rejected(self) -> None:
+    def test_admin_can_pin_untrusted_winrm_certificate(self) -> None:
         self.probe.return_value = CertificateObservation(
             **{
                 **self.certificate.__dict__,
                 "trusted_by_system": False,
             }
         )
+        self.payload["approval_token"] = create_windows_deployment_approval(
+            tenant_id=str(self.tenant.id),
+            address="windows.example.invalid",
+            port=5986,
+            transport=WindowsAgentDeployment.Transport.HTTPS,
+            fingerprint_sha256=self.certificate.fingerprint_sha256,
+            trusted_by_system=False,
+        )
         response = self.post(self.admin)
+        self.assertEqual(response.status_code, 201)
+        deployment = WindowsAgentDeployment.objects.get()
+        self.assertEqual(
+            deployment.certificate_trust_mode,
+            WindowsAgentDeployment.CertificateTrustMode.PINNED,
+        )
+
+    def test_admin_can_confirm_http_message_encryption_fallback(self) -> None:
+        self.payload.update(
+            {
+                "port": 5985,
+                "transport": WindowsAgentDeployment.Transport.HTTP,
+                "approval_token": create_windows_deployment_approval(
+                    tenant_id=str(self.tenant.id),
+                    address="windows.example.invalid",
+                    port=5985,
+                    transport=WindowsAgentDeployment.Transport.HTTP,
+                ),
+            }
+        )
+
+        response = self.post(self.admin)
+
+        self.assertEqual(response.status_code, 201)
+        deployment = WindowsAgentDeployment.objects.get()
+        self.assertEqual(deployment.transport, WindowsAgentDeployment.Transport.HTTP)
+        self.assertEqual(
+            deployment.certificate_trust_mode,
+            WindowsAgentDeployment.CertificateTrustMode.NONE,
+        )
+        self.assertEqual(deployment.certificate_fingerprint_sha256, "")
+
+    def test_explicit_connection_confirmation_is_required(self) -> None:
+        self.payload["confirm_connection"] = False
+
+        response = self.post(self.admin)
+
         self.assertEqual(response.status_code, 400)
-        self.assertIn("windows_certificate_untrusted", str(response.json()))
+        self.assertIn(
+            "windows_deployment_confirmation_required",
+            str(response.json()),
+        )
+        self.assertFalse(WindowsAgentDeployment.objects.exists())
+
+    def test_approval_cannot_be_reused_for_another_endpoint(self) -> None:
+        self.payload["port"] = 5985
+
+        response = self.post(self.admin)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(
+            "windows_deployment_approval_scope_mismatch",
+            str(response.json()),
+        )
         self.assertFalse(WindowsAgentDeployment.objects.exists())
 
     def test_active_deployment_is_not_disclosed_to_another_tenant(self) -> None:
@@ -198,6 +320,80 @@ class WindowsAgentDeploymentWorkerTests(TestCase):
         self.assertTrue(AgentEnrollmentToken.objects.exists())
         self.assertEqual(client.copy.call_count, 2)
         self.assertNotIn("test-only-password", str(client.mock_calls))
+        client_type.assert_called_once()
+        self.assertTrue(client_type.call_args.kwargs["ssl"])
+
+    @patch("ipms.apps.agent_pki.deployment.request_bmc_certificate_probe")
+    @patch("pypsrp.client.Client")
+    def test_pinned_https_certificate_disables_ca_validation_after_recheck(
+        self,
+        client_type,
+        probe,
+    ):
+        self.deployment.certificate_trust_mode = (
+            WindowsAgentDeployment.CertificateTrustMode.PINNED
+        )
+        self.deployment.save(update_fields=("certificate_trust_mode",))
+        probe.return_value = CertificateObservation(
+            **{
+                **self.certificate.__dict__,
+                "trusted_by_system": False,
+            }
+        )
+        client = Mock()
+        client.execute_ps.return_value = ("", [], False)
+        client_type.return_value = client
+
+        with override_settings(
+            AGENT_WINDOWS_PACKAGE_PATH=str(self.package),
+            AGENT_WINDOWS_PACKAGE_SHA256=self.package_digest,
+        ):
+            process_deployment(self.deployment)
+
+        self.deployment.refresh_from_db()
+        self.assertEqual(self.deployment.status, WindowsAgentDeployment.Status.SUCCEEDED)
+        self.assertFalse(client_type.call_args.kwargs["cert_validation"])
+
+    @patch("ipms.apps.agent_pki.deployment.request_windows_http_probe")
+    @patch("ipms.apps.agent_pki.deployment.request_bmc_certificate_probe")
+    @patch("pypsrp.client.Client")
+    def test_http_fallback_requires_ntlm_message_encryption(
+        self,
+        client_type,
+        certificate_probe,
+        http_probe,
+    ):
+        self.deployment.transport = WindowsAgentDeployment.Transport.HTTP
+        self.deployment.target_port = 5985
+        self.deployment.certificate_trust_mode = (
+            WindowsAgentDeployment.CertificateTrustMode.NONE
+        )
+        self.deployment.certificate_fingerprint_sha256 = ""
+        self.deployment.save(
+            update_fields=(
+                "transport",
+                "target_port",
+                "certificate_trust_mode",
+                "certificate_fingerprint_sha256",
+            )
+        )
+        http_probe.return_value = WindowsHttpObservation(reachable=True)
+        client = Mock()
+        client.execute_ps.return_value = ("", [], False)
+        client_type.return_value = client
+
+        with override_settings(
+            AGENT_WINDOWS_PACKAGE_PATH=str(self.package),
+            AGENT_WINDOWS_PACKAGE_SHA256=self.package_digest,
+        ):
+            process_deployment(self.deployment)
+
+        self.deployment.refresh_from_db()
+        self.assertEqual(self.deployment.status, WindowsAgentDeployment.Status.SUCCEEDED)
+        certificate_probe.assert_not_called()
+        self.assertFalse(client_type.call_args.kwargs["ssl"])
+        self.assertEqual(client_type.call_args.kwargs["auth"], "ntlm")
+        self.assertEqual(client_type.call_args.kwargs["encryption"], "always")
 
     @patch("ipms.apps.agent_pki.deployment.request_bmc_certificate_probe")
     def test_failure_still_destroys_transient_secret(self, probe):

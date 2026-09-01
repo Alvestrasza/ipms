@@ -1623,6 +1623,17 @@ td strong {
   flex: 0 0 auto;
   color: var(--color-accent-blue);
 }
+.security-note--warning {
+  border-color: color-mix(
+    in srgb,
+    var(--color-warning) 48%,
+    var(--border-default)
+  );
+  background: color-mix(in srgb, var(--color-warning) 9%, var(--surface-page));
+}
+.security-note--warning svg {
+  color: var(--color-warning);
+}
 .deployment-status .deployment-status__failure {
   color: var(--color-critical);
 }

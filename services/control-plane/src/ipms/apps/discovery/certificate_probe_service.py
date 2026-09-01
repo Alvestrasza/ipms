@@ -5,7 +5,11 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from .certificates import CertificateProbeError, probe_bmc_certificate
+from .certificates import (
+    CertificateProbeError,
+    probe_bmc_certificate,
+    probe_windows_http_endpoint,
+)
 
 
 MAX_REQUEST_BYTES = 4096
@@ -33,7 +37,7 @@ class CertificateProbeHandler(BaseHTTPRequestHandler):
         if not expected or not hmac.compare_digest(supplied, f"Bearer {expected}"):
             self._response(403, {"error": "certificate_probe_forbidden"})
             return
-        if self.path != "/probe":
+        if self.path not in {"/probe", "/probe/windows-http"}:
             self._response(404, {"error": "certificate_probe_not_found"})
             return
         try:
@@ -59,7 +63,11 @@ class CertificateProbeHandler(BaseHTTPRequestHandler):
             self._response(400, {"error": "certificate_probe_invalid_request"})
             return
         try:
-            observation = probe_bmc_certificate(base_url, timeout=timeout)
+            observation = (
+                probe_windows_http_endpoint(base_url, timeout=timeout)
+                if self.path == "/probe/windows-http"
+                else probe_bmc_certificate(base_url, timeout=timeout)
+            )
         except CertificateProbeError as exc:
             self._response(422, {"error": exc.code})
             return

@@ -54,19 +54,40 @@ export const en = {
     windowsHeading: "Add a Windows system",
     name: "Display name",
     address: "DNS name or IP address",
-    port: "HTTPS port",
+    port: "Preferred HTTPS port",
     username: "Administrative username",
     password: "Password",
     credentialNote:
       "IPMS encrypts these credentials only until the isolated deployment worker consumes the job. They are destroyed after the first attempt and are never returned to the browser or stored by the Agent.",
     winrmRequirement:
-      "Requires secure Windows remote management over HTTPS with a certificate trusted by the IPMS Appliance. The target must be on a private network and the account must be a local administrator.",
+      "IPMS prefers Windows remote management over HTTPS. If HTTPS is unavailable, the administrator may explicitly approve an HTTP fallback with mandatory NTLM message encryption. The target must be private and the account must be a local administrator.",
     back: "Back",
     deploy: "Deploy Agent",
+    checkConnection: "Check connection",
+    checkingConnection: "Checking connection",
     queuing: "Queuing deployment",
     unavailable: "The Control Plane is currently unavailable.",
     certificateUntrusted:
       "The Windows HTTPS certificate is not trusted by the IPMS Appliance. Install the issuing CA on the Appliance or replace the target certificate.",
+    certificateHeading: "Confirm Windows HTTPS certificate",
+    certificateTrusted:
+      "The certificate is trusted by the IPMS Appliance. Confirm its identity before the deployment is queued.",
+    certificateWarning:
+      "The certificate is not trusted by the IPMS Appliance. Confirm the displayed identity to pin this certificate to the deployment.",
+    certificateSubject: "Subject",
+    certificateIssuer: "Issuer",
+    certificateSerial: "Serial number",
+    certificateDnsNames: "DNS names",
+    certificateValidity: "Validity",
+    certificateFingerprint: "SHA-256 fingerprint",
+    confirmCertificateAndDeploy: "Confirm certificate and deploy",
+    httpFallbackHeading: "Confirm HTTP fallback",
+    httpFallbackWarning:
+      "The Windows HTTPS endpoint is unavailable. Port 5985 is reachable and can be used only after explicit administrator approval.",
+    httpFallbackSecurity:
+      "TLS server identity is not available on this path. IPMS requires NTLM and fail-closed WS-Man message encryption, but the connection remains more exposed to relay and endpoint-identity risks than HTTPS.",
+    confirmHttpFallbackAndDeploy: "Use HTTP fallback and deploy",
+    cancel: "Cancel",
     certificateChanged:
       "The Windows HTTPS certificate changed before deployment.",
     connectionTimeout: "The Windows system did not answer before the timeout.",
@@ -81,6 +102,12 @@ export const en = {
     packageUnavailable: "The pinned Windows Agent package is unavailable.",
     packageInvalid: "The Windows Agent package failed its integrity check.",
     deploymentFailed: "The Windows Agent could not be deployed.",
+    approvalExpired:
+      "The connection approval expired. Check the endpoint again.",
+    approvalInvalid:
+      "The connection approval does not match this Windows system.",
+    confirmationRequired:
+      "Administrator confirmation is required before deployment.",
     deploymentInProgress:
       "The isolated worker is validating the target and running the fixed installation job.",
     deploymentSucceeded:
@@ -108,7 +135,7 @@ export const en = {
     tenants: "Tenants",
     administration: "Administration",
     soon: "Soon",
-    version: "IPMS v0.1.30 development",
+    version: "IPMS v0.1.31 development",
   },
   overview: {
     inventoryCurrent: "Current inventory",

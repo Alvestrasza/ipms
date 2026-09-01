@@ -207,6 +207,15 @@ class WindowsAgentDeployment(models.Model):
         SUCCEEDED = "succeeded", "Succeeded"
         FAILED = "failed", "Failed"
 
+    class Transport(models.TextChoices):
+        HTTPS = "https", "HTTPS"
+        HTTP = "http", "HTTP with message encryption"
+
+    class CertificateTrustMode(models.TextChoices):
+        SYSTEM = "system", "System trust"
+        PINNED = "pinned", "Administrator-approved certificate pin"
+        NONE = "none", "Not applicable"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
         Tenant,
@@ -224,13 +233,23 @@ class WindowsAgentDeployment(models.Model):
         default=5986,
         validators=(MinValueValidator(1), MaxValueValidator(65535)),
     )
+    transport = models.CharField(
+        max_length=8,
+        choices=Transport.choices,
+        default=Transport.HTTPS,
+    )
+    certificate_trust_mode = models.CharField(
+        max_length=8,
+        choices=CertificateTrustMode.choices,
+        default=CertificateTrustMode.SYSTEM,
+    )
     status = models.CharField(
         max_length=16,
         choices=Status.choices,
         default=Status.QUEUED,
     )
     requested_by = models.CharField(max_length=255)
-    certificate_fingerprint_sha256 = models.CharField(max_length=64)
+    certificate_fingerprint_sha256 = models.CharField(max_length=64, blank=True)
     error_code = models.CharField(max_length=64, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     started_at = models.DateTimeField(blank=True, null=True)

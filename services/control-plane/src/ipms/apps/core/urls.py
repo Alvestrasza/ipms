@@ -3,6 +3,7 @@ from django.urls import include, path
 from ipms.apps.agent_pki.views import (
     WindowsAgentDeploymentDetailView,
     WindowsAgentDeploymentListCreateView,
+    WindowsAgentDeploymentPreflightView,
 )
 
 from ipms.apps.discovery.views import (
@@ -36,6 +37,11 @@ urlpatterns = [
         "agents/windows/deployments/",
         WindowsAgentDeploymentListCreateView.as_view(),
         name="windows-agent-deployment-list",
+    ),
+    path(
+        "agents/windows/deployments/preflight/",
+        WindowsAgentDeploymentPreflightView.as_view(),
+        name="windows-agent-deployment-preflight",
     ),
     path(
         "agents/windows/deployments/<uuid:pk>/",

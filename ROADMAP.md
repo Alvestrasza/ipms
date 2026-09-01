@@ -157,9 +157,11 @@ restore point.
   integration remains required for end-to-end acceptance.
 - Provide a tenant-administrator-only portal bootstrap for Windows systems. A
   dedicated worker may run only the compiled, version-pinned Agent installation
-  workflow over trusted HTTPS remote management; credentials are encrypted only
-  until the first attempt and the path cannot execute operator-supplied scripts
-  or commands.
+  workflow over administrator-approved HTTPS with certificate inspection and
+  pinning. If HTTPS is unavailable, the portal may offer an explicitly approved
+  TCP 5985 fallback with mandatory NTLM WS-Man message encryption and a clear
+  residual-risk warning. Credentials are encrypted only until the first attempt
+  and the path cannot execute operator-supplied scripts or commands.
 - Implement a read-only Hyper-V connector for host, cluster, VM, and basic
   resource discovery through the C++20 Windows Agent and its signed,
   built-in `hyper-v-host` Management Pack.

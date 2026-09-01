@@ -144,6 +144,148 @@ test("centers the Add System dialog in the primary workspace", async ({
   );
 });
 
+test("shows and confirms the Windows HTTPS certificate before deployment", async ({
+  page,
+}) => {
+  await signIn(page);
+  let preflightPayload: Record<string, unknown> = {};
+  let deploymentPayload: Record<string, unknown> = {};
+  await page.route("**/api/v1/agents/windows/deployments/", async (route) => {
+    deploymentPayload = route.request().postDataJSON();
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "00000000-0000-0000-0000-000000000010",
+        status: "succeeded",
+        error_code: "",
+      }),
+    });
+  });
+  await page.route(
+    "**/api/v1/agents/windows/deployments/preflight/",
+    async (route) => {
+      preflightPayload = route.request().postDataJSON();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          transport: "https",
+          port: 5986,
+          approval_token: "test-only-windows-approval",
+          requires_explicit_confirmation: true,
+          requires_explicit_trust: true,
+          certificate: {
+            fingerprint_sha256: "ab".repeat(32),
+            subject: "CN=windows-target.invalid",
+            issuer: "CN=synthetic-windows-ca",
+            serial_number: "10",
+            valid_from: "2026-01-01T00:00:00Z",
+            valid_until: "2027-01-01T00:00:00Z",
+            dns_names: ["windows-target.invalid"],
+            trusted_by_system: false,
+          },
+        }),
+      });
+    },
+  );
+
+  await page.getByRole("button", { name: "Add System" }).click();
+  await page.getByRole("button", { name: /Windows system/ }).click();
+  await page.getByLabel("Display name").fill("Synthetic Windows target");
+  await page
+    .getByLabel("DNS name or IP address")
+    .fill("windows-target.invalid");
+  await page.getByLabel("Preferred HTTPS port").fill("5986");
+  await page
+    .getByLabel("Administrative username")
+    .fill("example\\administrator");
+  await page.getByLabel("Password", { exact: true }).fill("test-only-secret");
+  await page.getByRole("button", { name: "Check connection" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "Confirm Windows HTTPS certificate" }),
+  ).toBeVisible();
+  await expect(page.getByText("CN=synthetic-windows-ca")).toBeVisible();
+  expect(preflightPayload).not.toHaveProperty("password");
+  await page
+    .getByRole("button", { name: "Confirm certificate and deploy" })
+    .click();
+
+  await expect(page.getByText("Deployment succeeded")).toBeVisible();
+  expect(deploymentPayload).toMatchObject({
+    transport: "https",
+    port: 5986,
+    approval_token: "test-only-windows-approval",
+    confirm_connection: true,
+    password: "test-only-secret",
+  });
+  await expect(page.getByText("test-only-secret")).toHaveCount(0);
+});
+
+test("requires explicit approval for the Windows HTTP fallback", async ({
+  page,
+}) => {
+  await signIn(page);
+  let deploymentPayload: Record<string, unknown> = {};
+  await page.route("**/api/v1/agents/windows/deployments/", async (route) => {
+    deploymentPayload = route.request().postDataJSON();
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "00000000-0000-0000-0000-000000000011",
+        status: "succeeded",
+        error_code: "",
+      }),
+    });
+  });
+  await page.route(
+    "**/api/v1/agents/windows/deployments/preflight/",
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          transport: "http",
+          port: 5985,
+          approval_token: "test-only-http-approval",
+          requires_explicit_confirmation: true,
+          https_error_code: "connection_failed",
+        }),
+      });
+    },
+  );
+
+  await page.getByRole("button", { name: "Add System" }).click();
+  await page.getByRole("button", { name: /Windows system/ }).click();
+  await page.getByLabel("Display name").fill("Synthetic HTTP target");
+  await page.getByLabel("DNS name or IP address").fill("windows-http.invalid");
+  await page
+    .getByLabel("Administrative username")
+    .fill("example\\administrator");
+  await page.getByLabel("Password", { exact: true }).fill("test-only-secret");
+  await page.getByRole("button", { name: "Check connection" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "Confirm HTTP fallback" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/mandatory NTLM message encryption/i),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Use HTTP fallback and deploy" })
+    .click();
+
+  await expect(page.getByText("Deployment succeeded")).toBeVisible();
+  expect(deploymentPayload).toMatchObject({
+    transport: "http",
+    port: 5985,
+    approval_token: "test-only-http-approval",
+    confirm_connection: true,
+  });
+});
+
 test("provides dark and light semantic themes after sign-in", async ({
   page,
 }) => {

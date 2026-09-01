@@ -16,6 +16,11 @@ class WindowsAgentDeploymentRequestSerializer(serializers.Serializer):
     display_name = serializers.CharField(max_length=255)
     address = serializers.CharField(max_length=253)
     port = serializers.IntegerField(min_value=1, max_value=65535, default=5986)
+    transport = serializers.ChoiceField(
+        choices=WindowsAgentDeployment.Transport.choices,
+    )
+    approval_token = serializers.CharField(max_length=4096, write_only=True)
+    confirm_connection = serializers.BooleanField()
     username = serializers.CharField(max_length=255, write_only=True)
     password = serializers.CharField(
         max_length=4096,
@@ -35,6 +40,15 @@ class WindowsAgentDeploymentRequestSerializer(serializers.Serializer):
         return address.lower()
 
 
+class WindowsAgentDeploymentPreflightSerializer(serializers.Serializer):
+    address = serializers.CharField(max_length=253)
+    https_port = serializers.IntegerField(min_value=1, max_value=65535, default=5986)
+    allow_http_fallback = serializers.BooleanField(default=True)
+
+    def validate_address(self, value: str) -> str:
+        return WindowsAgentDeploymentRequestSerializer().validate_address(value)
+
+
 class WindowsAgentDeploymentSerializer(serializers.ModelSerializer):
     tenant_id = serializers.UUIDField(read_only=True)
 
@@ -46,6 +60,7 @@ class WindowsAgentDeploymentSerializer(serializers.ModelSerializer):
             "display_name",
             "target_address",
             "target_port",
+            "transport",
             "status",
             "error_code",
             "created_at",

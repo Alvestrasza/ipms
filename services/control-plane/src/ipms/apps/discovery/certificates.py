@@ -39,6 +39,14 @@ class CertificateObservation:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class WindowsHttpObservation:
+    reachable: bool
+
+    def public_document(self) -> dict[str, bool]:
+        return asdict(self)
+
+
 def _private_addresses(hostname: str, port: int) -> tuple[ipaddress.IPv4Address | ipaddress.IPv6Address, ...]:
     try:
         addresses = tuple(
@@ -146,6 +154,41 @@ def probe_bmc_certificate(base_url: str, *, timeout: float = 10) -> CertificateO
     )
 
 
+def probe_windows_http_endpoint(
+    base_url: str,
+    *,
+    timeout: float = 10,
+) -> WindowsHttpObservation:
+    parsed = urlsplit(base_url)
+    if parsed.scheme != "http" or not parsed.hostname:
+        raise CertificateProbeError("invalid_endpoint")
+    port = parsed.port or 5985
+    addresses = _private_addresses(parsed.hostname, port)
+    address = addresses[0]
+    path = parsed.path or "/wsman"
+    connection = http.client.HTTPConnection(str(address), port, timeout=timeout)
+    try:
+        connection.request(
+            "GET",
+            path,
+            headers={
+                "Host": parsed.hostname,
+                "Connection": "close",
+            },
+        )
+        response = connection.getresponse()
+        response.read(4096)
+    except (TimeoutError, socket.timeout) as exc:
+        raise CertificateProbeError("connection_timeout") from exc
+    except (OSError, http.client.HTTPException) as exc:
+        raise CertificateProbeError("connection_failed") from exc
+    finally:
+        connection.close()
+    if response.status not in {401, 405}:
+        raise CertificateProbeError("remote_management_unavailable")
+    return WindowsHttpObservation(reachable=True)
+
+
 def request_bmc_certificate_probe(
     base_url: str,
     *,
@@ -198,6 +241,49 @@ def request_bmc_certificate_probe(
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise CertificateProbeError("certificate_probe_invalid_response") from exc
+
+
+def request_windows_http_probe(
+    base_url: str,
+    *,
+    timeout: float,
+    port: int,
+    token: str,
+) -> WindowsHttpObservation:
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout + 5)
+    try:
+        connection.request(
+            "POST",
+            "/probe/windows-http",
+            body=json.dumps({"base_url": base_url, "timeout": timeout}),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+        )
+        response = connection.getresponse()
+        body = response.read(4096 + 1)
+    except (OSError, TimeoutError, http.client.HTTPException) as exc:
+        raise CertificateProbeError("certificate_probe_unavailable") from exc
+    finally:
+        connection.close()
+    if len(body) > 4096:
+        raise CertificateProbeError("certificate_probe_invalid_response")
+    try:
+        document = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CertificateProbeError("certificate_probe_invalid_response") from exc
+    if response.status != 200:
+        code = document.get("error") if isinstance(document, dict) else None
+        safe_code = (
+            code
+            if isinstance(code, str) and len(code) <= 64
+            else "certificate_probe_failed"
+        )
+        raise CertificateProbeError(safe_code)
+    if not isinstance(document, dict) or document.get("reachable") is not True:
+        raise CertificateProbeError("certificate_probe_invalid_response")
+    return WindowsHttpObservation(reachable=True)
 
 
 def create_certificate_trust_token(

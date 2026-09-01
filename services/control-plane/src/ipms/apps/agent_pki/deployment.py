@@ -14,6 +14,7 @@ from ipms.apps.audit.models import AuditEvent
 from ipms.apps.discovery.certificates import (
     CertificateProbeError,
     request_bmc_certificate_probe,
+    request_windows_http_probe,
 )
 
 from .deployment_secrets import load_deployment_secret
@@ -79,10 +80,20 @@ def _https_origin(address: str, port: int) -> str:
     return f"https://{host}:{port}/"
 
 
+def _http_origin(address: str, port: int) -> str:
+    try:
+        host = f"[{address}]" if ipaddress.ip_address(address).version == 6 else address
+    except ValueError:
+        host = address
+    return f"http://{host}:{port}/wsman"
+
+
 def _audit(deployment: WindowsAgentDeployment, *, outcome: str, error_code: str = ""):
     details = {
         "target_address": deployment.target_address,
         "target_port": deployment.target_port,
+        "transport": deployment.transport,
+        "certificate_trust_mode": deployment.certificate_trust_mode,
     }
     if error_code:
         details["error_code"] = error_code
@@ -110,36 +121,71 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
         secret_row = deployment.secret
         secret = load_deployment_secret(secret_row)
         artifact = _artifact()
-        base_url = _https_origin(
-            deployment.target_address,
-            deployment.target_port,
-        )
-        observation = request_bmc_certificate_probe(
-            base_url,
-            timeout=settings.AGENT_DEPLOYMENT_CONNECT_TIMEOUT_SECONDS,
-            port=settings.CERTIFICATE_PROBE_PORT,
-            token=settings.CERTIFICATE_PROBE_TOKEN,
-        )
-        if (
-            not observation.trusted_by_system
-            or observation.fingerprint_sha256
-            != deployment.certificate_fingerprint_sha256
-        ):
-            raise CertificateProbeError("windows_certificate_changed")
+        client_options = {
+            "username": secret["username"],
+            "password": secret["password"],
+            "port": deployment.target_port,
+            "auth": "ntlm",
+            "connection_timeout": settings.AGENT_DEPLOYMENT_CONNECT_TIMEOUT_SECONDS,
+            "read_timeout": settings.AGENT_DEPLOYMENT_READ_TIMEOUT_SECONDS,
+            "no_proxy": True,
+        }
+        if deployment.transport == WindowsAgentDeployment.Transport.HTTPS:
+            observation = request_bmc_certificate_probe(
+                _https_origin(
+                    deployment.target_address,
+                    deployment.target_port,
+                ),
+                timeout=settings.AGENT_DEPLOYMENT_CONNECT_TIMEOUT_SECONDS,
+                port=settings.CERTIFICATE_PROBE_PORT,
+                token=settings.CERTIFICATE_PROBE_TOKEN,
+            )
+            if (
+                observation.fingerprint_sha256
+                != deployment.certificate_fingerprint_sha256
+            ):
+                raise CertificateProbeError("windows_certificate_changed")
+            if (
+                deployment.certificate_trust_mode
+                == WindowsAgentDeployment.CertificateTrustMode.SYSTEM
+                and not observation.trusted_by_system
+            ):
+                raise CertificateProbeError("windows_certificate_trust_changed")
+            client_options.update(
+                {
+                    "ssl": True,
+                    "cert_validation": (
+                        settings.AGENT_DEPLOYMENT_CA_BUNDLE
+                        if deployment.certificate_trust_mode
+                        == WindowsAgentDeployment.CertificateTrustMode.SYSTEM
+                        else False
+                    ),
+                    "encryption": "auto",
+                }
+            )
+        else:
+            request_windows_http_probe(
+                _http_origin(
+                    deployment.target_address,
+                    deployment.target_port,
+                ),
+                timeout=settings.AGENT_DEPLOYMENT_CONNECT_TIMEOUT_SECONDS,
+                port=settings.CERTIFICATE_PROBE_PORT,
+                token=settings.CERTIFICATE_PROBE_TOKEN,
+            )
+            client_options.update(
+                {
+                    "ssl": False,
+                    "cert_validation": False,
+                    "encryption": "always",
+                }
+            )
 
         from pypsrp.client import Client
 
         client = Client(
             deployment.target_address,
-            username=secret["username"],
-            password=secret["password"],
-            ssl=True,
-            port=deployment.target_port,
-            auth="ntlm",
-            cert_validation=settings.AGENT_DEPLOYMENT_CA_BUNDLE,
-            connection_timeout=settings.AGENT_DEPLOYMENT_CONNECT_TIMEOUT_SECONDS,
-            read_timeout=settings.AGENT_DEPLOYMENT_READ_TIMEOUT_SECONDS,
-            no_proxy=True,
+            **client_options,
         )
         staging_path = (
             f"$staging = {remote_staging}; "

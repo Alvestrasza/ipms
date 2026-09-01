@@ -6,11 +6,12 @@ import {
   LoaderCircle,
   MonitorCog,
   Plus,
+  ShieldAlert,
   ShieldCheck,
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import type { Dictionary } from "@/i18n/dictionaries";
 
@@ -21,6 +22,27 @@ type Deployment = {
   id: string;
   status: "queued" | "running" | "succeeded" | "failed";
   error_code: string;
+};
+
+type WindowsCertificate = {
+  fingerprint_sha256: string;
+  subject: string;
+  issuer: string;
+  serial_number: string;
+  valid_from: string;
+  valid_until: string;
+  dns_names: string[];
+  trusted_by_system: boolean;
+};
+
+type WindowsPreflight = {
+  transport: "https" | "http";
+  port: number;
+  approval_token: string;
+  requires_explicit_confirmation: boolean;
+  requires_explicit_trust?: boolean;
+  https_error_code?: string;
+  certificate?: WindowsCertificate;
 };
 
 type Props = {
@@ -49,6 +71,15 @@ function responseErrorCode(value: unknown): string | null {
   return null;
 }
 
+function fingerprint(value: string) {
+  return (
+    value
+      .match(/.{1,2}/g)
+      ?.join(":")
+      .toUpperCase() ?? value
+  );
+}
+
 export function AddSystemDialog({
   csrfToken,
   tenantId,
@@ -58,13 +89,15 @@ export function AddSystemDialog({
   bmcCopy,
 }: Props) {
   const router = useRouter();
+  const windowsFormRef = useRef<HTMLFormElement>(null);
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [bmcOpen, setBmcOpen] = useState(false);
   const [windowsOpen, setWindowsOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"checking" | "queuing" | null>(null);
   const [error, setError] = useState("");
   const [password, setPassword] = useState("");
   const [deployment, setDeployment] = useState<Deployment | null>(null);
+  const [preflight, setPreflight] = useState<WindowsPreflight | null>(null);
 
   useEffect(() => {
     if (!deployment || !["queued", "running"].includes(deployment.status)) {
@@ -108,6 +141,7 @@ export function AddSystemDialog({
     setWindowsOpen(false);
     setPassword("");
     setDeployment(null);
+    setPreflight(null);
     setError("");
   }
 
@@ -115,6 +149,7 @@ export function AddSystemDialog({
     const messages: Record<string, string> = {
       windows_certificate_untrusted: copy.certificateUntrusted,
       windows_certificate_changed: copy.certificateChanged,
+      windows_certificate_trust_changed: copy.certificateChanged,
       connection_timeout: copy.connectionTimeout,
       connection_failed: copy.connectionFailed,
       target_unresolved: copy.targetUnresolved,
@@ -126,15 +161,70 @@ export function AddSystemDialog({
       agent_package_unavailable: copy.packageUnavailable,
       agent_package_invalid: copy.packageInvalid,
       deployment_failed: copy.deploymentFailed,
+      remote_management_unavailable: copy.remoteManagementFailed,
+      windows_deployment_approval_expired: copy.approvalExpired,
+      windows_deployment_approval_invalid: copy.approvalInvalid,
+      windows_deployment_approval_scope_mismatch: copy.approvalInvalid,
+      windows_deployment_confirmation_required: copy.confirmationRequired,
     };
     return (code && messages[code]) || copy.deploymentFailed;
   }
 
-  async function deployWindows(event: FormEvent<HTMLFormElement>) {
+  function windowsFormPayload() {
+    const form = new FormData(windowsFormRef.current ?? undefined);
+    return {
+      display_name: form.get("display_name"),
+      address: form.get("address"),
+      https_port: Number(form.get("port")),
+      username: form.get("username"),
+    };
+  }
+
+  async function checkWindowsConnection(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setBusy(true);
+    setBusy("checking");
     setError("");
-    const form = new FormData(event.currentTarget);
+    const payload = windowsFormPayload();
+    try {
+      const response = await fetch(
+        "/api/v1/agents/windows/deployments/preflight/",
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": csrfToken,
+            "X-IPMS-Tenant-ID": tenantId,
+          },
+          body: JSON.stringify({
+            address: payload.address,
+            https_port: payload.https_port,
+            allow_http_fallback: true,
+          }),
+        },
+      );
+      if (!response.ok) {
+        let code: string | null = null;
+        try {
+          code = responseErrorCode(await response.json());
+        } catch {
+          // The generic localized message remains the safe fallback.
+        }
+        setError(deploymentError(code));
+        return;
+      }
+      setPreflight((await response.json()) as WindowsPreflight);
+    } catch {
+      setError(copy.unavailable);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function queueWindows(preflightResult: WindowsPreflight) {
+    setBusy("queuing");
+    setError("");
+    const payload = windowsFormPayload();
     try {
       const response = await fetch("/api/v1/agents/windows/deployments/", {
         method: "POST",
@@ -145,10 +235,13 @@ export function AddSystemDialog({
           "X-IPMS-Tenant-ID": tenantId,
         },
         body: JSON.stringify({
-          display_name: form.get("display_name"),
-          address: form.get("address"),
-          port: Number(form.get("port")),
-          username: form.get("username"),
+          display_name: payload.display_name,
+          address: payload.address,
+          port: preflightResult.port,
+          transport: preflightResult.transport,
+          approval_token: preflightResult.approval_token,
+          confirm_connection: true,
+          username: payload.username,
           password,
         }),
       });
@@ -163,12 +256,13 @@ export function AddSystemDialog({
         setError(deploymentError(code));
         return;
       }
+      setPreflight(null);
       setDeployment((await response.json()) as Deployment);
     } catch {
       setPassword("");
       setError(copy.unavailable);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -183,6 +277,10 @@ export function AddSystemDialog({
     deployment?.status === "failed"
       ? deploymentError(deployment.error_code)
       : "";
+  const dateFormatter = new Intl.DateTimeFormat(locale, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 
   return (
     <>
@@ -316,7 +414,11 @@ export function AddSystemDialog({
                   </div>
                 </div>
               ) : (
-                <form className="wizard" onSubmit={deployWindows}>
+                <form
+                  ref={windowsFormRef}
+                  className="wizard"
+                  onSubmit={checkWindowsConnection}
+                >
                   <label>
                     {copy.name}
                     <input
@@ -392,7 +494,7 @@ export function AddSystemDialog({
                         setPassword("");
                         setError("");
                       }}
-                      disabled={busy}
+                      disabled={Boolean(busy)}
                     >
                       <ArrowLeft aria-hidden="true" size={15} />
                       {copy.back}
@@ -400,7 +502,7 @@ export function AddSystemDialog({
                     <button
                       className="primary-button"
                       type="submit"
-                      disabled={busy}
+                      disabled={Boolean(busy)}
                     >
                       {busy ? (
                         <LoaderCircle
@@ -411,11 +513,145 @@ export function AddSystemDialog({
                       ) : (
                         <MonitorCog aria-hidden="true" size={16} />
                       )}
-                      {busy ? copy.queuing : copy.deploy}
+                      {busy === "checking"
+                        ? copy.checkingConnection
+                        : busy === "queuing"
+                          ? copy.queuing
+                          : copy.checkConnection}
                     </button>
                   </div>
                 </form>
               )}
+            </section>
+          </div>
+        </DialogPortal>
+      ) : null}
+
+      {preflight ? (
+        <DialogPortal>
+          <div className="modal-backdrop modal-backdrop--nested">
+            <section
+              className="modal-card certificate-dialog"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="windows-connection-approval-heading"
+            >
+              <div className="modal-card__heading">
+                {preflight.transport === "https" ? (
+                  <ShieldCheck aria-hidden="true" size={22} />
+                ) : (
+                  <ShieldAlert aria-hidden="true" size={22} />
+                )}
+                <h3 id="windows-connection-approval-heading">
+                  {preflight.transport === "https"
+                    ? copy.certificateHeading
+                    : copy.httpFallbackHeading}
+                </h3>
+              </div>
+
+              {preflight.transport === "https" && preflight.certificate ? (
+                <>
+                  <p>
+                    {preflight.requires_explicit_trust
+                      ? copy.certificateWarning
+                      : copy.certificateTrusted}
+                  </p>
+                  <dl className="certificate-details">
+                    <div>
+                      <dt>{copy.certificateSubject}</dt>
+                      <dd>{preflight.certificate.subject}</dd>
+                    </div>
+                    <div>
+                      <dt>{copy.certificateIssuer}</dt>
+                      <dd>{preflight.certificate.issuer}</dd>
+                    </div>
+                    <div>
+                      <dt>{copy.certificateSerial}</dt>
+                      <dd>
+                        <code>{preflight.certificate.serial_number}</code>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{copy.certificateDnsNames}</dt>
+                      <dd>
+                        {preflight.certificate.dns_names.join(", ") || "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{copy.certificateValidity}</dt>
+                      <dd>
+                        {dateFormatter.format(
+                          new Date(preflight.certificate.valid_from),
+                        )}{" "}
+                        –{" "}
+                        {dateFormatter.format(
+                          new Date(preflight.certificate.valid_until),
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{copy.certificateFingerprint}</dt>
+                      <dd>
+                        <code>
+                          {fingerprint(
+                            preflight.certificate.fingerprint_sha256,
+                          )}
+                        </code>
+                      </dd>
+                    </div>
+                  </dl>
+                </>
+              ) : (
+                <>
+                  <p>{copy.httpFallbackWarning}</p>
+                  <div className="security-note security-note--warning">
+                    <ShieldAlert aria-hidden="true" size={20} />
+                    <span>{copy.httpFallbackSecurity}</span>
+                  </div>
+                </>
+              )}
+
+              {error ? (
+                <p className="form-error" role="alert">
+                  {error}
+                </p>
+              ) : null}
+              <div className="modal-card__actions">
+                <button
+                  className="outline-button"
+                  type="button"
+                  onClick={() => {
+                    setPreflight(null);
+                    setError("");
+                  }}
+                  disabled={Boolean(busy)}
+                >
+                  {copy.cancel}
+                </button>
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => queueWindows(preflight)}
+                  disabled={Boolean(busy)}
+                >
+                  {busy === "queuing" ? (
+                    <LoaderCircle
+                      className="spin"
+                      aria-hidden="true"
+                      size={16}
+                    />
+                  ) : preflight.transport === "https" ? (
+                    <ShieldCheck aria-hidden="true" size={16} />
+                  ) : (
+                    <ShieldAlert aria-hidden="true" size={16} />
+                  )}
+                  {busy === "queuing"
+                    ? copy.queuing
+                    : preflight.transport === "https"
+                      ? copy.confirmCertificateAndDeploy
+                      : copy.confirmHttpFallbackAndDeploy}
+                </button>
+              </div>
             </section>
           </div>
         </DialogPortal>

@@ -60,19 +60,40 @@ export const de = {
     windowsHeading: "Windows-System hinzufügen",
     name: "Anzeigename",
     address: "DNS-Name oder IP-Adresse",
-    port: "HTTPS-Port",
+    port: "Bevorzugter HTTPS-Port",
     username: "Administrativer Benutzername",
     password: "Passwort",
     credentialNote:
       "IPMS verschlüsselt diese Zugangsdaten nur, bis der isolierte Bereitstellungsdienst den Auftrag verarbeitet. Nach dem ersten Versuch werden sie gelöscht; sie werden weder an den Browser zurückgegeben noch vom Agent gespeichert.",
     winrmRequirement:
-      "Erfordert eine sichere Windows-Remoteverwaltung über HTTPS mit einem Zertifikat, dem die IPMS-Appliance vertraut. Das Ziel muss in einem privaten Netzwerk liegen und der Benutzer muss lokaler Administrator sein.",
+      "IPMS bevorzugt die Windows-Remoteverwaltung über HTTPS. Ist HTTPS nicht verfügbar, kann ein Administrator den HTTP-Fallback mit verpflichtender NTLM-Nachrichtenverschlüsselung ausdrücklich bestätigen. Das Ziel muss privat und der Benutzer lokaler Administrator sein.",
     back: "Zurück",
     deploy: "Agent bereitstellen",
+    checkConnection: "Verbindung prüfen",
+    checkingConnection: "Verbindung wird geprüft",
     queuing: "Bereitstellung wird eingereiht",
     unavailable: "Die Steuerungsebene ist derzeit nicht erreichbar.",
     certificateUntrusted:
       "Die IPMS-Appliance vertraut dem Windows-HTTPS-Zertifikat nicht. Installieren Sie die ausstellende CA auf der Appliance oder ersetzen Sie das Zertifikat des Zielsystems.",
+    certificateHeading: "Windows-HTTPS-Zertifikat bestätigen",
+    certificateTrusted:
+      "Die IPMS-Appliance vertraut diesem Zertifikat. Bestätigen Sie dessen Identität, bevor der Auftrag eingereiht wird.",
+    certificateWarning:
+      "Die IPMS-Appliance vertraut diesem Zertifikat nicht. Bestätigen Sie die angezeigte Identität, um das Zertifikat an diesen Auftrag zu binden.",
+    certificateSubject: "Antragsteller",
+    certificateIssuer: "Aussteller",
+    certificateSerial: "Seriennummer",
+    certificateDnsNames: "DNS-Namen",
+    certificateValidity: "Gültigkeit",
+    certificateFingerprint: "SHA-256-Fingerabdruck",
+    confirmCertificateAndDeploy: "Zertifikat bestätigen und bereitstellen",
+    httpFallbackHeading: "HTTP-Fallback bestätigen",
+    httpFallbackWarning:
+      "Der Windows-HTTPS-Endpunkt ist nicht verfügbar. Port 5985 ist erreichbar und kann nur nach ausdrücklicher Bestätigung durch einen Administrator verwendet werden.",
+    httpFallbackSecurity:
+      "Auf diesem Weg fehlt eine TLS-Serveridentität. IPMS erzwingt NTLM und eine ausfallsichere WS-Man-Nachrichtenverschlüsselung; dennoch bleibt die Verbindung stärker durch Relay- und Endpunktidentitätsrisiken gefährdet als HTTPS.",
+    confirmHttpFallbackAndDeploy: "HTTP-Fallback verwenden und bereitstellen",
+    cancel: "Abbrechen",
     certificateChanged:
       "Das Windows-HTTPS-Zertifikat hat sich vor der Bereitstellung geändert.",
     connectionTimeout: "Das Windows-System hat nicht rechtzeitig geantwortet.",
@@ -93,6 +114,12 @@ export const de = {
     packageInvalid:
       "Die Integritätsprüfung des Windows-Agent-Pakets ist fehlgeschlagen.",
     deploymentFailed: "Der Windows Agent konnte nicht bereitgestellt werden.",
+    approvalExpired:
+      "Die Verbindungsbestätigung ist abgelaufen. Prüfen Sie den Endpunkt erneut.",
+    approvalInvalid:
+      "Die Verbindungsbestätigung passt nicht zu diesem Windows-System.",
+    confirmationRequired:
+      "Vor der Bereitstellung ist eine Bestätigung durch einen Administrator erforderlich.",
     deploymentInProgress:
       "Der isolierte Dienst prüft das Ziel und führt den fest definierten Installationsauftrag aus.",
     deploymentSucceeded:
@@ -120,7 +147,7 @@ export const de = {
     tenants: "Mandanten",
     administration: "Administration",
     soon: "Bald",
-    version: "IPMS v0.1.30 Entwicklung",
+    version: "IPMS v0.1.31 Entwicklung",
   },
   overview: {
     inventoryCurrent: "Aktuelles Inventar",

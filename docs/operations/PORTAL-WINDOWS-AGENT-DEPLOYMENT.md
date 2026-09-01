@@ -2,18 +2,20 @@
 
 ## Scope
 
-IPMS 0.1.28 adds a development-grade portal bootstrap for Windows Agent 0.1.27.
-The workflow is tenant-scoped, audited, certificate-validated, and limited to a
-fixed installation operation. It is not a general-purpose remote execution
-feature.
+IPMS 0.1.31 provides a development-grade portal bootstrap for Windows Agent
+0.1.27. The workflow is tenant-scoped, audited, connection-approved, and
+limited to a fixed installation operation. It is not a general-purpose remote
+execution feature.
 
 ## Prerequisites
 
 - The target resolves only to private addresses reachable from the Appliance.
-- Windows HTTPS remote management is enabled on the target, normally on TCP
-  5986.
-- The target certificate is valid for the entered DNS name or IP address and
-  chains to a CA in the Appliance trust store.
+- Windows remote management is enabled over HTTPS, normally on TCP 5986, or
+  over HTTP on TCP 5985 for the explicitly approved fallback.
+- HTTPS is preferred. A system-trusted certificate or an administrator-approved
+  certificate pin is required before the deployment can be queued.
+- The HTTP fallback requires NTLM and fail-closed WS-Man message encryption. It
+  is not equivalent to HTTPS because it provides no TLS server identity.
 - The supplied account is a local administrator on the target.
 - No existing `IPMS Agent` service or Agent installation directory is present.
 - The Appliance contains the pinned Windows Agent package whose SHA-256 digest
@@ -23,11 +25,16 @@ feature.
 
 1. Select **Add System** in the top bar.
 2. Select **Windows system**.
-3. Enter a display name, DNS name or IP address, HTTPS port, administrative
-   username, and password.
-4. Submit the deployment and keep the dialog open to see queued, running,
-   succeeded, or failed state.
-5. After a successful installation, wait for the Agent to complete one-time
+3. Enter a display name, DNS name or IP address, preferred HTTPS port,
+   administrative username, and password.
+4. Select **Check connection**. The preflight request contains no credential.
+5. For HTTPS, inspect and confirm the certificate subject, issuer, validity,
+   DNS names, serial number, and SHA-256 fingerprint. An untrusted certificate
+   is pinned only to the approved deployment.
+6. If HTTPS is unavailable and TCP 5985 exposes the Windows remote-management
+   endpoint, review and explicitly approve the HTTP fallback warning.
+7. Keep the dialog open to see queued, running, succeeded, or failed state.
+8. After a successful installation, wait for the Agent to complete one-time
    enrollment and submit its first inventory through the mTLS Gateway.
 
 The password is cleared from browser state after submission. The API never
@@ -48,8 +55,12 @@ worker attempt, so a failed deployment requires a new submission.
 
 Do not enable protocol debug logging in production. Remote output and exception
 text can contain sensitive details and are intentionally not persisted by IPMS.
-Audit events record tenant, actor, target endpoint, job identifier, outcome, and
-a bounded error code only.
+Audit events record tenant, actor, target endpoint, approved transport,
+certificate trust mode, job identifier, outcome, and a bounded error code only.
+
+The worker repeats the approved preflight before decrypting and using the
+credential. HTTPS certificate pins must still match. HTTP always uses NTLM with
+`encryption="always"`; disabling WS-Man message encryption is not supported.
 
 The current development package is hash-pinned but not Authenticode-signed and
 is not an MSI. Code signing, a signed installer, clean-VM acceptance, upgrade,

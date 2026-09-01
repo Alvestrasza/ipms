@@ -6,7 +6,12 @@ from unittest.mock import patch
 from django.test import SimpleTestCase
 
 from .certificate_probe_service import CertificateProbeHandler
-from .certificates import CertificateObservation, request_bmc_certificate_probe
+from .certificates import (
+    CertificateObservation,
+    WindowsHttpObservation,
+    request_bmc_certificate_probe,
+    request_windows_http_probe,
+)
 
 
 class CertificateProbeServiceTests(SimpleTestCase):
@@ -34,6 +39,34 @@ class CertificateProbeServiceTests(SimpleTestCase):
             try:
                 actual = request_bmc_certificate_probe(
                     "https://192.0.2.10/",
+                    timeout=5,
+                    port=server.server_port,
+                    token="boundary-token",
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+        self.assertEqual(actual, expected)
+
+    def test_authenticated_boundary_probes_windows_http_without_credentials(
+        self,
+    ) -> None:
+        expected = WindowsHttpObservation(reachable=True)
+        server = ThreadingHTTPServer(("127.0.0.1", 0), CertificateProbeHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        with (
+            patch.dict(os.environ, {"IPMS_CERTIFICATE_PROBE_TOKEN": "boundary-token"}),
+            patch(
+                "ipms.apps.discovery.certificate_probe_service."
+                "probe_windows_http_endpoint",
+                return_value=expected,
+            ),
+        ):
+            thread.start()
+            try:
+                actual = request_windows_http_probe(
+                    "http://192.0.2.10:5985/wsman",
                     timeout=5,
                     port=server.server_port,
                     token="boundary-token",
