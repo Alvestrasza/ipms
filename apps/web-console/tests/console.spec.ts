@@ -95,7 +95,7 @@ test("authenticates and renders the tenant-scoped overview", async ({
   await expect(
     page.getByRole("heading", { name: "Infrastructure at a glance" }),
   ).toBeVisible();
-  await expect(page.getByText(/Live Control Plane data/)).toBeVisible();
+  await expect(page.getByText(/Control Plane checked/)).toBeVisible();
   await expect(
     page.getByRole("article").filter({ hasText: "Physical systems" }),
   ).toContainText("0");
@@ -103,9 +103,45 @@ test("authenticates and renders the tenant-scoped overview", async ({
   await expect(
     page.getByLabel("Active tenant").locator("option:checked"),
   ).toHaveText("E2E Development");
-  await expect(
-    page.getByRole("button", { name: "Run discovery" }),
-  ).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Add System" })).toBeEnabled();
+});
+
+test("centers the Add System dialog in the primary workspace", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.getByRole("button", { name: "Add System" }).click();
+
+  const workspace = page.locator(".console-workspace");
+  const topbar = page.locator(".topbar");
+  const backdrop = page.locator("body > .modal-backdrop");
+  const dialog = page.getByRole("dialog", { name: "Add a system" });
+  await expect(dialog).toBeVisible();
+
+  const [workspaceBox, topbarBox, backdropBox, dialogBox] = await Promise.all([
+    workspace.boundingBox(),
+    topbar.boundingBox(),
+    backdrop.boundingBox(),
+    dialog.boundingBox(),
+  ]);
+  expect(workspaceBox).not.toBeNull();
+  expect(topbarBox).not.toBeNull();
+  expect(backdropBox).not.toBeNull();
+  expect(dialogBox).not.toBeNull();
+  if (!workspaceBox || !topbarBox || !backdropBox || !dialogBox) return;
+
+  const workspaceTop = topbarBox.y + topbarBox.height;
+  const availableHeight = page.viewportSize()?.height ?? 0;
+  expect(backdropBox.x).toBeCloseTo(workspaceBox.x, 0);
+  expect(backdropBox.y).toBeCloseTo(workspaceTop, 0);
+  expect(dialogBox.x + dialogBox.width / 2).toBeCloseTo(
+    workspaceBox.x + workspaceBox.width / 2,
+    0,
+  );
+  expect(dialogBox.y + dialogBox.height / 2).toBeCloseTo(
+    workspaceTop + (availableHeight - workspaceTop) / 2,
+    0,
+  );
 });
 
 test("provides dark and light semantic themes after sign-in", async ({
@@ -149,7 +185,10 @@ test("opens the tenant-scoped physical Windows server inventory", async ({
   await page.getByRole("link", { name: "Windows servers" }).click();
   await expect(page).toHaveURL("/en/physical/servers");
   await expect(
-    page.getByRole("heading", { name: "Physical Windows servers" }),
+    page.getByRole("heading", {
+      name: "Physical Windows servers",
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(
     page.getByText("No physical Windows servers discovered"),
@@ -167,7 +206,10 @@ test("opens the tenant-scoped virtual Windows server inventory", async ({
   await page.getByRole("link", { name: "Virtual infrastructure" }).click();
   await expect(page).toHaveURL("/en/virtual");
   await expect(
-    page.getByRole("heading", { name: "Virtual Windows servers" }),
+    page.getByRole("heading", {
+      name: "Virtual Windows servers",
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(
     page.getByText("No virtual Windows servers discovered"),
@@ -217,7 +259,7 @@ test("enrolls a BMC through certificate-aware guided portal wizard", async ({
   });
 
   await page.getByRole("button", { name: "Add BMC" }).click();
-  await page.getByLabel("BMC family").selectOption("hpe-ilo4");
+  await page.getByLabel("BMC platform").selectOption("hpe-ilo4");
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByLabel("Display name").fill("Synthetic BMC");
   await page.getByLabel("Address").fill("192.0.2.40");
@@ -227,13 +269,15 @@ test("enrolls a BMC through certificate-aware guided portal wizard", async ({
   const password = page.getByLabel("Password", { exact: true });
   await expect(password).toHaveAttribute("type", "password");
   await password.fill("test-only-secret");
-  await page.getByRole("button", { name: "Check certificate" }).click();
+  await page.getByRole("button", { name: "Add and discover" }).click();
 
   await expect(
     page.getByRole("heading", { name: "Trust BMC certificate" }),
   ).toBeVisible();
   await expect(page.getByText("CN=synthetic-test-ca")).toBeVisible();
-  await page.getByRole("button", { name: "Trust and add BMC" }).click();
+  await page
+    .getByRole("button", { name: "Trust certificate and add BMC" })
+    .click();
 
   await expect(page.getByText(/first discovery job is queued/i)).toBeVisible();
   expect(submittedPassword).toBe("test-only-secret");

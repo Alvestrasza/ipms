@@ -15,6 +15,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import type { Dictionary } from "@/i18n/dictionaries";
 
 import { BmcWizard } from "./bmc-wizard";
+import { DialogPortal } from "./dialog-portal";
 
 type Deployment = {
   id: string;
@@ -197,56 +198,58 @@ export function AddSystemDialog({
       </button>
 
       {selectorOpen ? (
-        <div className="modal-backdrop">
-          <section
-            className="modal-card add-system-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="add-system-heading"
-          >
-            <div className="wizard__header">
-              <div>
-                <p className="eyebrow">{copy.eyebrow}</p>
-                <h3 id="add-system-heading">{copy.heading}</h3>
+        <DialogPortal>
+          <div className="modal-backdrop">
+            <section
+              className="modal-card add-system-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="add-system-heading"
+            >
+              <div className="wizard__header">
+                <div>
+                  <p className="eyebrow">{copy.eyebrow}</p>
+                  <h3 id="add-system-heading">{copy.heading}</h3>
+                </div>
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={() => setSelectorOpen(false)}
+                  aria-label={copy.close}
+                >
+                  <X aria-hidden="true" size={17} />
+                </button>
               </div>
-              <button
-                className="icon-button"
-                type="button"
-                onClick={() => setSelectorOpen(false)}
-                aria-label={copy.close}
-              >
-                <X aria-hidden="true" size={17} />
-              </button>
-            </div>
-            <p>{copy.description}</p>
-            <div className="system-choice-grid">
-              <button
-                className="system-choice"
-                type="button"
-                onClick={() => {
-                  setSelectorOpen(false);
-                  setBmcOpen(true);
-                }}
-              >
-                <Boxes aria-hidden="true" size={31} />
-                <strong>{copy.bmc}</strong>
-                <span>{copy.bmcHint}</span>
-              </button>
-              <button
-                className="system-choice"
-                type="button"
-                onClick={() => {
-                  setSelectorOpen(false);
-                  setWindowsOpen(true);
-                }}
-              >
-                <MonitorCog aria-hidden="true" size={31} />
-                <strong>{copy.windows}</strong>
-                <span>{copy.windowsHint}</span>
-              </button>
-            </div>
-          </section>
-        </div>
+              <p>{copy.description}</p>
+              <div className="system-choice-grid">
+                <button
+                  className="system-choice"
+                  type="button"
+                  onClick={() => {
+                    setSelectorOpen(false);
+                    setBmcOpen(true);
+                  }}
+                >
+                  <Boxes aria-hidden="true" size={31} />
+                  <strong>{copy.bmc}</strong>
+                  <span>{copy.bmcHint}</span>
+                </button>
+                <button
+                  className="system-choice"
+                  type="button"
+                  onClick={() => {
+                    setSelectorOpen(false);
+                    setWindowsOpen(true);
+                  }}
+                >
+                  <MonitorCog aria-hidden="true" size={31} />
+                  <strong>{copy.windows}</strong>
+                  <span>{copy.windowsHint}</span>
+                </button>
+              </div>
+            </section>
+          </div>
+        </DialogPortal>
       ) : null}
 
       <BmcWizard
@@ -261,155 +264,161 @@ export function AddSystemDialog({
       />
 
       {windowsOpen ? (
-        <div className="modal-backdrop">
-          <section
-            className="modal-card modal-card--wide windows-deployment-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="windows-deployment-heading"
-          >
-            <div className="wizard__header">
-              <div>
-                <p className="eyebrow">{copy.windowsEyebrow}</p>
-                <h3 id="windows-deployment-heading">{copy.windowsHeading}</h3>
-              </div>
-              <button
-                className="icon-button"
-                type="button"
-                onClick={closeWindows}
-                aria-label={copy.close}
-              >
-                <X aria-hidden="true" size={17} />
-              </button>
-            </div>
-
-            {deployment ? (
-              <div className="deployment-status" role="status">
-                {deployment.status === "queued" ||
-                deployment.status === "running" ? (
-                  <LoaderCircle className="spin" aria-hidden="true" size={24} />
-                ) : deployment.status === "failed" ? (
-                  <X
-                    className="deployment-status__failure"
-                    aria-hidden="true"
-                    size={24}
-                  />
-                ) : (
-                  <ShieldCheck aria-hidden="true" size={24} />
-                )}
+        <DialogPortal>
+          <div className="modal-backdrop">
+            <section
+              className="modal-card modal-card--wide windows-deployment-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="windows-deployment-heading"
+            >
+              <div className="wizard__header">
                 <div>
-                  <strong>{statusLabel}</strong>
-                  <span>
-                    {terminalError ||
-                      (deployment.status === "succeeded"
-                        ? copy.deploymentSucceeded
-                        : copy.deploymentInProgress)}
-                  </span>
+                  <p className="eyebrow">{copy.windowsEyebrow}</p>
+                  <h3 id="windows-deployment-heading">{copy.windowsHeading}</h3>
                 </div>
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={closeWindows}
+                  aria-label={copy.close}
+                >
+                  <X aria-hidden="true" size={17} />
+                </button>
               </div>
-            ) : (
-              <form className="wizard" onSubmit={deployWindows}>
-                <label>
-                  {copy.name}
-                  <input
-                    name="display_name"
-                    type="text"
-                    required
-                    maxLength={255}
-                  />
-                </label>
-                <div className="form-grid form-grid--endpoint">
+
+              {deployment ? (
+                <div className="deployment-status" role="status">
+                  {deployment.status === "queued" ||
+                  deployment.status === "running" ? (
+                    <LoaderCircle
+                      className="spin"
+                      aria-hidden="true"
+                      size={24}
+                    />
+                  ) : deployment.status === "failed" ? (
+                    <X
+                      className="deployment-status__failure"
+                      aria-hidden="true"
+                      size={24}
+                    />
+                  ) : (
+                    <ShieldCheck aria-hidden="true" size={24} />
+                  )}
+                  <div>
+                    <strong>{statusLabel}</strong>
+                    <span>
+                      {terminalError ||
+                        (deployment.status === "succeeded"
+                          ? copy.deploymentSucceeded
+                          : copy.deploymentInProgress)}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <form className="wizard" onSubmit={deployWindows}>
                   <label>
-                    {copy.address}
+                    {copy.name}
                     <input
-                      name="address"
+                      name="display_name"
                       type="text"
                       required
-                      maxLength={253}
-                      placeholder="server.example.invalid"
-                      spellCheck={false}
+                      maxLength={255}
+                    />
+                  </label>
+                  <div className="form-grid form-grid--endpoint">
+                    <label>
+                      {copy.address}
+                      <input
+                        name="address"
+                        type="text"
+                        required
+                        maxLength={253}
+                        placeholder="server.example.invalid"
+                        spellCheck={false}
+                      />
+                    </label>
+                    <label>
+                      {copy.port}
+                      <input
+                        name="port"
+                        type="number"
+                        min={1}
+                        max={65535}
+                        defaultValue={5986}
+                        required
+                      />
+                    </label>
+                  </div>
+                  <label>
+                    {copy.username}
+                    <input
+                      name="username"
+                      type="text"
+                      required
+                      maxLength={255}
+                      autoComplete="username"
                     />
                   </label>
                   <label>
-                    {copy.port}
+                    {copy.password}
                     <input
-                      name="port"
-                      type="number"
-                      min={1}
-                      max={65535}
-                      defaultValue={5986}
+                      name="password"
+                      type="password"
                       required
+                      maxLength={4096}
+                      autoComplete="current-password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
                     />
                   </label>
-                </div>
-                <label>
-                  {copy.username}
-                  <input
-                    name="username"
-                    type="text"
-                    required
-                    maxLength={255}
-                    autoComplete="username"
-                  />
-                </label>
-                <label>
-                  {copy.password}
-                  <input
-                    name="password"
-                    type="password"
-                    required
-                    maxLength={4096}
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                  />
-                </label>
-                <div className="security-note">
-                  <ShieldCheck aria-hidden="true" size={20} />
-                  <span>{copy.credentialNote}</span>
-                </div>
-                <p className="wizard__hint">{copy.winrmRequirement}</p>
-                {error ? (
-                  <p className="form-error" role="alert">
-                    {error}
-                  </p>
-                ) : null}
-                <div className="wizard__actions">
-                  <button
-                    className="outline-button"
-                    type="button"
-                    onClick={() => {
-                      setWindowsOpen(false);
-                      setSelectorOpen(true);
-                      setPassword("");
-                      setError("");
-                    }}
-                    disabled={busy}
-                  >
-                    <ArrowLeft aria-hidden="true" size={15} />
-                    {copy.back}
-                  </button>
-                  <button
-                    className="primary-button"
-                    type="submit"
-                    disabled={busy}
-                  >
-                    {busy ? (
-                      <LoaderCircle
-                        className="spin"
-                        aria-hidden="true"
-                        size={16}
-                      />
-                    ) : (
-                      <MonitorCog aria-hidden="true" size={16} />
-                    )}
-                    {busy ? copy.queuing : copy.deploy}
-                  </button>
-                </div>
-              </form>
-            )}
-          </section>
-        </div>
+                  <div className="security-note">
+                    <ShieldCheck aria-hidden="true" size={20} />
+                    <span>{copy.credentialNote}</span>
+                  </div>
+                  <p className="wizard__hint">{copy.winrmRequirement}</p>
+                  {error ? (
+                    <p className="form-error" role="alert">
+                      {error}
+                    </p>
+                  ) : null}
+                  <div className="wizard__actions">
+                    <button
+                      className="outline-button"
+                      type="button"
+                      onClick={() => {
+                        setWindowsOpen(false);
+                        setSelectorOpen(true);
+                        setPassword("");
+                        setError("");
+                      }}
+                      disabled={busy}
+                    >
+                      <ArrowLeft aria-hidden="true" size={15} />
+                      {copy.back}
+                    </button>
+                    <button
+                      className="primary-button"
+                      type="submit"
+                      disabled={busy}
+                    >
+                      {busy ? (
+                        <LoaderCircle
+                          className="spin"
+                          aria-hidden="true"
+                          size={16}
+                        />
+                      ) : (
+                        <MonitorCog aria-hidden="true" size={16} />
+                      )}
+                      {busy ? copy.queuing : copy.deploy}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </section>
+          </div>
+        </DialogPortal>
       ) : null}
     </>
   );
