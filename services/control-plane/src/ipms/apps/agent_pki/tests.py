@@ -304,9 +304,13 @@ class ManagedAgentPkiTests(TestCase):
                 "pack": "windows-server-core",
                 "agent_gateway_port": 9419,
                 "hostname": "windows-test",
-                "os_product": "Windows Server",
+                "os_product": "Windows 10 Enterprise LTSC 2024",
+                "os_name": "Microsoft Windows 11 Enterprise LTSC",
                 "os_build": "26100",
                 "architecture": "x64",
+                "manufacturer": "Microsoft Corporation",
+                "model": "Virtual Machine",
+                "machine_type": "virtual",
                 "logical_processors": 4,
                 "memory_total_bytes": 8 * 1024**3,
             },
@@ -314,10 +318,30 @@ class ManagedAgentPkiTests(TestCase):
         server = WindowsServer.objects.get(source_id=enrollment.device_uri)
         self.assertEqual(server.tenant, self.tenant)
         self.assertEqual(server.hostname, "windows-test")
+        self.assertEqual(server.operating_system, "Microsoft Windows 11 Enterprise LTSC")
+        self.assertEqual(server.server_type, WindowsServer.ServerType.VIRTUAL)
+        self.assertEqual(server.manufacturer, "Microsoft Corporation")
+        self.assertEqual(server.model, "Virtual Machine")
         self.assertEqual(server.agent_state, WindowsServer.AgentState.ONLINE)
         self.assertEqual(server.management_packs, ["windows-server-core"])
         with self.assertRaises(ValidationError):
             confirm_inventory(enrollment, agent_version="0.1.17", inventory={})
+
+        invalid_inventory = {
+            "schema_version": "1",
+            "pack": "windows-server-core",
+            "agent_gateway_port": 9419,
+            "hostname": "windows-test",
+            "machine_type": "container",
+            "logical_processors": 4,
+            "memory_total_bytes": 8 * 1024**3,
+        }
+        with self.assertRaisesMessage(ValidationError, "machine type is invalid"):
+            confirm_inventory(
+                enrollment,
+                agent_version="0.1.23",
+                inventory=invalid_inventory,
+            )
 
     def test_managed_issuer_rotation_keeps_overlap_and_supports_rollback(self) -> None:
         old_issuer = AgentIssuer.objects.get(

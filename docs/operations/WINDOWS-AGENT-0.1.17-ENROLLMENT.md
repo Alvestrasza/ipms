@@ -1,4 +1,4 @@
-# Windows Agent 0.1.17 Enrollment and Inventory
+# Windows Agent Enrollment and Inventory
 
 ## Scope
 
@@ -74,11 +74,29 @@ local Administrators only. The directory contains:
 The private key remains in the LocalMachine key store and is marked
 non-exportable. No private key is written to these files.
 
+## Operating system and machine classification
+
+Starting with Agent `0.1.23`, the `windows-server-core` pack reads
+`Win32_OperatingSystem.Caption` and the `Manufacturer` and `Model` properties
+from `Win32_ComputerSystem` through the native WMI COM API. It does not invoke
+PowerShell, a command shell, or an external inventory process.
+
+The WMI operating-system caption is authoritative for the normalized portal
+name. The legacy `ProductName` registry value remains in the bounded detail
+snapshot for diagnostics because supported Windows 11 editions can report a
+Windows 10 product name there. The Agent classifies known Hyper-V, VMware,
+VirtualBox, KVM/QEMU, Xen, Parallels, bhyve, and public-cloud virtual hardware
+models as `virtual`. A successfully read non-virtual model is `physical`; a
+failed or empty model query is `unknown`. The Control Plane accepts only these
+three classification values.
+
 ## Portal result
 
 An accepted inventory upserts one tenant-scoped `WindowsServer` record with
 `inventory_source=agent`, `agent_state=online`, and the approved Management Pack
-allow-list. It appears in the existing physical Windows Server inventory view.
+allow-list. The normalized machine classification places the system in the
+physical or virtual inventory view. A later accepted report automatically moves
+an existing record when its classification changes.
 
 ## Current boundary
 

@@ -761,8 +761,14 @@ def confirm_inventory(
         raise ValidationError("The Agent version is invalid.")
     hostname = _bounded_inventory_string(inventory, "hostname", 255, required=True)
     os_product = _bounded_inventory_string(inventory, "os_product", 255)
+    os_name = _bounded_inventory_string(inventory, "os_name", 255)
     os_build = _bounded_inventory_string(inventory, "os_build", 64)
     architecture = _bounded_inventory_string(inventory, "architecture", 32)
+    manufacturer = _bounded_inventory_string(inventory, "manufacturer", 255)
+    model = _bounded_inventory_string(inventory, "model", 255)
+    machine_type = _bounded_inventory_string(inventory, "machine_type", 16)
+    if machine_type not in {"", *WindowsServer.ServerType.values}:
+        raise ValidationError("The Agent machine type is invalid.")
     logical_processors = inventory.get("logical_processors")
     memory_bytes = inventory.get("memory_total_bytes")
     gateway_port = inventory.get("agent_gateway_port")
@@ -782,11 +788,13 @@ def confirm_inventory(
         inventory_source=WindowsServer.InventorySource.AGENT,
         source_id=enrollment.device_uri,
         defaults={
-            "server_type": WindowsServer.ServerType.PHYSICAL,
+            "server_type": machine_type or WindowsServer.ServerType.PHYSICAL,
             "hostname": hostname,
-            "operating_system": os_product,
+            "operating_system": os_name or os_product,
             "os_build": os_build,
             "architecture": architecture,
+            "manufacturer": manufacturer,
+            "model": model,
             "logical_processors": logical_processors,
             "memory_bytes": memory_bytes,
             "agent_version": agent_version,
@@ -796,6 +804,9 @@ def confirm_inventory(
             "detail_snapshot": {
                 "schema_version": "1",
                 "agent_gateway_port": gateway_port,
+                "registry_product_name": os_product,
+                "reported_os_name": os_name,
+                "machine_type": machine_type or "legacy-physical",
             },
             "last_seen_at": now,
             "discovered_at": now,

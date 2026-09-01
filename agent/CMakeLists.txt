@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(ipms_agent VERSION 0.1.22 LANGUAGES CXX)
+project(ipms_agent VERSION 0.1.23 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -15,7 +15,7 @@ target_link_libraries(ipms-agent PRIVATE ipms_agent_core)
 
 if(WIN32)
   target_sources(ipms-agent PRIVATE src/windows/windows_core_pack.cpp src/windows/windows_service.cpp src/windows/windows_transport.cpp)
-  target_link_libraries(ipms-agent PRIVATE advapi32 bcrypt crypt32 ncrypt ole32 oleaut32 winhttp)
+  target_link_libraries(ipms-agent PRIVATE advapi32 bcrypt crypt32 ncrypt ole32 oleaut32 wbemuuid winhttp)
   target_compile_definitions(ipms-agent PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
   add_executable(ipms-agent-config WIN32
     src/windows/configuration_app.cpp
