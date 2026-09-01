@@ -51,6 +51,16 @@ and public chain. The Agent then reconnects with mTLS and submits its first
 bounded inventory message. Possession of a valid certificate does not bypass
 tenant, device, enrollment, revocation, or message-policy checks.
 
+The development acceptance client exercises this exact exchange with an
+ephemeral device key and prints only the opaque device URI and pass/fail state:
+
+```bash
+python scripts/agent-gateway-acceptance.py /protected/enrollment.json
+```
+
+Revoke the synthetic identity immediately after the test and securely remove
+all copies of the one-time enrollment document.
+
 ## Runtime separation
 
 `ipms-agent-gateway-material.service` decrypts only the current Gateway key and

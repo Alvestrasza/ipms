@@ -8,13 +8,17 @@ class Command(BaseCommand):
     help = "Immediately revoke one enrolled Agent identity."
 
     def add_arguments(self, parser) -> None:
+        parser.add_argument("--tenant-slug", required=True)
         parser.add_argument("--device-uri", required=True)
         parser.add_argument("--reason", required=True)
         parser.add_argument("--actor", required=True)
 
     def handle(self, *args, **options) -> None:
         try:
-            enrollment = AgentEnrollment.objects.get(device_uri=options["device_uri"])
+            enrollment = AgentEnrollment.objects.get(
+                tenant__slug=options["tenant_slug"],
+                device_uri=options["device_uri"],
+            )
         except AgentEnrollment.DoesNotExist as exc:
             raise CommandError("The Agent enrollment does not exist.") from exc
         revoke_agent(

@@ -11,6 +11,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID
 from django.core.exceptions import ValidationError
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import TestCase
 
 from ipms.apps.audit.models import AuditEvent
@@ -154,6 +156,34 @@ class ManagedAgentPkiTests(TestCase):
         revoke_agent(enrollment=enrollment, actor="test-operator", reason="compromised")
         with self.assertRaisesMessage(ValidationError, "not active"):
             validate_peer_certificate(certificate_der)
+
+    def test_revocation_command_requires_the_enrollment_tenant(self) -> None:
+        enrollment, raw_token, _ = create_enrollment_token(
+            tenant=self.tenant,
+            display_name="Tenant-scoped revocation",
+            actor="test-operator",
+        )
+        enrollment, _, _ = enroll_agent(raw_token=raw_token, csr_pem=create_csr()[1])
+        other_tenant = Tenant.objects.create(slug="other", display_name="Other")
+        with self.assertRaises(CommandError):
+            call_command(
+                "revoke_agent",
+                tenant_slug=other_tenant.slug,
+                device_uri=enrollment.device_uri,
+                reason="test",
+                actor="test-operator",
+            )
+        enrollment.refresh_from_db()
+        self.assertEqual(enrollment.status, AgentEnrollment.Status.ACTIVE)
+        call_command(
+            "revoke_agent",
+            tenant_slug=self.tenant.slug,
+            device_uri=enrollment.device_uri,
+            reason="test",
+            actor="test-operator",
+        )
+        enrollment.refresh_from_db()
+        self.assertEqual(enrollment.status, AgentEnrollment.Status.REVOKED)
 
     def test_renewal_requires_window_and_replaces_certificate_identity(self) -> None:
         enrollment, raw_token, _ = create_enrollment_token(
