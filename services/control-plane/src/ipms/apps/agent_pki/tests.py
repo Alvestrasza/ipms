@@ -24,7 +24,12 @@ from .crypto import (
     create_managed_hierarchy,
     issue_agent_certificate,
 )
-from .gateway import _bounded_json, _parse_http_request, build_tls_context
+from .gateway import (
+    _bounded_json,
+    _connection_protocol,
+    _parse_http_request,
+    build_tls_context,
+)
 from .models import AgentEnrollment, AgentEnrollmentToken, AgentIssuer, AgentPkiPolicy
 from .services import (
     bootstrap_managed_pki,
@@ -276,6 +281,13 @@ class ManagedAgentPkiTests(TestCase):
             _parse_http_request(
                 b"GET /v1/inventory HTTP/1.1\r\nContent-Length: 1\r\n\r\n"
             )
+
+    def test_gateway_routes_winhttp_without_alpn_only_to_bounded_http(self) -> None:
+        self.assertEqual(_connection_protocol(None), "http")
+        self.assertEqual(_connection_protocol("http/1.1"), "http")
+        self.assertEqual(_connection_protocol("ipms-agent/1"), "stream")
+        with self.assertRaisesMessage(ValidationError, "ALPN is invalid"):
+            _connection_protocol("unexpected-protocol")
 
     def test_inventory_updates_only_the_certificate_tenant_server(self) -> None:
         enrollment, raw_token, _ = create_enrollment_token(

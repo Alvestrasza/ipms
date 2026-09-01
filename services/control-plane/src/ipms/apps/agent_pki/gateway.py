@@ -23,6 +23,14 @@ ALLOWED_AGENT_MESSAGES = {
 logger = logging.getLogger("ipms.agent_gateway")
 
 
+def _connection_protocol(selected_alpn: str | None) -> str:
+    if selected_alpn == "ipms-agent/1":
+        return "stream"
+    if selected_alpn in {"http/1.1", None}:
+        return "http"
+    raise ValidationError("The Agent Gateway ALPN is invalid.")
+
+
 def _bounded_json(line: bytes) -> dict:
     if not line or len(line) > MAX_MESSAGE_BYTES:
         raise ValidationError("The Gateway message size is invalid.")
@@ -176,13 +184,11 @@ async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.Stream
     ssl_object = writer.get_extra_info("ssl_object")
     enrollment = None
     try:
-        if ssl_object is None or ssl_object.selected_alpn_protocol() not in {
-            "ipms-agent/1",
-            "http/1.1",
-        }:
+        if ssl_object is None:
             raise ValidationError("The Agent Gateway ALPN is invalid.")
+        protocol = _connection_protocol(ssl_object.selected_alpn_protocol())
         peer_certificate = ssl_object.getpeercert(binary_form=True)
-        if ssl_object.selected_alpn_protocol() == "http/1.1":
+        if protocol == "http":
             await _handle_http_connection(reader, writer, peer_certificate)
             return
         line = await asyncio.wait_for(reader.readline(), timeout=15)
@@ -245,7 +251,10 @@ async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.Stream
             else "Gateway request timeout"
         )
         logger.warning("Agent Gateway request rejected: %s", reason, extra={"peer": str(peer)})
-        if ssl_object is not None and ssl_object.selected_alpn_protocol() == "http/1.1":
+        if ssl_object is not None and ssl_object.selected_alpn_protocol() in {
+            "http/1.1",
+            None,
+        }:
             await _http_reply(
                 writer,
                 400,
