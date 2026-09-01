@@ -12,6 +12,7 @@ from ipms.apps.discovery.views import (
     ConnectorDiscoveryView,
     ConnectorEndpointListView,
     PhysicalSystemListView,
+    WindowsServerDetailView,
     WindowsServerListView,
 )
 
@@ -49,6 +50,11 @@ urlpatterns = [
     ),
     path("physical-systems/", PhysicalSystemListView.as_view(), name="physical-list"),
     path("windows-servers/", WindowsServerListView.as_view(), name="windows-server-list"),
+    path(
+        "windows-servers/<uuid:pk>/",
+        WindowsServerDetailView.as_view(),
+        name="windows-server-detail",
+    ),
     path("bmc-logs/", BmcCommunicationLogListView.as_view(), name="bmc-log-list"),
     path(
         "bmc-event-logs/",

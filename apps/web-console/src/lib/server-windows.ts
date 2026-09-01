@@ -58,3 +58,27 @@ export async function getWindowsServers(
     return { sessionValid: true, available: false, servers: [] };
   }
 }
+
+export async function getWindowsServer(tenantId: string, id: string) {
+  const cookie = (await cookies()).toString();
+  const headers = controlPlaneHeaders({ cookie, "X-IPMS-Tenant-ID": tenantId });
+  try {
+    const response = await fetch(
+      `${CONTROL_PLANE_URL}/api/v1/windows-servers/${encodeURIComponent(id)}/`,
+      { cache: "no-store", headers },
+    );
+    return {
+      sessionValid: ![401, 403].includes(response.status),
+      available: response.ok,
+      notFound: response.status === 404,
+      server: response.ok ? ((await response.json()) as WindowsServer) : null,
+    };
+  } catch {
+    return {
+      sessionValid: true,
+      available: false,
+      notFound: false,
+      server: null,
+    };
+  }
+}

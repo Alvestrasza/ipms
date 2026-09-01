@@ -98,6 +98,12 @@ allow-list. The normalized machine classification places the system in the
 physical or virtual inventory view. A later accepted report automatically moves
 an existing record when its classification changes.
 
+Starting with IPMS `0.1.24`, the system name links to a tenant-scoped read-only
+detail page. It displays the normalized identity, operating system, hardware
+model, logical processor and memory totals, Agent state and version, inventory
+source, assigned Management Packs, and discovery timestamps. The detail API
+does not expose the provider detail snapshot and does not accept browser writes.
+
 ## Current boundary
 
 The Windows compatibility transport opens one short-lived HTTP/1.1 request per

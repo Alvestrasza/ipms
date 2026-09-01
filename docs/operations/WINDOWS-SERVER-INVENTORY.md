@@ -2,16 +2,19 @@
 
 ## Scope
 
-IPMS `0.1.14` prepares tenant-scoped read-only portal views for physical and
-virtual Windows servers. This foundation does not enroll an Agent, accept an
-inventory upload, query Hyper-V, or perform a state-changing Windows or
-virtualization operation.
+IPMS `0.1.24` provides tenant-scoped read-only portal inventory and detail
+views for physical and virtual Windows systems. Native Agent enrollment and
+bounded inventory ingestion are available; Hyper-V provider discovery and all
+state-changing Windows or virtualization operations remain outside this
+release.
 
 The Web Console routes are:
 
-- `/{locale}/physical/servers` for physical Windows servers; and
-- `/{locale}/virtual` for virtual Windows servers and their future Hyper-V
-  placement.
+- `/{locale}/physical/servers` for physical Windows systems;
+- `/{locale}/physical/servers/{id}` for one physical system;
+- `/{locale}/virtual` for virtual Windows systems and their future Hyper-V
+  placement; and
+- `/{locale}/virtual/{id}` for one virtual system.
 
 Both routes are server-rendered, require an authenticated tenant selection,
 and use the same Control Plane inventory contract.
@@ -20,8 +23,9 @@ and use the same Control Plane inventory contract.
 
 `GET /api/v1/windows-servers/` returns only the selected tenant's records. The
 optional `server_type=physical|virtual|unknown` query parameter supports the
-separate portal views. The endpoint has no browser-facing create, update, or
-delete method.
+separate portal views. `GET /api/v1/windows-servers/{id}/` returns one selected
+tenant record for the detail page. Neither endpoint has a browser-facing
+create, update, or delete method, and a cross-tenant identifier returns `404`.
 
 The normalized record prepares these fields:
 
@@ -39,14 +43,14 @@ Unnormalized provider data remains internal and is not returned by the list
 API. Tenant identity is derived from the authenticated selected-tenant boundary,
 never from a browser-supplied inventory document.
 
-## Future ingestion boundary
+## Ingestion boundary
 
-The native `windows-server-core` Management Pack will populate operating-system
-and host inventory only after Agent enrollment, outbound mTLS transport,
-assignment verification, sequence handling, and durable Control Plane ingestion
-are implemented. The `hyper-v-host` Management Pack will add host, cluster,
-virtual-machine, and virtual-network observations after its separate provider
-and fixture acceptance.
+The native `windows-server-core` Management Pack populates bounded
+operating-system and host inventory through Agent-initiated mTLS. Enrollment,
+certificate-bound tenant identity, sequence validation, and durable Control
+Plane ingestion remain mandatory. The `hyper-v-host` Management Pack will add
+host, cluster, virtual-machine, and virtual-network observations after its
+separate provider and fixture acceptance.
 
 Agent and Hyper-V ingestion must use an internal authenticated service, validate
 tenant and device identity, normalize bounded fields, reject stale sequences,
@@ -55,14 +59,16 @@ an arbitrary command, PowerShell, script, shell, or remote-execution channel.
 
 ## Current acceptance boundary
 
-The following are prepared in `0.1.14`:
+The following are accepted through `0.1.24`:
 
 - localized physical and virtual Windows Server navigation;
 - live empty states that distinguish unavailable data from an empty inventory;
 - summary and table layouts for Agent, health, CPU, memory, hardware, and
   Hyper-V placement;
-- a tenant-filtered read-only API and database migration; and
+- read-only system detail pages for identity, platform, resources, Agent state,
+  inventory source, Management Packs, and timestamps;
+- a tenant-filtered read-only list and detail API and database migration; and
 - negative API coverage for cross-tenant access and browser writes.
 
-Agent enrollment, real inventory ingestion, Hyper-V collection, server detail
-pages, search, lifecycle operations, and production support remain future work.
+Hyper-V collection, search, lifecycle operations, and production support remain
+future work.

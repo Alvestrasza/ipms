@@ -125,6 +125,39 @@ class WindowsServerInventoryApiTests(TestCase):
         self.assertEqual(response.status_code, 405)
         self.assertFalse(WindowsServer.objects.filter(hostname="browser-created").exists())
 
+    def test_reader_retrieves_one_selected_tenant_system(self) -> None:
+        response = self.client.get(
+            reverse("core:windows-server-detail", args=(self.virtual.id,)),
+            **self.headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["id"], str(self.virtual.id))
+        self.assertEqual(response.json()["server_type"], "virtual")
+        self.assertNotIn("detail_snapshot", response.json())
+
+    def test_reader_cannot_retrieve_another_tenant_system(self) -> None:
+        other_system = WindowsServer.objects.get(hostname="other-tenant-fixture")
+        response = self.client.get(
+            reverse("core:windows-server-detail", args=(other_system.id,)),
+            **self.headers(),
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_system_detail_api_is_read_only(self) -> None:
+        url = reverse("core:windows-server-detail", args=(self.physical.id,))
+        response = self.client.patch(
+            url,
+            data={"hostname": "browser-updated"},
+            content_type="application/json",
+            **self.headers(),
+        )
+
+        self.assertEqual(response.status_code, 405)
+        self.physical.refresh_from_db()
+        self.assertEqual(self.physical.hostname, "physical-fixture")
+
     def test_inaccessible_tenant_is_not_disclosed(self) -> None:
         response = self.client.get(self.url, **self.headers(self.other_tenant))
 

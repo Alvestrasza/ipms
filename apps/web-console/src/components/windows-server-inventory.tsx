@@ -1,4 +1,6 @@
 import { Cpu, HardDrive, MemoryStick, Server, ShieldCheck } from "lucide-react";
+import type { Route } from "next";
+import Link from "next/link";
 
 import { StatusPill } from "@/components/status-pill";
 import { documentLocale } from "@/i18n/config";
@@ -188,7 +190,18 @@ export function WindowsServerInventory({
                   return (
                     <tr key={server.id}>
                       <td>
-                        <strong>{server.fqdn || server.hostname}</strong>
+                        <Link
+                          className="connector-detail-link"
+                          href={
+                            `/${locale}/${
+                              serverType === "physical"
+                                ? "physical/servers"
+                                : "virtual"
+                            }/${server.id}` as Route
+                          }
+                        >
+                          <strong>{server.fqdn || server.hostname}</strong>
+                        </Link>
                         {server.domain_name ? (
                           <small>{server.domain_name}</small>
                         ) : null}

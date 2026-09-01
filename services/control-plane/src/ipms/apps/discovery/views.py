@@ -369,6 +369,16 @@ class WindowsServerListView(ListAPIView):
         return queryset.select_related("connector")
 
 
+class WindowsServerDetailView(RetrieveAPIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess)
+    serializer_class = WindowsServerSerializer
+
+    def get_queryset(self):
+        return WindowsServer.objects.filter(
+            tenant=self.request.tenant,
+        ).select_related("connector")
+
+
 def _filtered_bmc_logs(request):
     queryset = BmcCommunicationLog.objects.filter(tenant=request.tenant)
     severities = []
