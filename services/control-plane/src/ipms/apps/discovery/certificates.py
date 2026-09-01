@@ -50,14 +50,14 @@ class WindowsHttpObservation:
 def _private_addresses(hostname: str, port: int) -> tuple[ipaddress.IPv4Address | ipaddress.IPv6Address, ...]:
     try:
         addresses = tuple(
-            {
+            dict.fromkeys(
                 ipaddress.ip_address(item[4][0])
                 for item in socket.getaddrinfo(
                     hostname,
                     port,
                     type=socket.SOCK_STREAM,
                 )
-            }
+            )
         )
     except socket.gaierror as exc:
         raise CertificateProbeError("target_unresolved") from exc
@@ -92,46 +92,67 @@ def _peer_certificate(
     return certificate
 
 
+def _peer_certificate_from_addresses(
+    *,
+    hostname: str,
+    port: int,
+    addresses: tuple[ipaddress.IPv4Address | ipaddress.IPv6Address, ...],
+    context: ssl.SSLContext,
+    timeout: float,
+) -> bytes:
+    timed_out = False
+    connection_failed = False
+    for address in addresses:
+        try:
+            return _peer_certificate(
+                hostname=hostname,
+                port=port,
+                address=address,
+                context=context,
+                timeout=timeout,
+            )
+        except ssl.SSLCertVerificationError:
+            raise
+        except (TimeoutError, socket.timeout):
+            timed_out = True
+        except (ssl.SSLError, OSError):
+            connection_failed = True
+    if connection_failed:
+        raise CertificateProbeError("connection_failed")
+    if timed_out:
+        raise CertificateProbeError("connection_timeout")
+    raise CertificateProbeError("connection_failed")
+
+
 def probe_bmc_certificate(base_url: str, *, timeout: float = 10) -> CertificateObservation:
     parsed = urlsplit(base_url)
     if parsed.scheme != "https" or not parsed.hostname:
         raise CertificateProbeError("invalid_endpoint")
     port = parsed.port or 443
     addresses = _private_addresses(parsed.hostname, port)
-    address = addresses[0]
 
     trusted_by_system = True
     try:
-        _peer_certificate(
+        der = _peer_certificate_from_addresses(
             hostname=parsed.hostname,
             port=port,
-            address=address,
+            addresses=addresses,
             context=ssl.create_default_context(),
             timeout=timeout,
         )
     except ssl.SSLCertVerificationError:
         trusted_by_system = False
-    except (TimeoutError, socket.timeout) as exc:
-        raise CertificateProbeError("connection_timeout") from exc
-    except (ssl.SSLError, OSError) as exc:
-        raise CertificateProbeError("connection_failed") from exc
-
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
-    context.minimum_version = ssl.TLSVersion.TLSv1_2
-    try:
-        der = _peer_certificate(
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        der = _peer_certificate_from_addresses(
             hostname=parsed.hostname,
             port=port,
-            address=address,
+            addresses=addresses,
             context=context,
             timeout=timeout,
         )
-    except (TimeoutError, socket.timeout) as exc:
-        raise CertificateProbeError("connection_timeout") from exc
-    except (ssl.SSLError, OSError) as exc:
-        raise CertificateProbeError("connection_failed") from exc
 
     certificate = x509.load_der_x509_certificate(der)
     try:
@@ -164,29 +185,41 @@ def probe_windows_http_endpoint(
         raise CertificateProbeError("invalid_endpoint")
     port = parsed.port or 5985
     addresses = _private_addresses(parsed.hostname, port)
-    address = addresses[0]
     path = parsed.path or "/wsman"
-    connection = http.client.HTTPConnection(str(address), port, timeout=timeout)
-    try:
-        connection.request(
-            "GET",
-            path,
-            headers={
-                "Host": parsed.hostname,
-                "Connection": "close",
-            },
-        )
-        response = connection.getresponse()
-        response.read(4096)
-    except (TimeoutError, socket.timeout) as exc:
-        raise CertificateProbeError("connection_timeout") from exc
-    except (OSError, http.client.HTTPException) as exc:
-        raise CertificateProbeError("connection_failed") from exc
-    finally:
-        connection.close()
-    if response.status not in {401, 405}:
+    timed_out = False
+    connection_failed = False
+    remote_management_unavailable = False
+    for address in addresses:
+        connection = http.client.HTTPConnection(str(address), port, timeout=timeout)
+        try:
+            connection.request(
+                "GET",
+                path,
+                headers={
+                    "Host": parsed.hostname,
+                    "Connection": "close",
+                },
+            )
+            response = connection.getresponse()
+            response.read(4096)
+        except (TimeoutError, socket.timeout):
+            timed_out = True
+            continue
+        except (OSError, http.client.HTTPException):
+            connection_failed = True
+            continue
+        finally:
+            connection.close()
+        if response.status in {401, 405}:
+            return WindowsHttpObservation(reachable=True)
+        remote_management_unavailable = True
+    if remote_management_unavailable:
         raise CertificateProbeError("remote_management_unavailable")
-    return WindowsHttpObservation(reachable=True)
+    if connection_failed:
+        raise CertificateProbeError("connection_failed")
+    if timed_out:
+        raise CertificateProbeError("connection_timeout")
+    raise CertificateProbeError("connection_failed")
 
 
 def request_bmc_certificate_probe(

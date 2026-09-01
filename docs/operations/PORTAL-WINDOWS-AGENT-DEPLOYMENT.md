@@ -2,7 +2,7 @@
 
 ## Scope
 
-IPMS 0.1.34 provides a development-grade portal bootstrap for Windows Agent
+IPMS 0.1.35 provides a development-grade portal bootstrap for Windows Agent
 0.1.28. The workflow is tenant-scoped, audited, connection-approved, and
 limited to a fixed installation operation. It is not a general-purpose remote
 execution feature.
@@ -21,6 +21,12 @@ execution feature.
   incomplete portal installation may be repaired automatically before retry.
 - The Appliance contains the pinned Windows Agent package whose SHA-256 digest
   matches its deployment configuration.
+
+DNS names may resolve to multiple private IPv4 and IPv6 addresses. The
+certificate probe preserves resolver order and tries each approved address
+until one answers. A failed IPv6 path therefore does not hide a reachable IPv4
+WinRM endpoint. The preflight still rejects the entire target when any resolved
+address is public, loopback, link-local, multicast, reserved, or unspecified.
 
 ## Portal workflow
 
