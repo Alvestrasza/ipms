@@ -6,6 +6,10 @@ os.environ.setdefault(
     "IPMS_CONNECTOR_MASTER_KEY",
     "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
 )
+os.environ.setdefault(
+    "IPMS_AGENT_PKI_MASTER_KEY",
+    "ZmVkY2JhOTg3NjU0MzIxMGZlZGNiYTk4NzY1NDMyMTA=",
+)
 os.environ.setdefault("IPMS_ALLOWED_HOSTS", "testserver")
 os.environ.setdefault("IPMS_CERTIFICATE_PROBE_TOKEN", "test-only-probe-token")
 os.environ.setdefault("IPMS_DATABASE_NAME", "unused-in-test-settings")

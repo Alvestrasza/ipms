@@ -150,6 +150,11 @@ restore point.
 - Establish tenant-scoped read-only inventory views for physical and virtual
   Windows servers, backed by one normalized API contract for Agent and Hyper-V
   sources. Browser clients cannot create or modify inventory records.
+- Establish the dedicated tenant-scoped Agent PKI and isolated TCP 9419 mTLS
+  Gateway with one-time pinned enrollment, short-lived device certificates,
+  immediate revocation, encrypted runtime issuer keys, offline Root recovery,
+  dual-issuer rotation, rollback, and expiry monitoring. Native Agent transport
+  integration remains required for end-to-end acceptance.
 - Implement a read-only Hyper-V connector for host, cluster, VM, and basic
   resource discovery through the C++20 Windows Agent and its signed,
   built-in `hyper-v-host` Management Pack.

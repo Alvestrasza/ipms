@@ -43,6 +43,7 @@ def bounded_integer_environment(
 
 SECRET_KEY = required_environment("IPMS_SECRET_KEY")
 CONNECTOR_MASTER_KEY = required_environment("IPMS_CONNECTOR_MASTER_KEY")
+AGENT_PKI_MASTER_KEY = required_environment("IPMS_AGENT_PKI_MASTER_KEY")
 CERTIFICATE_PROBE_TOKEN = required_environment("IPMS_CERTIFICATE_PROBE_TOKEN")
 CERTIFICATE_PROBE_PORT = bounded_integer_environment(
     "IPMS_CERTIFICATE_PROBE_PORT",
@@ -70,6 +71,7 @@ INSTALLED_APPS = [
     "ipms.apps.core",
     "ipms.apps.tenancy",
     "ipms.apps.audit",
+    "ipms.apps.agent_pki",
     "ipms.apps.discovery",
 ]
 

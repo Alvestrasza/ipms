@@ -87,19 +87,26 @@ state before accepting a stream.
 
 ## Implementation handoff
 
-1. Add tenant-scoped CA, issuer, enrollment, and revocation domain models with
-   row-level policy and append-only audit events.
-2. Implement protected, encrypted Issuing-CA key storage and one-time Root
-   recovery export for the managed mode.
-3. Build the guided enrollment ceremony: bootstrap token, pinned Gateway
-   identity, device key generation, CSR, client certificate issuance, and
-   post-enrollment inventory confirmation.
-4. Implement the Agent Gateway TLS listener on TCP 9419, requiring client
-   certificates and enforcing the profile checks above before creating a
-   bidirectional stream.
-5. Add certificate rotation, revocation, dual-issuer overlap, expiry alarms,
-   negative tests, and an operator-tested rollback path.
-6. Add external-CA import validation before protocol-specific CA integrations.
+The server-side foundation is implemented in application build `0.1.16`:
+
+- tenant-scoped policy, issuer, Gateway identity, enrollment, token, and
+  revocation records with safe audit events;
+- AES-256-GCM protected runtime keys with tenant/object associated data and a
+  one-time encrypted managed-Root recovery export;
+- one-time bootstrap tokens, Gateway fingerprint pin data, CSR validation,
+  client issuance, renewal, immediate revocation, and first-inventory state;
+- an isolated TLS 1.3 Gateway listener on TCP 9419 with ALPN, certificate
+  profile, device URI, tenant, enrollment, issuer, and revocation enforcement;
+- managed issuer rotation, dual-issuer overlap, rollback, guarded retirement,
+  and aggregate expiry checks; and
+- strict protected-file validation for external issuing CA and externally
+  supplied certificate modes.
+
+The native Agent still needs to generate and retain its device key, perform the
+pinned enrollment exchange, persist its client identity, establish the mTLS
+stream, and deliver the first real read-only inventory. The portal ceremony and
+hardware/customer-PKI acceptance also remain open. See the
+[operator runbook](../operations/AGENT-PKI-AND-GATEWAY.md).
 
 ## Consequences
 

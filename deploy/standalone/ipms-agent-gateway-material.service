@@ -1,0 +1,38 @@
+[Unit]
+Description=IPMS Agent Gateway TLS materialization
+After=postgresql.service
+Requires=postgresql.service
+Before=ipms-agent-gateway.service
+
+[Service]
+Type=oneshot
+User=root
+Group=ipms-agent-gateway
+WorkingDirectory=/srv/ipms/current/services/control-plane
+EnvironmentFile=/srv/ipms/shared/agent-gateway.env
+Environment=PYTHONPATH=/srv/ipms/current/services/control-plane/src
+ExecStart=/srv/ipms/current/services/control-plane/.venv/bin/python /srv/ipms/current/services/control-plane/manage.py export_agent_gateway_runtime --tenant-slug ${IPMS_AGENT_GATEWAY_TENANT_SLUG} --directory /run/ipms-agent-gateway
+RemainAfterExit=yes
+RuntimeDirectory=ipms-agent-gateway
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+UMask=0027
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/run/ipms-agent-gateway
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

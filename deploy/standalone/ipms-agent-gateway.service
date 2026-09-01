@@ -1,0 +1,39 @@
+[Unit]
+Description=IPMS Agent mTLS Gateway
+After=network-online.target postgresql.service ipms-agent-gateway-material.service
+Wants=network-online.target
+Requires=postgresql.service ipms-agent-gateway-material.service
+
+[Service]
+Type=simple
+User=ipms-agent-gateway
+Group=ipms-agent-gateway
+WorkingDirectory=/srv/ipms/current/services/control-plane
+EnvironmentFile=/srv/ipms/shared/agent-gateway.env
+Environment=PYTHONPATH=/srv/ipms/current/services/control-plane/src
+ExecStart=/srv/ipms/current/services/control-plane/.venv/bin/python -m ipms.apps.agent_pki.gateway
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+UMask=0027
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectHostname=true
+ProtectClock=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadOnlyPaths=/run/ipms-agent-gateway
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

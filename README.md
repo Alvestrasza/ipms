@@ -9,7 +9,7 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-IPMS application build `0.1.15` is in the v0.1.0 read-only foundation phase. A
+IPMS application build `0.1.16` is in the v0.1.0 read-only foundation phase. A
 standalone development
 Appliance currently runs the tenant-aware Django Control Plane, PostgreSQL,
 the multilingual Next.js Web Console, and the isolated connector worker.
@@ -37,6 +37,7 @@ The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 - [Standalone development acceptance](docs/operations/STANDALONE-DEV-ACCEPTANCE.md)
 - [Portal-based BMC connector management](docs/operations/BMC-CONNECTOR-MANAGEMENT.md)
 - [Windows Server inventory preparation](docs/operations/WINDOWS-SERVER-INVENTORY.md)
+- [Agent PKI and mTLS Gateway operations](docs/operations/AGENT-PKI-AND-GATEWAY.md)
 - [Development versioning](docs/operations/VERSIONING.md)
 
 ## Architecture Decisions

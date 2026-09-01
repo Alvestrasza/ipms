@@ -1,0 +1,29 @@
+[Unit]
+Description=IPMS Agent PKI expiry check
+After=postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=oneshot
+User=ipms-control-plane
+Group=ipms-control-plane
+WorkingDirectory=/srv/ipms/current/services/control-plane
+EnvironmentFile=/srv/ipms/shared/control-plane.env
+Environment=PYTHONPATH=/srv/ipms/current/services/control-plane/src
+ExecStart=/srv/ipms/current/services/control-plane/.venv/bin/python /srv/ipms/current/services/control-plane/manage.py check_agent_pki_expiry --warning-days 14
+UMask=0027
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native

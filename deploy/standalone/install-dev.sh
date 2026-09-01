@@ -87,8 +87,10 @@ getent group ipms-web >/dev/null || groupadd --system ipms-web
 id ipms-web >/dev/null 2>&1 || useradd --system --gid ipms-web --home-dir /nonexistent --shell /usr/sbin/nologin ipms-web
 getent group ipms-connector-worker >/dev/null || groupadd --system ipms-connector-worker
 id ipms-connector-worker >/dev/null 2>&1 || useradd --system --gid ipms-connector-worker --home-dir /nonexistent --shell /usr/sbin/nologin ipms-connector-worker
+getent group ipms-agent-gateway >/dev/null || groupadd --system ipms-agent-gateway
+id ipms-agent-gateway >/dev/null 2>&1 || useradd --system --gid ipms-agent-gateway --home-dir /nonexistent --shell /usr/sbin/nologin ipms-agent-gateway
 getent group ipms-runtime >/dev/null || groupadd --system ipms-runtime
-for runtime_user in postgres ipms-control-plane ipms-web ipms-connector-worker; do
+for runtime_user in postgres ipms-control-plane ipms-web ipms-connector-worker ipms-agent-gateway; do
     usermod --append --groups ipms-runtime "$runtime_user"
 done
 
@@ -178,6 +180,9 @@ fi
 if ! grep -q '^IPMS_CONNECTOR_MASTER_KEY=' "$control_plane_env"; then
     echo "IPMS_CONNECTOR_MASTER_KEY=$(openssl rand -base64 32 | tr -d '\n')" >> "$control_plane_env"
 fi
+if ! grep -q '^IPMS_AGENT_PKI_MASTER_KEY=' "$control_plane_env"; then
+    echo "IPMS_AGENT_PKI_MASTER_KEY=$(openssl rand -base64 32 | tr -d '\n')" >> "$control_plane_env"
+fi
 if ! grep -q '^IPMS_CERTIFICATE_PROBE_TOKEN=' "$control_plane_env"; then
     generated_probe_token=$(openssl rand -hex 32)
     [[ $generated_probe_token =~ ^[0-9a-f]{64}$ ]] || {
@@ -232,6 +237,30 @@ install -o root -g ipms-web -m 0640 /dev/null "$web_console_env"
     echo "IPMS_CONTROL_PLANE_URL=http://127.0.0.1:8000"
 } > "$web_console_env"
 
+agent_gateway_env=/srv/ipms/shared/agent-gateway.env
+agent_gateway_secret_file=/srv/ipms/shared/agent-gateway-secret
+if [[ ! -f $agent_gateway_secret_file ]]; then
+    openssl rand -hex 64 > "$agent_gateway_secret_file"
+    chmod 0600 "$agent_gateway_secret_file"
+fi
+agent_gateway_secret=$(<"$agent_gateway_secret_file")
+agent_pki_master_key=$(sed -n 's/^IPMS_AGENT_PKI_MASTER_KEY=//p' "$control_plane_env" | tail -n 1)
+install -o root -g ipms-agent-gateway -m 0640 /dev/null "$agent_gateway_env"
+{
+    echo "DJANGO_SETTINGS_MODULE=ipms_control_plane.settings.gateway"
+    echo "IPMS_GATEWAY_SECRET_KEY=${agent_gateway_secret}"
+    echo "IPMS_AGENT_PKI_MASTER_KEY=${agent_pki_master_key}"
+    echo "IPMS_DATABASE_NAME=ipms"
+    echo "IPMS_DATABASE_USER=ipms"
+    echo "IPMS_DATABASE_PASSWORD=${database_password}"
+    echo "IPMS_DATABASE_HOST=127.0.0.1"
+    echo "IPMS_DATABASE_PORT=5432"
+    echo "IPMS_DATABASE_SSLMODE=prefer"
+    echo "IPMS_AGENT_GATEWAY_RUNTIME_DIRECTORY=/run/ipms-agent-gateway"
+    echo "IPMS_AGENT_GATEWAY_BIND=0.0.0.0"
+    echo "IPMS_AGENT_GATEWAY_PORT=9419"
+} > "$agent_gateway_env"
+
 initial_password_file=/srv/ipms/shared/initial-admin-password
 if [[ ! -f $initial_password_file ]]; then
     openssl rand -base64 36 > "$initial_password_file"
@@ -252,6 +281,20 @@ control_manage=/srv/ipms/current/services/control-plane/manage.py
     --tenant-name "$TENANT_NAME" \
     --admin-username "$ADMIN_USERNAME" \
     --admin-password-file "$initial_password_file"
+root_recovery_passphrase_file=/srv/ipms/shared/agent-root-recovery.passphrase
+root_recovery_bundle=/srv/ipms/shared/agent-root-recovery.pem
+"$control_python" "$control_manage" bootstrap_agent_pki \
+    --tenant-slug "$TENANT_SLUG" \
+    --gateway-dns-name "$PUBLIC_HOST" \
+    --root-recovery-output "$root_recovery_bundle" \
+    --root-recovery-passphrase-file "$root_recovery_passphrase_file" \
+    --generate-root-recovery-passphrase \
+    --if-missing
+if grep -q '^IPMS_AGENT_GATEWAY_TENANT_SLUG=' "$control_plane_env"; then
+    sed -i "s|^IPMS_AGENT_GATEWAY_TENANT_SLUG=.*|IPMS_AGENT_GATEWAY_TENANT_SLUG=${TENANT_SLUG}|" "$control_plane_env"
+else
+    echo "IPMS_AGENT_GATEWAY_TENANT_SLUG=${TENANT_SLUG}" >> "$control_plane_env"
+fi
 "$control_python" "$control_manage" check --deploy
 
 install -m 0644 "$release_directory/deploy/standalone/ipms-control-plane.service" /etc/systemd/system/ipms-control-plane.service
@@ -259,6 +302,10 @@ install -m 0644 "$release_directory/deploy/standalone/ipms-certificate-probe.ser
 install -m 0644 "$release_directory/deploy/standalone/ipms-web-console.service" /etc/systemd/system/ipms-web-console.service
 install -m 0644 "$release_directory/deploy/standalone/ipms-connector-worker.service" /etc/systemd/system/ipms-connector-worker.service
 install -m 0644 "$release_directory/deploy/standalone/ipms-connector-worker.timer" /etc/systemd/system/ipms-connector-worker.timer
+install -m 0644 "$release_directory/deploy/standalone/ipms-agent-gateway-material.service" /etc/systemd/system/ipms-agent-gateway-material.service
+install -m 0644 "$release_directory/deploy/standalone/ipms-agent-gateway.service" /etc/systemd/system/ipms-agent-gateway.service
+install -m 0644 "$release_directory/deploy/standalone/ipms-agent-pki-expiry.service" /etc/systemd/system/ipms-agent-pki-expiry.service
+install -m 0644 "$release_directory/deploy/standalone/ipms-agent-pki-expiry.timer" /etc/systemd/system/ipms-agent-pki-expiry.timer
 
 install -d -m 0700 /etc/ipms/tls
 if [[ ! -f /etc/ipms/tls/server.key || ! -f /etc/ipms/tls/server.crt ]]; then
@@ -292,9 +339,11 @@ install -d -m 0755 /etc/fail2ban/jail.d
 nginx -t
 fail2ban-client -t
 systemctl daemon-reload
-systemctl enable fail2ban ipms-certificate-probe ipms-control-plane ipms-web-console ipms-connector-worker.timer nginx
-systemctl restart fail2ban ipms-certificate-probe ipms-control-plane ipms-web-console ipms-connector-worker.timer nginx
+systemctl enable fail2ban ipms-certificate-probe ipms-control-plane ipms-web-console ipms-connector-worker.timer ipms-agent-gateway-material ipms-agent-gateway ipms-agent-pki-expiry.timer nginx
+systemctl restart fail2ban ipms-certificate-probe ipms-control-plane ipms-web-console ipms-connector-worker.timer ipms-agent-pki-expiry.timer nginx
+systemctl restart ipms-agent-gateway-material ipms-agent-gateway
 ufw allow from "$MANAGEMENT_SOURCE" to any port 443 proto tcp comment "IPMS HTTPS management"
+ufw allow from "$MANAGEMENT_SOURCE" to any port 9419 proto tcp comment "IPMS Agent Gateway"
 ufw --force enable
 
 systemctl is-active --quiet postgresql
@@ -302,7 +351,11 @@ systemctl is-active --quiet ipms-certificate-probe
 systemctl is-active --quiet ipms-control-plane
 systemctl is-active --quiet ipms-web-console
 systemctl is-active --quiet ipms-connector-worker.timer
+systemctl is-active --quiet ipms-agent-gateway-material
+systemctl is-active --quiet ipms-agent-gateway
+systemctl is-active --quiet ipms-agent-pki-expiry.timer
 systemctl is-active --quiet nginx
+ss -lntH 'sport = :9419' | grep -q ':9419'
 curl --fail --silent --show-error \
     --header "Host: ${PUBLIC_HOST}" \
     --header "X-Forwarded-Proto: https" \
