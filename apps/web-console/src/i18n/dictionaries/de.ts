@@ -173,7 +173,7 @@ export const de = {
     tenants: "Mandanten",
     administration: "Administration",
     soon: "Bald",
-    version: "IPMS v0.1.35 Entwicklung",
+    version: "IPMS v0.1.36 Entwicklung",
   },
   overview: {
     inventoryCurrent: "Aktuelles Inventar",

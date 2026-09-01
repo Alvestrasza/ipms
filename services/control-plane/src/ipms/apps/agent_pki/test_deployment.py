@@ -15,7 +15,12 @@ from ipms.apps.discovery.certificates import (
 )
 from ipms.apps.tenancy.models import Tenant, TenantMembership
 
-from .deployment import _staging_path_assignment, process_deployment
+from .deployment import (
+    _incomplete_install_assessment,
+    _incomplete_install_repair_script,
+    _staging_path_assignment,
+    process_deployment,
+)
 from .deployment_approval import create_windows_deployment_approval
 from .deployment_secrets import load_deployment_secret, store_deployment_secret
 from .models import (
@@ -24,6 +29,30 @@ from .models import (
     WindowsAgentDeploymentSecret,
 )
 from .services import bootstrap_managed_pki, create_enrollment_token
+
+
+class WindowsAgentDeploymentScriptTests(TestCase):
+    def test_legacy_repair_remains_limited_to_stopped_unenrolled_agent(self) -> None:
+        assessment = _incomplete_install_assessment()
+
+        self.assertIn("$service.StartName -eq 'LocalSystem'", assessment)
+        self.assertIn("$service.State -eq 'Stopped'", assessment)
+        self.assertIn("$serviceBinary -ieq $agentBinary", assessment)
+        self.assertIn("-not (Test-Path -LiteralPath $state)", assessment)
+        self.assertIn("-not (Test-Path -LiteralPath $enrollment)", assessment)
+        self.assertIn("$unexpectedFiles.Count -eq 0", assessment)
+        self.assertIn("$registrationMatches", assessment)
+        self.assertIn("InstallLocation", assessment)
+        self.assertIn(".ipms-deployment-owner", assessment)
+
+    def test_legacy_repair_removes_only_known_ipms_registration(self) -> None:
+        repair = _incomplete_install_repair_script()
+
+        self.assertIn("Remove-Item -LiteralPath $uninstallKey", repair)
+        self.assertIn("Remove-Item -LiteralPath $controlPanelNamespace", repair)
+        self.assertIn("Remove-Item -LiteralPath $controlPanelClass", repair)
+        self.assertIn("Remove-Item -LiteralPath $install", repair)
+        self.assertIn("IPMS_INCOMPLETE_REPAIR=1", repair)
 
 
 class WindowsAgentDeploymentApiTests(TestCase):

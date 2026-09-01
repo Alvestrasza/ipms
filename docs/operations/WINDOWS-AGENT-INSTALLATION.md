@@ -3,7 +3,7 @@
 ## Scope and current status
 
 This runbook covers the native C++20 IPMS Agent for Windows Server and Windows
-test systems. Agent build `0.1.28` provides:
+test systems. Agent build `0.1.29` provides:
 
 - the `IPMS Agent` Windows service, installed as `LocalSystem`;
 - the `windows-server-core` and `hyper-v-host` built-in read-only Management
@@ -36,6 +36,12 @@ The Windows build produces:
 - `ipms-agent-config.exe` — elevated local configuration application; and
 - `ipms-agent-pack-tests.exe` — Management Pack and configuration contract
   tests.
+
+The release build statically links the MSVC runtime. `ipms-agent.exe` and
+`ipms-agent-config.exe` therefore require only Windows system libraries and do
+not depend on a separately installed Visual C++ Redistributable. Release
+acceptance must inspect the PE dependency table and reject imports of
+`MSVCP140.dll`, `VCRUNTIME140.dll`, or `VCRUNTIME140_1.dll`.
 
 The configuration executable embeds the Alvestrasza Corporation emblem as a
 multi-resolution Windows icon and carries a `requireAdministrator` UAC

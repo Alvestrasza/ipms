@@ -1,10 +1,14 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(ipms_agent VERSION 0.1.28 LANGUAGES CXX)
+project(ipms_agent VERSION 0.1.29 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+if(MSVC)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 add_library(ipms_agent_core STATIC src/configuration.cpp src/gateway_contract.cpp src/management_pack.cpp)
 target_include_directories(ipms_agent_core PUBLIC include)

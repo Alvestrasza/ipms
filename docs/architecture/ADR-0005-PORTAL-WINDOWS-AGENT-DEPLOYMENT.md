@@ -49,8 +49,10 @@ the directory created by that job.
 On a retry, the worker may repair an older incomplete portal installation only
 when all fixed evidence matches: expected install path and file set, stopped
 `LocalSystem` service with the expected binary path, no Agent state or pending
-enrollment, and no uninstall registration. A complete, changed, running, or
-otherwise ambiguous installation fails closed and remains untouched.
+enrollment, and either no uninstall registration or an exact IPMS registration
+for that same install path. The repair removes only those recognized IPMS
+artifacts. A complete, changed, running, or otherwise ambiguous installation
+fails closed and remains untouched.
 
 The worker deletes the encrypted bootstrap credential after the first attempt,
 whether the attempt succeeds or fails. Failed jobs also invalidate the unused
