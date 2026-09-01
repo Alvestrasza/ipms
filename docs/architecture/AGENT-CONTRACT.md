@@ -40,6 +40,12 @@ An update message is a signed manifest, not an executable payload. The Agent ver
 
 `hyper-v-host` requires `windows-server-core`. Both packs are available only on Windows and neither performs a state-changing Hyper-V operation.
 
+The Windows core pack separates five-minute configuration inventory from a
+ten-second current utilization sample. Live telemetry is limited to native,
+read-only CPU, physical-memory, and fixed-volume counters. The v0.1.0 Control
+Plane retains only the latest sample per system; historical telemetry requires
+the later dedicated telemetry storage boundary.
+
 ## Control-plane requirements
 
 The Control Plane must persist pack assignment, acceptance, rejection, last inventory sequence, policy version, and audit attribution. It must enforce tenant and license policy before queueing any assignment. The Web Console only displays this state; it is not the authorization boundary.

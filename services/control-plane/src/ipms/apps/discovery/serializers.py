@@ -10,6 +10,7 @@ from .models import (
     DiscoveryJob,
     PhysicalSystem,
     WindowsServer,
+    WindowsServerTelemetry,
 )
 
 
@@ -161,6 +162,35 @@ class WindowsServerSerializer(serializers.ModelSerializer):
             "management_packs",
             "last_seen_at",
             "discovered_at",
+        )
+        read_only_fields = fields
+
+
+class WindowsServerTelemetrySerializer(serializers.ModelSerializer):
+    server_id = serializers.UUIDField(read_only=True)
+
+    class Meta:
+        model = WindowsServerTelemetry
+        fields = (
+            "server_id",
+            "cpu_used_percent",
+            "memory_total_bytes",
+            "memory_available_bytes",
+            "memory_used_bytes",
+            "memory_used_percent",
+            "fixed_volumes",
+            "observed_at",
+        )
+        read_only_fields = fields
+
+
+class WindowsServerDetailSerializer(WindowsServerSerializer):
+    latest_telemetry = WindowsServerTelemetrySerializer(read_only=True, allow_null=True)
+
+    class Meta(WindowsServerSerializer.Meta):
+        fields = WindowsServerSerializer.Meta.fields + (
+            "network_interfaces",
+            "latest_telemetry",
         )
         read_only_fields = fields
 

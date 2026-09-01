@@ -1031,6 +1031,152 @@ td > small {
   font-size: 0.76rem;
   overflow-wrap: anywhere;
 }
+.live-telemetry,
+.network-inventory {
+  margin-bottom: 14px;
+  padding: 18px;
+}
+.live-telemetry__refresh {
+  margin-left: auto;
+  color: var(--color-accent-blue);
+  font-size: 0.67rem;
+  font-weight: 700;
+}
+.live-telemetry__metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.live-telemetry__metrics article {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--surface-panel);
+}
+.live-telemetry__metrics article > svg {
+  color: var(--color-accent-blue);
+}
+.live-telemetry__metrics article > span,
+.live-telemetry__metrics article > small {
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+}
+.live-telemetry__metrics article > strong {
+  color: var(--color-text-primary);
+  font-size: 1rem;
+}
+.live-telemetry progress {
+  width: 100%;
+  height: 7px;
+  grid-column: 1 / -1;
+  accent-color: var(--color-accent-blue);
+}
+.live-telemetry__metrics article > small {
+  grid-column: 1 / -1;
+}
+.live-telemetry__volumes {
+  margin-top: 16px;
+}
+.live-telemetry__volumes h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 9px;
+  color: var(--color-text-primary);
+  font-size: 0.78rem;
+}
+.live-telemetry__volumes article {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.6fr) minmax(180px, 1fr);
+  gap: 7px 16px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid var(--border-default);
+}
+.live-telemetry__volumes article > div {
+  display: grid;
+  gap: 3px;
+}
+.live-telemetry__volumes article span,
+.live-telemetry__volumes article small,
+.live-telemetry__timestamp,
+.live-telemetry__unavailable,
+.network-inventory__empty {
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+}
+.live-telemetry__volumes article > small {
+  grid-column: 1 / -1;
+}
+.live-telemetry__timestamp,
+.live-telemetry__unavailable,
+.network-inventory__empty {
+  margin: 14px 0 0;
+}
+.network-inventory__cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.network-inventory__cards > article {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--surface-panel);
+}
+.network-inventory__cards header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-default);
+}
+.network-inventory__cards header > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.network-inventory__cards header strong,
+.network-inventory__cards header small {
+  overflow-wrap: anywhere;
+}
+.network-inventory__cards header small {
+  color: var(--color-text-muted);
+  font-size: 0.67rem;
+}
+.network-inventory__cards dl {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+}
+.network-inventory__cards dl > div {
+  display: grid;
+  grid-template-columns: minmax(105px, 0.35fr) 1fr;
+  gap: 10px;
+}
+.network-inventory__cards dt,
+.network-inventory__cards dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.network-inventory__cards dt {
+  color: var(--color-text-muted);
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.network-inventory__cards dd {
+  color: var(--color-text-secondary);
+  font-size: 0.72rem;
+}
 .subsystem-section {
   margin-bottom: 14px;
 }
@@ -1745,7 +1891,8 @@ td strong {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .bmc-identity__grid,
-  .subsystem-grid {
+  .subsystem-grid,
+  .network-inventory__cards {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
@@ -1816,12 +1963,23 @@ td strong {
     grid-template-columns: 1fr;
   }
   .bmc-identity__grid,
-  .subsystem-grid {
+  .subsystem-grid,
+  .network-inventory__cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 680px) {
+  .live-telemetry__metrics,
+  .network-inventory__cards {
+    grid-template-columns: 1fr;
+  }
+  .live-telemetry__volumes article {
+    grid-template-columns: 1fr;
+  }
+  .live-telemetry__volumes article > small {
+    grid-column: auto;
+  }
   .console-shell {
     display: block;
   }

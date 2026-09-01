@@ -10,5 +10,6 @@ struct TransportResult {
 };
 
 TransportResult run_inventory_cycle();
+TransportResult run_telemetry_cycle();
 
 }  // namespace ipms::agent::windows

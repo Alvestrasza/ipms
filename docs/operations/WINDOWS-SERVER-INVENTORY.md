@@ -2,7 +2,7 @@
 
 ## Scope
 
-IPMS `0.1.24` provides tenant-scoped read-only portal inventory and detail
+IPMS `0.1.25` provides tenant-scoped read-only portal inventory and detail
 views for physical and virtual Windows systems. Native Agent enrollment and
 bounded inventory ingestion are available; Hyper-V provider discovery and all
 state-changing Windows or virtualization operations remain outside this
@@ -34,6 +34,7 @@ The normalized record prepares these fields:
 - hostname, FQDN, domain, operating-system version, build, and architecture;
 - manufacturer, model, serial number, and system UUID;
 - logical processor count and total memory;
+- bounded Windows network-interface configuration;
 - Hyper-V cluster and host placement;
 - Agent version, connection state, management-pack state, and last-seen time;
   and
@@ -59,7 +60,7 @@ an arbitrary command, PowerShell, script, shell, or remote-execution channel.
 
 ## Current acceptance boundary
 
-The following are accepted through `0.1.24`:
+The following are accepted through `0.1.25`:
 
 - localized physical and virtual Windows Server navigation;
 - live empty states that distinguish unavailable data from an empty inventory;
@@ -67,6 +68,8 @@ The following are accepted through `0.1.24`:
   Hyper-V placement;
 - read-only system detail pages for identity, platform, resources, Agent state,
   inventory source, Management Packs, and timestamps;
+- a current-sample-only telemetry surface for CPU, memory, and fixed-volume
+  utilization, refreshed by the portal every ten seconds;
 - a tenant-filtered read-only list and detail API and database migration; and
 - negative API coverage for cross-tenant access and browser writes.
 

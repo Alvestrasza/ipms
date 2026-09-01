@@ -1,0 +1,78 @@
+export type WindowsNetworkAddress = {
+  address: string;
+  prefix_length: number;
+};
+
+export type WindowsNetworkInterface = {
+  interface_id: string;
+  name: string;
+  description: string;
+  mac_address: string;
+  status:
+    | "up"
+    | "down"
+    | "testing"
+    | "dormant"
+    | "not-present"
+    | "lower-layer-down"
+    | "unknown";
+  transmit_link_speed_bps: number;
+  receive_link_speed_bps: number;
+  dhcp_enabled: boolean;
+  dns_suffix: string;
+  addresses: WindowsNetworkAddress[];
+  gateways: string[];
+  dns_servers: string[];
+};
+
+export type WindowsFixedVolume = {
+  name: string;
+  label: string;
+  filesystem: string;
+  total_bytes: number;
+  free_bytes: number;
+  used_percent: number;
+};
+
+export type WindowsServerTelemetry = {
+  server_id: string;
+  cpu_used_percent: number;
+  memory_total_bytes: number;
+  memory_available_bytes: number;
+  memory_used_bytes: number;
+  memory_used_percent: number;
+  fixed_volumes: WindowsFixedVolume[];
+  observed_at: string;
+};
+
+export type WindowsServer = {
+  id: string;
+  tenant_id: string;
+  connector_id: string | null;
+  source_id: string;
+  inventory_source: "agent" | "hyper-v";
+  server_type: "physical" | "virtual" | "unknown";
+  hostname: string;
+  fqdn: string;
+  domain_name: string;
+  operating_system: string;
+  os_version: string;
+  os_build: string;
+  architecture: string;
+  manufacturer: string;
+  model: string;
+  serial_number: string;
+  system_uuid: string;
+  logical_processors: number | null;
+  memory_bytes: number | null;
+  cluster_name: string;
+  hypervisor_host: string;
+  agent_version: string;
+  agent_state: "not-enrolled" | "online" | "stale" | "offline" | "unknown";
+  health: "healthy" | "warning" | "critical" | "unknown";
+  management_packs: string[];
+  last_seen_at: string | null;
+  discovered_at: string;
+  network_interfaces?: WindowsNetworkInterface[];
+  latest_telemetry?: WindowsServerTelemetry | null;
+};

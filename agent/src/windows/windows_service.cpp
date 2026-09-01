@@ -34,9 +34,15 @@ void WINAPI service_main(DWORD, LPWSTR*) {
   stop_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
   if (stop_event == nullptr) { report(SERVICE_STOPPED, GetLastError()); return; }
   report(SERVICE_RUNNING);
+  unsigned telemetry_cycles = 30;
   do {
-    (void)ipms::agent::windows::run_inventory_cycle();
-  } while (WaitForSingleObject(stop_event, 300'000) == WAIT_TIMEOUT);
+    if (telemetry_cycles >= 30) {
+      (void)ipms::agent::windows::run_inventory_cycle();
+      telemetry_cycles = 0;
+    }
+    (void)ipms::agent::windows::run_telemetry_cycle();
+    ++telemetry_cycles;
+  } while (WaitForSingleObject(stop_event, 10'000) == WAIT_TIMEOUT);
   CloseHandle(stop_event);
   report(SERVICE_STOPPED);
 }

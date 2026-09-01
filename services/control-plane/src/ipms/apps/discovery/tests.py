@@ -25,6 +25,7 @@ from .models import (
     DiscoveryJob,
     PhysicalSystem,
     WindowsServer,
+    WindowsServerTelemetry,
 )
 from .secrets import load_connector_secret
 from .services import process_discovery_queue
@@ -79,6 +80,43 @@ class WindowsServerInventoryApiTests(TestCase):
             agent_state=WindowsServer.AgentState.NOT_ENROLLED,
             health=WindowsServer.Health.UNKNOWN,
             discovered_at=timezone.now(),
+        )
+        self.virtual.network_interfaces = [
+            {
+                "interface_id": "fixture-interface",
+                "name": "Ethernet",
+                "description": "Synthetic adapter",
+                "mac_address": "00:11:22:33:44:55",
+                "status": "up",
+                "transmit_link_speed_bps": 1_000_000_000,
+                "receive_link_speed_bps": 1_000_000_000,
+                "dhcp_enabled": False,
+                "dns_suffix": "example.invalid",
+                "addresses": [{"address": "192.0.2.10", "prefix_length": 24}],
+                "gateways": ["192.0.2.1"],
+                "dns_servers": ["192.0.2.53"],
+            }
+        ]
+        self.virtual.save(update_fields=("network_interfaces",))
+        self.telemetry = WindowsServerTelemetry.objects.create(
+            tenant=self.tenant,
+            server=self.virtual,
+            cpu_used_percent=25,
+            memory_total_bytes=8 * 1024**3,
+            memory_available_bytes=3 * 1024**3,
+            memory_used_bytes=5 * 1024**3,
+            memory_used_percent=63,
+            fixed_volumes=[
+                {
+                    "name": "C:\\",
+                    "label": "System",
+                    "filesystem": "NTFS",
+                    "total_bytes": 100,
+                    "free_bytes": 40,
+                    "used_percent": 60,
+                }
+            ],
+            observed_at=timezone.now(),
         )
         WindowsServer.objects.create(
             tenant=self.other_tenant,
@@ -135,6 +173,17 @@ class WindowsServerInventoryApiTests(TestCase):
         self.assertEqual(response.json()["id"], str(self.virtual.id))
         self.assertEqual(response.json()["server_type"], "virtual")
         self.assertNotIn("detail_snapshot", response.json())
+        self.assertEqual(response.json()["network_interfaces"][0]["name"], "Ethernet")
+        self.assertEqual(response.json()["latest_telemetry"]["cpu_used_percent"], 25)
+
+    def test_detail_returns_null_when_current_telemetry_is_not_available(self) -> None:
+        response = self.client.get(
+            reverse("core:windows-server-detail", args=(self.physical.id,)),
+            **self.headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["latest_telemetry"])
 
     def test_reader_cannot_retrieve_another_tenant_system(self) -> None:
         other_system = WindowsServer.objects.get(hostname="other-tenant-fixture")
@@ -157,6 +206,27 @@ class WindowsServerInventoryApiTests(TestCase):
         self.assertEqual(response.status_code, 405)
         self.physical.refresh_from_db()
         self.assertEqual(self.physical.hostname, "physical-fixture")
+
+    def test_reader_retrieves_current_telemetry_only_for_selected_tenant(self) -> None:
+        url = reverse("core:windows-server-telemetry", args=(self.virtual.id,))
+        response = self.client.get(url, **self.headers())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["server_id"], str(self.virtual.id))
+        self.assertEqual(response.json()["cpu_used_percent"], 25)
+
+        denied = self.client.get(url, **self.headers(self.other_tenant))
+        self.assertEqual(denied.status_code, 404)
+
+        mutation = self.client.patch(
+            url,
+            data={"cpu_used_percent": 99},
+            content_type="application/json",
+            **self.headers(),
+        )
+        self.assertEqual(mutation.status_code, 405)
+        self.telemetry.refresh_from_db()
+        self.assertEqual(self.telemetry.cpu_used_percent, 25)
 
     def test_inaccessible_tenant_is_not_disclosed(self) -> None:
         response = self.client.get(self.url, **self.headers(self.other_tenant))

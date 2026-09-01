@@ -2,6 +2,7 @@
 
 #include "ipms/agent/configuration.hpp"
 #include "ipms/agent/windows_core_pack.hpp"
+#include "ipms/agent/windows_telemetry.hpp"
 
 #include <windows.h>
 #include <wincrypt.h>
@@ -27,7 +28,7 @@
 namespace {
 using Microsoft::WRL::ComPtr;
 constexpr std::size_t k_max_document_bytes = 65'536;
-constexpr wchar_t k_agent_version[] = L"0.1.24";
+constexpr wchar_t k_agent_version[] = L"0.1.25";
 
 struct internet_closer { void operator()(void* handle) const { if (handle) WinHttpCloseHandle(handle); } };
 using internet_handle = std::unique_ptr<void, internet_closer>;
@@ -281,7 +282,7 @@ struct http_response { DWORD status{}; std::string body; };
 
 http_response post_json(const std::wstring& hostname, std::uint16_t port, const std::wstring& path,
                         const std::string& body, const std::string* pin, PCCERT_CONTEXT client_certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.1.24", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.1.25", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent HTTP session could not be created.");
   WinHttpSetTimeouts(session.get(), 10'000, 10'000, 30'000, 30'000);
@@ -446,6 +447,31 @@ TransportResult run_inventory_cycle() {
   } catch (const std::exception& error) {
     try { return {false, wide(error.what())}; }
     catch (...) { return {false, L"The Agent connection cycle failed."}; }
+  }
+}
+
+TransportResult run_telemetry_cycle() {
+  try {
+    const auto directory = data_directory();
+    const auto state_path = directory / L"agent-state.json";
+    if (!std::filesystem::exists(state_path)) {
+      throw std::runtime_error("The Agent must complete enrollment before telemetry delivery.");
+    }
+    const state identity = load_state(state_path);
+    cert_context certificate(find_agent_certificate(identity.certificate_sha256));
+    if (!certificate) throw std::runtime_error("The enrolled Agent certificate is unavailable.");
+    const auto telemetry = collect_windows_telemetry_json();
+    if (telemetry.empty()) throw std::runtime_error("The Agent telemetry snapshot is unavailable.");
+    const std::string body = "{\"type\":\"telemetry\",\"device_uri\":\"" + json_escape(identity.device_uri) +
+                             "\",\"correlation_id\":\"windows-agent-telemetry\",\"agent_version\":\"" +
+                             utf8(k_agent_version) + "\",\"telemetry\":" + telemetry + "}";
+    const auto response = post_json(identity.gateway, identity.port, L"/v1/telemetry", body, nullptr, certificate.get());
+    if (response.status != 200 || json_string(response.body, "type") != std::optional<std::string>("accepted"))
+      throw std::runtime_error("The Agent telemetry was rejected.");
+    return {true, L"Telemetry delivery succeeded."};
+  } catch (const std::exception& error) {
+    try { return {false, wide(error.what())}; }
+    catch (...) { return {false, L"The Agent telemetry cycle failed."}; }
   }
 }
 }  // namespace ipms::agent::windows

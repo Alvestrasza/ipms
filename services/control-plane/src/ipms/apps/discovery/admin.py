@@ -7,6 +7,7 @@ from .models import (
     DiscoveryJob,
     PhysicalSystem,
     WindowsServer,
+    WindowsServerTelemetry,
 )
 
 
@@ -48,6 +49,21 @@ class WindowsServerAdmin(admin.ModelAdmin):
     list_filter = ("server_type", "inventory_source", "agent_state", "health")
     search_fields = ("hostname", "fqdn", "domain_name", "cluster_name")
     readonly_fields = tuple(field.name for field in WindowsServer._meta.fields)
+
+    def has_add_permission(self, request) -> bool:
+        return False
+
+    def has_change_permission(self, request, obj=None) -> bool:
+        return False
+
+    def has_delete_permission(self, request, obj=None) -> bool:
+        return False
+
+
+@admin.register(WindowsServerTelemetry)
+class WindowsServerTelemetryAdmin(admin.ModelAdmin):
+    list_display = ("server", "tenant", "cpu_used_percent", "memory_used_percent", "observed_at")
+    readonly_fields = tuple(field.name for field in WindowsServerTelemetry._meta.fields)
 
     def has_add_permission(self, request) -> bool:
         return False

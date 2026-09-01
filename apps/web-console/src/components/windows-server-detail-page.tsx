@@ -1,4 +1,11 @@
-import { ArrowLeft, Cpu, MonitorCog, Server, ShieldCheck } from "lucide-react";
+import {
+  ArrowLeft,
+  Cpu,
+  MonitorCog,
+  Network,
+  Server,
+  ShieldCheck,
+} from "lucide-react";
 import type { Route } from "next";
 import { cookies } from "next/headers";
 import Link from "next/link";
@@ -6,6 +13,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { ConsoleShell } from "@/components/console-shell";
 import { StatusPill } from "@/components/status-pill";
+import { WindowsServerTelemetry } from "@/components/windows-server-telemetry";
 import { documentLocale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionaries";
 import { resolveLocale } from "@/i18n/server";
@@ -29,6 +37,16 @@ function formatDate(value: string | null, locale: "de" | "en") {
 
 function display(value: string | null | undefined) {
   return value || "—";
+}
+
+function formatLinkSpeed(bitsPerSecond: number) {
+  if (bitsPerSecond >= 1_000_000_000) {
+    return `${(bitsPerSecond / 1_000_000_000).toFixed(1)} Gbit/s`;
+  }
+  if (bitsPerSecond >= 1_000_000) {
+    return `${(bitsPerSecond / 1_000_000).toFixed(1)} Mbit/s`;
+  }
+  return bitsPerSecond > 0 ? `${bitsPerSecond} bit/s` : "—";
 }
 
 export async function WindowsServerDetailPage({
@@ -241,6 +259,130 @@ export async function WindowsServerDetailPage({
             <dd>{formatMemory(server.memory_bytes)}</dd>
           </div>
         </dl>
+      </section>
+
+      <WindowsServerTelemetry
+        serverId={server.id}
+        tenantId={tenant.id}
+        locale={locale}
+        initialTelemetry={server.latest_telemetry ?? null}
+        copy={{
+          heading: copy.telemetryHeading,
+          hint: copy.telemetryHint,
+          refresh: copy.telemetryRefresh,
+          unavailable: copy.telemetryUnavailable,
+          cpu: copy.telemetryCpu,
+          memory: copy.telemetryMemory,
+          used: copy.telemetryUsed,
+          available: copy.telemetryAvailable,
+          volumes: copy.telemetryVolumes,
+          volume: copy.telemetryVolume,
+          capacity: copy.telemetryCapacity,
+          free: copy.telemetryFree,
+          observed: copy.telemetryObserved,
+        }}
+      />
+
+      <section
+        className="panel network-inventory"
+        aria-labelledby="network-heading"
+      >
+        <div className="bmc-identity__title">
+          <span className="connector-mark">
+            <Network aria-hidden="true" size={18} />
+          </span>
+          <div>
+            <strong id="network-heading">{copy.network}</strong>
+            <small>{copy.networkHint}</small>
+          </div>
+        </div>
+        {(server.network_interfaces ?? []).length === 0 ? (
+          <p className="network-inventory__empty">{copy.noNetworkInterfaces}</p>
+        ) : (
+          <div className="network-inventory__cards">
+            {(server.network_interfaces ?? []).map((networkInterface) => {
+              const statusLabels = {
+                up: copy.interfaceUp,
+                down: copy.interfaceDown,
+                testing: copy.interfaceTesting,
+                dormant: copy.interfaceDormant,
+                "not-present": copy.interfaceNotPresent,
+                "lower-layer-down": copy.interfaceLowerLayerDown,
+                unknown: copy.unknown,
+              };
+              return (
+                <article key={networkInterface.interface_id}>
+                  <header>
+                    <div>
+                      <strong>
+                        {networkInterface.name || networkInterface.description}
+                      </strong>
+                      <small>{networkInterface.description}</small>
+                    </div>
+                    <StatusPill
+                      status={
+                        networkInterface.status === "up"
+                          ? "healthy"
+                          : networkInterface.status === "down"
+                            ? "critical"
+                            : "unknown"
+                      }
+                      label={statusLabels[networkInterface.status]}
+                    />
+                  </header>
+                  <dl>
+                    <div>
+                      <dt>{copy.macAddress}</dt>
+                      <dd>{display(networkInterface.mac_address)}</dd>
+                    </div>
+                    <div>
+                      <dt>{copy.linkSpeed}</dt>
+                      <dd>
+                        {formatLinkSpeed(
+                          Math.max(
+                            networkInterface.receive_link_speed_bps,
+                            networkInterface.transmit_link_speed_bps,
+                          ),
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{copy.dhcp}</dt>
+                      <dd>
+                        {networkInterface.dhcp_enabled
+                          ? copy.enabled
+                          : copy.disabled}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{copy.dnsSuffix}</dt>
+                      <dd>{display(networkInterface.dns_suffix)}</dd>
+                    </div>
+                    <div>
+                      <dt>{copy.ipAddresses}</dt>
+                      <dd>
+                        {networkInterface.addresses
+                          .map(
+                            (address) =>
+                              `${address.address}/${address.prefix_length}`,
+                          )
+                          .join(", ") || "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{copy.gateways}</dt>
+                      <dd>{networkInterface.gateways.join(", ") || "—"}</dd>
+                    </div>
+                    <div>
+                      <dt>{copy.dnsServers}</dt>
+                      <dd>{networkInterface.dns_servers.join(", ") || "—"}</dd>
+                    </div>
+                  </dl>
+                </article>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <section

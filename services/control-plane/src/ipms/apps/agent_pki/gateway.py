@@ -16,6 +16,7 @@ MAX_HTTP_HEADER_BYTES = 16_384
 ALLOWED_AGENT_MESSAGES = {
     "hello",
     "inventory",
+    "telemetry",
     "acknowledgement",
     "health",
     "certificate_renewal",
@@ -79,6 +80,7 @@ def _parse_http_request(header: bytes) -> tuple[str, dict[str, str], int]:
     if method != "POST" or version != "HTTP/1.1" or path not in {
         "/v1/enroll",
         "/v1/inventory",
+        "/v1/telemetry",
     }:
         raise ValidationError("The Agent Gateway HTTP route is invalid.")
     headers: dict[str, str] = {}
@@ -124,6 +126,7 @@ async def _handle_http_connection(
 ) -> None:
     from ipms.apps.agent_pki.services import (
         confirm_inventory,
+        confirm_telemetry,
         enroll_agent,
         validate_peer_certificate,
     )
@@ -155,16 +158,22 @@ async def _handle_http_connection(
     if not peer_certificate:
         raise ValidationError("A client certificate is required.")
     enrollment = await sync_to_async(validate_peer_certificate)(peer_certificate)
-    if (
-        document.get("type") != "inventory"
-        or document.get("device_uri") != enrollment.device_uri
-    ):
-        raise ValidationError("The inventory identity is invalid.")
-    await sync_to_async(confirm_inventory)(
-        enrollment,
-        inventory=document.get("inventory"),
-        agent_version=str(document.get("agent_version", "")),
-    )
+    if document.get("device_uri") != enrollment.device_uri:
+        raise ValidationError("The Agent message identity is invalid.")
+    if path == "/v1/inventory" and document.get("type") == "inventory":
+        await sync_to_async(confirm_inventory)(
+            enrollment,
+            inventory=document.get("inventory"),
+            agent_version=str(document.get("agent_version", "")),
+        )
+    elif path == "/v1/telemetry" and document.get("type") == "telemetry":
+        await sync_to_async(confirm_telemetry)(
+            enrollment,
+            telemetry=document.get("telemetry"),
+            agent_version=str(document.get("agent_version", "")),
+        )
+    else:
+        raise ValidationError("The Agent HTTP message type is invalid.")
     await _http_reply(
         writer,
         200,
@@ -175,6 +184,7 @@ async def _handle_http_connection(
 async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     from ipms.apps.agent_pki.services import (
         confirm_inventory,
+        confirm_telemetry,
         enroll_agent,
         renew_agent_certificate,
         validate_peer_certificate,
@@ -220,6 +230,12 @@ async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.Stream
                 await sync_to_async(confirm_inventory)(
                     enrollment,
                     inventory=document.get("inventory"),
+                    agent_version=str(document.get("agent_version", "")),
+                )
+            if document["type"] == "telemetry":
+                await sync_to_async(confirm_telemetry)(
+                    enrollment,
+                    telemetry=document.get("telemetry"),
                     agent_version=str(document.get("agent_version", "")),
                 )
             if document["type"] == "certificate_renewal":

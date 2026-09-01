@@ -1,4 +1,5 @@
 import hashlib
+import ipaddress
 import secrets
 import uuid
 from datetime import timedelta
@@ -741,6 +742,101 @@ def _bounded_inventory_string(
     return value.strip()
 
 
+def _bounded_object_string(value: dict, name: str, maximum: int) -> str:
+    text = value.get(name, "")
+    if not isinstance(text, str) or len(text) > maximum:
+        raise ValidationError(f"The Agent inventory field is invalid: {name}.")
+    return text.strip()
+
+
+def _bounded_ip_list(value: object, name: str) -> list[str]:
+    if not isinstance(value, list) or len(value) > 64:
+        raise ValidationError(f"The Agent network field is invalid: {name}.")
+    result = []
+    for address in value:
+        if not isinstance(address, str) or len(address) > 64:
+            raise ValidationError(f"The Agent network field is invalid: {name}.")
+        try:
+            result.append(str(ipaddress.ip_address(address)))
+        except ValueError as exc:
+            raise ValidationError(
+                f"The Agent network field is invalid: {name}."
+            ) from exc
+    return result
+
+
+def _bounded_network_interfaces(value: object) -> list[dict]:
+    if not isinstance(value, list) or len(value) > 64:
+        raise ValidationError("The Agent network interface list is invalid.")
+    result = []
+    allowed_statuses = {
+        "up",
+        "down",
+        "testing",
+        "dormant",
+        "not-present",
+        "lower-layer-down",
+        "unknown",
+    }
+    for interface in value:
+        if not isinstance(interface, dict) or len(interface) > 16:
+            raise ValidationError("The Agent network interface is invalid.")
+        interface_id = _bounded_object_string(interface, "interface_id", 255)
+        if not interface_id:
+            raise ValidationError("The Agent network interface identity is invalid.")
+        status = _bounded_object_string(interface, "status", 32)
+        if status not in allowed_statuses:
+            raise ValidationError("The Agent network interface status is invalid.")
+        transmit = interface.get("transmit_link_speed_bps")
+        receive = interface.get("receive_link_speed_bps")
+        dhcp = interface.get("dhcp_enabled")
+        if type(transmit) is not int or not 0 <= transmit <= 2**63 - 1:
+            raise ValidationError("The Agent network transmit speed is invalid.")
+        if type(receive) is not int or not 0 <= receive <= 2**63 - 1:
+            raise ValidationError("The Agent network receive speed is invalid.")
+        if type(dhcp) is not bool:
+            raise ValidationError("The Agent network DHCP state is invalid.")
+        addresses = interface.get("addresses")
+        if not isinstance(addresses, list) or len(addresses) > 64:
+            raise ValidationError("The Agent network address list is invalid.")
+        normalized_addresses = []
+        for address in addresses:
+            if not isinstance(address, dict) or set(address) != {"address", "prefix_length"}:
+                raise ValidationError("The Agent network address is invalid.")
+            raw_address = address.get("address")
+            prefix = address.get("prefix_length")
+            if not isinstance(raw_address, str) or len(raw_address) > 64:
+                raise ValidationError("The Agent network address is invalid.")
+            try:
+                parsed = ipaddress.ip_address(raw_address)
+            except ValueError as exc:
+                raise ValidationError("The Agent network address is invalid.") from exc
+            if type(prefix) is not int or not 0 <= prefix <= parsed.max_prefixlen:
+                raise ValidationError("The Agent network prefix is invalid.")
+            normalized_addresses.append(
+                {"address": str(parsed), "prefix_length": prefix}
+            )
+        result.append(
+            {
+                "interface_id": interface_id,
+                "name": _bounded_object_string(interface, "name", 255),
+                "description": _bounded_object_string(interface, "description", 512),
+                "mac_address": _bounded_object_string(interface, "mac_address", 32),
+                "status": status,
+                "transmit_link_speed_bps": transmit,
+                "receive_link_speed_bps": receive,
+                "dhcp_enabled": dhcp,
+                "dns_suffix": _bounded_object_string(interface, "dns_suffix", 255),
+                "addresses": normalized_addresses,
+                "gateways": _bounded_ip_list(interface.get("gateways"), "gateways"),
+                "dns_servers": _bounded_ip_list(
+                    interface.get("dns_servers"), "dns_servers"
+                ),
+            }
+        )
+    return result
+
+
 @transaction.atomic
 def confirm_inventory(
     enrollment: AgentEnrollment,
@@ -760,13 +856,20 @@ def confirm_inventory(
     if not isinstance(agent_version, str) or not 1 <= len(agent_version) <= 64:
         raise ValidationError("The Agent version is invalid.")
     hostname = _bounded_inventory_string(inventory, "hostname", 255, required=True)
+    fqdn = _bounded_inventory_string(inventory, "fqdn", 255)
+    domain_name = _bounded_inventory_string(inventory, "domain_name", 255)
     os_product = _bounded_inventory_string(inventory, "os_product", 255)
     os_name = _bounded_inventory_string(inventory, "os_name", 255)
+    os_version = _bounded_inventory_string(inventory, "os_version", 128)
     os_build = _bounded_inventory_string(inventory, "os_build", 64)
     architecture = _bounded_inventory_string(inventory, "architecture", 32)
     manufacturer = _bounded_inventory_string(inventory, "manufacturer", 255)
     model = _bounded_inventory_string(inventory, "model", 255)
     machine_type = _bounded_inventory_string(inventory, "machine_type", 16)
+    hypervisor_host = _bounded_inventory_string(inventory, "hypervisor_host", 255)
+    network_interfaces = _bounded_network_interfaces(
+        inventory.get("network_interfaces", [])
+    )
     if machine_type not in {"", *WindowsServer.ServerType.values}:
         raise ValidationError("The Agent machine type is invalid.")
     logical_processors = inventory.get("logical_processors")
@@ -790,17 +893,22 @@ def confirm_inventory(
         defaults={
             "server_type": machine_type or WindowsServer.ServerType.PHYSICAL,
             "hostname": hostname,
+            "fqdn": fqdn,
+            "domain_name": domain_name,
             "operating_system": os_name or os_product,
+            "os_version": os_version,
             "os_build": os_build,
             "architecture": architecture,
             "manufacturer": manufacturer,
             "model": model,
+            "hypervisor_host": hypervisor_host,
             "logical_processors": logical_processors,
             "memory_bytes": memory_bytes,
             "agent_version": agent_version,
             "agent_state": WindowsServer.AgentState.ONLINE,
             "health": WindowsServer.Health.HEALTHY,
             "management_packs": ["windows-server-core"],
+            "network_interfaces": network_interfaces,
             "detail_snapshot": {
                 "schema_version": "1",
                 "agent_gateway_port": gateway_port,
@@ -811,6 +919,104 @@ def confirm_inventory(
             "last_seen_at": now,
             "discovered_at": now,
         },
+    )
+
+
+def _bounded_fixed_volumes(value: object) -> list[dict]:
+    if not isinstance(value, list) or len(value) > 64:
+        raise ValidationError("The Agent fixed-volume list is invalid.")
+    result = []
+    for volume in value:
+        if not isinstance(volume, dict) or len(volume) > 8:
+            raise ValidationError("The Agent fixed-volume entry is invalid.")
+        name = _bounded_object_string(volume, "name", 16)
+        label = _bounded_object_string(volume, "label", 255)
+        filesystem = _bounded_object_string(volume, "filesystem", 64)
+        total = volume.get("total_bytes")
+        free = volume.get("free_bytes")
+        used_percent = volume.get("used_percent")
+        if not name or type(total) is not int or not 1 <= total <= 2**63 - 1:
+            raise ValidationError("The Agent fixed-volume capacity is invalid.")
+        if type(free) is not int or not 0 <= free <= total:
+            raise ValidationError("The Agent fixed-volume free space is invalid.")
+        if type(used_percent) is not int or not 0 <= used_percent <= 100:
+            raise ValidationError("The Agent fixed-volume utilization is invalid.")
+        expected_percent = ((total - free) * 100 + total // 2) // total
+        if used_percent != expected_percent:
+            raise ValidationError("The Agent fixed-volume utilization is inconsistent.")
+        result.append(
+            {
+                "name": name,
+                "label": label,
+                "filesystem": filesystem,
+                "total_bytes": total,
+                "free_bytes": free,
+                "used_percent": used_percent,
+            }
+        )
+    return result
+
+
+@transaction.atomic
+def confirm_telemetry(
+    enrollment: AgentEnrollment,
+    *,
+    telemetry: object,
+    agent_version: str,
+) -> None:
+    from ipms.apps.discovery.models import WindowsServer, WindowsServerTelemetry
+
+    if not isinstance(telemetry, dict) or len(telemetry) > 16:
+        raise ValidationError("The Agent telemetry document is invalid.")
+    if (
+        telemetry.get("schema_version") != "1"
+        or telemetry.get("pack") != "windows-server-core"
+    ):
+        raise ValidationError("The Agent telemetry schema or Management Pack is invalid.")
+    if not isinstance(agent_version, str) or not 1 <= len(agent_version) <= 64:
+        raise ValidationError("The Agent version is invalid.")
+    cpu_percent = telemetry.get("cpu_used_percent")
+    memory_total = telemetry.get("memory_total_bytes")
+    memory_available = telemetry.get("memory_available_bytes")
+    memory_used = telemetry.get("memory_used_bytes")
+    memory_percent = telemetry.get("memory_used_percent")
+    if type(cpu_percent) is not int or not 0 <= cpu_percent <= 100:
+        raise ValidationError("The Agent CPU utilization is invalid.")
+    if type(memory_total) is not int or not 1 <= memory_total <= 2**63 - 1:
+        raise ValidationError("The Agent memory total is invalid.")
+    if type(memory_available) is not int or not 0 <= memory_available <= memory_total:
+        raise ValidationError("The Agent available memory is invalid.")
+    if type(memory_used) is not int or memory_used != memory_total - memory_available:
+        raise ValidationError("The Agent used memory is invalid.")
+    if type(memory_percent) is not int or not 0 <= memory_percent <= 100:
+        raise ValidationError("The Agent memory utilization is invalid.")
+    fixed_volumes = _bounded_fixed_volumes(telemetry.get("fixed_volumes"))
+    server = WindowsServer.objects.filter(
+        tenant=enrollment.tenant,
+        inventory_source=WindowsServer.InventorySource.AGENT,
+        source_id=enrollment.device_uri,
+    ).first()
+    if server is None:
+        raise ValidationError("Agent inventory is required before telemetry.")
+    now = timezone.now()
+    WindowsServerTelemetry.objects.update_or_create(
+        tenant=enrollment.tenant,
+        server=server,
+        defaults={
+            "cpu_used_percent": cpu_percent,
+            "memory_total_bytes": memory_total,
+            "memory_available_bytes": memory_available,
+            "memory_used_bytes": memory_used,
+            "memory_used_percent": memory_percent,
+            "fixed_volumes": fixed_volumes,
+            "observed_at": now,
+        },
+    )
+    AgentEnrollment.objects.filter(id=enrollment.id).update(last_seen_at=now)
+    WindowsServer.objects.filter(id=server.id).update(
+        agent_version=agent_version,
+        agent_state=WindowsServer.AgentState.ONLINE,
+        last_seen_at=now,
     )
 
 

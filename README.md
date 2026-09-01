@@ -9,7 +9,7 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-IPMS application build `0.1.24` is in the v0.1.0 read-only foundation phase. A
+IPMS application build `0.1.25` is in the v0.1.0 read-only foundation phase. A
 standalone development
 Appliance currently runs the tenant-aware Django Control Plane, PostgreSQL,
 the multilingual Next.js Web Console, and the isolated connector worker.

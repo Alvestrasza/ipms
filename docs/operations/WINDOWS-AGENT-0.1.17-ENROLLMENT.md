@@ -57,8 +57,8 @@ Run one visible acceptance cycle before enabling periodic service operation:
 
 The command reports only success or a sanitized failure reason. It never prints
 the token, private key, certificate body, or complete bootstrap document. After
-successful enrollment, the service repeats the bounded inventory cycle every
-five minutes.
+successful enrollment, the service repeats bounded live telemetry every ten
+seconds and the full inventory cycle every five minutes.
 
 ## Local state
 
@@ -90,6 +90,39 @@ models as `virtual`. A successfully read non-virtual model is `physical`; a
 failed or empty model query is `unknown`. The Control Plane accepts only these
 three classification values.
 
+Starting with Agent `0.1.25`, the same native WMI session also reads
+`Win32_ComputerSystem.Domain` and `Win32_OperatingSystem.Version`. The Agent
+constructs the FQDN from the hostname and domain only when Windows reports that
+the computer is domain joined. A Hyper-V guest reads
+`PhysicalHostNameFullyQualified` from the documented guest parameters registry
+location; the cluster remains unset until the Hyper-V host connector can
+provide authoritative placement.
+
+The five-minute inventory includes every bounded Windows adapter returned by
+`GetAdaptersAddresses`, including operational state, MAC address, link speed,
+DHCP state, DNS suffix, unicast addresses and prefixes, gateways, and DNS
+servers. The Control Plane validates addresses and bounds adapter and address
+counts before replacing the normalized configuration.
+
+## Current live telemetry
+
+Agent `0.1.25` sends a separate certificate-bound telemetry document every ten
+seconds. It contains current CPU utilization, physical-memory utilization, and
+capacity, free space, filesystem, label, and utilization for fixed Windows
+volumes. CPU counters and storage APIs are read locally through native Windows
+APIs; no PowerShell, shell, script, performance-counter command, or inbound
+listener is introduced.
+
+The Control Plane keeps only the newest telemetry sample for each tenant-owned
+system in this release. The portal polls the read-only current-sample endpoint
+every ten seconds while the system detail page is visible. Historical metric
+retention, downsampling, alert evaluation, and a separately scalable
+time-series store remain future monitoring work.
+
+For a local, read-only diagnostic without contacting the Control Plane, an
+administrator can run `ipms-agent.exe --telemetry-console`. The output is
+limited to the current CPU, memory, and fixed-volume utilization payload.
+
 ## Portal result
 
 An accepted inventory upserts one tenant-scoped `WindowsServer` record with
@@ -103,6 +136,8 @@ detail page. It displays the normalized identity, operating system, hardware
 model, logical processor and memory totals, Agent state and version, inventory
 source, assigned Management Packs, and discovery timestamps. The detail API
 does not expose the provider detail snapshot and does not accept browser writes.
+IPMS `0.1.25` extends that page with the current utilization sample and the
+normalized configuration of all reported network adapters.
 
 ## Current boundary
 

@@ -16,7 +16,7 @@ from django.core.management.base import CommandError
 from django.test import TestCase
 
 from ipms.apps.audit.models import AuditEvent
-from ipms.apps.discovery.models import WindowsServer
+from ipms.apps.discovery.models import WindowsServer, WindowsServerTelemetry
 from ipms.apps.tenancy.models import Tenant
 
 from .crypto import (
@@ -37,6 +37,7 @@ from .services import (
     configure_external_issuing_pki,
     create_enrollment_token,
     confirm_inventory,
+    confirm_telemetry,
     enroll_agent,
     export_gateway_runtime,
     import_external_agent_certificate,
@@ -277,6 +278,12 @@ class ManagedAgentPkiTests(TestCase):
         self.assertEqual(path, "/v1/inventory")
         self.assertEqual(headers["host"], "gateway.example.invalid")
         self.assertEqual(length, 42)
+        telemetry_path, _, _ = _parse_http_request(
+            b"POST /v1/telemetry HTTP/1.1\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: 42\r\n\r\n"
+        )
+        self.assertEqual(telemetry_path, "/v1/telemetry")
         with self.assertRaises(ValidationError):
             _parse_http_request(
                 b"GET /v1/inventory HTTP/1.1\r\nContent-Length: 1\r\n\r\n"
@@ -304,24 +311,51 @@ class ManagedAgentPkiTests(TestCase):
                 "pack": "windows-server-core",
                 "agent_gateway_port": 9419,
                 "hostname": "windows-test",
+                "fqdn": "windows-test.example.invalid",
+                "domain_name": "example.invalid",
                 "os_product": "Windows 10 Enterprise LTSC 2024",
                 "os_name": "Microsoft Windows 11 Enterprise LTSC",
+                "os_version": "10.0.26100",
                 "os_build": "26100",
                 "architecture": "x64",
                 "manufacturer": "Microsoft Corporation",
                 "model": "Virtual Machine",
                 "machine_type": "virtual",
+                "hypervisor_host": "hypervisor.example.invalid",
                 "logical_processors": 4,
                 "memory_total_bytes": 8 * 1024**3,
+                "network_interfaces": [
+                    {
+                        "interface_id": "fixture-interface",
+                        "name": "Ethernet",
+                        "description": "Synthetic network adapter",
+                        "mac_address": "00:11:22:33:44:55",
+                        "status": "up",
+                        "transmit_link_speed_bps": 1_000_000_000,
+                        "receive_link_speed_bps": 1_000_000_000,
+                        "dhcp_enabled": False,
+                        "dns_suffix": "example.invalid",
+                        "addresses": [
+                            {"address": "192.0.2.10", "prefix_length": 24}
+                        ],
+                        "gateways": ["192.0.2.1"],
+                        "dns_servers": ["192.0.2.53"],
+                    }
+                ],
             },
         )
         server = WindowsServer.objects.get(source_id=enrollment.device_uri)
         self.assertEqual(server.tenant, self.tenant)
         self.assertEqual(server.hostname, "windows-test")
+        self.assertEqual(server.fqdn, "windows-test.example.invalid")
+        self.assertEqual(server.domain_name, "example.invalid")
         self.assertEqual(server.operating_system, "Microsoft Windows 11 Enterprise LTSC")
+        self.assertEqual(server.os_version, "10.0.26100")
         self.assertEqual(server.server_type, WindowsServer.ServerType.VIRTUAL)
         self.assertEqual(server.manufacturer, "Microsoft Corporation")
         self.assertEqual(server.model, "Virtual Machine")
+        self.assertEqual(server.hypervisor_host, "hypervisor.example.invalid")
+        self.assertEqual(server.network_interfaces[0]["name"], "Ethernet")
         self.assertEqual(server.agent_state, WindowsServer.AgentState.ONLINE)
         self.assertEqual(server.management_packs, ["windows-server-core"])
         with self.assertRaises(ValidationError):
@@ -341,6 +375,67 @@ class ManagedAgentPkiTests(TestCase):
                 enrollment,
                 agent_version="0.1.23",
                 inventory=invalid_inventory,
+            )
+
+    def test_telemetry_replaces_only_the_current_certificate_tenant_sample(self) -> None:
+        enrollment, raw_token, _ = create_enrollment_token(
+            tenant=self.tenant,
+            display_name="Telemetry Agent",
+            actor="test-operator",
+        )
+        enrollment, _, _ = enroll_agent(raw_token=raw_token, csr_pem=create_csr()[1])
+        confirm_inventory(
+            enrollment,
+            agent_version="0.1.25",
+            inventory={
+                "schema_version": "1",
+                "pack": "windows-server-core",
+                "agent_gateway_port": 9419,
+                "hostname": "telemetry-test",
+                "machine_type": "virtual",
+                "logical_processors": 4,
+                "memory_total_bytes": 8 * 1024**3,
+                "network_interfaces": [],
+            },
+        )
+        telemetry = {
+            "schema_version": "1",
+            "pack": "windows-server-core",
+            "cpu_used_percent": 25,
+            "memory_total_bytes": 8 * 1024**3,
+            "memory_available_bytes": 3 * 1024**3,
+            "memory_used_bytes": 5 * 1024**3,
+            "memory_used_percent": 63,
+            "fixed_volumes": [
+                {
+                    "name": "C:\\",
+                    "label": "System",
+                    "filesystem": "NTFS",
+                    "total_bytes": 100,
+                    "free_bytes": 40,
+                    "used_percent": 60,
+                }
+            ],
+        }
+
+        confirm_telemetry(enrollment, telemetry=telemetry, agent_version="0.1.25")
+        sample = WindowsServerTelemetry.objects.get(server__source_id=enrollment.device_uri)
+        self.assertEqual(sample.tenant, self.tenant)
+        self.assertEqual(sample.cpu_used_percent, 25)
+        self.assertEqual(sample.fixed_volumes[0]["used_percent"], 60)
+
+        telemetry["cpu_used_percent"] = 30
+        confirm_telemetry(enrollment, telemetry=telemetry, agent_version="0.1.25")
+        self.assertEqual(WindowsServerTelemetry.objects.count(), 1)
+        sample.refresh_from_db()
+        self.assertEqual(sample.cpu_used_percent, 30)
+
+        telemetry["cpu_used_percent"] = 101
+        with self.assertRaisesMessage(ValidationError, "CPU utilization is invalid"):
+            confirm_telemetry(
+                enrollment,
+                telemetry=telemetry,
+                agent_version="0.1.25",
             )
 
     def test_managed_issuer_rotation_keeps_overlap_and_supports_rollback(self) -> None:

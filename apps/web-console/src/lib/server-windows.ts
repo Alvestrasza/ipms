@@ -6,36 +6,9 @@ import {
   CONTROL_PLANE_URL,
   controlPlaneHeaders,
 } from "./control-plane-request";
+import type { WindowsServer } from "./windows-server-types";
 
-export type WindowsServer = {
-  id: string;
-  tenant_id: string;
-  connector_id: string | null;
-  source_id: string;
-  inventory_source: "agent" | "hyper-v";
-  server_type: "physical" | "virtual" | "unknown";
-  hostname: string;
-  fqdn: string;
-  domain_name: string;
-  operating_system: string;
-  os_version: string;
-  os_build: string;
-  architecture: string;
-  manufacturer: string;
-  model: string;
-  serial_number: string;
-  system_uuid: string;
-  logical_processors: number | null;
-  memory_bytes: number | null;
-  cluster_name: string;
-  hypervisor_host: string;
-  agent_version: string;
-  agent_state: "not-enrolled" | "online" | "stale" | "offline" | "unknown";
-  health: "healthy" | "warning" | "critical" | "unknown";
-  management_packs: string[];
-  last_seen_at: string | null;
-  discovered_at: string;
-};
+export type { WindowsServer } from "./windows-server-types";
 
 export async function getWindowsServers(
   tenantId: string,
