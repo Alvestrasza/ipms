@@ -161,6 +161,24 @@ class ManagedAgentPkiTests(TestCase):
         self.assertEqual(enrolled.id, enrollment.id)
         self.assertEqual(enrolled.status, AgentEnrollment.Status.ACTIVE)
 
+    def test_windows_certenroll_certificate_pem_label_is_accepted(self) -> None:
+        enrollment, raw_token, _ = create_enrollment_token(
+            tenant=self.tenant,
+            display_name="Windows CertEnroll Legacy Agent",
+            actor="test-operator",
+        )
+        _, csr_pem = create_csr()
+        windows_csr = csr_pem.replace(
+            "BEGIN CERTIFICATE REQUEST",
+            "BEGIN CERTIFICATE",
+        ).replace(
+            "END CERTIFICATE REQUEST",
+            "END CERTIFICATE",
+        )
+        enrolled, _, _ = enroll_agent(raw_token=raw_token, csr_pem=windows_csr)
+        self.assertEqual(enrolled.id, enrollment.id)
+        self.assertEqual(enrolled.status, AgentEnrollment.Status.ACTIVE)
+
     def test_revocation_immediately_blocks_existing_certificate(self) -> None:
         enrollment, raw_token, _ = create_enrollment_token(
             tenant=self.tenant,

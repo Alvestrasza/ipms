@@ -262,6 +262,10 @@ def validate_agent_csr(csr_pem: str):
                 "-----BEGIN NEW CERTIFICATE REQUEST-----",
                 "-----END NEW CERTIFICATE REQUEST-----",
             ),
+            (
+                "-----BEGIN CERTIFICATE-----",
+                "-----END CERTIFICATE-----",
+            ),
         )
         wrapper = next(
             (
