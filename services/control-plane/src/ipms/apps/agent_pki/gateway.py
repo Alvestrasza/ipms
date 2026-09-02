@@ -9,6 +9,7 @@ from pathlib import Path
 import django
 from asgiref.sync import sync_to_async
 from django.core.exceptions import ValidationError
+from django.db import close_old_connections
 
 
 MAX_MESSAGE_BYTES = 65_536
@@ -22,6 +23,22 @@ ALLOWED_AGENT_MESSAGES = {
     "certificate_renewal",
 }
 logger = logging.getLogger("ipms.agent_gateway")
+
+
+def _database_call(function, *args, **kwargs):
+    close_old_connections()
+    try:
+        return function(*args, **kwargs)
+    finally:
+        close_old_connections()
+
+
+async def _database_call_async(function, *args, **kwargs):
+    return await sync_to_async(_database_call, thread_sensitive=True)(
+        function,
+        *args,
+        **kwargs,
+    )
 
 
 def _connection_protocol(selected_alpn: str | None) -> str:
@@ -140,7 +157,8 @@ async def _handle_http_connection(
             raise ValidationError("Enrollment does not accept an existing client certificate.")
         if document.get("type") != "enroll":
             raise ValidationError("The enrollment message is invalid.")
-        enrollment, certificate, chain = await sync_to_async(enroll_agent)(
+        enrollment, certificate, chain = await _database_call_async(
+            enroll_agent,
             raw_token=str(document.get("bootstrap_token", "")),
             csr_pem=str(document.get("csr_pem", "")),
         )
@@ -157,17 +175,22 @@ async def _handle_http_connection(
         return
     if not peer_certificate:
         raise ValidationError("A client certificate is required.")
-    enrollment = await sync_to_async(validate_peer_certificate)(peer_certificate)
+    enrollment = await _database_call_async(
+        validate_peer_certificate,
+        peer_certificate,
+    )
     if document.get("device_uri") != enrollment.device_uri:
         raise ValidationError("The Agent message identity is invalid.")
     if path == "/v1/inventory" and document.get("type") == "inventory":
-        await sync_to_async(confirm_inventory)(
+        await _database_call_async(
+            confirm_inventory,
             enrollment,
             inventory=document.get("inventory"),
             agent_version=str(document.get("agent_version", "")),
         )
     elif path == "/v1/telemetry" and document.get("type") == "telemetry":
-        await sync_to_async(confirm_telemetry)(
+        await _database_call_async(
+            confirm_telemetry,
             enrollment,
             telemetry=document.get("telemetry"),
             agent_version=str(document.get("agent_version", "")),
@@ -206,7 +229,8 @@ async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.Stream
         if not peer_certificate:
             if document["type"] != "enroll":
                 raise ValidationError("A client certificate is required.")
-            enrollment, certificate, chain = await sync_to_async(enroll_agent)(
+            enrollment, certificate, chain = await _database_call_async(
+                enroll_agent,
                 raw_token=str(document.get("bootstrap_token", "")),
                 csr_pem=str(document.get("csr_pem", "")),
             )
@@ -220,26 +244,32 @@ async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.Stream
                 },
             )
             return
-        enrollment = await sync_to_async(validate_peer_certificate)(peer_certificate)
+        enrollment = await _database_call_async(
+            validate_peer_certificate,
+            peer_certificate,
+        )
         while True:
             if document["type"] not in ALLOWED_AGENT_MESSAGES:
                 raise ValidationError("The Agent message type is not allowed.")
             if document.get("device_uri") != enrollment.device_uri:
                 raise ValidationError("The message device URI does not match the certificate.")
             if document["type"] == "inventory":
-                await sync_to_async(confirm_inventory)(
+                await _database_call_async(
+                    confirm_inventory,
                     enrollment,
                     inventory=document.get("inventory"),
                     agent_version=str(document.get("agent_version", "")),
                 )
             if document["type"] == "telemetry":
-                await sync_to_async(confirm_telemetry)(
+                await _database_call_async(
+                    confirm_telemetry,
                     enrollment,
                     telemetry=document.get("telemetry"),
                     agent_version=str(document.get("agent_version", "")),
                 )
             if document["type"] == "certificate_renewal":
-                certificate, chain = await sync_to_async(renew_agent_certificate)(
+                certificate, chain = await _database_call_async(
+                    renew_agent_certificate,
                     enrollment=enrollment,
                     csr_pem=str(document.get("csr_pem", "")),
                 )

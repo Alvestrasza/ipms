@@ -5,6 +5,7 @@ import ssl
 import tempfile
 import uuid
 from pathlib import Path
+from unittest.mock import patch
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -27,6 +28,7 @@ from .crypto import (
 from .gateway import (
     _bounded_json,
     _connection_protocol,
+    _database_call,
     _parse_http_request,
     build_tls_context,
 )
@@ -295,6 +297,21 @@ class ManagedAgentPkiTests(TestCase):
         self.assertEqual(_connection_protocol("ipms-agent/1"), "stream")
         with self.assertRaisesMessage(ValidationError, "ALPN is invalid"):
             _connection_protocol("unexpected-protocol")
+
+    @patch("ipms.apps.agent_pki.gateway.close_old_connections")
+    def test_gateway_database_calls_recycle_stale_connections(
+        self,
+        close_connections,
+    ) -> None:
+        self.assertEqual(_database_call(lambda value: value + 1, 41), 42)
+        self.assertEqual(close_connections.call_count, 2)
+
+        def fail() -> None:
+            raise RuntimeError("synthetic database failure")
+
+        with self.assertRaisesMessage(RuntimeError, "synthetic database failure"):
+            _database_call(fail)
+        self.assertEqual(close_connections.call_count, 4)
 
     def test_inventory_updates_only_the_certificate_tenant_server(self) -> None:
         enrollment, raw_token, _ = create_enrollment_token(

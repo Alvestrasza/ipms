@@ -2,7 +2,7 @@
 
 ## Scope
 
-IPMS 0.1.37 provides a development-grade portal bootstrap for Windows Agent
+IPMS 0.1.38 provides a development-grade portal bootstrap for Windows Agent
 0.1.30. The workflow is tenant-scoped, audited, connection-approved, and
 limited to a fixed installation operation. It is not a general-purpose remote
 execution feature.
@@ -90,6 +90,11 @@ remains untouched.
 Until the first inventory succeeds, Agent 0.1.30 retries enrollment every ten
 seconds. After enrollment, inventory returns to its five-minute interval and
 telemetry continues at ten-second intervals.
+
+The long-running Agent Gateway closes obsolete Django database connections
+before and after every synchronous PKI, inventory, and telemetry transaction.
+This prevents a PostgreSQL idle-session closure from leaving the asynchronous
+Gateway process alive but unable to validate later Agent certificates.
 
 The Agent executables statically link the MSVC runtime. Minimal Windows Server
 Core targets do not need a separately installed Visual C++ Redistributable.

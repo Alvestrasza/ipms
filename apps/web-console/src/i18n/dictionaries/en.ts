@@ -161,7 +161,7 @@ export const en = {
     tenants: "Tenants",
     administration: "Administration",
     soon: "Soon",
-    version: "IPMS v0.1.37 development",
+    version: "IPMS v0.1.38 development",
   },
   overview: {
     inventoryCurrent: "Current inventory",

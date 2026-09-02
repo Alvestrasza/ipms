@@ -6,7 +6,7 @@ PNPM_VERSION="11.24.0"
 REPOSITORY_URL="https://github.com/Alvestrasza/ipms.git"
 AGENT_PACKAGE_NAME="ipms-agent-windows-x64-0.1.30.zip"
 AGENT_PACKAGE_SHA256="7b1450412596d49f9835039d1b02d94045c3dcdf6bc344cb5eceb499bed70fe6"
-AGENT_PACKAGE_URL="https://github.com/Alvestrasza/ipms/releases/download/v0.1.37/${AGENT_PACKAGE_NAME}"
+AGENT_PACKAGE_URL="https://github.com/Alvestrasza/ipms/releases/download/v0.1.38/${AGENT_PACKAGE_NAME}"
 
 usage() {
     echo "Usage: sudo install-dev.sh --public-host HOST --management-source IP_OR_CIDR --agent-source IP_OR_CIDR [--agent-source IP_OR_CIDR ...] --release-ref COMMIT --tenant-slug SLUG --tenant-name NAME [--admin-username USER]" >&2
