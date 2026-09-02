@@ -56,6 +56,7 @@ class WindowsAgentDeploymentScriptTests(TestCase):
         self.assertIn("Remove-Item -LiteralPath $controlPanelNamespace", repair)
         self.assertIn("Remove-Item -LiteralPath $controlPanelClass", repair)
         self.assertIn("Remove-Item -LiteralPath $install", repair)
+        self.assertIn("Remove-Item -LiteralPath $enrollment", repair)
         self.assertIn("Stop-Service -Name 'IPMS Agent'", repair)
         self.assertIn("IPMS_INCOMPLETE_REPAIR=1", repair)
 

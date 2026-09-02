@@ -790,10 +790,16 @@ def _bounded_network_interfaces(value: object) -> list[dict]:
         transmit = interface.get("transmit_link_speed_bps")
         receive = interface.get("receive_link_speed_bps")
         dhcp = interface.get("dhcp_enabled")
-        if type(transmit) is not int or not 0 <= transmit <= 2**63 - 1:
+        if type(transmit) is not int or not 0 <= transmit <= 2**64 - 1:
             raise ValidationError("The Agent network transmit speed is invalid.")
-        if type(receive) is not int or not 0 <= receive <= 2**63 - 1:
+        if type(receive) is not int or not 0 <= receive <= 2**64 - 1:
             raise ValidationError("The Agent network receive speed is invalid.")
+        # Windows exposes unavailable link speeds as an unsigned 64-bit sentinel
+        # on some Hyper-V and teamed adapters. Preserve the interface while
+        # representing that unavailable measurement as zero in the signed JSON
+        # snapshot contract.
+        transmit = transmit if transmit <= 2**63 - 1 else 0
+        receive = receive if receive <= 2**63 - 1 else 0
         if type(dhcp) is not bool:
             raise ValidationError("The Agent network DHCP state is invalid.")
         addresses = interface.get("addresses")

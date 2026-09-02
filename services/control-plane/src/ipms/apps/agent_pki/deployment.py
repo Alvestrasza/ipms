@@ -190,6 +190,8 @@ def _incomplete_install_repair_script(known_owner_ids=()) -> str:
         "'Microsoft\\Windows\\Start Menu\\Programs\\IPMS Agent'; "
         "Remove-Item -LiteralPath $shortcut -Recurse -Force "
         "-ErrorAction SilentlyContinue; "
+        "Remove-Item -LiteralPath $enrollment -Force "
+        "-ErrorAction SilentlyContinue; "
         "$configurationChildren = @(Get-ChildItem -LiteralPath $configuration "
         "-Force -ErrorAction SilentlyContinue); "
         "if ($configurationChildren.Count -eq 0) "

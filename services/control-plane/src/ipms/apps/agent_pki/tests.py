@@ -395,6 +395,41 @@ class ManagedAgentPkiTests(TestCase):
         )
         self.assertEqual(server.agent_state, WindowsServer.AgentState.ONLINE)
         self.assertEqual(server.management_packs, ["windows-server-core"])
+
+        sentinel_inventory = {
+            "schema_version": "1",
+            "pack": "windows-server-core",
+            "agent_gateway_port": 9419,
+            "hostname": "windows-test",
+            "machine_type": "virtual",
+            "logical_processors": 4,
+            "memory_total_bytes": 8 * 1024**3,
+            "network_interfaces": [
+            {
+                "interface_id": "hyper-v-sentinel-interface",
+                "name": "vEthernet",
+                "description": "Synthetic Hyper-V adapter",
+                "mac_address": "00:11:22:33:44:55",
+                "status": "up",
+                "transmit_link_speed_bps": 2**64 - 1,
+                "receive_link_speed_bps": 2**64 - 1,
+                "dhcp_enabled": False,
+                "dns_suffix": "",
+                "addresses": [],
+                "gateways": [],
+                "dns_servers": [],
+            }
+            ],
+        }
+        confirm_inventory(
+            enrollment,
+            agent_version="0.1.30",
+            inventory=sentinel_inventory,
+        )
+        server.refresh_from_db()
+        self.assertEqual(server.network_interfaces[0]["transmit_link_speed_bps"], 0)
+        self.assertEqual(server.network_interfaces[0]["receive_link_speed_bps"], 0)
+
         with self.assertRaises(ValidationError):
             confirm_inventory(enrollment, agent_version="0.1.17", inventory={})
 

@@ -552,8 +552,10 @@ std::string network_interfaces_json() {
          << json_escape(utf8(adapter->Description == nullptr ? L"" : adapter->Description))
          << "\",\"mac_address\":\"" << mac_address(*adapter)
          << "\",\"status\":\"" << adapter_status(adapter->OperStatus)
-         << "\",\"transmit_link_speed_bps\":" << adapter->TransmitLinkSpeed
-         << ",\"receive_link_speed_bps\":" << adapter->ReceiveLinkSpeed
+         << "\",\"transmit_link_speed_bps\":"
+         << (adapter->TransmitLinkSpeed <= INT64_MAX ? adapter->TransmitLinkSpeed : 0)
+         << ",\"receive_link_speed_bps\":"
+         << (adapter->ReceiveLinkSpeed <= INT64_MAX ? adapter->ReceiveLinkSpeed : 0)
          << ",\"dhcp_enabled\":"
          << ((adapter->Flags & IP_ADAPTER_DHCP_ENABLED) != 0 ? "true" : "false")
          << ",\"dns_suffix\":\""
