@@ -2,7 +2,7 @@
 
 ## Scope
 
-IPMS 0.1.39 provides a development-grade portal bootstrap for Windows Agent
+IPMS 0.1.40 provides a development-grade portal bootstrap for Windows Agent
 0.1.31. The workflow is tenant-scoped, audited, connection-approved, and
 limited to a fixed installation operation. It is not a general-purpose remote
 execution feature.
@@ -17,8 +17,10 @@ execution feature.
 - The HTTP fallback requires NTLM and fail-closed WS-Man message encryption. It
   is not equivalent to HTTPS because it provides no TLS server identity.
 - The supplied account is a local administrator on the target.
-- No complete `IPMS Agent` installation is present. A narrowly identified
-  incomplete portal installation may be repaired automatically before retry.
+- A complete existing `IPMS Agent` must match a previously successful,
+  tenant-scoped portal deployment and its active device identity before it can
+  be updated. A narrowly identified incomplete portal installation may be
+  repaired automatically before retry.
 - The Appliance contains the pinned Windows Agent package whose SHA-256 digest
   matches its deployment configuration.
 
@@ -42,7 +44,9 @@ address is public, loopback, link-local, multicast, reserved, or unspecified.
    endpoint, review and explicitly approve the HTTP fallback warning.
 7. Keep the dialog open to see queued, running, succeeded, or failed state.
 8. After a successful installation, wait for the Agent to complete one-time
-   enrollment and submit its first inventory through the mTLS Gateway.
+   enrollment and submit its first inventory through the mTLS Gateway. An
+   existing managed Agent retains its device identity and reconnects after the
+   update service restart.
 
 The password is cleared from browser state after submission. The API never
 returns it or the username. The encrypted queue secret is destroyed after one
@@ -87,6 +91,15 @@ and removes only the known IPMS service, files, and registration before
 applying the pinned package. Any other existing installation fails closed and
 remains untouched.
 
+A complete Agent from a previously successful deployment follows a separate
+identity-preserving update path. IPMS requires the exact service path,
+`LocalSystem` identity, registered install location, bounded file set, and
+protected `device_uri` to match an active enrollment for the same tenant and
+endpoint. Only the hash-pinned program files are replaced. The device key,
+certificate, enrollment state, and local configuration remain untouched. The
+worker keeps a protected local backup and restores the previous program files
+if the updated service cannot be started.
+
 Until the first inventory succeeds, Agent 0.1.31 retries enrollment every ten
 seconds. After enrollment, inventory returns to its five-minute interval and
 telemetry continues at ten-second intervals.
@@ -104,6 +117,6 @@ credential. HTTPS certificate pins must still match. HTTP always uses NTLM with
 `encryption="always"`; disabling WS-Man message encryption is not supported.
 
 The current development package is hash-pinned but not Authenticode-signed and
-is not an MSI. Code signing, a signed installer, clean-VM acceptance, and a
-supported in-place upgrade remain release gates. The bounded development
-rollback and incomplete-install recovery do not replace those release gates.
+is not an MSI. Code signing, an identity-preserving MSI upgrade, and clean-VM
+acceptance remain release gates. The bounded development update, rollback, and
+incomplete-install recovery do not replace those release gates.

@@ -165,6 +165,9 @@ export function AddSystemDialog({
       remote_staging_failed: copy.remoteStagingFailed,
       remote_administrator_required: copy.remoteAdministratorRequired,
       remote_agent_already_installed: copy.remoteAgentAlreadyInstalled,
+      remote_existing_agent_assessment_failed:
+        copy.remoteExistingAgentAssessmentFailed,
+      remote_existing_agent_update_failed: copy.remoteExistingAgentUpdateFailed,
       remote_incomplete_agent_repair_failed:
         copy.remoteIncompleteAgentRepairFailed,
       remote_staging_directory_failed: copy.remoteStagingDirectoryFailed,

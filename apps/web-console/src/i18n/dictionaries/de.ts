@@ -119,6 +119,10 @@ export const de = {
       "Die Zugangsdaten wurden akzeptiert, aber die Remotesitzung besitzt kein erhöhtes lokales Administratortoken.",
     remoteAgentAlreadyInstalled:
       "Auf dem Windows-System ist bereits ein IPMS-Agent-Dienst vorhanden.",
+    remoteExistingAgentAssessmentFailed:
+      "Der vorhandene IPMS-Agent konnte nicht sicher als zuvor verwaltete Installation bestätigt werden.",
+    remoteExistingAgentUpdateFailed:
+      "Der vorhandene verwaltete IPMS-Agent konnte nicht aktualisiert werden. Die vorherigen Programmdateien wurden wiederhergestellt.",
     remoteIncompleteAgentRepairFailed:
       "Eine erkannte unvollständige IPMS-Agent-Installation konnte nicht sicher repariert werden.",
     remoteStagingDirectoryFailed:
@@ -173,7 +177,7 @@ export const de = {
     tenants: "Mandanten",
     administration: "Administration",
     soon: "Bald",
-    version: "IPMS v0.1.39 Entwicklung",
+    version: "IPMS v0.1.40 Entwicklung",
   },
   overview: {
     inventoryCurrent: "Aktuelles Inventar",

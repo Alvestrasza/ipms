@@ -18,7 +18,7 @@ from ipms.apps.discovery.certificates import (
 )
 
 from .deployment_secrets import load_deployment_secret
-from .models import WindowsAgentDeployment
+from .models import AgentEnrollment, WindowsAgentDeployment
 
 
 class AgentPackageUnavailableError(Exception):
@@ -201,6 +201,139 @@ def _incomplete_install_repair_script(known_owner_ids=()) -> str:
     )
 
 
+def _managed_existing_agent_assessment(managed_device_uris=()) -> str:
+    device_uris = ", ".join(
+        _powershell_single_quoted(device_uri) for device_uri in managed_device_uris
+    )
+    return (
+        "$ErrorActionPreference = 'Stop'; "
+        + _agent_path_assignments()
+        + f"$managedDeviceUris = @({device_uris}); "
+        + "$service = Get-CimInstance -ClassName Win32_Service "
+        "-Filter \"Name='IPMS Agent'\" -ErrorAction SilentlyContinue; "
+        "$allowedFiles = @('.ipms-deployment-owner', "
+        "'import-windows-agent-enrollment.ps1', "
+        "'install-windows-agent.ps1', 'ipms-agent-config.exe', "
+        "'ipms-agent.exe', 'ipms-agent-import-enrollment.ps1', "
+        "'ipms-agent-uninstall.ps1', 'uninstall-windows-agent.ps1'); "
+        "$unexpectedFiles = @(); "
+        "if (Test-Path -LiteralPath $install) { "
+        "$unexpectedFiles = @(Get-ChildItem -LiteralPath $install -Force | "
+        "Where-Object { $_.Name -notin $allowedFiles }) }; "
+        "$serviceBinary = if ($service) "
+        "{ ([string]$service.PathName).Trim().Trim([char]34) } else { '' }; "
+        "$uninstallRegistration = Get-ItemProperty -LiteralPath $uninstallKey "
+        "-ErrorAction SilentlyContinue; "
+        "$registrationMatches = $null -ne $uninstallRegistration -and "
+        "$uninstallRegistration.DisplayName -eq 'IPMS Agent' -and "
+        "([string]$uninstallRegistration.InstallLocation).TrimEnd([char]92) "
+        "-ieq $install.TrimEnd([char]92); "
+        "$stateDeviceUri = ''; "
+        "if (Test-Path -LiteralPath $state -PathType Leaf) { try { "
+        "$stateDocument = Get-Content -LiteralPath $state -Raw "
+        "-ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop; "
+        "$stateDeviceUri = [string]$stateDocument.device_uri "
+        "} catch { $stateDeviceUri = '' } }; "
+        "$stateMatches = $managedDeviceUris -contains $stateDeviceUri; "
+        "$isManagedExisting = $null -ne $service -and "
+        "$serviceBinary -ieq $agentBinary -and "
+        "$service.StartName -eq 'LocalSystem' -and "
+        "$service.State -in @('Stopped', 'Running') -and "
+        "(Test-Path -LiteralPath $install -PathType Container) -and "
+        "(Test-Path -LiteralPath $agentBinary -PathType Leaf) -and "
+        "$unexpectedFiles.Count -eq 0 -and $registrationMatches -and "
+        "$stateMatches; "
+        "Write-Output ('IPMS_AGENT_PRESENT=' + "
+        "$(if ($service) { '1' } else { '0' })); "
+        "Write-Output ('IPMS_EXISTING_UPDATE=' + "
+        "$(if ($isManagedExisting) { '1' } else { '0' }))"
+    )
+
+
+def _managed_existing_agent_update_script(
+    deployment_id,
+    *,
+    expected_device_uri: str,
+) -> str:
+    expected_uri = _powershell_single_quoted(expected_device_uri)
+    return (
+        _staging_path_assignment(deployment_id)
+        + "$ErrorActionPreference = 'Stop'; "
+        + _agent_path_assignments()
+        + f"$expectedDeviceUri = {expected_uri}; "
+        "$package = Join-Path $staging 'package'; "
+        "$backup = Join-Path $staging 'backup'; "
+        "$archive = Join-Path $staging 'agent.zip'; "
+        "$requiredFiles = @('import-windows-agent-enrollment.ps1', "
+        "'install-windows-agent.ps1', 'ipms-agent-config.exe', "
+        "'ipms-agent.exe', 'uninstall-windows-agent.ps1'); "
+        "$service = Get-CimInstance -ClassName Win32_Service "
+        "-Filter \"Name='IPMS Agent'\" -ErrorAction Stop; "
+        "$serviceBinary = ([string]$service.PathName).Trim().Trim([char]34); "
+        "if ($serviceBinary -ine $agentBinary -or "
+        "$service.StartName -ne 'LocalSystem') "
+        "{ throw 'The managed Agent service identity changed.' }; "
+        "$stateDocument = Get-Content -LiteralPath $state -Raw "
+        "-ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop; "
+        "if ([string]$stateDocument.device_uri -ne $expectedDeviceUri) "
+        "{ throw 'The managed Agent device identity changed.' }; "
+        "New-Item -ItemType Directory -Path $package -Force | Out-Null; "
+        "New-Item -ItemType Directory -Path $backup -Force | Out-Null; "
+        "Expand-Archive -LiteralPath $archive -DestinationPath $package; "
+        "foreach ($name in $requiredFiles) { "
+        "if (-not (Test-Path -LiteralPath (Join-Path $package $name) "
+        "-PathType Leaf)) { throw 'The Agent update package is incomplete.' } }; "
+        "$backupNames = @('import-windows-agent-enrollment.ps1', "
+        "'install-windows-agent.ps1', 'ipms-agent-config.exe', "
+        "'ipms-agent.exe', 'uninstall-windows-agent.ps1', "
+        "'ipms-agent-import-enrollment.ps1', 'ipms-agent-uninstall.ps1'); "
+        "foreach ($name in $backupNames) { "
+        "$source = Join-Path $install $name; "
+        "if (Test-Path -LiteralPath $source -PathType Leaf) { "
+        "Copy-Item -LiteralPath $source -Destination $backup -Force } }; "
+        "$wasRunning = $service.State -eq 'Running'; "
+        "try { "
+        "if ($wasRunning) { Stop-Service -Name 'IPMS Agent' -Force "
+        "-ErrorAction Stop; "
+        "$deadline = [DateTime]::UtcNow.AddSeconds(15); "
+        "do { Start-Sleep -Milliseconds 100; "
+        "$remaining = Get-Service -Name 'IPMS Agent' "
+        "-ErrorAction SilentlyContinue } "
+        "while ($remaining -and $remaining.Status -ne 'Stopped' -and "
+        "[DateTime]::UtcNow -lt $deadline); "
+        "if ($remaining -and $remaining.Status -ne 'Stopped') "
+        "{ throw 'The managed Agent stop timed out.' } }; "
+        "foreach ($name in $requiredFiles) { "
+        "Copy-Item -LiteralPath (Join-Path $package $name) "
+        "-Destination (Join-Path $install $name) -Force }; "
+        "Copy-Item -LiteralPath (Join-Path $package "
+        "'import-windows-agent-enrollment.ps1') "
+        "-Destination (Join-Path $install "
+        "'ipms-agent-import-enrollment.ps1') -Force; "
+        "Copy-Item -LiteralPath (Join-Path $package "
+        "'uninstall-windows-agent.ps1') "
+        "-Destination (Join-Path $install 'ipms-agent-uninstall.ps1') -Force; "
+        "& sc.exe config 'IPMS Agent' start= auto | Out-Null; "
+        "if ($LASTEXITCODE -ne 0) { throw 'The Agent start mode update failed.' }; "
+        "Start-Service -Name 'IPMS Agent' -ErrorAction Stop; "
+        "$running = Get-Service -Name 'IPMS Agent' -ErrorAction Stop; "
+        "if ($running.Status -ne 'Running') "
+        "{ throw 'The updated Agent did not start.' }; "
+        "Write-Output 'IPMS_EXISTING_AGENT_UPDATED=1' "
+        "} catch { "
+        "$updateFailure = $_; "
+        "Stop-Service -Name 'IPMS Agent' -Force -ErrorAction SilentlyContinue; "
+        "foreach ($name in $backupNames) { "
+        "$saved = Join-Path $backup $name; "
+        "if (Test-Path -LiteralPath $saved -PathType Leaf) { "
+        "Copy-Item -LiteralPath $saved -Destination "
+        "(Join-Path $install $name) -Force } }; "
+        "if ($wasRunning) { Start-Service -Name 'IPMS Agent' "
+        "-ErrorAction SilentlyContinue }; "
+        "throw $updateFailure }"
+    )
+
+
 def _deployment_rollback_script(deployment_id) -> str:
     owner = _powershell_single_quoted(str(deployment_id))
     return (
@@ -304,6 +437,7 @@ def _audit(
     outcome: str,
     error_code: str = "",
     recovered_incomplete_install: bool = False,
+    updated_existing_agent: bool = False,
 ):
     details = {
         "target_address": deployment.target_address,
@@ -315,6 +449,8 @@ def _audit(
         details["error_code"] = error_code
     if recovered_incomplete_install:
         details["recovered_incomplete_install"] = True
+    if updated_existing_agent:
+        details["updated_existing_agent"] = True
     AuditEvent.objects.create(
         tenant=deployment.tenant,
         actor="ipms-agent-deployment-worker",
@@ -332,6 +468,8 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
     staging_path_assignment = _staging_path_assignment(deployment.id)
     succeeded = False
     recovered_incomplete_install = False
+    updated_existing_agent = False
+    existing_enrollment = None
     error_code = ""
     stage = "initialization"
     try:
@@ -425,17 +563,43 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
             + "{ throw 'Administrative access is required.' }",
             failure_code="remote_administrator_required",
         )
-        _execute_checked(
-            client,
-            _incomplete_install_guard_script(known_owner_ids),
-            failure_code="remote_agent_already_installed",
+        existing_enrollment = (
+            AgentEnrollment.objects.filter(
+                tenant_id=deployment.tenant_id,
+                status=AgentEnrollment.Status.ACTIVE,
+                windows_deployment__target_address__iexact=(
+                    deployment.target_address
+                ),
+                windows_deployment__status=(
+                    WindowsAgentDeployment.Status.SUCCEEDED
+                ),
+            )
+            .order_by("-windows_deployment__completed_at")
+            .first()
         )
-        repair_output = _execute_checked(
-            client,
-            _incomplete_install_repair_script(known_owner_ids),
-            failure_code="remote_incomplete_agent_repair_failed",
-        )
-        recovered_incomplete_install = "IPMS_INCOMPLETE_REPAIR=1" in repair_output
+        if existing_enrollment is not None:
+            assessment = _execute_checked(
+                client,
+                _managed_existing_agent_assessment(
+                    (existing_enrollment.device_uri,)
+                ),
+                failure_code="remote_existing_agent_assessment_failed",
+            )
+            updated_existing_agent = "IPMS_EXISTING_UPDATE=1" in assessment
+        if not updated_existing_agent:
+            _execute_checked(
+                client,
+                _incomplete_install_guard_script(known_owner_ids),
+                failure_code="remote_agent_already_installed",
+            )
+            repair_output = _execute_checked(
+                client,
+                _incomplete_install_repair_script(known_owner_ids),
+                failure_code="remote_incomplete_agent_repair_failed",
+            )
+            recovered_incomplete_install = (
+                "IPMS_INCOMPLETE_REPAIR=1" in repair_output
+            )
         _execute_checked(
             client,
             staging_path_assignment
@@ -455,84 +619,103 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
 
         stage = "transfer"
         with tempfile.TemporaryDirectory(prefix="ipms-agent-deployment-") as temp:
-            enrollment_path = Path(temp) / "enrollment.json"
-            policy = deployment.tenant.agent_pki_policy
-            enrollment_path.write_text(
-                json.dumps(
-                    {
-                        "device_uri": deployment.enrollment.device_uri,
-                        "gateway_dns_name": policy.gateway_dns_name,
-                        "gateway_port": policy.gateway_port,
-                        "gateway_fingerprint_sha256": (
-                            policy.gateway_identity.fingerprint_sha256
-                        ),
-                        "bootstrap_token": secret["bootstrap_token"],
-                    },
-                    separators=(",", ":"),
-                ),
-                encoding="utf-8",
-            )
             remote_package = (
                 f"C:\\ProgramData\\Alvestrasza\\IPMS Agent\\Staging\\"
                 f"{deployment.id}\\agent.zip"
             )
-            remote_enrollment = (
-                f"C:\\ProgramData\\Alvestrasza\\IPMS Agent\\Staging\\"
-                f"{deployment.id}\\enrollment.json"
-            )
             client.copy(str(artifact), remote_package)
-            client.copy(str(enrollment_path), remote_enrollment)
+            if not updated_existing_agent:
+                enrollment_path = Path(temp) / "enrollment.json"
+                policy = deployment.tenant.agent_pki_policy
+                enrollment_path.write_text(
+                    json.dumps(
+                        {
+                            "device_uri": deployment.enrollment.device_uri,
+                            "gateway_dns_name": policy.gateway_dns_name,
+                            "gateway_port": policy.gateway_port,
+                            "gateway_fingerprint_sha256": (
+                                policy.gateway_identity.fingerprint_sha256
+                            ),
+                            "bootstrap_token": secret["bootstrap_token"],
+                        },
+                        separators=(",", ":"),
+                    ),
+                    encoding="utf-8",
+                )
+                remote_enrollment = (
+                    "C:\\ProgramData\\Alvestrasza\\IPMS Agent\\Staging\\"
+                    f"{deployment.id}\\enrollment.json"
+                )
+                client.copy(str(enrollment_path), remote_enrollment)
 
-        stage = "install"
-        owner = _powershell_single_quoted(str(deployment.id))
-        extract_script = staging_path_assignment + (
-            "$ErrorActionPreference = 'Stop'; "
-            "$install = Join-Path $env:ProgramFiles 'Alvestrasza\\IPMS Agent'; "
-            "if (Test-Path -LiteralPath $install) "
-            "{ throw 'The IPMS Agent directory already exists.' }; "
-            "New-Item -ItemType Directory -Path $install -Force | Out-Null; "
-            f"Set-Content -LiteralPath (Join-Path $install '.ipms-deployment-owner') "
-            f"-Value {owner} -NoNewline; "
-            "Expand-Archive -LiteralPath (Join-Path $staging 'agent.zip') "
-            "-DestinationPath $install"
-        )
-        _execute_checked(
-            client,
-            extract_script,
-            failure_code="remote_package_extract_failed",
-        )
-        _execute_checked(
-            client,
-            "$ErrorActionPreference = 'Stop'; "
-            "$install = Join-Path $env:ProgramFiles 'Alvestrasza\\IPMS Agent'; "
-            "& (Join-Path $install 'install-windows-agent.ps1') "
-            "-BinaryPath (Join-Path $install 'ipms-agent.exe') "
-            "-ConfigBinaryPath (Join-Path $install 'ipms-agent-config.exe') "
-            "-StartMode Automatic -ShellIntegration Auto",
-            failure_code="remote_service_install_failed",
-        )
-        stage = "enrollment"
-        _execute_checked(
-            client,
-            staging_path_assignment
-            + "$ErrorActionPreference = 'Stop'; "
-            + "$install = Join-Path $env:ProgramFiles 'Alvestrasza\\IPMS Agent'; "
-            + "& (Join-Path $install 'import-windows-agent-enrollment.ps1') "
-            + "-EnrollmentDocument (Join-Path $staging 'enrollment.json')",
-            failure_code="remote_enrollment_import_failed",
-        )
-        stage = "start"
-        _execute_checked(
-            client,
-            "$ErrorActionPreference = 'Stop'; "
-            "Start-Service -Name 'IPMS Agent'; "
-            "$service = Get-Service -Name 'IPMS Agent'; "
-            "if ($service.Status -ne 'Running') { throw 'Agent did not start.' }; "
-            "$install = Join-Path $env:ProgramFiles 'Alvestrasza\\IPMS Agent'; "
-            "Remove-Item -LiteralPath (Join-Path $install '.ipms-deployment-owner') "
-            "-Force",
-            failure_code="remote_service_start_failed",
-        )
+        if updated_existing_agent:
+            stage = "update"
+            _execute_checked(
+                client,
+                _managed_existing_agent_update_script(
+                    deployment.id,
+                    expected_device_uri=existing_enrollment.device_uri,
+                ),
+                failure_code="remote_existing_agent_update_failed",
+            )
+        else:
+            stage = "install"
+            owner = _powershell_single_quoted(str(deployment.id))
+            extract_script = staging_path_assignment + (
+                "$ErrorActionPreference = 'Stop'; "
+                "$install = Join-Path $env:ProgramFiles "
+                "'Alvestrasza\\IPMS Agent'; "
+                "if (Test-Path -LiteralPath $install) "
+                "{ throw 'The IPMS Agent directory already exists.' }; "
+                "New-Item -ItemType Directory -Path $install -Force | Out-Null; "
+                "Set-Content -LiteralPath (Join-Path $install "
+                "'.ipms-deployment-owner') "
+                f"-Value {owner} -NoNewline; "
+                "Expand-Archive -LiteralPath (Join-Path $staging 'agent.zip') "
+                "-DestinationPath $install"
+            )
+            _execute_checked(
+                client,
+                extract_script,
+                failure_code="remote_package_extract_failed",
+            )
+            _execute_checked(
+                client,
+                "$ErrorActionPreference = 'Stop'; "
+                "$install = Join-Path $env:ProgramFiles "
+                "'Alvestrasza\\IPMS Agent'; "
+                "& (Join-Path $install 'install-windows-agent.ps1') "
+                "-BinaryPath (Join-Path $install 'ipms-agent.exe') "
+                "-ConfigBinaryPath (Join-Path $install 'ipms-agent-config.exe') "
+                "-StartMode Automatic -ShellIntegration Auto",
+                failure_code="remote_service_install_failed",
+            )
+            stage = "enrollment"
+            _execute_checked(
+                client,
+                staging_path_assignment
+                + "$ErrorActionPreference = 'Stop'; "
+                + "$install = Join-Path $env:ProgramFiles "
+                + "'Alvestrasza\\IPMS Agent'; "
+                + "& (Join-Path $install "
+                + "'import-windows-agent-enrollment.ps1') "
+                + "-EnrollmentDocument (Join-Path $staging 'enrollment.json')",
+                failure_code="remote_enrollment_import_failed",
+            )
+            stage = "start"
+            _execute_checked(
+                client,
+                "$ErrorActionPreference = 'Stop'; "
+                "Start-Service -Name 'IPMS Agent'; "
+                "$service = Get-Service -Name 'IPMS Agent'; "
+                "if ($service.Status -ne 'Running') "
+                "{ throw 'Agent did not start.' }; "
+                "$install = Join-Path $env:ProgramFiles "
+                "'Alvestrasza\\IPMS Agent'; "
+                "Remove-Item -LiteralPath (Join-Path $install "
+                "'.ipms-deployment-owner') -Force",
+                failure_code="remote_service_start_failed",
+            )
         succeeded = True
     except Exception as exc:  # Safe error codes only; never persist remote output.
         error_code = _safe_error_code(exc, stage=stage)
@@ -560,8 +743,13 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
             error_code=error_code,
             completed_at=timezone.now(),
         )
-        if not succeeded:
+        if not succeeded or updated_existing_agent:
             deployment.enrollment.bootstrap_tokens.filter(used_at__isnull=True).delete()
+        if succeeded and updated_existing_agent:
+            AgentEnrollment.objects.filter(
+                id=deployment.enrollment_id,
+                status=AgentEnrollment.Status.PENDING,
+            ).update(status=AgentEnrollment.Status.REVOKED)
         if secret_row is not None:
             secret_row.delete()
         _audit(
@@ -573,6 +761,7 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
             ),
             error_code=error_code,
             recovered_incomplete_install=recovered_incomplete_install,
+            updated_existing_agent=updated_existing_agent,
         )
 
 

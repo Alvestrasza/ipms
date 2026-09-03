@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from ipms.apps.audit.models import AuditEvent
 from ipms.apps.discovery.certificates import (
@@ -18,12 +19,15 @@ from ipms.apps.tenancy.models import Tenant, TenantMembership
 from .deployment import (
     _incomplete_install_assessment,
     _incomplete_install_repair_script,
+    _managed_existing_agent_assessment,
+    _managed_existing_agent_update_script,
     _staging_path_assignment,
     process_deployment,
 )
 from .deployment_approval import create_windows_deployment_approval
 from .deployment_secrets import load_deployment_secret, store_deployment_secret
 from .models import (
+    AgentEnrollment,
     AgentEnrollmentToken,
     WindowsAgentDeployment,
     WindowsAgentDeploymentSecret,
@@ -59,6 +63,27 @@ class WindowsAgentDeploymentScriptTests(TestCase):
         self.assertIn("Remove-Item -LiteralPath $enrollment", repair)
         self.assertIn("Stop-Service -Name 'IPMS Agent'", repair)
         self.assertIn("IPMS_INCOMPLETE_REPAIR=1", repair)
+
+    def test_existing_update_requires_managed_identity_and_local_system(self) -> None:
+        device_uri = "urn:ipms:agent:11111111-1111-1111-1111-111111111111"
+        assessment = _managed_existing_agent_assessment((device_uri,))
+        update = _managed_existing_agent_update_script(
+            "22222222-2222-2222-2222-222222222222",
+            expected_device_uri=device_uri,
+        )
+
+        self.assertIn(device_uri, assessment)
+        self.assertIn("$service.StartName -eq 'LocalSystem'", assessment)
+        self.assertIn("$serviceBinary -ieq $agentBinary", assessment)
+        self.assertIn("$stateMatches", assessment)
+        self.assertIn("$unexpectedFiles.Count -eq 0", assessment)
+        self.assertIn("$registrationMatches", assessment)
+        self.assertIn("IPMS_EXISTING_UPDATE", assessment)
+        self.assertIn("$expectedDeviceUri", update)
+        self.assertIn("Expand-Archive", update)
+        self.assertIn("$backup", update)
+        self.assertIn("throw $updateFailure", update)
+        self.assertIn("Start-Service -Name 'IPMS Agent'", update)
 
 
 class WindowsAgentDeploymentApiTests(TestCase):
@@ -579,6 +604,82 @@ class WindowsAgentDeploymentWorkerTests(TestCase):
         self.assertEqual(self.deployment.status, WindowsAgentDeployment.Status.SUCCEEDED)
         event = AuditEvent.objects.get(action="agent.windows_deployment.complete")
         self.assertTrue(event.details["recovered_incomplete_install"])
+
+    @patch("ipms.apps.agent_pki.deployment.request_windows_http_probe")
+    @patch("pypsrp.client.Client")
+    def test_existing_managed_agent_is_updated_without_reenrollment(
+        self,
+        client_type,
+        http_probe,
+    ):
+        self.deployment.transport = WindowsAgentDeployment.Transport.HTTP
+        self.deployment.target_port = 5985
+        self.deployment.certificate_trust_mode = (
+            WindowsAgentDeployment.CertificateTrustMode.NONE
+        )
+        self.deployment.certificate_fingerprint_sha256 = ""
+        self.deployment.save(
+            update_fields=(
+                "transport",
+                "target_port",
+                "certificate_trust_mode",
+                "certificate_fingerprint_sha256",
+            )
+        )
+        existing = AgentEnrollment.objects.create(
+            tenant=self.tenant,
+            device_uri="urn:ipms:agent:11111111-1111-1111-1111-111111111111",
+            display_name="Existing managed Agent",
+            status=AgentEnrollment.Status.ACTIVE,
+        )
+        WindowsAgentDeployment.objects.create(
+            tenant=self.tenant,
+            enrollment=existing,
+            display_name="Existing managed Agent",
+            target_address=self.deployment.target_address,
+            target_port=5985,
+            transport=WindowsAgentDeployment.Transport.HTTP,
+            certificate_trust_mode=(
+                WindowsAgentDeployment.CertificateTrustMode.NONE
+            ),
+            status=WindowsAgentDeployment.Status.SUCCEEDED,
+            requested_by="test-operator",
+            completed_at=timezone.now(),
+        )
+        http_probe.return_value = WindowsHttpObservation(reachable=True)
+        client = Mock()
+        client.execute_ps.side_effect = [
+            ("", [], False),
+            ("IPMS_AGENT_PRESENT=1\nIPMS_EXISTING_UPDATE=1", [], False),
+            ("", [], False),
+            ("", [], False),
+            ("IPMS_EXISTING_AGENT_UPDATED=1", [], False),
+            ("", [], False),
+        ]
+        client_type.return_value = client
+
+        with override_settings(
+            AGENT_WINDOWS_PACKAGE_PATH=str(self.package),
+            AGENT_WINDOWS_PACKAGE_SHA256=self.package_digest,
+        ):
+            process_deployment(self.deployment)
+
+        self.deployment.refresh_from_db()
+        self.deployment.enrollment.refresh_from_db()
+        existing.refresh_from_db()
+        self.assertEqual(
+            self.deployment.status,
+            WindowsAgentDeployment.Status.SUCCEEDED,
+        )
+        self.assertEqual(client.copy.call_count, 1)
+        self.assertEqual(
+            self.deployment.enrollment.status,
+            AgentEnrollment.Status.REVOKED,
+        )
+        self.assertEqual(existing.status, AgentEnrollment.Status.ACTIVE)
+        self.assertFalse(AgentEnrollmentToken.objects.exists())
+        event = AuditEvent.objects.get(action="agent.windows_deployment.complete")
+        self.assertTrue(event.details["updated_existing_agent"])
 
     @patch("ipms.apps.agent_pki.deployment.request_windows_http_probe")
     @patch("pypsrp.client.Client")

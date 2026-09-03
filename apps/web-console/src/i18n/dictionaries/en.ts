@@ -107,6 +107,10 @@ export const en = {
       "The credentials were accepted, but the remote session does not have an elevated local administrator token.",
     remoteAgentAlreadyInstalled:
       "An IPMS Agent service already exists on the Windows system.",
+    remoteExistingAgentAssessmentFailed:
+      "The existing IPMS Agent could not be safely confirmed as a previously managed installation.",
+    remoteExistingAgentUpdateFailed:
+      "The existing managed IPMS Agent could not be updated. The previous program files were restored.",
     remoteIncompleteAgentRepairFailed:
       "A detected incomplete IPMS Agent installation could not be repaired safely.",
     remoteStagingDirectoryFailed:
@@ -161,7 +165,7 @@ export const en = {
     tenants: "Tenants",
     administration: "Administration",
     soon: "Soon",
-    version: "IPMS v0.1.39 development",
+    version: "IPMS v0.1.40 development",
   },
   overview: {
     inventoryCurrent: "Current inventory",
