@@ -169,7 +169,7 @@ export const en = {
     infrastructure: "Infrastructure",
     agents: "Agents",
     soon: "Soon",
-    version: "IPMS v0.1.47 development",
+    version: "IPMS v0.1.48 development",
   },
   agentAdministration: {
     title: "Agent administration",

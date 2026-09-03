@@ -1,4 +1,5 @@
 import os
+import re
 
 from django.core.exceptions import ImproperlyConfigured
 
@@ -37,3 +38,21 @@ DATABASES = {
     }
 }
 AGENT_PKI_MASTER_KEY = required_environment("IPMS_AGENT_PKI_MASTER_KEY")
+AGENT_WINDOWS_PACKAGE_PATH = required_environment(
+    "IPMS_AGENT_WINDOWS_PACKAGE_PATH"
+)
+AGENT_WINDOWS_PACKAGE_SHA256 = required_environment(
+    "IPMS_AGENT_WINDOWS_PACKAGE_SHA256"
+).lower()
+if not re.fullmatch(r"[0-9a-f]{64}", AGENT_WINDOWS_PACKAGE_SHA256):
+    raise ImproperlyConfigured(
+        "IPMS_AGENT_WINDOWS_PACKAGE_SHA256 must be a SHA-256 digest."
+    )
+AGENT_WINDOWS_VERSION = required_environment("IPMS_AGENT_WINDOWS_VERSION")
+if not re.fullmatch(
+    r"(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){2}",
+    AGENT_WINDOWS_VERSION,
+):
+    raise ImproperlyConfigured(
+        "IPMS_AGENT_WINDOWS_VERSION must be a three-part numeric version."
+    )

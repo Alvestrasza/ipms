@@ -1,6 +1,6 @@
 # Agent Lifecycle Administration
 
-IPMS 0.1.47 provides the tenant-administrator Agent inventory at
+IPMS 0.1.48 provides the tenant-administrator Agent inventory at
 **Administration > Infrastructure > Agents**. It displays FQDN, derived contact
 state, operating system, installed Agent version, target version, compliance,
 last contact, and any active lifecycle job.
@@ -63,6 +63,13 @@ The Agent downloads only the binary assigned to its active job. Both the Agent
 and the updater verify its SHA-256 digest. The updater retains a rollback copy
 until the new service starts. ProgramData identity and configuration remain
 unchanged.
+
+The Agent Gateway receives the same pinned package path, package digest, and
+target version as the Control Plane. A deployment-time contract test protects
+this shared configuration boundary. This prevents an accepted assignment from
+remaining in `delivered` because the Gateway cannot resolve the approved
+artifact. Existing `delivered` jobs are offered again and continue without
+being recreated after the corrected Gateway restarts.
 
 ## Uninstall
 
