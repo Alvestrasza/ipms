@@ -2,7 +2,7 @@
 
 - Status: Accepted for the development foundation
 - Decision date: 2026-09-03
-- Application version: 0.1.48
+- Application version: 0.1.49
 - First lifecycle-capable Windows Agent: 0.1.32
 
 ## Context
@@ -56,6 +56,14 @@ The sequence is:
 Only one active lifecycle job is allowed per enrollment. Job state is explicit:
 `queued`, `delivered`, `running`, `succeeded`, `failed`, or `cancelled`.
 
+Starting with Agent 0.1.34, the running Agent copies its own authenticated
+binary to the fixed job staging directory and launches that copy in a compiled
+updater mode. The runner waits for both the Service Control Manager state and
+the prior service process handle before replacement, applies bounded retries
+only to transient Windows file-lock errors, and reports or rolls back every
+reachable failure path. This keeps the updater implementation version-aligned
+with the Agent after the one-time 0.1.33-to-0.1.34 transition.
+
 ## Security properties
 
 - tenant and role checks are enforced by the Django API;
@@ -76,7 +84,7 @@ Only one active lifecycle job is allowed per enrollment. Job state is explicit:
 
 ## Development limitations
 
-Version 0.1.48 proves the lifecycle control path and the identity-preserving
+Version 0.1.49 proves the lifecycle control path and the identity-preserving
 legacy bootstrap path but is not a customer release
 channel. The current Windows binaries are not Authenticode-signed, the
 assignment is authenticated by mTLS rather than by a separately signed update

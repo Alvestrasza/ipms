@@ -29,7 +29,7 @@
 namespace {
 using Microsoft::WRL::ComPtr;
 constexpr std::size_t k_max_document_bytes = 65'536;
-constexpr wchar_t k_agent_version[] = L"0.1.33";
+constexpr wchar_t k_agent_version[] = L"0.1.34";
 constexpr std::size_t k_max_artifact_bytes = 64 * 1024 * 1024;
 
 struct internet_closer { void operator()(void* handle) const { if (handle) WinHttpCloseHandle(handle); } };
@@ -306,7 +306,7 @@ struct http_response { DWORD status{}; std::string body; };
 
 http_response post_json(const std::wstring& hostname, std::uint16_t port, const std::wstring& path,
                         const std::string& body, const std::string* pin, PCCERT_CONTEXT client_certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.1.33", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.1.34", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent HTTP session could not be created.");
   WinHttpSetTimeouts(session.get(), 10'000, 10'000, 30'000, 30'000);
@@ -368,7 +368,7 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
 }
 
 http_response post_binary(const state& identity, const std::string& body, PCCERT_CONTEXT certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.1.33", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.1.34", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent artifact session could not be created.");
   WinHttpSetTimeouts(session.get(), 10'000, 10'000, 60'000, 60'000);
@@ -499,10 +499,13 @@ std::filesystem::path executable_directory() {
 void launch_updater(const std::string& job_id, const std::string& action,
                     const std::string& target_version, const std::string& expected_sha256,
                     const std::filesystem::path& staged_binary) {
-  const auto updater = executable_directory() / L"ipms-agent-updater.exe";
-  if (!std::filesystem::is_regular_file(updater))
-    throw std::runtime_error("The fixed Agent updater is unavailable.");
-  std::wstring command = L"\"" + updater.wstring() + L"\" --job \"" + wide(job_id) +
+  const auto source = executable_directory() / L"ipms-agent.exe";
+  const auto update_directory = data_directory() / L"updates" / wide(job_id);
+  std::filesystem::create_directories(update_directory);
+  const auto updater = update_directory / L"ipms-agent-update-runner.exe";
+  if (!CopyFileW(source.c_str(), updater.c_str(), FALSE))
+    throw std::runtime_error("The fixed Agent updater could not be staged.");
+  std::wstring command = L"\"" + updater.wstring() + L"\" --apply-lifecycle-update --job \"" + wide(job_id) +
                          L"\" --action \"" + wide(action) + L"\" --version \"" +
                          wide(target_version.empty() ? "none" : target_version) + L"\" --sha256 \"" +
                          wide(expected_sha256.empty() ? "none" : expected_sha256) + L"\" --staged \"" +

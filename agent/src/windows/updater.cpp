@@ -1,5 +1,8 @@
+#include "ipms/agent/windows_updater.hpp"
+
 #include <windows.h>
 #include <bcrypt.h>
+#include <shellapi.h>
 
 #include <algorithm>
 #include <array>
@@ -17,6 +20,10 @@
 namespace {
 struct service_closer { void operator()(SC_HANDLE value) const { if (value) CloseServiceHandle(value); } };
 using service_handle = std::unique_ptr<std::remove_pointer_t<SC_HANDLE>, service_closer>;
+struct handle_closer { void operator()(void* value) const { if (value) CloseHandle(value); } };
+using win_handle = std::unique_ptr<void, handle_closer>;
+struct local_closer { void operator()(wchar_t** value) const { if (value) LocalFree(value); } };
+using local_arguments = std::unique_ptr<wchar_t*, local_closer>;
 
 bool safe_value(const std::wstring& value, std::size_t maximum = 64) {
   return !value.empty() && value.size() <= maximum &&
@@ -46,19 +53,23 @@ std::array<unsigned, 3> version_tuple(const std::wstring& value) {
   return result;
 }
 
-std::wstring argument(int argc, wchar_t** argv, const std::wstring& name) {
-  for (int index = 1; index + 1 < argc; index += 2) {
-    if (argv[index] == name) return argv[index + 1];
-  }
-  throw std::runtime_error("A fixed updater argument is missing.");
-}
-
 std::filesystem::path executable_directory() {
   std::wstring buffer(32'768, L'\0');
   const auto length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
   if (length == 0 || length >= buffer.size()) throw std::runtime_error("The updater path is unavailable.");
   buffer.resize(length);
   return std::filesystem::path(buffer).parent_path();
+}
+
+std::filesystem::path agent_installation_directory() {
+  wchar_t program_files[32'768]{};
+  const auto length = GetEnvironmentVariableW(
+      L"ProgramFiles",
+      program_files,
+      static_cast<DWORD>(std::size(program_files)));
+  if (length == 0 || length >= std::size(program_files))
+    throw std::runtime_error("The Agent installation root is unavailable.");
+  return std::filesystem::path(program_files) / L"Alvestrasza" / L"IPMS Agent";
 }
 
 std::filesystem::path data_directory() {
@@ -125,6 +136,17 @@ service_handle open_service(DWORD access) {
 
 void stop_service() {
   auto service = open_service(SERVICE_STOP | SERVICE_QUERY_STATUS);
+  SERVICE_STATUS_PROCESS initial_status{};
+  DWORD initial_bytes = 0;
+  if (!QueryServiceStatusEx(service.get(), SC_STATUS_PROCESS_INFO,
+                            reinterpret_cast<BYTE*>(&initial_status),
+                            sizeof(initial_status), &initial_bytes)) {
+    throw std::runtime_error("The Agent service state could not be read.");
+  }
+  win_handle process;
+  if (initial_status.dwProcessId != 0) {
+    process.reset(OpenProcess(SYNCHRONIZE, FALSE, initial_status.dwProcessId));
+  }
   SERVICE_STATUS status{};
   if (!ControlService(service.get(), SERVICE_CONTROL_STOP, &status) && GetLastError() != ERROR_SERVICE_NOT_ACTIVE)
     throw std::runtime_error("The Agent service could not be stopped.");
@@ -134,7 +156,12 @@ void stop_service() {
     if (!QueryServiceStatusEx(service.get(), SC_STATUS_PROCESS_INFO,
                               reinterpret_cast<BYTE*>(&process_status), sizeof(process_status), &bytes))
       throw std::runtime_error("The Agent service state could not be read.");
-    if (process_status.dwCurrentState == SERVICE_STOPPED) return;
+    if (process_status.dwCurrentState == SERVICE_STOPPED) {
+      if (process && WaitForSingleObject(process.get(), 30'000) != WAIT_OBJECT_0) {
+        throw std::runtime_error("The Agent process did not exit in time.");
+      }
+      return;
+    }
     Sleep(250);
   }
   throw std::runtime_error("The Agent service did not stop in time.");
@@ -144,6 +171,50 @@ void start_service() {
   auto service = open_service(SERVICE_START | SERVICE_QUERY_STATUS);
   if (!StartServiceW(service.get(), 0, nullptr) && GetLastError() != ERROR_SERVICE_ALREADY_RUNNING)
     throw std::runtime_error("The Agent service could not be started.");
+  for (unsigned attempt = 0; attempt < 120; ++attempt) {
+    SERVICE_STATUS_PROCESS process_status{};
+    DWORD bytes = 0;
+    if (!QueryServiceStatusEx(service.get(), SC_STATUS_PROCESS_INFO,
+                              reinterpret_cast<BYTE*>(&process_status), sizeof(process_status), &bytes))
+      throw std::runtime_error("The Agent service state could not be read.");
+    if (process_status.dwCurrentState == SERVICE_RUNNING) return;
+    if (process_status.dwCurrentState == SERVICE_STOPPED)
+      throw std::runtime_error("The Agent service stopped during startup.");
+    Sleep(250);
+  }
+  throw std::runtime_error("The Agent service did not start in time.");
+}
+
+bool retryable_file_error(DWORD error) {
+  return error == ERROR_ACCESS_DENIED || error == ERROR_SHARING_VIOLATION ||
+         error == ERROR_LOCK_VIOLATION;
+}
+
+void replace_file_with_retry(
+    const std::filesystem::path& source,
+    const std::filesystem::path& destination) {
+  for (unsigned attempt = 0; attempt < 40; ++attempt) {
+    if (MoveFileExW(source.c_str(), destination.c_str(),
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+      return;
+    }
+    const auto error = GetLastError();
+    if (!retryable_file_error(error)) break;
+    Sleep(250);
+  }
+  throw std::runtime_error("The Agent binary could not be replaced.");
+}
+
+void copy_file_with_retry(
+    const std::filesystem::path& source,
+    const std::filesystem::path& destination) {
+  for (unsigned attempt = 0; attempt < 40; ++attempt) {
+    if (CopyFileW(source.c_str(), destination.c_str(), FALSE)) return;
+    const auto error = GetLastError();
+    if (!retryable_file_error(error)) break;
+    Sleep(250);
+  }
+  throw std::runtime_error("The Agent binary could not be restored.");
 }
 
 void write_result(const std::wstring& job, const std::string& result, const std::string& code) {
@@ -221,46 +292,70 @@ void remove_registration() {
 }
 }  // namespace
 
-int wmain(int argc, wchar_t** argv) {
+namespace ipms::agent::windows {
+int run_windows_updater() {
+  int argc = 0;
+  local_arguments arguments(CommandLineToArgvW(GetCommandLineW(), &argc));
+  if (!arguments) return 1;
+  wchar_t** argv = arguments.get();
+  std::wstring job;
+  std::wstring action;
+  bool validated = false;
   try {
-    if (argc != 11) throw std::runtime_error("The fixed updater invocation is invalid.");
-    const auto job = argument(argc, argv, L"--job");
-    const auto action = argument(argc, argv, L"--action");
-    const auto version = argument(argc, argv, L"--version");
-    const auto expected_sha256 = argument(argc, argv, L"--sha256");
-    const auto staged = std::filesystem::path(argument(argc, argv, L"--staged"));
+    const int offset =
+        argc >= 2 && std::wstring_view(argv[1]) == L"--apply-lifecycle-update" ? 2 : 1;
+    if (argc != offset + 10 || std::wstring_view(argv[offset]) != L"--job" ||
+        std::wstring_view(argv[offset + 2]) != L"--action" ||
+        std::wstring_view(argv[offset + 4]) != L"--version" ||
+        std::wstring_view(argv[offset + 6]) != L"--sha256" ||
+        std::wstring_view(argv[offset + 8]) != L"--staged") {
+      throw std::runtime_error("The fixed updater invocation is invalid.");
+    }
+    job = argv[offset + 1];
+    action = argv[offset + 3];
+    const std::wstring version = argv[offset + 5];
+    const std::wstring expected_sha256 = argv[offset + 7];
+    const auto staged = std::filesystem::path(argv[offset + 9]);
     if (!safe_value(job) || (action != L"update" && action != L"uninstall"))
       throw std::runtime_error("The fixed updater invocation is invalid.");
-    const auto install = executable_directory();
+    validated = true;
+    const auto install = agent_installation_directory();
     const auto agent = install / L"ipms-agent.exe";
-    stop_service();
     if (action == L"update") {
       if (!safe_value(version) || expected_sha256.size() != 64 ||
           !std::all_of(expected_sha256.begin(), expected_sha256.end(), [](wchar_t c) { return std::iswxdigit(c); }))
         throw std::runtime_error("The fixed update policy is invalid.");
-      if (version_tuple(version) <= version_tuple(installed_version()))
+      const auto source_version = installed_version();
+      if (version_tuple(version) <= version_tuple(source_version))
         throw std::runtime_error("The fixed update policy rejected a non-monotonic version.");
       if (file_sha256(staged) != narrow_ascii(expected_sha256))
         throw std::runtime_error("The staged Agent binary failed verification.");
       const auto backup = install / L"ipms-agent.exe.rollback";
-      if (!CopyFileW(agent.c_str(), backup.c_str(), FALSE))
+      const auto current_digest = file_sha256(agent);
+      if (std::filesystem::is_regular_file(backup)) {
+        if (file_sha256(backup) != current_digest)
+          throw std::runtime_error("The existing Agent rollback binary is invalid.");
+      } else if (!CopyFileW(agent.c_str(), backup.c_str(), TRUE)) {
         throw std::runtime_error("The current Agent binary could not be backed up.");
-      if (!MoveFileExW(staged.c_str(), agent.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-        throw std::runtime_error("The Agent binary could not be replaced.");
+      }
+      stop_service();
       try {
+        replace_file_with_retry(staged, agent);
         set_display_version(version);
         write_result(job, "succeeded", "updated");
         start_service();
         std::error_code ignored;
         std::filesystem::remove(backup, ignored);
       } catch (...) {
-        MoveFileExW(backup.c_str(), agent.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
-        write_result(job, "failed", "update_rolled_back");
-        start_service();
-        throw;
+        try { copy_file_with_retry(backup, agent); } catch (...) {}
+        try { set_display_version(source_version); } catch (...) {}
+        try { write_result(job, "failed", "update_rolled_back"); } catch (...) {}
+        try { start_service(); } catch (...) {}
+        return 1;
       }
       return 0;
     }
+    stop_service();
     remove_registration();
     for (const auto* name : {L"ipms-agent-config.exe", L"ipms-agent-import-enrollment.ps1",
                              L"ipms-agent-uninstall.ps1", L"install-windows-agent.ps1"}) {
@@ -275,6 +370,11 @@ int wmain(int argc, wchar_t** argv) {
       MoveFileExW(updater_path, nullptr, MOVEFILE_DELAY_UNTIL_REBOOT);
     return 0;
   } catch (...) {
+    if (validated && action == L"update") {
+      try { write_result(job, "failed", "update_failed"); } catch (...) {}
+      try { start_service(); } catch (...) {}
+    }
     return 1;
   }
 }
+}  // namespace ipms::agent::windows

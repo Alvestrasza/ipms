@@ -3,7 +3,7 @@
 ## Scope and current status
 
 This runbook covers the native C++20 IPMS Agent for Windows Server and Windows
-test systems. Agent build `0.1.33` provides:
+test systems. Agent build `0.1.34` provides:
 
 - the `IPMS Agent` Windows service, installed as `LocalSystem`;
 - the `windows-server-core` and `hyper-v-host` built-in read-only Management
