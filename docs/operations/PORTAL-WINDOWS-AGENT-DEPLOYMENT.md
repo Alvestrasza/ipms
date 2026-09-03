@@ -2,8 +2,8 @@
 
 ## Scope
 
-IPMS 0.1.46 provides a development-grade portal bootstrap for Windows Agent
-0.1.32. The workflow is tenant-scoped, audited, connection-approved, and
+IPMS 0.1.47 provides a development-grade portal bootstrap for Windows Agent
+0.1.33. The workflow is tenant-scoped, audited, connection-approved, and
 limited to a fixed installation operation. It is not a general-purpose remote
 execution feature.
 
@@ -77,7 +77,7 @@ security identifiers so paths with spaces and localized group names behave
 consistently. Administrator-token, existing-service, directory-creation, and
 ACL failures have separate bounded error codes.
 
-Agent 0.1.32 also uses well-known security identifiers inside the package. It
+Agent 0.1.33 also uses well-known security identifiers inside the package. It
 detects Windows Server Core and skips Start Menu and Control Panel shell
 integration while retaining the service and uninstall registration. A failed
 new installation is rolled back only when the deployment-owned marker and the
@@ -111,7 +111,7 @@ directory instead of deleting it, and rolls the service path and product
 registration back if the new service cannot start. A matching hostname alone
 is never sufficient.
 
-Until the first inventory succeeds, Agent 0.1.32 retries enrollment every ten
+Until the first inventory succeeds, Agent 0.1.33 retries enrollment every ten
 seconds. After enrollment, inventory returns to its five-minute interval and
 telemetry continues at ten-second intervals.
 

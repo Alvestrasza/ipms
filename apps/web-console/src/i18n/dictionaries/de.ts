@@ -181,7 +181,7 @@ export const de = {
     infrastructure: "Infrastruktur",
     agents: "Agenten",
     soon: "Bald",
-    version: "IPMS v0.1.46 Entwicklung",
+    version: "IPMS v0.1.47 Entwicklung",
   },
   agentAdministration: {
     title: "Agent-Verwaltung",

@@ -2,7 +2,7 @@
 
 ## Scope
 
-IPMS `0.1.46` provides tenant-scoped read-only portal inventory and detail
+IPMS `0.1.47` provides tenant-scoped read-only portal inventory and detail
 views for physical and virtual Windows systems. Native Agent enrollment and
 bounded inventory ingestion are available; Hyper-V provider discovery and all
 state-changing Windows or virtualization operations remain outside this
@@ -72,9 +72,15 @@ tenant record, and projects top-level roles into an indexed read model. Role
 services and features remain available on the tenant-scoped detail API but do
 not create navigation entries.
 
+Agent 0.1.33 allows the Server Manager provider up to one bounded minute to
+complete a cold initialization. Five-second polling slices keep the operation
+responsive without turning a slow provider into a false empty inventory. A
+provider that still fails or exceeds the overall deadline remains explicitly
+`unavailable`.
+
 ## Current acceptance boundary
 
-The following are accepted through `0.1.46`:
+The following are accepted through `0.1.47`:
 
 - localized physical and virtual Windows Server navigation;
 - live empty states that distinguish unavailable data from an empty inventory;

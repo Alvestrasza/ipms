@@ -1,6 +1,6 @@
 # Agent Lifecycle Administration
 
-IPMS 0.1.46 provides the tenant-administrator Agent inventory at
+IPMS 0.1.47 provides the tenant-administrator Agent inventory at
 **Administration > Infrastructure > Agents**. It displays FQDN, derived contact
 state, operating system, installed Agent version, target version, compliance,
 last contact, and any active lifecycle job.

@@ -9,6 +9,7 @@
 #include <wrl/client.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cwctype>
 #include <iomanip>
@@ -351,16 +352,26 @@ std::optional<std::vector<installed_server_feature>> read_installed_server_featu
   if (FAILED(query_result) || !rows) return std::nullopt;
 
   std::vector<installed_server_feature> features;
+  const auto query_deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(60);
   for (;;) {
     Microsoft::WRL::ComPtr<IWbemClassObject> row;
     ULONG returned = 0;
+    const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+        query_deadline - std::chrono::steady_clock::now());
+    if (remaining <= std::chrono::milliseconds::zero()) return std::nullopt;
+    const auto maximum_wait = std::chrono::milliseconds(5'000);
+    const auto wait_time = static_cast<LONG>(
+        (remaining < maximum_wait ? remaining : maximum_wait).count());
     const HRESULT next = rows->Next(
-        5'000,
+        wait_time,
         1,
         row.ReleaseAndGetAddressOf(),
         &returned);
-    if (next == WBEM_S_FALSE) break;
-    if (next == WBEM_S_TIMEDOUT || FAILED(next) || returned == 0 || !row) {
+    if (next == WBEM_S_FALSE && returned == 0) break;
+    if (FAILED(next)) return std::nullopt;
+    if (returned == 0 || !row) {
+      if (next == WBEM_S_TIMEDOUT) continue;
       return std::nullopt;
     }
     const auto state = wmi_uint32(row.Get(), L"State");
