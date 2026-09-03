@@ -179,7 +179,7 @@ export const de = {
     infrastructure: "Infrastruktur",
     agents: "Agenten",
     soon: "Bald",
-    version: "IPMS v0.1.43 Entwicklung",
+    version: "IPMS v0.1.44 Entwicklung",
   },
   agentAdministration: {
     title: "Agent-Verwaltung",
@@ -219,6 +219,10 @@ export const de = {
       "Der Agent wurde ohne Änderung seiner Geräteidentität aktualisiert. Nach dem nächsten Agent-Inventar stehen die Lifecycle-Aktionen zur Verfügung.",
     bootstrapIdentityMismatch:
       "Die Identität des entfernten Agents stimmt nicht mit dem ausgewählten verwalteten Agent überein. Es wurden keine Dateien geändert.",
+    bootstrapLayoutUnsupported:
+      "Die Agent-Identität stimmt überein, aber das Installationslayout kann nicht sicher migriert werden. Es wurden keine Dateien geändert.",
+    bootstrapMigrationFailed:
+      "Die ältere Agent-Installation konnte nicht migriert werden. IPMS hat versucht, den vorherigen Dienstpfad und die Registrierung wiederherzustellen.",
     bootstrapNotRequired:
       "Dieser Agent unterstützt die Lifecycle-Verwaltung bereits. Aktualisiere die Liste und wiederhole die normale Aktion.",
     bootstrapUnavailable:

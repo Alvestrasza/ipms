@@ -2,7 +2,7 @@
 
 ## Scope
 
-IPMS 0.1.43 provides a development-grade portal bootstrap for Windows Agent
+IPMS 0.1.44 provides a development-grade portal bootstrap for Windows Agent
 0.1.32. The workflow is tenant-scoped, audited, connection-approved, and
 limited to a fixed installation operation. It is not a general-purpose remote
 execution feature.
@@ -94,11 +94,22 @@ remains untouched.
 A complete Agent from a previously successful deployment follows a separate
 identity-preserving update path. IPMS requires the exact service path,
 `LocalSystem` identity, registered install location, bounded file set, and
-protected `device_uri` to match an active enrollment for the same tenant and
-endpoint. Only the hash-pinned program files are replaced. The device key,
+protected device URI and certificate fingerprint to match an active enrollment
+for the same tenant and endpoint. Only the hash-pinned program files are
+replaced. The device key,
 certificate, enrollment state, and local configuration remain untouched. The
 worker keeps a protected local backup and restores the previous program files
 if the updated service cannot be started.
+
+Development Agents installed before the standard Program Files layout require
+an explicit one-time lifecycle bootstrap. IPMS accepts that migration only when
+the protected state document, the installed LocalMachine certificate, the
+active tenant enrollment, the reported Agent version, the `LocalSystem`
+service, and the registered installation directory all agree. The worker then
+moves service execution to the fixed Program Files location, preserves the old
+directory instead of deleting it, and rolls the service path and product
+registration back if the new service cannot start. A matching hostname alone
+is never sufficient.
 
 Until the first inventory succeeds, Agent 0.1.32 retries enrollment every ten
 seconds. After enrollment, inventory returns to its five-minute interval and

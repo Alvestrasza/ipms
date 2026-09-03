@@ -134,6 +134,8 @@ export function AgentLifecycleBootstrapDialog({
       remote_existing_agent_assessment_failed:
         deploymentCopy.remoteExistingAgentAssessmentFailed,
       remote_existing_agent_identity_mismatch: copy.bootstrapIdentityMismatch,
+      remote_existing_agent_layout_unsupported: copy.bootstrapLayoutUnsupported,
+      remote_existing_agent_migration_failed: copy.bootstrapMigrationFailed,
       remote_existing_agent_update_failed:
         deploymentCopy.remoteExistingAgentUpdateFailed,
       remote_staging_directory_failed:

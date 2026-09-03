@@ -16,6 +16,7 @@ from ipms.apps.discovery.certificates import (
     request_bmc_certificate_probe,
     request_windows_http_probe,
 )
+from ipms.apps.discovery.models import WindowsServer
 
 from .deployment_secrets import load_deployment_secret
 from .models import AgentEnrollment, WindowsAgentDeployment
@@ -205,14 +206,23 @@ def _incomplete_install_repair_script(known_owner_ids=()) -> str:
     )
 
 
-def _managed_existing_agent_assessment(managed_device_uris=()) -> str:
-    device_uris = ", ".join(
-        _powershell_single_quoted(device_uri) for device_uri in managed_device_uris
+def _managed_existing_agent_assessment(
+    *,
+    expected_device_uri: str,
+    expected_certificate_sha256: str,
+    expected_agent_version: str,
+) -> str:
+    device_uri = _powershell_single_quoted(expected_device_uri)
+    certificate_sha256 = _powershell_single_quoted(
+        expected_certificate_sha256.lower()
     )
+    agent_version = _powershell_single_quoted(expected_agent_version)
     return (
         "$ErrorActionPreference = 'Stop'; "
         + _agent_path_assignments()
-        + f"$managedDeviceUris = @({device_uris}); "
+        + f"$expectedDeviceUri = {device_uri}; "
+        + f"$expectedCertificateSha256 = {certificate_sha256}; "
+        + f"$expectedAgentVersion = {agent_version}; "
         + "$service = Get-CimInstance -ClassName Win32_Service "
         "-Filter \"Name='IPMS Agent'\" -ErrorAction SilentlyContinue; "
         "$allowedFiles = @('.ipms-deployment-owner', "
@@ -232,13 +242,42 @@ def _managed_existing_agent_assessment(managed_device_uris=()) -> str:
         "$uninstallRegistration.DisplayName -eq 'IPMS Agent' -and "
         "([string]$uninstallRegistration.InstallLocation).TrimEnd([char]92) "
         "-ieq $install.TrimEnd([char]92); "
-        "$stateDeviceUri = ''; "
+        "$stateDeviceUri = ''; $stateCertificateSha256 = ''; "
         "if (Test-Path -LiteralPath $state -PathType Leaf) { try { "
         "$stateDocument = Get-Content -LiteralPath $state -Raw "
         "-ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop; "
-        "$stateDeviceUri = [string]$stateDocument.device_uri "
-        "} catch { $stateDeviceUri = '' } }; "
-        "$stateMatches = $managedDeviceUris -contains $stateDeviceUri; "
+        "$stateDeviceUri = [string]$stateDocument.device_uri; "
+        "$stateCertificateSha256 = "
+        "([string]$stateDocument.certificate_sha256).Replace(':', '').ToLowerInvariant() "
+        "} catch { $stateDeviceUri = ''; $stateCertificateSha256 = '' } }; "
+        "$certificateMatches = $false; "
+        "if ($stateCertificateSha256 -eq $expectedCertificateSha256) { "
+        "$sha256 = [Security.Cryptography.SHA256]::Create(); "
+        "try { foreach ($certificate in Get-ChildItem Cert:\\LocalMachine\\My) { "
+        "$candidateFingerprint = [BitConverter]::ToString("
+        "$sha256.ComputeHash($certificate.RawData)).Replace('-', '').ToLowerInvariant(); "
+        "if ($candidateFingerprint -eq $expectedCertificateSha256) "
+        "{ $certificateMatches = $true; break } } "
+        "} finally { $sha256.Dispose() } }; "
+        "$identityMatches = $stateDeviceUri -eq $expectedDeviceUri -and "
+        "$stateCertificateSha256 -eq $expectedCertificateSha256 -and "
+        "$certificateMatches; "
+        "$registeredVersion = if ($uninstallRegistration) "
+        "{ [string]$uninstallRegistration.DisplayVersion } else { '' }; "
+        "$registeredLocation = if ($uninstallRegistration) "
+        "{ ([string]$uninstallRegistration.InstallLocation).TrimEnd([char]92) } "
+        "else { '' }; "
+        "$serviceDirectory = if ($serviceBinary) "
+        "{ Split-Path -Path $serviceBinary -Parent } else { '' }; "
+        "$legacyLayoutMatches = $identityMatches -and $null -ne $service -and "
+        "$service.StartName -eq 'LocalSystem' -and "
+        "$service.State -in @('Stopped', 'Running') -and "
+        "(Test-Path -LiteralPath $serviceBinary -PathType Leaf) -and "
+        "(Split-Path -Path $serviceBinary -Leaf) -ieq 'ipms-agent.exe' -and "
+        "$serviceBinary -ine $agentBinary -and "
+        "$registeredLocation -ieq $serviceDirectory.TrimEnd([char]92) -and "
+        "$registeredVersion -eq $expectedAgentVersion -and "
+        "-not (Test-Path -LiteralPath $install); "
         "$isManagedExisting = $null -ne $service -and "
         "$serviceBinary -ieq $agentBinary -and "
         "$service.StartName -eq 'LocalSystem' -and "
@@ -246,11 +285,15 @@ def _managed_existing_agent_assessment(managed_device_uris=()) -> str:
         "(Test-Path -LiteralPath $install -PathType Container) -and "
         "(Test-Path -LiteralPath $agentBinary -PathType Leaf) -and "
         "$unexpectedFiles.Count -eq 0 -and $registrationMatches -and "
-        "$stateMatches; "
+        "$identityMatches; "
         "Write-Output ('IPMS_AGENT_PRESENT=' + "
         "$(if ($service) { '1' } else { '0' })); "
+        "Write-Output ('IPMS_IDENTITY_MATCH=' + "
+        "$(if ($identityMatches) { '1' } else { '0' })); "
         "Write-Output ('IPMS_EXISTING_UPDATE=' + "
-        "$(if ($isManagedExisting) { '1' } else { '0' }))"
+        "$(if ($isManagedExisting) { '1' } else { '0' })); "
+        "Write-Output ('IPMS_LEGACY_MIGRATION=' + "
+        "$(if ($legacyLayoutMatches) { '1' } else { '0' }))"
     )
 
 
@@ -343,6 +386,144 @@ def _managed_existing_agent_update_script(
         "if ($wasRunning) { Start-Service -Name 'IPMS Agent' "
         "-ErrorAction SilentlyContinue }; "
         "throw $updateFailure }"
+    )
+
+
+def _managed_legacy_agent_migration_script(
+    deployment_id,
+    *,
+    expected_device_uri: str,
+    expected_certificate_sha256: str,
+    expected_agent_version: str,
+) -> str:
+    expected_uri = _powershell_single_quoted(expected_device_uri)
+    expected_fingerprint = _powershell_single_quoted(
+        expected_certificate_sha256.lower()
+    )
+    target_version = _powershell_single_quoted(settings.AGENT_WINDOWS_VERSION)
+    source_version = _powershell_single_quoted(expected_agent_version)
+    owner = _powershell_single_quoted(str(deployment_id))
+    return (
+        _staging_path_assignment(deployment_id)
+        + "$ErrorActionPreference = 'Stop'; "
+        + _agent_path_assignments()
+        + f"$expectedDeviceUri = {expected_uri}; "
+        + f"$expectedCertificateSha256 = {expected_fingerprint}; "
+        + f"$targetVersion = {target_version}; "
+        + f"$expectedAgentVersion = {source_version}; "
+        + f"$expectedOwner = {owner}; "
+        "$package = Join-Path $staging 'package'; "
+        "$archive = Join-Path $staging 'agent.zip'; "
+        "$requiredFiles = @('import-windows-agent-enrollment.ps1', "
+        "'install-windows-agent.ps1', 'ipms-agent-config.exe', "
+        "'ipms-agent.exe', 'ipms-agent-updater.exe', 'uninstall-windows-agent.ps1'); "
+        "$service = Get-CimInstance -ClassName Win32_Service "
+        "-Filter \"Name='IPMS Agent'\" -ErrorAction Stop; "
+        "$legacyBinary = ([string]$service.PathName).Trim().Trim([char]34); "
+        "$legacyDirectory = Split-Path -Path $legacyBinary -Parent; "
+        "$registration = Get-ItemProperty -LiteralPath $uninstallKey -ErrorAction Stop; "
+        "$stateDocument = Get-Content -LiteralPath $state -Raw "
+        "-ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop; "
+        "$stateFingerprint = "
+        "([string]$stateDocument.certificate_sha256).Replace(':', '').ToLowerInvariant(); "
+        "$certificateMatches = $false; "
+        "$sha256 = [Security.Cryptography.SHA256]::Create(); "
+        "try { foreach ($certificate in Get-ChildItem Cert:\\LocalMachine\\My) { "
+        "$candidateFingerprint = [BitConverter]::ToString("
+        "$sha256.ComputeHash($certificate.RawData)).Replace('-', '').ToLowerInvariant(); "
+        "if ($candidateFingerprint -eq $expectedCertificateSha256) "
+        "{ $certificateMatches = $true; break } } "
+        "} finally { $sha256.Dispose() }; "
+        "if ([string]$stateDocument.device_uri -ne $expectedDeviceUri -or "
+        "$stateFingerprint -ne $expectedCertificateSha256 -or -not $certificateMatches) "
+        "{ throw 'The managed Agent identity changed.' }; "
+        "if ($service.StartName -ne 'LocalSystem' -or "
+        "$service.State -notin @('Stopped', 'Running') -or "
+        "-not (Test-Path -LiteralPath $legacyBinary -PathType Leaf) -or "
+        "(Split-Path -Path $legacyBinary -Leaf) -ine 'ipms-agent.exe' -or "
+        "$legacyBinary -ieq $agentBinary -or "
+        "([string]$registration.DisplayName) -ne 'IPMS Agent' -or "
+        "([string]$registration.DisplayVersion) -ne $expectedAgentVersion -or "
+        "([string]$registration.InstallLocation).TrimEnd([char]92) -ine "
+        "$legacyDirectory.TrimEnd([char]92) -or "
+        "(Test-Path -LiteralPath $install)) "
+        "{ throw 'The legacy Agent installation layout changed.' }; "
+        "$previousVersion = [string]$registration.DisplayVersion; "
+        "$previousInstallLocation = [string]$registration.InstallLocation; "
+        "$previousDisplayIcon = [string]$registration.DisplayIcon; "
+        "$previousModifyPath = [string]$registration.ModifyPath; "
+        "$previousUninstallString = [string]$registration.UninstallString; "
+        "$previousEstimatedSize = $registration.EstimatedSize; "
+        "$previousStartType = switch ($service.StartMode) "
+        "{ 'Auto' { 'auto' } 'Disabled' { 'disabled' } default { 'demand' } }; "
+        "$wasRunning = $service.State -eq 'Running'; "
+        "try { "
+        "New-Item -ItemType Directory -Path $package -Force | Out-Null; "
+        "Expand-Archive -LiteralPath $archive -DestinationPath $package; "
+        "foreach ($name in $requiredFiles) { if (-not (Test-Path -LiteralPath "
+        "(Join-Path $package $name) -PathType Leaf)) "
+        "{ throw 'The Agent migration package is incomplete.' } }; "
+        "New-Item -ItemType Directory -Path $install -Force | Out-Null; "
+        "Set-Content -LiteralPath $ownerFile -Value $expectedOwner -NoNewline; "
+        "& icacls.exe $install /inheritance:r /grant:r "
+        "'*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null; "
+        "if ($LASTEXITCODE -ne 0) { throw 'Agent migration ACL failed.' }; "
+        "foreach ($name in $requiredFiles) { Copy-Item -LiteralPath "
+        "(Join-Path $package $name) -Destination (Join-Path $install $name) -Force }; "
+        "Copy-Item -LiteralPath (Join-Path $package 'import-windows-agent-enrollment.ps1') "
+        "-Destination (Join-Path $install 'ipms-agent-import-enrollment.ps1') -Force; "
+        "Copy-Item -LiteralPath (Join-Path $package 'uninstall-windows-agent.ps1') "
+        "-Destination (Join-Path $install 'ipms-agent-uninstall.ps1') -Force; "
+        "if ($service.State -eq 'Running') { Stop-Service -Name 'IPMS Agent' "
+        "-Force -ErrorAction Stop; (Get-Service -Name 'IPMS Agent').WaitForStatus("
+        "'Stopped', [TimeSpan]::FromSeconds(15)) }; "
+        "& sc.exe config 'IPMS Agent' binPath= ('\"{0}\"' -f $agentBinary) "
+        "start= auto | Out-Null; "
+        "if ($LASTEXITCODE -ne 0) { throw 'Agent service migration failed.' }; "
+        "$installedUninstaller = Join-Path $install 'ipms-agent-uninstall.ps1'; "
+        "$configBinary = Join-Path $install 'ipms-agent-config.exe'; "
+        "$powerShellHost = Join-Path $PSHOME 'pwsh.exe'; "
+        "if (-not (Test-Path -LiteralPath $powerShellHost -PathType Leaf)) "
+        "{ $powerShellHost = (Get-Command powershell.exe -ErrorAction Stop).Source }; "
+        "$uninstallCommand = '\"{0}\" -NoProfile -ExecutionPolicy Bypass -File \"{1}\"' "
+        "-f $powerShellHost, $installedUninstaller; "
+        "Set-ItemProperty -LiteralPath $uninstallKey -Name DisplayVersion -Value $targetVersion; "
+        "Set-ItemProperty -LiteralPath $uninstallKey -Name InstallLocation -Value $install; "
+        "Set-ItemProperty -LiteralPath $uninstallKey -Name DisplayIcon -Value ($configBinary + ',0'); "
+        "Set-ItemProperty -LiteralPath $uninstallKey -Name ModifyPath -Value ('\"{0}\"' -f $configBinary); "
+        "Set-ItemProperty -LiteralPath $uninstallKey -Name UninstallString -Value $uninstallCommand; "
+        "$estimatedSize = [math]::Ceiling((Get-ChildItem -LiteralPath $install -File | "
+        "Measure-Object -Property Length -Sum).Sum / 1KB); "
+        "Set-ItemProperty -LiteralPath $uninstallKey -Name EstimatedSize -Value $estimatedSize; "
+        "Start-Service -Name 'IPMS Agent' -ErrorAction Stop; "
+        "(Get-Service -Name 'IPMS Agent').WaitForStatus('Running', [TimeSpan]::FromSeconds(15)); "
+        "Remove-Item -LiteralPath $ownerFile -Force; "
+        "Write-Output 'IPMS_LEGACY_AGENT_MIGRATED=1' "
+        "} catch { "
+        "$migrationFailure = $_; "
+        "Stop-Service -Name 'IPMS Agent' -Force -ErrorAction SilentlyContinue; "
+        "& sc.exe config 'IPMS Agent' binPath= ('\"{0}\"' -f $legacyBinary) "
+        "start= $previousStartType | Out-Null; "
+        "Set-ItemProperty -LiteralPath $uninstallKey -Name DisplayVersion "
+        "-Value $previousVersion -ErrorAction SilentlyContinue; "
+        "Set-ItemProperty -LiteralPath $uninstallKey -Name InstallLocation "
+        "-Value $previousInstallLocation -ErrorAction SilentlyContinue; "
+        "Set-ItemProperty -LiteralPath $uninstallKey -Name DisplayIcon "
+        "-Value $previousDisplayIcon -ErrorAction SilentlyContinue; "
+        "Set-ItemProperty -LiteralPath $uninstallKey -Name ModifyPath "
+        "-Value $previousModifyPath -ErrorAction SilentlyContinue; "
+        "Set-ItemProperty -LiteralPath $uninstallKey -Name UninstallString "
+        "-Value $previousUninstallString -ErrorAction SilentlyContinue; "
+        "if ($null -ne $previousEstimatedSize) { Set-ItemProperty -LiteralPath "
+        "$uninstallKey -Name EstimatedSize -Value $previousEstimatedSize "
+        "-ErrorAction SilentlyContinue }; "
+        "if ($wasRunning) { Start-Service -Name 'IPMS Agent' "
+        "-ErrorAction SilentlyContinue }; "
+        "if ((Test-Path -LiteralPath $ownerFile) -and "
+        "((Get-Content -LiteralPath $ownerFile -Raw -ErrorAction SilentlyContinue).Trim() "
+        "-eq $expectedOwner)) { Remove-Item -LiteralPath $install -Recurse -Force "
+        "-ErrorAction SilentlyContinue }; "
+        "throw $migrationFailure }"
     )
 
 
@@ -450,6 +631,7 @@ def _audit(
     error_code: str = "",
     recovered_incomplete_install: bool = False,
     updated_existing_agent: bool = False,
+    migrated_legacy_agent: bool = False,
 ):
     details = {
         "target_address": deployment.target_address,
@@ -463,6 +645,8 @@ def _audit(
         details["recovered_incomplete_install"] = True
     if updated_existing_agent:
         details["updated_existing_agent"] = True
+    if migrated_legacy_agent:
+        details["migrated_legacy_agent"] = True
     AuditEvent.objects.create(
         tenant=deployment.tenant,
         actor="ipms-agent-deployment-worker",
@@ -481,6 +665,8 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
     succeeded = False
     recovered_incomplete_install = False
     updated_existing_agent = False
+    migrated_legacy_agent = False
+    legacy_migration_required = False
     existing_enrollment = None
     error_code = ""
     stage = "initialization"
@@ -603,17 +789,49 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
                 .first()
             )
         if existing_enrollment is not None:
+            existing_agent_version = (
+                WindowsServer.objects.filter(
+                    tenant_id=deployment.tenant_id,
+                    source_id=existing_enrollment.device_uri,
+                )
+                .values_list("agent_version", flat=True)
+                .first()
+                or ""
+            )
+            if (
+                not existing_enrollment.certificate_fingerprint_sha256
+                or not existing_agent_version
+            ):
+                raise RemoteDeploymentStepError(
+                    "agent_lifecycle_bootstrap_unavailable"
+                )
             assessment = _execute_checked(
                 client,
                 _managed_existing_agent_assessment(
-                    (existing_enrollment.device_uri,)
+                    expected_device_uri=existing_enrollment.device_uri,
+                    expected_certificate_sha256=(
+                        existing_enrollment.certificate_fingerprint_sha256
+                    ),
+                    expected_agent_version=existing_agent_version,
                 ),
                 failure_code="remote_existing_agent_assessment_failed",
             )
             updated_existing_agent = "IPMS_EXISTING_UPDATE=1" in assessment
-            if explicit_lifecycle_bootstrap and not updated_existing_agent:
+            identity_matches = "IPMS_IDENTITY_MATCH=1" in assessment
+            legacy_migration_required = (
+                explicit_lifecycle_bootstrap
+                and "IPMS_LEGACY_MIGRATION=1" in assessment
+            )
+            updated_existing_agent = (
+                updated_existing_agent or legacy_migration_required
+            )
+            if explicit_lifecycle_bootstrap and not identity_matches:
                 raise RemoteDeploymentStepError(
                     "remote_existing_agent_identity_mismatch"
+                )
+            if explicit_lifecycle_bootstrap and not updated_existing_agent:
+                raise RemoteDeploymentStepError(
+                    "remote_existing_agent_layout_unsupported"
                 )
         if not updated_existing_agent:
             _execute_checked(
@@ -679,14 +897,29 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
 
         if updated_existing_agent:
             stage = "update"
-            _execute_checked(
-                client,
-                _managed_existing_agent_update_script(
-                    deployment.id,
-                    expected_device_uri=existing_enrollment.device_uri,
-                ),
-                failure_code="remote_existing_agent_update_failed",
-            )
+            if legacy_migration_required:
+                _execute_checked(
+                    client,
+                    _managed_legacy_agent_migration_script(
+                        deployment.id,
+                        expected_device_uri=existing_enrollment.device_uri,
+                        expected_certificate_sha256=(
+                            existing_enrollment.certificate_fingerprint_sha256
+                        ),
+                        expected_agent_version=existing_agent_version,
+                    ),
+                    failure_code="remote_existing_agent_migration_failed",
+                )
+                migrated_legacy_agent = True
+            else:
+                _execute_checked(
+                    client,
+                    _managed_existing_agent_update_script(
+                        deployment.id,
+                        expected_device_uri=existing_enrollment.device_uri,
+                    ),
+                    failure_code="remote_existing_agent_update_failed",
+                )
         else:
             stage = "install"
             owner = _powershell_single_quoted(str(deployment.id))
@@ -791,6 +1024,7 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
             error_code=error_code,
             recovered_incomplete_install=recovered_incomplete_install,
             updated_existing_agent=updated_existing_agent,
+            migrated_legacy_agent=migrated_legacy_agent,
         )
 
 

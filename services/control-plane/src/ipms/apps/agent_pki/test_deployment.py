@@ -21,6 +21,7 @@ from .deployment import (
     _incomplete_install_assessment,
     _incomplete_install_repair_script,
     _managed_existing_agent_assessment,
+    _managed_legacy_agent_migration_script,
     _managed_existing_agent_update_script,
     _staging_path_assignment,
     process_deployment,
@@ -67,19 +68,28 @@ class WindowsAgentDeploymentScriptTests(TestCase):
 
     def test_existing_update_requires_managed_identity_and_local_system(self) -> None:
         device_uri = "urn:ipms:agent:11111111-1111-1111-1111-111111111111"
-        assessment = _managed_existing_agent_assessment((device_uri,))
+        fingerprint = "ab" * 32
+        assessment = _managed_existing_agent_assessment(
+            expected_device_uri=device_uri,
+            expected_certificate_sha256=fingerprint,
+            expected_agent_version="0.1.25",
+        )
         update = _managed_existing_agent_update_script(
             "22222222-2222-2222-2222-222222222222",
             expected_device_uri=device_uri,
         )
 
         self.assertIn(device_uri, assessment)
+        self.assertIn(fingerprint, assessment)
+        self.assertIn("$expectedAgentVersion = '0.1.25'", assessment)
         self.assertIn("$service.StartName -eq 'LocalSystem'", assessment)
         self.assertIn("$serviceBinary -ieq $agentBinary", assessment)
-        self.assertIn("$stateMatches", assessment)
+        self.assertIn("$identityMatches", assessment)
+        self.assertIn("Cert:\\LocalMachine\\My", assessment)
         self.assertIn("$unexpectedFiles.Count -eq 0", assessment)
         self.assertIn("$registrationMatches", assessment)
         self.assertIn("IPMS_EXISTING_UPDATE", assessment)
+        self.assertIn("IPMS_LEGACY_MIGRATION", assessment)
         self.assertIn("$expectedDeviceUri", update)
         self.assertIn("Expand-Archive", update)
         self.assertIn("$backup", update)
@@ -88,6 +98,28 @@ class WindowsAgentDeploymentScriptTests(TestCase):
         self.assertIn("$targetVersion = '0.1.32'", update)
         self.assertIn("-Name DisplayVersion", update)
         self.assertIn("-Value $previousVersion", update)
+
+    def test_legacy_migration_is_device_and_certificate_bound(self) -> None:
+        device_uri = "urn:ipms:agent:11111111-1111-1111-1111-111111111111"
+        fingerprint = "cd" * 32
+
+        migration = _managed_legacy_agent_migration_script(
+            "22222222-2222-2222-2222-222222222222",
+            expected_device_uri=device_uri,
+            expected_certificate_sha256=fingerprint,
+            expected_agent_version="0.1.25",
+        )
+
+        self.assertIn(device_uri, migration)
+        self.assertIn(fingerprint, migration)
+        self.assertIn("$expectedAgentVersion = '0.1.25'", migration)
+        self.assertIn("Cert:\\LocalMachine\\My", migration)
+        self.assertIn("$service.StartName -ne 'LocalSystem'", migration)
+        self.assertIn("Split-Path -Path $legacyBinary -Leaf", migration)
+        self.assertIn("sc.exe config 'IPMS Agent'", migration)
+        self.assertIn("$legacyBinary", migration)
+        self.assertIn("IPMS_LEGACY_AGENT_MIGRATED=1", migration)
+        self.assertIn("Remove-Item -LiteralPath $install -Recurse", migration)
 
 
 class WindowsAgentDeploymentApiTests(TestCase):
@@ -699,6 +731,15 @@ class WindowsAgentDeploymentWorkerTests(TestCase):
             device_uri="urn:ipms:agent:11111111-1111-1111-1111-111111111111",
             display_name="Existing managed Agent",
             status=AgentEnrollment.Status.ACTIVE,
+            certificate_fingerprint_sha256="ab" * 32,
+        )
+        WindowsServer.objects.create(
+            tenant=self.tenant,
+            source_id=existing.device_uri,
+            inventory_source=WindowsServer.InventorySource.AGENT,
+            hostname="existing-managed-agent",
+            agent_version="0.1.25",
+            discovered_at=timezone.now(),
         )
         self.deployment.lifecycle_bootstrap_enrollment = existing
         self.deployment.save(update_fields=("lifecycle_bootstrap_enrollment",))
@@ -706,7 +747,12 @@ class WindowsAgentDeploymentWorkerTests(TestCase):
         client = Mock()
         client.execute_ps.side_effect = [
             ("", [], False),
-            ("IPMS_AGENT_PRESENT=1\nIPMS_EXISTING_UPDATE=1", [], False),
+            (
+                "IPMS_AGENT_PRESENT=1\nIPMS_IDENTITY_MATCH=1\n"
+                "IPMS_EXISTING_UPDATE=1\nIPMS_LEGACY_MIGRATION=0",
+                [],
+                False,
+            ),
             ("", [], False),
             ("", [], False),
             ("IPMS_EXISTING_AGENT_UPDATED=1", [], False),
@@ -739,6 +785,84 @@ class WindowsAgentDeploymentWorkerTests(TestCase):
 
     @patch("ipms.apps.agent_pki.deployment.request_windows_http_probe")
     @patch("pypsrp.client.Client")
+    def test_explicit_nonstandard_legacy_agent_is_migrated_without_reenrollment(
+        self,
+        client_type,
+        http_probe,
+    ):
+        self.deployment.transport = WindowsAgentDeployment.Transport.HTTP
+        self.deployment.target_port = 5985
+        self.deployment.certificate_trust_mode = (
+            WindowsAgentDeployment.CertificateTrustMode.NONE
+        )
+        self.deployment.certificate_fingerprint_sha256 = ""
+        self.deployment.save(
+            update_fields=(
+                "transport",
+                "target_port",
+                "certificate_trust_mode",
+                "certificate_fingerprint_sha256",
+            )
+        )
+        existing = AgentEnrollment.objects.create(
+            tenant=self.tenant,
+            device_uri="urn:ipms:agent:55555555-5555-5555-5555-555555555555",
+            display_name="Nonstandard legacy Agent",
+            status=AgentEnrollment.Status.ACTIVE,
+            certificate_fingerprint_sha256="ef" * 32,
+        )
+        WindowsServer.objects.create(
+            tenant=self.tenant,
+            source_id=existing.device_uri,
+            inventory_source=WindowsServer.InventorySource.AGENT,
+            hostname="nonstandard-legacy-agent",
+            agent_version="0.1.25",
+            discovered_at=timezone.now(),
+        )
+        self.deployment.lifecycle_bootstrap_enrollment = existing
+        self.deployment.save(update_fields=("lifecycle_bootstrap_enrollment",))
+        http_probe.return_value = WindowsHttpObservation(reachable=True)
+        client = Mock()
+        client.execute_ps.side_effect = [
+            ("", [], False),
+            (
+                "IPMS_AGENT_PRESENT=1\nIPMS_IDENTITY_MATCH=1\n"
+                "IPMS_EXISTING_UPDATE=0\nIPMS_LEGACY_MIGRATION=1",
+                [],
+                False,
+            ),
+            ("", [], False),
+            ("", [], False),
+            ("IPMS_LEGACY_AGENT_MIGRATED=1", [], False),
+            ("", [], False),
+        ]
+        client_type.return_value = client
+
+        with override_settings(
+            AGENT_WINDOWS_PACKAGE_PATH=str(self.package),
+            AGENT_WINDOWS_PACKAGE_SHA256=self.package_digest,
+        ):
+            process_deployment(self.deployment)
+
+        self.deployment.refresh_from_db()
+        self.deployment.enrollment.refresh_from_db()
+        existing.refresh_from_db()
+        self.assertEqual(
+            self.deployment.status,
+            WindowsAgentDeployment.Status.SUCCEEDED,
+        )
+        self.assertEqual(client.copy.call_count, 1)
+        self.assertEqual(
+            self.deployment.enrollment.status,
+            AgentEnrollment.Status.REVOKED,
+        )
+        self.assertEqual(existing.status, AgentEnrollment.Status.ACTIVE)
+        event = AuditEvent.objects.get(action="agent.windows_deployment.complete")
+        self.assertTrue(event.details["updated_existing_agent"])
+        self.assertTrue(event.details["migrated_legacy_agent"])
+
+    @patch("ipms.apps.agent_pki.deployment.request_windows_http_probe")
+    @patch("pypsrp.client.Client")
     def test_explicit_legacy_bootstrap_fails_closed_on_identity_mismatch(
         self,
         client_type,
@@ -754,6 +878,15 @@ class WindowsAgentDeploymentWorkerTests(TestCase):
             device_uri="urn:ipms:agent:33333333-3333-3333-3333-333333333333",
             display_name="Selected managed Agent",
             status=AgentEnrollment.Status.ACTIVE,
+            certificate_fingerprint_sha256="cd" * 32,
+        )
+        WindowsServer.objects.create(
+            tenant=self.tenant,
+            source_id=existing.device_uri,
+            inventory_source=WindowsServer.InventorySource.AGENT,
+            hostname="selected-managed-agent",
+            agent_version="0.1.25",
+            discovered_at=timezone.now(),
         )
         self.deployment.lifecycle_bootstrap_enrollment = existing
         self.deployment.save(
@@ -768,7 +901,12 @@ class WindowsAgentDeploymentWorkerTests(TestCase):
         client = Mock()
         client.execute_ps.side_effect = [
             ("", [], False),
-            ("IPMS_AGENT_PRESENT=1\nIPMS_EXISTING_UPDATE=0", [], False),
+            (
+                "IPMS_AGENT_PRESENT=1\nIPMS_IDENTITY_MATCH=0\n"
+                "IPMS_EXISTING_UPDATE=0\nIPMS_LEGACY_MIGRATION=0",
+                [],
+                False,
+            ),
             ("", [], False),
         ]
         client_type.return_value = client

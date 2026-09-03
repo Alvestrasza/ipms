@@ -1,6 +1,6 @@
 # Agent Lifecycle Administration
 
-IPMS 0.1.43 provides the tenant-administrator Agent inventory at
+IPMS 0.1.44 provides the tenant-administrator Agent inventory at
 **Administration > Infrastructure > Agents**. It displays FQDN, derived contact
 state, operating system, installed Agent version, target version, compliance,
 last contact, and any active lifecycle job.
@@ -23,8 +23,11 @@ For an older Agent, the row update or uninstall action opens a one-time secure
 bootstrap dialog instead of remaining disabled. The administrator confirms the
 Windows management endpoint and its certificate or explicit HTTP fallback,
 then supplies transient administrative credentials. The worker must match the
-remote device URI to the selected enrollment before it copies or changes any
-Agent file. The existing device identity and mTLS certificate are retained.
+remote device URI and installed certificate fingerprint to the selected active
+enrollment before it copies or changes any Agent file. A nonstandard
+development installation must additionally match its reported Agent version,
+`LocalSystem` service identity, executable name, and registered installation
+directory. The existing device identity and mTLS certificate are retained.
 
 Bulk actions stop at the first older Agent because each endpoint certificate or
 HTTP fallback requires an individual administrator decision. Once all selected

@@ -167,7 +167,7 @@ export const en = {
     infrastructure: "Infrastructure",
     agents: "Agents",
     soon: "Soon",
-    version: "IPMS v0.1.43 development",
+    version: "IPMS v0.1.44 development",
   },
   agentAdministration: {
     title: "Agent administration",
@@ -206,6 +206,10 @@ export const en = {
       "The Agent was updated without changing its device identity. Lifecycle actions become available after the next Agent inventory.",
     bootstrapIdentityMismatch:
       "The remote Agent identity does not match the selected managed Agent. No files were changed.",
+    bootstrapLayoutUnsupported:
+      "The Agent identity matches, but its installation layout cannot be migrated safely. No files were changed.",
+    bootstrapMigrationFailed:
+      "The legacy Agent installation could not be migrated. IPMS attempted to restore the previous service path and registration.",
     bootstrapNotRequired:
       "This Agent already supports lifecycle management. Refresh the Agent list and retry the normal action.",
     bootstrapUnavailable:

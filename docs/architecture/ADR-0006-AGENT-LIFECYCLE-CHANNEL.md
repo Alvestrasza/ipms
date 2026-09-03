@@ -2,7 +2,7 @@
 
 - Status: Accepted for the development foundation
 - Decision date: 2026-09-03
-- Application version: 0.1.43
+- Application version: 0.1.44
 - First lifecycle-capable Windows Agent: 0.1.32
 
 ## Context
@@ -73,7 +73,7 @@ Only one active lifecycle job is allowed per enrollment. Job state is explicit:
 
 ## Development limitations
 
-Version 0.1.43 proves the lifecycle control path and the identity-preserving
+Version 0.1.44 proves the lifecycle control path and the identity-preserving
 legacy bootstrap path but is not a customer release
 channel. The current Windows binaries are not Authenticode-signed, the
 assignment is authenticated by mTLS rather than by a separately signed update
