@@ -26,6 +26,7 @@ export type ManagedAgent = {
   status: "online" | "stale" | "offline" | "not-seen" | "revoked";
   compliance: "current" | "outdated" | "unknown";
   lifecycle_capable: boolean;
+  can_remove: boolean;
   last_seen_at: string | null;
   active_job: AgentLifecycleJob | null;
 };

@@ -1,6 +1,7 @@
 import hashlib
 import tempfile
 import zipfile
+from datetime import timedelta
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
@@ -13,7 +14,12 @@ from ipms.apps.discovery.models import WindowsServer
 from ipms.apps.tenancy.models import Tenant, TenantMembership
 
 from .lifecycle import lifecycle_artifact, offer_lifecycle_job, record_lifecycle_result
-from .models import AgentEnrollment, AgentLifecycleJob
+from .models import (
+    AgentEnrollment,
+    AgentLifecycleJob,
+    AgentRevocation,
+    WindowsAgentDeployment,
+)
 
 
 class AgentLifecycleTests(TestCase):
@@ -86,6 +92,126 @@ class AgentLifecycleTests(TestCase):
         self.assertEqual(document["target_version"], "0.1.33")
         self.assertEqual(document["compliance"], "outdated")
         self.assertTrue(document["lifecycle_capable"])
+        self.assertFalse(document["can_remove"])
+
+    def test_revoked_agent_record_can_be_removed_and_hidden(self) -> None:
+        self.enrollment.status = AgentEnrollment.Status.REVOKED
+        self.enrollment.save(update_fields=("status", "updated_at"))
+        self.client.force_login(self.admin)
+
+        response = self.client.delete(
+            reverse(
+                "core:agent-administration-detail",
+                kwargs={"pk": self.enrollment.id},
+            ),
+            **self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.enrollment.refresh_from_db()
+        self.assertEqual(self.enrollment.status, AgentEnrollment.Status.REMOVED)
+        self.assertTrue(
+            WindowsServer.objects.filter(source_id=self.enrollment.device_uri).exists()
+        )
+        listing = self.client.get(
+            reverse("core:agent-administration-list"),
+            **self._headers(),
+        )
+        self.assertEqual(listing.json(), [])
+        self.assertTrue(
+            AuditEvent.objects.filter(
+                action="agent.remove",
+                object_id=str(self.enrollment.id),
+            ).exists()
+        )
+
+    def test_offline_active_agent_is_revoked_removed_and_jobs_cancelled(self) -> None:
+        old = timezone.now() - timedelta(minutes=10)
+        WindowsServer.objects.filter(source_id=self.enrollment.device_uri).update(
+            last_seen_at=old,
+        )
+        job = AgentLifecycleJob.objects.create(
+            tenant=self.tenant,
+            enrollment=self.enrollment,
+            action=AgentLifecycleJob.Action.UPDATE,
+            status=AgentLifecycleJob.Status.QUEUED,
+            requested_by="lifecycle-admin",
+        )
+        self.client.force_login(self.admin)
+
+        response = self.client.delete(
+            reverse(
+                "core:agent-administration-detail",
+                kwargs={"pk": self.enrollment.id},
+            ),
+            **self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.enrollment.refresh_from_db()
+        job.refresh_from_db()
+        self.assertEqual(self.enrollment.status, AgentEnrollment.Status.REMOVED)
+        self.assertEqual(job.status, AgentLifecycleJob.Status.CANCELLED)
+        self.assertEqual(job.result_code, "enrollment_removed")
+        self.assertTrue(
+            AgentRevocation.objects.filter(enrollment=self.enrollment).exists()
+        )
+        self.assertTrue(
+            AuditEvent.objects.filter(
+                action="agent.revoke",
+                object_id=str(self.enrollment.id),
+            ).exists()
+        )
+
+    def test_online_agent_record_cannot_be_removed(self) -> None:
+        self.client.force_login(self.admin)
+
+        response = self.client.delete(
+            reverse(
+                "core:agent-administration-detail",
+                kwargs={"pk": self.enrollment.id},
+            ),
+            **self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["error"]["code"],
+            "agent_removal_not_allowed",
+        )
+        self.enrollment.refresh_from_db()
+        self.assertEqual(self.enrollment.status, AgentEnrollment.Status.ACTIVE)
+        self.assertFalse(AuditEvent.objects.filter(action="agent.remove").exists())
+
+    def test_agent_with_active_windows_deployment_cannot_be_removed(self) -> None:
+        WindowsServer.objects.filter(source_id=self.enrollment.device_uri).update(
+            last_seen_at=timezone.now() - timedelta(minutes=10),
+        )
+        WindowsAgentDeployment.objects.create(
+            tenant=self.tenant,
+            enrollment=self.enrollment,
+            display_name="Managed Agent",
+            target_address="192.0.2.10",
+            target_port=5986,
+            requested_by="lifecycle-admin",
+        )
+        self.client.force_login(self.admin)
+
+        response = self.client.delete(
+            reverse(
+                "core:agent-administration-detail",
+                kwargs={"pk": self.enrollment.id},
+            ),
+            **self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["error"]["code"],
+            "agent_removal_operation_pending",
+        )
+        self.enrollment.refresh_from_db()
+        self.assertEqual(self.enrollment.status, AgentEnrollment.Status.ACTIVE)
 
     def test_reader_cannot_list_or_queue_agent_lifecycle_operations(self) -> None:
         self.client.force_login(self.reader)
@@ -97,9 +223,17 @@ class AgentLifecycleTests(TestCase):
             content_type="application/json",
             **self._headers(),
         )
+        remove_response = self.client.delete(
+            reverse(
+                "core:agent-administration-detail",
+                kwargs={"pk": self.enrollment.id},
+            ),
+            **self._headers(),
+        )
 
         self.assertEqual(list_response.status_code, 403)
         self.assertEqual(action_response.status_code, 403)
+        self.assertEqual(remove_response.status_code, 403)
 
     def test_update_job_is_audited_offered_and_completed(self) -> None:
         self.client.force_login(self.admin)
@@ -174,6 +308,14 @@ class AgentLifecycleTests(TestCase):
             content_type="application/json",
             **self._headers(self.other_tenant),
         )
+        remove_response = self.client.delete(
+            reverse(
+                "core:agent-administration-detail",
+                kwargs={"pk": self.enrollment.id},
+            ),
+            **self._headers(self.other_tenant),
+        )
 
         self.assertEqual(response.status_code, 404)
+        self.assertEqual(remove_response.status_code, 404)
         self.assertFalse(AgentLifecycleJob.objects.exists())

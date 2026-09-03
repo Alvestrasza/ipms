@@ -167,7 +167,7 @@ export const en = {
     infrastructure: "Infrastructure",
     agents: "Agents",
     soon: "Soon",
-    version: "IPMS v0.1.44 development",
+    version: "IPMS v0.1.45 development",
   },
   agentAdministration: {
     title: "Agent administration",
@@ -193,6 +193,16 @@ export const en = {
     uninstall: "Uninstall Agent",
     uninstallConfirm:
       "Uninstall the Agent while retaining its historical inventory for",
+    remove: "Remove Agent record",
+    removeUnavailable:
+      "Only offline, never-seen, or revoked Agents can be removed",
+    removeConfirm:
+      "Revoke the Agent identity, remove it from administration, and retain audit history for",
+    removeFailed: "The Agent record could not be removed.",
+    removeNotAllowed:
+      "The Agent recently reported and cannot be removed. Wait until it is offline or revoke it explicitly.",
+    removeOperationPending:
+      "A Windows Agent deployment is still active for this record. Wait for it to finish before removing the record.",
     bootstrapRequired: "One-time lifecycle bootstrap required",
     bootstrapAction: "Activate lifecycle management",
     bootstrapEyebrow: "Secure lifecycle bootstrap",

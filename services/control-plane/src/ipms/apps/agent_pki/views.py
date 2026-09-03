@@ -3,7 +3,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist, ValidationError as DjangoValidationError
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, models, transaction
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -37,7 +37,7 @@ from .serializers import (
     WindowsAgentDeploymentRequestSerializer,
     WindowsAgentDeploymentSerializer,
 )
-from .services import create_enrollment_token
+from .services import create_enrollment_token, revoke_agent
 
 
 def _actor(request) -> str:
@@ -307,6 +307,19 @@ def _version_tuple(value: str) -> tuple[int, int, int] | None:
     return tuple(int(part) for part in parts)
 
 
+def _agent_contact_state(enrollment, server, *, now) -> str:
+    last_seen = server.last_seen_at if server else enrollment.last_seen_at
+    if enrollment.status == AgentEnrollment.Status.REVOKED:
+        return "revoked"
+    if last_seen is None:
+        return "not-seen"
+    if last_seen >= now - timedelta(seconds=45):
+        return "online"
+    if last_seen >= now - timedelta(minutes=5):
+        return "stale"
+    return "offline"
+
+
 class AgentAdministrationListView(APIView):
     permission_classes = (IsAuthenticated, HasSelectedTenantAccess, CanDeployAgents)
 
@@ -325,6 +338,8 @@ class AgentAdministrationListView(APIView):
         now = timezone.now()
         enrollments = AgentEnrollment.objects.filter(
             tenant=request.tenant,
+        ).exclude(
+            status=AgentEnrollment.Status.REMOVED,
         ).prefetch_related(
             Prefetch(
                 "lifecycle_jobs",
@@ -336,16 +351,7 @@ class AgentAdministrationListView(APIView):
         for enrollment in enrollments:
             server = servers.get(enrollment.device_uri)
             last_seen = server.last_seen_at if server else enrollment.last_seen_at
-            if enrollment.status == AgentEnrollment.Status.REVOKED:
-                state = "revoked"
-            elif last_seen is None:
-                state = "not-seen"
-            elif last_seen >= now - timedelta(seconds=45):
-                state = "online"
-            elif last_seen >= now - timedelta(minutes=5):
-                state = "stale"
-            else:
-                state = "offline"
+            state = _agent_contact_state(enrollment, server, now=now)
             current_version = server.agent_version if server else ""
             current_tuple = _version_tuple(current_version)
             lifecycle_capable = (
@@ -372,11 +378,83 @@ class AgentAdministrationListView(APIView):
                     "status": state,
                     "compliance": compliance,
                     "lifecycle_capable": lifecycle_capable,
+                    "can_remove": state in {"offline", "not-seen", "revoked"},
                     "last_seen_at": last_seen,
                     "active_job": AgentLifecycleJobSerializer(active_job).data if active_job else None,
                 }
             )
         return Response(documents)
+
+
+class AgentAdministrationDetailView(APIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess, CanDeployAgents)
+
+    def delete(self, request, pk):
+        from ipms.apps.discovery.models import WindowsServer
+
+        actor = _actor(request)
+        now = timezone.now()
+        with transaction.atomic():
+            enrollment = get_object_or_404(
+                AgentEnrollment.objects.select_for_update().exclude(
+                    status=AgentEnrollment.Status.REMOVED,
+                ),
+                id=pk,
+                tenant=request.tenant,
+            )
+            server = WindowsServer.objects.select_for_update().filter(
+                tenant=request.tenant,
+                inventory_source=WindowsServer.InventorySource.AGENT,
+                source_id=enrollment.device_uri,
+            ).first()
+            contact_state = _agent_contact_state(enrollment, server, now=now)
+            if contact_state not in {"offline", "not-seen", "revoked"}:
+                raise PublicApiError("agent_removal_not_allowed")
+            if WindowsAgentDeployment.objects.filter(
+                tenant=request.tenant,
+                status__in=(
+                    WindowsAgentDeployment.Status.QUEUED,
+                    WindowsAgentDeployment.Status.RUNNING,
+                ),
+            ).filter(
+                models.Q(enrollment=enrollment)
+                | models.Q(lifecycle_bootstrap_enrollment=enrollment)
+            ).exists():
+                raise PublicApiError("agent_removal_operation_pending")
+
+            active_jobs = AgentLifecycleJob.objects.select_for_update().filter(
+                enrollment=enrollment,
+                status__in=ACTIVE_STATUSES,
+            )
+            active_jobs.update(
+                status=AgentLifecycleJob.Status.CANCELLED,
+                result_code="enrollment_removed",
+                completed_at=now,
+            )
+            previous_status = enrollment.status
+            if previous_status == AgentEnrollment.Status.ACTIVE:
+                revoke_agent(
+                    enrollment=enrollment,
+                    actor=actor,
+                    reason="administrative_removal",
+                )
+            enrollment.status = AgentEnrollment.Status.REMOVED
+            enrollment.save(update_fields=("status", "updated_at"))
+            enrollment.bootstrap_tokens.filter(used_at__isnull=True).delete()
+            AuditEvent.objects.create(
+                tenant=request.tenant,
+                actor=actor,
+                action="agent.remove",
+                object_type="agent_enrollment",
+                object_id=str(enrollment.id),
+                outcome=AuditEvent.Outcome.SUCCEEDED,
+                details={
+                    "previous_status": previous_status,
+                    "contact_state": contact_state,
+                    "inventory_retained": server is not None,
+                },
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class AgentLifecycleView(APIView):
@@ -385,32 +463,35 @@ class AgentLifecycleView(APIView):
     def post(self, request, pk):
         serializer = AgentLifecycleRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        enrollment = get_object_or_404(
-            AgentEnrollment,
-            id=pk,
-            tenant=request.tenant,
-        )
         from ipms.apps.discovery.models import WindowsServer
 
-        server = WindowsServer.objects.filter(
-            tenant=request.tenant,
-            inventory_source=WindowsServer.InventorySource.AGENT,
-            source_id=enrollment.device_uri,
-        ).first()
-        current_version = _version_tuple(server.agent_version if server else "")
-        if current_version is None or current_version < (0, 1, 32):
-            raise PublicApiError("agent_lifecycle_bootstrap_required")
-        action = serializer.validated_data["action"]
-        target_version = _version_tuple(settings.AGENT_WINDOWS_VERSION)
-        if (
-            action == AgentLifecycleJob.Action.UPDATE
-            and target_version is not None
-            and current_version >= target_version
-        ):
-            raise PublicApiError("agent_already_current")
         actor = _actor(request)
         try:
             with transaction.atomic():
+                enrollment = get_object_or_404(
+                    AgentEnrollment.objects.select_for_update(),
+                    id=pk,
+                    tenant=request.tenant,
+                    status=AgentEnrollment.Status.ACTIVE,
+                )
+                server = WindowsServer.objects.filter(
+                    tenant=request.tenant,
+                    inventory_source=WindowsServer.InventorySource.AGENT,
+                    source_id=enrollment.device_uri,
+                ).first()
+                current_version = _version_tuple(
+                    server.agent_version if server else ""
+                )
+                if current_version is None or current_version < (0, 1, 32):
+                    raise PublicApiError("agent_lifecycle_bootstrap_required")
+                action = serializer.validated_data["action"]
+                target_version = _version_tuple(settings.AGENT_WINDOWS_VERSION)
+                if (
+                    action == AgentLifecycleJob.Action.UPDATE
+                    and target_version is not None
+                    and current_version >= target_version
+                ):
+                    raise PublicApiError("agent_already_current")
                 job = create_lifecycle_job(
                     enrollment=enrollment,
                     action=action,

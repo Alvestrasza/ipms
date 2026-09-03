@@ -1,6 +1,6 @@
 "use client";
 
-import { RefreshCw, Search, Trash2 } from "lucide-react";
+import { CircleX, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useDeferredValue, useEffect, useState } from "react";
 
@@ -101,6 +101,57 @@ export function AgentAdministrationTable({
       router.refresh();
     } catch {
       setError(copy.actionFailed);
+    } finally {
+      setBusy((current) => {
+        const next = new Set(current);
+        next.delete(agent.enrollment_id);
+        return next;
+      });
+    }
+  }
+
+  async function remove(agent: ManagedAgent) {
+    if (!window.confirm(`${copy.removeConfirm} ${agent.fqdn}?`)) return;
+    setBusy((current) => new Set(current).add(agent.enrollment_id));
+    setError("");
+    try {
+      const response = await fetch(
+        `/api/v1/agents/${encodeURIComponent(agent.enrollment_id)}/`,
+        {
+          method: "DELETE",
+          credentials: "same-origin",
+          headers: {
+            "X-CSRFToken": csrfToken,
+            "X-IPMS-Tenant-ID": tenantId,
+          },
+        },
+      );
+      if (!response.ok) {
+        const document = await response.json().catch(() => null);
+        throw new Error(
+          document?.error?.code === "agent_removal_operation_pending"
+            ? "agent-removal-operation-pending"
+            : document?.error?.code === "agent_removal_not_allowed"
+              ? "agent-removal-not-allowed"
+              : "agent-removal-rejected",
+        );
+      }
+      setSelected((current) => {
+        const next = new Set(current);
+        next.delete(agent.enrollment_id);
+        return next;
+      });
+      router.refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error &&
+          cause.message === "agent-removal-operation-pending"
+          ? copy.removeOperationPending
+          : cause instanceof Error &&
+              cause.message === "agent-removal-not-allowed"
+            ? copy.removeNotAllowed
+            : copy.removeFailed,
+      );
     } finally {
       setBusy((current) => {
         const next = new Set(current);
@@ -297,6 +348,20 @@ export function AgentAdministrationTable({
                         aria-label={`${copy.uninstall} ${agent.fqdn}`}
                       >
                         <Trash2 aria-hidden="true" size={16} />
+                      </button>
+                      <button
+                        className="icon-button icon-button--compact icon-button--danger"
+                        type="button"
+                        disabled={isBusy || !agent.can_remove}
+                        onClick={() => void remove(agent)}
+                        title={
+                          agent.can_remove
+                            ? copy.remove
+                            : copy.removeUnavailable
+                        }
+                        aria-label={`${copy.remove} ${agent.fqdn}`}
+                      >
+                        <CircleX aria-hidden="true" size={16} />
                       </button>
                     </div>
                   </td>

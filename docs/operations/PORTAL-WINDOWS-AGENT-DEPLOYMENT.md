@@ -2,7 +2,7 @@
 
 ## Scope
 
-IPMS 0.1.44 provides a development-grade portal bootstrap for Windows Agent
+IPMS 0.1.45 provides a development-grade portal bootstrap for Windows Agent
 0.1.32. The workflow is tenant-scoped, audited, connection-approved, and
 limited to a fixed installation operation. It is not a general-purpose remote
 execution feature.

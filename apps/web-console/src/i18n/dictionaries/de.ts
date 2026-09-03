@@ -179,7 +179,7 @@ export const de = {
     infrastructure: "Infrastruktur",
     agents: "Agenten",
     soon: "Bald",
-    version: "IPMS v0.1.44 Entwicklung",
+    version: "IPMS v0.1.45 Entwicklung",
   },
   agentAdministration: {
     title: "Agent-Verwaltung",
@@ -206,6 +206,16 @@ export const de = {
     uninstall: "Agent deinstallieren",
     uninstallConfirm:
       "Agent deinstallieren und das historische Inventar beibehalten für",
+    remove: "Agent-Eintrag löschen",
+    removeUnavailable:
+      "Nur offline, nie gesehene oder widerrufene Agents können gelöscht werden",
+    removeConfirm:
+      "Agent-Identität widerrufen, aus der Verwaltung löschen und den Auditverlauf behalten für",
+    removeFailed: "Der Agent-Eintrag konnte nicht gelöscht werden.",
+    removeNotAllowed:
+      "Der Agent hat sich kürzlich gemeldet und kann nicht gelöscht werden. Warte, bis er offline ist, oder widerrufe ihn ausdrücklich.",
+    removeOperationPending:
+      "Für diesen Eintrag läuft noch ein Windows-Agent-Deployment. Warte vor dem Löschen auf dessen Abschluss.",
     bootstrapRequired: "Einmaliges Lifecycle-Bootstrap erforderlich",
     bootstrapAction: "Lifecycle-Verwaltung aktivieren",
     bootstrapEyebrow: "Sicheres Lifecycle-Bootstrap",

@@ -16,7 +16,7 @@ class PublicEndpointTests(TestCase):
             {
                 "name": "IPMS Control Plane API",
                 "version": "v1",
-                "application_version": "0.1.44",
+                "application_version": "0.1.45",
             },
         )
 

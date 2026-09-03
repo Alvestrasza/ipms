@@ -1,6 +1,6 @@
 # Agent Lifecycle Administration
 
-IPMS 0.1.44 provides the tenant-administrator Agent inventory at
+IPMS 0.1.45 provides the tenant-administrator Agent inventory at
 **Administration > Infrastructure > Agents**. It displays FQDN, derived contact
 state, operating system, installed Agent version, target version, compliance,
 last contact, and any active lifecycle job.
@@ -15,6 +15,21 @@ last contact, and any active lifecycle job.
 
 These values are derived by the Control Plane when the list is requested. They
 do not trust a browser-calculated state.
+
+## Administrative removal
+
+A tenant administrator may remove an Agent record only when its derived state
+is `Offline`, `Not seen`, or `Revoked`. `Online` and `Stale` records fail
+closed, which prevents a short network interruption from being mistaken for a
+decommissioned system.
+
+Removal is a security operation rather than an unaudited database deletion. An
+active offline identity is revoked first, unused enrollment tokens are
+destroyed, and any active fixed lifecycle jobs are cancelled. The enrollment
+is then hidden from Agent administration. Historical Windows inventory,
+terminal lifecycle and deployment records, certificate-revocation evidence,
+and append-only audit events remain available for reconciliation. An active
+Windows bootstrap deployment blocks removal until it reaches a terminal state.
 
 ## Bootstrap boundary
 

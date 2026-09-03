@@ -123,6 +123,7 @@ class AgentEnrollment(models.Model):
         PENDING = "pending", "Pending"
         ACTIVE = "active", "Active"
         REVOKED = "revoked", "Revoked"
+        REMOVED = "removed", "Removed"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(

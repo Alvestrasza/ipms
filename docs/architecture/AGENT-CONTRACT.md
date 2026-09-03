@@ -37,7 +37,7 @@ An assignment is configuration, never executable content. It cannot contain shel
 
 An update message is a signed manifest, not an executable payload. The Agent verifies the signer, target platform, version, artifact digest, compatibility, and rollback availability before downloading an update through the authenticated channel and applying it atomically.
 
-The 0.1.44 development foundation implements the narrower precursor defined in
+The 0.1.45 development foundation implements the narrower precursor defined in
 [ADR-0006](ADR-0006-AGENT-LIFECYCLE-CHANNEL.md): a tenant- and device-bound
 mTLS assignment, a job-bound download, independent SHA-256 verification by the
 Agent and updater, and rollback. A separately signed manifest, Authenticode,
