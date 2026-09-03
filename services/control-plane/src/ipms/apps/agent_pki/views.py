@@ -204,6 +204,42 @@ class WindowsAgentDeploymentListCreateView(APIView):
         actor = _actor(request)
         try:
             with transaction.atomic():
+                lifecycle_bootstrap_enrollment = None
+                existing_enrollment_id = data.get("existing_enrollment_id")
+                if existing_enrollment_id is not None:
+                    lifecycle_bootstrap_enrollment = get_object_or_404(
+                        AgentEnrollment.objects.select_for_update(),
+                        id=existing_enrollment_id,
+                        tenant=request.tenant,
+                        status=AgentEnrollment.Status.ACTIVE,
+                    )
+                    from ipms.apps.discovery.models import WindowsServer
+
+                    existing_server = WindowsServer.objects.filter(
+                        tenant=request.tenant,
+                        inventory_source=WindowsServer.InventorySource.AGENT,
+                        source_id=lifecycle_bootstrap_enrollment.device_uri,
+                    ).first()
+                    existing_version = _version_tuple(
+                        existing_server.agent_version if existing_server else ""
+                    )
+                    if existing_version is not None and existing_version >= (0, 1, 32):
+                        raise PublicApiError("agent_lifecycle_bootstrap_not_required")
+                    if AgentLifecycleJob.objects.filter(
+                        enrollment=lifecycle_bootstrap_enrollment,
+                        status__in=ACTIVE_STATUSES,
+                    ).exists():
+                        raise PublicApiError("agent_lifecycle_job_rejected")
+                    if WindowsAgentDeployment.objects.filter(
+                        lifecycle_bootstrap_enrollment=(
+                            lifecycle_bootstrap_enrollment
+                        ),
+                        status__in=(
+                            WindowsAgentDeployment.Status.QUEUED,
+                            WindowsAgentDeployment.Status.RUNNING,
+                        ),
+                    ).exists():
+                        raise PublicApiError("deployment_already_pending")
                 enrollment, bootstrap_token, _ = create_enrollment_token(
                     tenant=request.tenant,
                     display_name=data["display_name"],
@@ -212,6 +248,7 @@ class WindowsAgentDeploymentListCreateView(APIView):
                 deployment = WindowsAgentDeployment.objects.create(
                     tenant=request.tenant,
                     enrollment=enrollment,
+                    lifecycle_bootstrap_enrollment=lifecycle_bootstrap_enrollment,
                     display_name=data["display_name"],
                     target_address=data["address"],
                     target_port=data["port"],
@@ -239,6 +276,8 @@ class WindowsAgentDeploymentListCreateView(APIView):
                         "transport": data["transport"],
                         "certificate_trust_mode": trust_mode,
                         "administrator_confirmed": True,
+                        "lifecycle_bootstrap": lifecycle_bootstrap_enrollment
+                        is not None,
                     },
                 )
         except (DjangoValidationError, ObjectDoesNotExist) as exc:

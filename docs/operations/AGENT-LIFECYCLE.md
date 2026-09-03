@@ -1,6 +1,6 @@
 # Agent Lifecycle Administration
 
-IPMS 0.1.41 introduces the tenant-administrator Agent inventory at
+IPMS 0.1.42 provides the tenant-administrator Agent inventory at
 **Administration > Infrastructure > Agents**. It displays FQDN, derived contact
 state, operating system, installed Agent version, target version, compliance,
 last contact, and any active lifecycle job.
@@ -19,11 +19,21 @@ do not trust a browser-calculated state.
 ## Bootstrap boundary
 
 Agent 0.1.32 is the first version that can consume fixed lifecycle assignments.
-An older Agent is marked **One-time lifecycle bootstrap required**. Update that
-system once through the existing **Add System > Windows system** workflow. The
-existing managed identity, private key, certificate, configuration, and device
-URI are retained. Routine later updates use the Agent-initiated mTLS channel and
-do not require Windows administrator credentials.
+For an older Agent, the row update or uninstall action opens a one-time secure
+bootstrap dialog instead of remaining disabled. The administrator confirms the
+Windows management endpoint and its certificate or explicit HTTP fallback,
+then supplies transient administrative credentials. The worker must match the
+remote device URI to the selected enrollment before it copies or changes any
+Agent file. The existing device identity and mTLS certificate are retained.
+
+Bulk actions stop at the first older Agent because each endpoint certificate or
+HTTP fallback requires an individual administrator decision. Once all selected
+Agents report 0.1.32 or newer, the same bulk controls queue fixed lifecycle jobs
+without Windows administrative credentials.
+
+An older Agent is marked **One-time lifecycle bootstrap required**. Routine
+later updates use the Agent-initiated mTLS channel and do not require Windows
+administrator credentials.
 
 ## Update
 

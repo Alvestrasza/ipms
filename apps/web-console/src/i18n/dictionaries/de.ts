@@ -179,7 +179,7 @@ export const de = {
     infrastructure: "Infrastruktur",
     agents: "Agenten",
     soon: "Bald",
-    version: "IPMS v0.1.41 Entwicklung",
+    version: "IPMS v0.1.42 Entwicklung",
   },
   agentAdministration: {
     title: "Agent-Verwaltung",
@@ -207,6 +207,28 @@ export const de = {
     uninstallConfirm:
       "Agent deinstallieren und das historische Inventar beibehalten für",
     bootstrapRequired: "Einmaliges Lifecycle-Bootstrap erforderlich",
+    bootstrapAction: "Lifecycle-Verwaltung aktivieren",
+    bootstrapEyebrow: "Sicheres Lifecycle-Bootstrap",
+    bootstrapHeading: "Älteren Agent aktualisieren",
+    bootstrapDescription:
+      "Das Lifecycle-fähige Agent-Paket wird über den bestätigten Windows-Verwaltungspfad installiert. Die bestehende Geräteidentität und das mTLS-Zertifikat bleiben erhalten.",
+    bootstrapConfirm: "Bestätigen und Agent aktualisieren",
+    bootstrapInProgress:
+      "Der isolierte Worker prüft die bestehende Agent-Identität und installiert das fest definierte Update-Paket.",
+    bootstrapSucceeded:
+      "Der Agent wurde ohne Änderung seiner Geräteidentität aktualisiert. Nach dem nächsten Agent-Inventar stehen die Lifecycle-Aktionen zur Verfügung.",
+    bootstrapIdentityMismatch:
+      "Die Identität des entfernten Agents stimmt nicht mit dem ausgewählten verwalteten Agent überein. Es wurden keine Dateien geändert.",
+    bootstrapNotRequired:
+      "Dieser Agent unterstützt die Lifecycle-Verwaltung bereits. Aktualisiere die Liste und wiederhole die normale Aktion.",
+    bootstrapUnavailable:
+      "Die ausgewählte Agent-Registrierung ist nicht mehr aktiv. Es wurde keine Remoteverbindung aufgebaut.",
+    bootstrapStates: {
+      queued: "Bootstrap eingereiht",
+      running: "Bootstrap wird ausgeführt",
+      succeeded: "Bootstrap erfolgreich",
+      failed: "Bootstrap fehlgeschlagen",
+    },
     actionFailed: "Die Agent-Lifecycle-Aktion konnte nicht eingereiht werden.",
     noAgents: "Keine Agenten entsprechen dem aktuellen Filter.",
     states: {

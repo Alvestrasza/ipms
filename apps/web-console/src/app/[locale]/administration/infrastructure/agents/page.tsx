@@ -62,6 +62,7 @@ export default async function AgentAdministrationPage() {
         tenantId={tenant.id}
         locale={locale}
         copy={dictionary.agentAdministration}
+        deploymentCopy={dictionary.addSystem}
       />
     </ConsoleShell>
   );

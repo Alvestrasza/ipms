@@ -14,6 +14,7 @@ from ipms.apps.discovery.certificates import (
     CertificateProbeError,
     WindowsHttpObservation,
 )
+from ipms.apps.discovery.models import WindowsServer
 from ipms.apps.tenancy.models import Tenant, TenantMembership
 
 from .deployment import (
@@ -187,6 +188,70 @@ class WindowsAgentDeploymentApiTests(TestCase):
         self.assertTrue(
             AuditEvent.objects.filter(action="agent.windows_deployment.queue").exists()
         )
+
+    def test_admin_can_target_legacy_agent_for_identity_preserving_bootstrap(self) -> None:
+        existing = AgentEnrollment.objects.create(
+            tenant=self.tenant,
+            device_uri="urn:ipms:agent:11111111-1111-1111-1111-111111111111",
+            display_name="Legacy managed Agent",
+            status=AgentEnrollment.Status.ACTIVE,
+        )
+        WindowsServer.objects.create(
+            tenant=self.tenant,
+            source_id=existing.device_uri,
+            inventory_source=WindowsServer.InventorySource.AGENT,
+            server_type=WindowsServer.ServerType.PHYSICAL,
+            hostname="legacy-agent",
+            fqdn="legacy-agent.example.invalid",
+            operating_system="Microsoft Windows Server",
+            os_version="10.0.26100",
+            agent_version="0.1.31",
+            agent_state=WindowsServer.AgentState.ONLINE,
+            health=WindowsServer.Health.HEALTHY,
+            discovered_at=timezone.now(),
+            last_seen_at=timezone.now(),
+        )
+        self.payload["existing_enrollment_id"] = str(existing.id)
+
+        response = self.post(self.admin)
+
+        self.assertEqual(response.status_code, 201)
+        deployment = WindowsAgentDeployment.objects.get()
+        self.assertEqual(deployment.lifecycle_bootstrap_enrollment, existing)
+        self.assertNotEqual(deployment.enrollment, existing)
+        self.assertNotIn(str(existing.id), str(response.json()))
+        event = AuditEvent.objects.get(action="agent.windows_deployment.queue")
+        self.assertTrue(event.details["lifecycle_bootstrap"])
+
+    def test_current_agent_rejects_redundant_lifecycle_bootstrap(self) -> None:
+        existing = AgentEnrollment.objects.create(
+            tenant=self.tenant,
+            device_uri="urn:ipms:agent:22222222-2222-2222-2222-222222222222",
+            display_name="Current managed Agent",
+            status=AgentEnrollment.Status.ACTIVE,
+        )
+        WindowsServer.objects.create(
+            tenant=self.tenant,
+            source_id=existing.device_uri,
+            inventory_source=WindowsServer.InventorySource.AGENT,
+            server_type=WindowsServer.ServerType.PHYSICAL,
+            hostname="current-agent",
+            fqdn="current-agent.example.invalid",
+            operating_system="Microsoft Windows Server",
+            os_version="10.0.26100",
+            agent_version="0.1.32",
+            agent_state=WindowsServer.AgentState.ONLINE,
+            health=WindowsServer.Health.HEALTHY,
+            discovered_at=timezone.now(),
+            last_seen_at=timezone.now(),
+        )
+        self.payload["existing_enrollment_id"] = str(existing.id)
+
+        response = self.post(self.admin)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("agent_lifecycle_bootstrap_not_required", str(response.json()))
+        self.assertFalse(WindowsAgentDeployment.objects.exists())
 
     def test_preflight_returns_certificate_and_scoped_approval(self) -> None:
         self.client.force_login(self.admin)
@@ -610,7 +675,7 @@ class WindowsAgentDeploymentWorkerTests(TestCase):
 
     @patch("ipms.apps.agent_pki.deployment.request_windows_http_probe")
     @patch("pypsrp.client.Client")
-    def test_existing_managed_agent_is_updated_without_reenrollment(
+    def test_explicit_legacy_agent_is_updated_without_reenrollment(
         self,
         client_type,
         http_probe,
@@ -635,20 +700,8 @@ class WindowsAgentDeploymentWorkerTests(TestCase):
             display_name="Existing managed Agent",
             status=AgentEnrollment.Status.ACTIVE,
         )
-        WindowsAgentDeployment.objects.create(
-            tenant=self.tenant,
-            enrollment=existing,
-            display_name="Existing managed Agent",
-            target_address=self.deployment.target_address,
-            target_port=5985,
-            transport=WindowsAgentDeployment.Transport.HTTP,
-            certificate_trust_mode=(
-                WindowsAgentDeployment.CertificateTrustMode.NONE
-            ),
-            status=WindowsAgentDeployment.Status.SUCCEEDED,
-            requested_by="test-operator",
-            completed_at=timezone.now(),
-        )
+        self.deployment.lifecycle_bootstrap_enrollment = existing
+        self.deployment.save(update_fields=("lifecycle_bootstrap_enrollment",))
         http_probe.return_value = WindowsHttpObservation(reachable=True)
         client = Mock()
         client.execute_ps.side_effect = [
@@ -683,6 +736,85 @@ class WindowsAgentDeploymentWorkerTests(TestCase):
         self.assertFalse(AgentEnrollmentToken.objects.exists())
         event = AuditEvent.objects.get(action="agent.windows_deployment.complete")
         self.assertTrue(event.details["updated_existing_agent"])
+
+    @patch("ipms.apps.agent_pki.deployment.request_windows_http_probe")
+    @patch("pypsrp.client.Client")
+    def test_explicit_legacy_bootstrap_fails_closed_on_identity_mismatch(
+        self,
+        client_type,
+        http_probe,
+    ):
+        self.deployment.transport = WindowsAgentDeployment.Transport.HTTP
+        self.deployment.target_port = 5985
+        self.deployment.certificate_trust_mode = (
+            WindowsAgentDeployment.CertificateTrustMode.NONE
+        )
+        existing = AgentEnrollment.objects.create(
+            tenant=self.tenant,
+            device_uri="urn:ipms:agent:33333333-3333-3333-3333-333333333333",
+            display_name="Selected managed Agent",
+            status=AgentEnrollment.Status.ACTIVE,
+        )
+        self.deployment.lifecycle_bootstrap_enrollment = existing
+        self.deployment.save(
+            update_fields=(
+                "transport",
+                "target_port",
+                "certificate_trust_mode",
+                "lifecycle_bootstrap_enrollment",
+            )
+        )
+        http_probe.return_value = WindowsHttpObservation(reachable=True)
+        client = Mock()
+        client.execute_ps.side_effect = [
+            ("", [], False),
+            ("IPMS_AGENT_PRESENT=1\nIPMS_EXISTING_UPDATE=0", [], False),
+            ("", [], False),
+        ]
+        client_type.return_value = client
+
+        with override_settings(
+            AGENT_WINDOWS_PACKAGE_PATH=str(self.package),
+            AGENT_WINDOWS_PACKAGE_SHA256=self.package_digest,
+        ):
+            process_deployment(self.deployment)
+
+        self.deployment.refresh_from_db()
+        self.assertEqual(self.deployment.status, WindowsAgentDeployment.Status.FAILED)
+        self.assertEqual(
+            self.deployment.error_code,
+            "remote_existing_agent_identity_mismatch",
+        )
+        self.assertEqual(client.copy.call_count, 0)
+
+    @patch("pypsrp.client.Client")
+    def test_explicit_legacy_bootstrap_rechecks_active_enrollment(
+        self,
+        client_type,
+    ):
+        existing = AgentEnrollment.objects.create(
+            tenant=self.tenant,
+            device_uri="urn:ipms:agent:44444444-4444-4444-4444-444444444444",
+            display_name="Revoked managed Agent",
+            status=AgentEnrollment.Status.REVOKED,
+        )
+        self.deployment.lifecycle_bootstrap_enrollment = existing
+        self.deployment.save(update_fields=("lifecycle_bootstrap_enrollment",))
+
+        with override_settings(
+            AGENT_WINDOWS_PACKAGE_PATH=str(self.package),
+            AGENT_WINDOWS_PACKAGE_SHA256=self.package_digest,
+        ):
+            process_deployment(self.deployment)
+
+        self.deployment.refresh_from_db()
+        self.assertEqual(self.deployment.status, WindowsAgentDeployment.Status.FAILED)
+        self.assertEqual(
+            self.deployment.error_code,
+            "agent_lifecycle_bootstrap_unavailable",
+        )
+        client_type.assert_not_called()
+        self.assertFalse(WindowsAgentDeploymentSecret.objects.exists())
 
     @patch("ipms.apps.agent_pki.deployment.request_windows_http_probe")
     @patch("pypsrp.client.Client")

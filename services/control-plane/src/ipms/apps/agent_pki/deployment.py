@@ -39,7 +39,12 @@ def _claim_next_deployment() -> WindowsAgentDeployment | None:
     with transaction.atomic():
         deployment = (
             WindowsAgentDeployment.objects.select_for_update(skip_locked=True)
-            .select_related("tenant", "enrollment", "enrollment__tenant")
+            .select_related(
+                "tenant",
+                "enrollment",
+                "enrollment__tenant",
+                "lifecycle_bootstrap_enrollment",
+            )
             .filter(status=WindowsAgentDeployment.Status.QUEUED)
             .order_by("created_at")
             .first()
@@ -482,6 +487,16 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
     stage = "initialization"
     try:
         secret_row = deployment.secret
+        if deployment.lifecycle_bootstrap_enrollment_id is not None:
+            lifecycle_bootstrap_available = AgentEnrollment.objects.filter(
+                id=deployment.lifecycle_bootstrap_enrollment_id,
+                tenant_id=deployment.tenant_id,
+                status=AgentEnrollment.Status.ACTIVE,
+            ).exists()
+            if not lifecycle_bootstrap_available:
+                raise RemoteDeploymentStepError(
+                    "agent_lifecycle_bootstrap_unavailable"
+                )
         secret = load_deployment_secret(secret_row)
         stage = "package"
         artifact = _artifact()
@@ -571,20 +586,23 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
             + "{ throw 'Administrative access is required.' }",
             failure_code="remote_administrator_required",
         )
-        existing_enrollment = (
-            AgentEnrollment.objects.filter(
-                tenant_id=deployment.tenant_id,
-                status=AgentEnrollment.Status.ACTIVE,
-                windows_deployment__target_address__iexact=(
-                    deployment.target_address
-                ),
-                windows_deployment__status=(
-                    WindowsAgentDeployment.Status.SUCCEEDED
-                ),
+        existing_enrollment = deployment.lifecycle_bootstrap_enrollment
+        explicit_lifecycle_bootstrap = existing_enrollment is not None
+        if existing_enrollment is None:
+            existing_enrollment = (
+                AgentEnrollment.objects.filter(
+                    tenant_id=deployment.tenant_id,
+                    status=AgentEnrollment.Status.ACTIVE,
+                    windows_deployment__target_address__iexact=(
+                        deployment.target_address
+                    ),
+                    windows_deployment__status=(
+                        WindowsAgentDeployment.Status.SUCCEEDED
+                    ),
+                )
+                .order_by("-windows_deployment__completed_at")
+                .first()
             )
-            .order_by("-windows_deployment__completed_at")
-            .first()
-        )
         if existing_enrollment is not None:
             assessment = _execute_checked(
                 client,
@@ -594,6 +612,10 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
                 failure_code="remote_existing_agent_assessment_failed",
             )
             updated_existing_agent = "IPMS_EXISTING_UPDATE=1" in assessment
+            if explicit_lifecycle_bootstrap and not updated_existing_agent:
+                raise RemoteDeploymentStepError(
+                    "remote_existing_agent_identity_mismatch"
+                )
         if not updated_existing_agent:
             _execute_checked(
                 client,

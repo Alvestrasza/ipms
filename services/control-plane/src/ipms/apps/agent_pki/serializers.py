@@ -27,6 +27,10 @@ class WindowsAgentDeploymentRequestSerializer(serializers.Serializer):
         write_only=True,
         trim_whitespace=False,
     )
+    existing_enrollment_id = serializers.UUIDField(
+        required=False,
+        write_only=True,
+    )
 
     def validate_address(self, value: str) -> str:
         address = value.strip().rstrip(".")

@@ -167,7 +167,7 @@ export const en = {
     infrastructure: "Infrastructure",
     agents: "Agents",
     soon: "Soon",
-    version: "IPMS v0.1.41 development",
+    version: "IPMS v0.1.42 development",
   },
   agentAdministration: {
     title: "Agent administration",
@@ -194,6 +194,28 @@ export const en = {
     uninstallConfirm:
       "Uninstall the Agent while retaining its historical inventory for",
     bootstrapRequired: "One-time lifecycle bootstrap required",
+    bootstrapAction: "Activate lifecycle management",
+    bootstrapEyebrow: "Secure lifecycle bootstrap",
+    bootstrapHeading: "Update legacy Agent",
+    bootstrapDescription:
+      "Install the lifecycle-capable Agent package through the approved Windows management path while preserving the existing device identity and mTLS certificate.",
+    bootstrapConfirm: "Confirm and update Agent",
+    bootstrapInProgress:
+      "The isolated worker is validating the existing Agent identity and applying the fixed update package.",
+    bootstrapSucceeded:
+      "The Agent was updated without changing its device identity. Lifecycle actions become available after the next Agent inventory.",
+    bootstrapIdentityMismatch:
+      "The remote Agent identity does not match the selected managed Agent. No files were changed.",
+    bootstrapNotRequired:
+      "This Agent already supports lifecycle management. Refresh the Agent list and retry the normal action.",
+    bootstrapUnavailable:
+      "The selected Agent enrollment is no longer active. No remote connection was attempted.",
+    bootstrapStates: {
+      queued: "Bootstrap queued",
+      running: "Bootstrap running",
+      succeeded: "Bootstrap succeeded",
+      failed: "Bootstrap failed",
+    },
     actionFailed: "The Agent lifecycle operation could not be queued.",
     noAgents: "No Agents match the current filter.",
     states: {

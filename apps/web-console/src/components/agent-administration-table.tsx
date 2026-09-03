@@ -7,12 +7,15 @@ import { useDeferredValue, useEffect, useState } from "react";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { ManagedAgent } from "@/lib/server-agents";
 
+import { AgentLifecycleBootstrapDialog } from "./agent-lifecycle-bootstrap-dialog";
+
 type Props = {
   agents: ManagedAgent[];
   csrfToken: string;
   tenantId: string;
   locale: "de" | "en";
   copy: Dictionary["agentAdministration"];
+  deploymentCopy: Dictionary["addSystem"];
 };
 
 function formatDate(value: string | null, locale: "de" | "en") {
@@ -29,6 +32,7 @@ export function AgentAdministrationTable({
   tenantId,
   locale,
   copy,
+  deploymentCopy,
 }: Props) {
   const router = useRouter();
   const [query, setQuery] = useState("");
@@ -36,6 +40,9 @@ export function AgentAdministrationTable({
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [busy, setBusy] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState("");
+  const [bootstrapAgent, setBootstrapAgent] = useState<ManagedAgent | null>(
+    null,
+  );
   const hasActiveJobs = agents.some((agent) => agent.active_job);
   const filtered = deferredQuery
     ? agents.filter((agent) =>
@@ -44,18 +51,18 @@ export function AgentAdministrationTable({
         ),
       )
     : agents;
-  const eligibleSelected = filtered.filter(
+  const selectedOutdated = filtered.filter(
     (agent) =>
       selected.has(agent.enrollment_id) &&
-      agent.lifecycle_capable &&
       agent.compliance === "outdated" &&
-      !agent.active_job,
+      !agent.active_job &&
+      agent.status !== "revoked",
   );
-  const eligibleOutdated = filtered.filter(
+  const outdated = filtered.filter(
     (agent) =>
-      agent.lifecycle_capable &&
       agent.compliance === "outdated" &&
-      !agent.active_job,
+      !agent.active_job &&
+      agent.status !== "revoked",
   );
 
   useEffect(() => {
@@ -104,12 +111,24 @@ export function AgentAdministrationTable({
   }
 
   async function updateSelected() {
-    for (const agent of eligibleSelected) await queue(agent, "update");
+    const bootstrap = selectedOutdated.find(
+      (agent) => !agent.lifecycle_capable,
+    );
+    if (bootstrap) {
+      setBootstrapAgent(bootstrap);
+      return;
+    }
+    for (const agent of selectedOutdated) await queue(agent, "update");
     setSelected(new Set());
   }
 
   async function updateAllOutdated() {
-    for (const agent of eligibleOutdated) await queue(agent, "update");
+    const bootstrap = outdated.find((agent) => !agent.lifecycle_capable);
+    if (bootstrap) {
+      setBootstrapAgent(bootstrap);
+      return;
+    }
+    for (const agent of outdated) await queue(agent, "update");
   }
 
   return (
@@ -136,20 +155,20 @@ export function AgentAdministrationTable({
           <button
             className="outline-button"
             type="button"
-            disabled={eligibleSelected.length === 0 || busy.size > 0}
+            disabled={selectedOutdated.length === 0 || busy.size > 0}
             onClick={updateSelected}
           >
             <RefreshCw aria-hidden="true" size={16} />
-            {copy.updateSelected} ({eligibleSelected.length})
+            {copy.updateSelected} ({selectedOutdated.length})
           </button>
           <button
             className="outline-button"
             type="button"
-            disabled={eligibleOutdated.length === 0 || busy.size > 0}
+            disabled={outdated.length === 0 || busy.size > 0}
             onClick={updateAllOutdated}
           >
             <RefreshCw aria-hidden="true" size={16} />
-            {copy.updateAllOutdated} ({eligibleOutdated.length})
+            {copy.updateAllOutdated} ({outdated.length})
           </button>
         </div>
       </div>
@@ -231,22 +250,37 @@ export function AgentAdministrationTable({
                         className="icon-button icon-button--compact"
                         type="button"
                         disabled={
-                          isBusy ||
-                          pending ||
-                          !agent.lifecycle_capable ||
-                          agent.compliance !== "outdated"
+                          isBusy || pending || agent.compliance !== "outdated"
                         }
-                        onClick={() => queue(agent, "update")}
-                        title={copy.update}
-                        aria-label={`${copy.update} ${agent.fqdn}`}
+                        onClick={() => {
+                          if (agent.lifecycle_capable)
+                            void queue(agent, "update");
+                          else setBootstrapAgent(agent);
+                        }}
+                        title={
+                          agent.lifecycle_capable
+                            ? copy.update
+                            : copy.bootstrapAction
+                        }
+                        aria-label={`${
+                          agent.lifecycle_capable
+                            ? copy.update
+                            : copy.bootstrapAction
+                        } ${agent.fqdn}`}
                       >
                         <RefreshCw aria-hidden="true" size={16} />
                       </button>
                       <button
                         className="icon-button icon-button--compact icon-button--danger"
                         type="button"
-                        disabled={isBusy || pending || !agent.lifecycle_capable}
+                        disabled={
+                          isBusy || pending || agent.status === "revoked"
+                        }
                         onClick={() => {
+                          if (!agent.lifecycle_capable) {
+                            setBootstrapAgent(agent);
+                            return;
+                          }
                           if (
                             window.confirm(
                               `${copy.uninstallConfirm} ${agent.fqdn}?`,
@@ -255,7 +289,11 @@ export function AgentAdministrationTable({
                             void queue(agent, "uninstall");
                           }
                         }}
-                        title={copy.uninstall}
+                        title={
+                          agent.lifecycle_capable
+                            ? copy.uninstall
+                            : copy.bootstrapAction
+                        }
                         aria-label={`${copy.uninstall} ${agent.fqdn}`}
                       >
                         <Trash2 aria-hidden="true" size={16} />
@@ -270,6 +308,17 @@ export function AgentAdministrationTable({
       </div>
       {filtered.length === 0 ? (
         <p className="table-empty">{copy.noAgents}</p>
+      ) : null}
+      {bootstrapAgent ? (
+        <AgentLifecycleBootstrapDialog
+          agent={bootstrapAgent}
+          csrfToken={csrfToken}
+          tenantId={tenantId}
+          locale={locale}
+          copy={copy}
+          deploymentCopy={deploymentCopy}
+          onClose={() => setBootstrapAgent(null)}
+        />
       ) : null}
     </section>
   );

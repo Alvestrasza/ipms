@@ -227,6 +227,13 @@ class WindowsAgentDeployment(models.Model):
         on_delete=models.PROTECT,
         related_name="windows_deployment",
     )
+    lifecycle_bootstrap_enrollment = models.ForeignKey(
+        AgentEnrollment,
+        blank=True,
+        null=True,
+        on_delete=models.PROTECT,
+        related_name="lifecycle_bootstrap_deployments",
+    )
     display_name = models.CharField(max_length=255)
     target_address = models.CharField(max_length=253)
     target_port = models.PositiveIntegerField(
