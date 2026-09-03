@@ -43,7 +43,6 @@ def _claim_next_deployment() -> WindowsAgentDeployment | None:
                 "tenant",
                 "enrollment",
                 "enrollment__tenant",
-                "lifecycle_bootstrap_enrollment",
             )
             .filter(status=WindowsAgentDeployment.Status.QUEUED)
             .order_by("created_at")
