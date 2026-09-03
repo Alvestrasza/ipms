@@ -27,12 +27,15 @@ export type ActiveSection =
   | "bmc"
   | "bmc-logs"
   | "bmc-events"
-  | "virtual";
+  | "virtual"
+  | "admin-agents";
 
 export async function Sidebar({
   activeSection,
+  canAdmin,
 }: {
   activeSection: ActiveSection;
+  canAdmin: boolean;
 }) {
   const locale = await resolveLocale();
   const dictionary = getDictionary(locale);
@@ -44,6 +47,7 @@ export async function Sidebar({
     "bmc-events",
   ].includes(activeSection);
   const virtualExpanded = activeSection === "virtual";
+  const administrationExpanded = activeSection === "admin-agents";
   const navigation = [
     {
       label: dictionary.navigation.overview,
@@ -210,11 +214,45 @@ export async function Sidebar({
           <span>{dictionary.navigation.tenants}</span>
           <span className="nav-item__soon">{dictionary.navigation.soon}</span>
         </span>
-        <span className="nav-item nav-item--disabled" aria-disabled="true">
-          <Settings aria-hidden="true" size={18} />
-          <span>{dictionary.navigation.administration}</span>
-          <span className="nav-item__soon">{dictionary.navigation.soon}</span>
-        </span>
+        {canAdmin ? (
+          <Link
+            className={`nav-item ${administrationExpanded ? "nav-item--active" : ""}`}
+            href={`/${locale}/administration/infrastructure/agents` as Route}
+            aria-current={administrationExpanded ? "page" : undefined}
+          >
+            <Settings aria-hidden="true" size={18} />
+            <span>{dictionary.navigation.administration}</span>
+          </Link>
+        ) : (
+          <span className="nav-item nav-item--disabled" aria-disabled="true">
+            <Settings aria-hidden="true" size={18} />
+            <span>{dictionary.navigation.administration}</span>
+          </span>
+        )}
+        {canAdmin && administrationExpanded ? (
+          <ul className="nav-tree">
+            <li>
+              <span className="nav-subitem nav-subitem--branch">
+                <ServerCog aria-hidden="true" size={15} />
+                <span>{dictionary.navigation.infrastructure}</span>
+              </span>
+              <ul className="nav-tree nav-tree--nested">
+                <li>
+                  <Link
+                    className="nav-subitem nav-subitem--active"
+                    href={
+                      `/${locale}/administration/infrastructure/agents` as Route
+                    }
+                    aria-current="page"
+                  >
+                    <MonitorCog aria-hidden="true" size={14} />
+                    <span>{dictionary.navigation.agents}</span>
+                  </Link>
+                </li>
+              </ul>
+            </li>
+          </ul>
+        ) : null}
         <div className="sidebar__version">
           <span className="sidebar__version-dot" aria-hidden="true" />
           {dictionary.navigation.version}

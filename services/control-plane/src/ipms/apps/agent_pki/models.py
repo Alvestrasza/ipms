@@ -306,3 +306,63 @@ class AgentRevocation(models.Model):
 
     class Meta:
         ordering = ("-revoked_at",)
+
+
+class AgentLifecycleJob(models.Model):
+    class Action(models.TextChoices):
+        UPDATE = "update", "Update"
+        UNINSTALL = "uninstall", "Uninstall"
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Queued"
+        DELIVERED = "delivered", "Delivered"
+        RUNNING = "running", "Running"
+        SUCCEEDED = "succeeded", "Succeeded"
+        FAILED = "failed", "Failed"
+        CANCELLED = "cancelled", "Cancelled"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.PROTECT,
+        related_name="agent_lifecycle_jobs",
+    )
+    enrollment = models.ForeignKey(
+        AgentEnrollment,
+        on_delete=models.PROTECT,
+        related_name="lifecycle_jobs",
+    )
+    action = models.CharField(max_length=16, choices=Action.choices)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.QUEUED,
+    )
+    target_version = models.CharField(max_length=64, blank=True)
+    artifact_sha256 = models.CharField(max_length=64, blank=True)
+    requested_by = models.CharField(max_length=255)
+    result_code = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    delivered_at = models.DateTimeField(blank=True, null=True)
+    started_at = models.DateTimeField(blank=True, null=True)
+    completed_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(
+                fields=("tenant", "-created_at"),
+                name="agent_lifecycle_tenant_time",
+            ),
+            models.Index(
+                fields=("enrollment", "status"),
+                name="agent_lifecycle_device_state",
+            ),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("enrollment",),
+                condition=models.Q(status__in=("queued", "delivered", "running")),
+                name="unique_active_agent_lifecycle_job",
+            )
+        ]

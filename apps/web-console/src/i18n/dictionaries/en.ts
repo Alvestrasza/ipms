@@ -164,8 +164,57 @@ export const en = {
     backup: "Backup & restore",
     tenants: "Tenants",
     administration: "Administration",
+    infrastructure: "Infrastructure",
+    agents: "Agents",
     soon: "Soon",
-    version: "IPMS v0.1.40 development",
+    version: "IPMS v0.1.41 development",
+  },
+  agentAdministration: {
+    title: "Agent administration",
+    liveData: "Live tenant-scoped Agent lifecycle data from the Control Plane.",
+    unavailableData: "Agent lifecycle data is currently unavailable.",
+    eyebrow: "Administration · Infrastructure",
+    heading: "Agents",
+    description:
+      "Review Agent health and version compliance, then issue fixed lifecycle operations over the authenticated Agent channel.",
+    inventory: "Agent inventory",
+    tableHeading: "Managed Windows Agents",
+    search: "Search Agents",
+    select: "Select",
+    fqdn: "FQDN",
+    status: "Status",
+    operatingSystem: "Operating system",
+    agentVersion: "Agent version",
+    lastContact: "Last contact",
+    actions: "Actions",
+    update: "Update Agent",
+    updateSelected: "Update selected",
+    updateAllOutdated: "Update all outdated",
+    uninstall: "Uninstall Agent",
+    uninstallConfirm:
+      "Uninstall the Agent while retaining its historical inventory for",
+    bootstrapRequired: "One-time lifecycle bootstrap required",
+    actionFailed: "The Agent lifecycle operation could not be queued.",
+    noAgents: "No Agents match the current filter.",
+    states: {
+      online: "Online",
+      stale: "Stale",
+      offline: "Offline",
+      "not-seen": "Not seen",
+      revoked: "Revoked",
+    },
+    compliance: {
+      current: "Current",
+      outdated: "Outdated",
+      unknown: "Unknown",
+    },
+    jobStates: {
+      queued: "Queued",
+      delivered: "Delivered",
+      running: "Running",
+      succeeded: "Succeeded",
+      failed: "Failed",
+    },
   },
   overview: {
     inventoryCurrent: "Current inventory",
@@ -746,8 +795,8 @@ export const en = {
   },
 } as const;
 
-export type Dictionary = {
-  [Section in keyof typeof en]: {
-    [Key in keyof (typeof en)[Section]]: string;
-  };
-};
+type WidenDictionary<T> = T extends string
+  ? string
+  : { [Key in keyof T]: WidenDictionary<T[Key]> };
+
+export type Dictionary = WidenDictionary<typeof en>;

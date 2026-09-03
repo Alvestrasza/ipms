@@ -5,6 +5,7 @@
 #include "ipms/agent/windows_telemetry.hpp"
 
 #include <windows.h>
+#include <bcrypt.h>
 #include <wincrypt.h>
 #include <winhttp.h>
 #include <certenroll.h>
@@ -28,7 +29,8 @@
 namespace {
 using Microsoft::WRL::ComPtr;
 constexpr std::size_t k_max_document_bytes = 65'536;
-constexpr wchar_t k_agent_version[] = L"0.1.31";
+constexpr wchar_t k_agent_version[] = L"0.1.32";
+constexpr std::size_t k_max_artifact_bytes = 64 * 1024 * 1024;
 
 struct internet_closer { void operator()(void* handle) const { if (handle) WinHttpCloseHandle(handle); } };
 using internet_handle = std::unique_ptr<void, internet_closer>;
@@ -139,6 +141,27 @@ std::optional<std::uint16_t> json_port(const std::string& document, const std::s
     if (value > 65'535) return std::nullopt;
   }
   return value == 0 ? std::nullopt : std::optional<std::uint16_t>(static_cast<std::uint16_t>(value));
+}
+
+std::array<unsigned, 3> version_tuple(const std::string& value) {
+  std::array<unsigned, 3> result{};
+  std::size_t position = 0;
+  for (std::size_t index = 0; index < result.size(); ++index) {
+    if (position >= value.size() || !std::isdigit(static_cast<unsigned char>(value[position])))
+      throw std::runtime_error("The Agent lifecycle version is invalid.");
+    unsigned component = 0;
+    while (position < value.size() && std::isdigit(static_cast<unsigned char>(value[position]))) {
+      component = component * 10 + static_cast<unsigned>(value[position++] - '0');
+      if (component > 65'535) throw std::runtime_error("The Agent lifecycle version is invalid.");
+    }
+    result[index] = component;
+    if (index + 1 < result.size()) {
+      if (position >= value.size() || value[position++] != '.')
+        throw std::runtime_error("The Agent lifecycle version is invalid.");
+    }
+  }
+  if (position != value.size()) throw std::runtime_error("The Agent lifecycle version is invalid.");
+  return result;
 }
 
 std::string read_bounded_file(const std::filesystem::path& path) {
@@ -278,11 +301,12 @@ enrollment_request create_enrollment_request(const std::wstring& hostname) {
   return result;
 }
 
+struct state { std::string device_uri; std::string certificate_sha256; std::wstring gateway; std::uint16_t port{}; };
 struct http_response { DWORD status{}; std::string body; };
 
 http_response post_json(const std::wstring& hostname, std::uint16_t port, const std::wstring& path,
                         const std::string& body, const std::string* pin, PCCERT_CONTEXT client_certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.1.31", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.1.32", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent HTTP session could not be created.");
   WinHttpSetTimeouts(session.get(), 10'000, 10'000, 30'000, 30'000);
@@ -343,6 +367,50 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
   return {status, response};
 }
 
+http_response post_binary(const state& identity, const std::string& body, PCCERT_CONTEXT certificate) {
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.1.32", WINHTTP_ACCESS_TYPE_NO_PROXY,
+                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
+  if (!session) throw std::runtime_error("The Agent artifact session could not be created.");
+  WinHttpSetTimeouts(session.get(), 10'000, 10'000, 60'000, 60'000);
+  DWORD protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
+  if (!WinHttpSetOption(session.get(), WINHTTP_OPTION_SECURE_PROTOCOLS, &protocols, sizeof(protocols)))
+    throw std::runtime_error("TLS 1.3 could not be required.");
+  internet_handle connection(WinHttpConnect(session.get(), identity.gateway.c_str(), identity.port, 0));
+  if (!connection) throw std::runtime_error("The Agent artifact connection could not be created.");
+  internet_handle request(WinHttpOpenRequest(connection.get(), L"POST", L"/v1/lifecycle-artifact", nullptr,
+                                             WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE));
+  if (!request) throw std::runtime_error("The Agent artifact request could not be created.");
+  DWORD redirect = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
+  WinHttpSetOption(request.get(), WINHTTP_OPTION_REDIRECT_POLICY, &redirect, sizeof(redirect));
+  if (!WinHttpSetOption(request.get(), WINHTTP_OPTION_CLIENT_CERT_CONTEXT,
+                        const_cast<PCERT_CONTEXT>(certificate), sizeof(CERT_CONTEXT)))
+    throw std::runtime_error("The Agent client certificate could not be selected.");
+  const wchar_t headers[] = L"Content-Type: application/json\r\n";
+  if (!WinHttpSendRequest(request.get(), headers, static_cast<DWORD>(-1), WINHTTP_NO_REQUEST_DATA, 0,
+                          static_cast<DWORD>(body.size()), 0))
+    throw std::runtime_error("The Agent artifact TLS request failed.");
+  DWORD written = 0;
+  if (!WinHttpWriteData(request.get(), body.data(), static_cast<DWORD>(body.size()), &written) || written != body.size())
+    throw std::runtime_error("The Agent artifact request body could not be sent.");
+  if (!WinHttpReceiveResponse(request.get(), nullptr)) throw std::runtime_error("The Agent artifact response could not be received.");
+  DWORD status = 0; DWORD status_size = sizeof(status);
+  if (!WinHttpQueryHeaders(request.get(), WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                           WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size, WINHTTP_NO_HEADER_INDEX))
+    throw std::runtime_error("The Agent artifact response status is unavailable.");
+  std::string response;
+  for (;;) {
+    DWORD available = 0;
+    if (!WinHttpQueryDataAvailable(request.get(), &available)) throw std::runtime_error("The Agent artifact response is invalid.");
+    if (available == 0) break;
+    if (response.size() + available > k_max_artifact_bytes) throw std::runtime_error("The Agent artifact is too large.");
+    const auto offset = response.size(); response.resize(offset + available);
+    DWORD read = 0;
+    if (!WinHttpReadData(request.get(), response.data() + offset, available, &read)) throw std::runtime_error("The Agent artifact response is invalid.");
+    response.resize(offset + read);
+  }
+  return {status, response};
+}
+
 PCCERT_CONTEXT find_agent_certificate(const std::string& fingerprint) {
   cert_store store(CertOpenStore(CERT_STORE_PROV_SYSTEM_W, 0, 0,
                                  CERT_SYSTEM_STORE_LOCAL_MACHINE | CERT_STORE_OPEN_EXISTING_FLAG, L"MY"));
@@ -362,8 +430,6 @@ std::wstring computer_name() {
   return value;
 }
 
-struct state { std::string device_uri; std::string certificate_sha256; std::wstring gateway; std::uint16_t port{}; };
-
 state load_state(const std::filesystem::path& path) {
   const auto document = read_bounded_file(path);
   const auto device_uri = json_string(document, "device_uri");
@@ -374,6 +440,123 @@ state load_state(const std::filesystem::path& path) {
       !device_uri->starts_with("urn:ipms:agent:") || normalized_fingerprint(*fingerprint).size() != 64)
     throw std::runtime_error("The Agent state is invalid.");
   return {*device_uri, *fingerprint, wide(*gateway), *port};
+}
+
+std::string sha256(const std::string& value) {
+  BCRYPT_ALG_HANDLE algorithm = nullptr;
+  BCRYPT_HASH_HANDLE hash = nullptr;
+  std::array<unsigned char, 32> digest{};
+  if (BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0) != 0)
+    throw std::runtime_error("The Agent SHA-256 provider is unavailable.");
+  const auto close_algorithm = [&]() { BCryptCloseAlgorithmProvider(algorithm, 0); };
+  if (BCryptCreateHash(algorithm, &hash, nullptr, 0, nullptr, 0, 0) != 0) {
+    close_algorithm();
+    throw std::runtime_error("The Agent SHA-256 hash could not be created.");
+  }
+  if (BCryptHashData(hash, reinterpret_cast<PUCHAR>(const_cast<char*>(value.data())),
+                     static_cast<ULONG>(value.size()), 0) != 0 ||
+      BCryptFinishHash(hash, digest.data(), static_cast<ULONG>(digest.size()), 0) != 0) {
+    BCryptDestroyHash(hash);
+    close_algorithm();
+    throw std::runtime_error("The Agent artifact digest could not be calculated.");
+  }
+  BCryptDestroyHash(hash);
+  close_algorithm();
+  return hex(digest.data(), static_cast<DWORD>(digest.size()));
+}
+
+bool safe_lifecycle_value(const std::string& value, std::size_t maximum = 64) {
+  return !value.empty() && value.size() <= maximum &&
+         std::all_of(value.begin(), value.end(), [](const unsigned char character) {
+           return std::isalnum(character) || character == '-' || character == '.' || character == '_';
+         });
+}
+
+void report_result(const state& identity, PCCERT_CONTEXT certificate, const std::string& job_id,
+                   const std::string& result, const std::string& result_code) {
+  if (!safe_lifecycle_value(job_id) || !safe_lifecycle_value(result, 16) ||
+      !safe_lifecycle_value(result_code))
+    throw std::runtime_error("The Agent lifecycle result is invalid.");
+  const std::string body = "{\"type\":\"lifecycle_result\",\"device_uri\":\"" +
+                           json_escape(identity.device_uri) + "\",\"correlation_id\":\"lifecycle-" +
+                           json_escape(job_id) + "\",\"job_id\":\"" + json_escape(job_id) +
+                           "\",\"result\":\"" + json_escape(result) + "\",\"result_code\":\"" +
+                           json_escape(result_code) + "\"}";
+  const auto response = post_json(identity.gateway, identity.port, L"/v1/lifecycle-result", body, nullptr, certificate);
+  if (response.status != 200 || json_string(response.body, "type") != std::optional<std::string>("accepted"))
+    throw std::runtime_error("The Agent lifecycle result was rejected.");
+}
+
+std::filesystem::path executable_directory() {
+  std::wstring buffer(32'768, L'\0');
+  const auto length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+  if (length == 0 || length >= buffer.size())
+    throw std::runtime_error("The Agent installation directory is unavailable.");
+  buffer.resize(length);
+  return std::filesystem::path(buffer).parent_path();
+}
+
+void launch_updater(const std::string& job_id, const std::string& action,
+                    const std::string& target_version, const std::string& expected_sha256,
+                    const std::filesystem::path& staged_binary) {
+  const auto updater = executable_directory() / L"ipms-agent-updater.exe";
+  if (!std::filesystem::is_regular_file(updater))
+    throw std::runtime_error("The fixed Agent updater is unavailable.");
+  std::wstring command = L"\"" + updater.wstring() + L"\" --job \"" + wide(job_id) +
+                         L"\" --action \"" + wide(action) + L"\" --version \"" +
+                         wide(target_version.empty() ? "none" : target_version) + L"\" --sha256 \"" +
+                         wide(expected_sha256.empty() ? "none" : expected_sha256) + L"\" --staged \"" +
+                         staged_binary.wstring() + L"\"";
+  STARTUPINFOW startup{};
+  startup.cb = sizeof(startup);
+  PROCESS_INFORMATION process{};
+  if (!CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr,
+                      updater.parent_path().c_str(), &startup, &process))
+    throw std::runtime_error("The fixed Agent updater could not be started.");
+  CloseHandle(process.hThread);
+  CloseHandle(process.hProcess);
+}
+
+void process_lifecycle_assignment(const std::string& response_document, const state& identity,
+                                  PCCERT_CONTEXT certificate) {
+  const auto job_id = json_string(response_document, "job_id");
+  const auto action = json_string(response_document, "action");
+  if (!job_id || !action) return;
+  const auto target_version = json_string(response_document, "target_version").value_or("");
+  const auto expected_sha256 = normalized_fingerprint(
+      json_string(response_document, "artifact_sha256").value_or(""));
+  if (!safe_lifecycle_value(*job_id) || (*action != "update" && *action != "uninstall"))
+    throw std::runtime_error("The Agent lifecycle assignment is invalid.");
+  std::filesystem::path staged_binary;
+  if (*action == "update") {
+    if (!safe_lifecycle_value(target_version) || expected_sha256.size() != 64)
+      throw std::runtime_error("The Agent update assignment is invalid.");
+    if (version_tuple(target_version) <= version_tuple(utf8(k_agent_version)))
+      throw std::runtime_error("The Agent update assignment is not a monotonic upgrade.");
+    const std::string request = "{\"type\":\"lifecycle_artifact\",\"device_uri\":\"" +
+                                json_escape(identity.device_uri) + "\",\"job_id\":\"" +
+                                json_escape(*job_id) + "\"}";
+    const auto artifact = post_binary(identity, request, certificate);
+    if (artifact.status != 200 || sha256(artifact.body) != expected_sha256)
+      throw std::runtime_error("The Agent update artifact failed verification.");
+    staged_binary = data_directory() / L"updates" / wide(*job_id) / L"ipms-agent.exe";
+    write_atomically(staged_binary, artifact.body);
+  }
+  report_result(identity, certificate, *job_id, "running", "accepted");
+  launch_updater(*job_id, *action, target_version, expected_sha256, staged_binary);
+}
+
+void report_pending_result(const state& identity, PCCERT_CONTEXT certificate) {
+  const auto path = data_directory() / L"lifecycle-result.json";
+  if (!std::filesystem::is_regular_file(path)) return;
+  const auto document = read_bounded_file(path);
+  const auto job_id = json_string(document, "job_id");
+  const auto result = json_string(document, "result");
+  const auto code = json_string(document, "result_code");
+  if (!job_id || !result || !code) throw std::runtime_error("The pending Agent lifecycle result is invalid.");
+  report_result(identity, certificate, *job_id, *result, *code);
+  std::error_code ignored;
+  std::filesystem::remove(path, ignored);
 }
 
 void write_local_configuration(const std::filesystem::path& directory, const std::string& gateway, std::uint16_t port) {
@@ -436,6 +619,7 @@ TransportResult run_inventory_cycle() {
     state identity = std::filesystem::exists(state_path) ? load_state(state_path) : enroll(bootstrap_path, state_path);
     cert_context certificate(find_agent_certificate(identity.certificate_sha256));
     if (!certificate) throw std::runtime_error("The enrolled Agent certificate is unavailable.");
+    report_pending_result(identity, certificate.get());
     const auto inventory = collect_windows_server_core_inventory_json();
     const std::string body = "{\"type\":\"inventory\",\"device_uri\":\"" + json_escape(identity.device_uri) +
                              "\",\"correlation_id\":\"windows-agent-cycle\",\"agent_version\":\"" +
@@ -443,6 +627,7 @@ TransportResult run_inventory_cycle() {
     const auto response = post_json(identity.gateway, identity.port, L"/v1/inventory", body, nullptr, certificate.get());
     if (response.status != 200 || json_string(response.body, "type") != std::optional<std::string>("accepted"))
       throw std::runtime_error("The Agent inventory was rejected.");
+    process_lifecycle_assignment(response.body, identity, certificate.get());
     return {true, L"Enrollment and inventory delivery succeeded."};
   } catch (const std::exception& error) {
     try { return {false, wide(error.what())}; }
@@ -460,6 +645,7 @@ TransportResult run_telemetry_cycle() {
     const state identity = load_state(state_path);
     cert_context certificate(find_agent_certificate(identity.certificate_sha256));
     if (!certificate) throw std::runtime_error("The enrolled Agent certificate is unavailable.");
+    report_pending_result(identity, certificate.get());
     const auto telemetry = collect_windows_telemetry_json();
     if (telemetry.empty()) throw std::runtime_error("The Agent telemetry snapshot is unavailable.");
     const std::string body = "{\"type\":\"telemetry\",\"device_uri\":\"" + json_escape(identity.device_uri) +
@@ -468,10 +654,27 @@ TransportResult run_telemetry_cycle() {
     const auto response = post_json(identity.gateway, identity.port, L"/v1/telemetry", body, nullptr, certificate.get());
     if (response.status != 200 || json_string(response.body, "type") != std::optional<std::string>("accepted"))
       throw std::runtime_error("The Agent telemetry was rejected.");
+    process_lifecycle_assignment(response.body, identity, certificate.get());
     return {true, L"Telemetry delivery succeeded."};
   } catch (const std::exception& error) {
     try { return {false, wide(error.what())}; }
     catch (...) { return {false, L"The Agent telemetry cycle failed."}; }
+  }
+}
+
+TransportResult report_lifecycle_result(
+    const std::string& job_id,
+    const std::string& result,
+    const std::string& result_code) {
+  try {
+    const state identity = load_state(data_directory() / L"agent-state.json");
+    cert_context certificate(find_agent_certificate(identity.certificate_sha256));
+    if (!certificate) throw std::runtime_error("The enrolled Agent certificate is unavailable.");
+    report_result(identity, certificate.get(), job_id, result, result_code);
+    return {true, L"The Agent lifecycle result was delivered."};
+  } catch (const std::exception& error) {
+    try { return {false, wide(error.what())}; }
+    catch (...) { return {false, L"The Agent lifecycle result delivery failed."}; }
   }
 }
 }  // namespace ipms::agent::windows

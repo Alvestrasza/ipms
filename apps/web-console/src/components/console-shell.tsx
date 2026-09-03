@@ -31,7 +31,12 @@ export async function ConsoleShell({
   };
   return (
     <div className="console-shell">
-      <Sidebar activeSection={activeSection} />
+      <Sidebar
+        activeSection={activeSection}
+        canAdmin={
+          session.user.is_platform_admin || tenant.role === "tenant_admin"
+        }
+      />
       <div className="console-workspace">
         <header className="topbar">
           <TenantSwitcher

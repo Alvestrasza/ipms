@@ -12,7 +12,7 @@ param(
 
     [string]$DisplayName = 'IPMS Agent',
 
-    [string]$AgentVersion = '0.1.31',
+    [string]$AgentVersion = '0.1.32',
 
     [string]$Publisher = 'Alvestrasza Corporation',
 
@@ -34,6 +34,10 @@ $resolvedConfigBinary = (Resolve-Path -LiteralPath $ConfigBinaryPath).Path
 $agentDirectory = Split-Path -Path $resolvedBinary -Parent
 if ((Split-Path -Path $resolvedConfigBinary -Parent) -ne $agentDirectory) {
     throw 'The Agent service and configuration application must be installed in the same directory.'
+}
+$updaterBinary = Join-Path $agentDirectory 'ipms-agent-updater.exe'
+if (-not (Test-Path -LiteralPath $updaterBinary -PathType Leaf)) {
+    throw 'The fixed Agent lifecycle updater is missing from the installation package.'
 }
 $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($existing) {
@@ -125,7 +129,7 @@ try {
         New-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value $AgentVersion -PropertyType String -Force | Out-Null
         New-ItemProperty -Path $uninstallKey -Name Publisher -Value $Publisher -PropertyType String -Force | Out-Null
         New-ItemProperty -Path $uninstallKey -Name InstallLocation -Value $agentDirectory -PropertyType String -Force | Out-Null
-        $estimatedSizeKb = [math]::Ceiling(((Get-Item -LiteralPath $resolvedBinary).Length + (Get-Item -LiteralPath $resolvedConfigBinary).Length + (Get-Item -LiteralPath $installedUninstaller).Length + (Get-Item -LiteralPath $installedEnrollmentImporter).Length) / 1KB)
+        $estimatedSizeKb = [math]::Ceiling(((Get-Item -LiteralPath $resolvedBinary).Length + (Get-Item -LiteralPath $resolvedConfigBinary).Length + (Get-Item -LiteralPath $updaterBinary).Length + (Get-Item -LiteralPath $installedUninstaller).Length + (Get-Item -LiteralPath $installedEnrollmentImporter).Length) / 1KB)
         New-ItemProperty -Path $uninstallKey -Name DisplayIcon -Value ($resolvedConfigBinary + ',0') -PropertyType String -Force | Out-Null
         New-ItemProperty -Path $uninstallKey -Name ModifyPath -Value ('"{0}"' -f $resolvedConfigBinary) -PropertyType String -Force | Out-Null
         New-ItemProperty -Path $uninstallKey -Name UninstallString -Value $uninstallCommand -PropertyType String -Force | Out-Null

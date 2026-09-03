@@ -1,6 +1,7 @@
 #include "ipms/agent/management_pack.hpp"
 
 #include <iostream>
+#include <string>
 #include <string_view>
 
 #ifdef _WIN32
@@ -18,6 +19,10 @@ int main(int argc, char** argv) {
   const bool run_once = argc == 2 && std::string_view(argv[1]) == "--run-once";
   for (const auto& pack : ipms::agent::builtin_management_packs()) if (!ipms::agent::is_valid_pack_assignment(pack)) return 2;
 #ifdef _WIN32
+  if (argc == 5 && std::string_view(argv[1]) == "--report-lifecycle-result") {
+    const auto result = ipms::agent::windows::report_lifecycle_result(argv[2], argv[3], argv[4]);
+    return result.succeeded ? 0 : 4;
+  }
   if (console) { std::cout << ipms::agent::windows::collect_windows_server_core_inventory_json() << '\n'; return 0; }
   if (telemetry_console) { std::cout << ipms::agent::windows::collect_windows_telemetry_json() << '\n'; return 0; }
   if (run_once) {

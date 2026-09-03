@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(ipms_agent VERSION 0.1.31 LANGUAGES CXX)
+project(ipms_agent VERSION 0.1.32 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -34,6 +34,10 @@ if(WIN32)
   target_compile_definitions(ipms-agent-config PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
   target_compile_options(ipms-agent-config PRIVATE /W4 /permissive-)
   set_target_properties(ipms-agent-config PROPERTIES LINK_FLAGS "/MANIFEST:NO")
+  add_executable(ipms-agent-updater src/windows/updater.cpp)
+  target_link_libraries(ipms-agent-updater PRIVATE advapi32 bcrypt)
+  target_compile_definitions(ipms-agent-updater PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
+  target_compile_options(ipms-agent-updater PRIVATE /W4 /permissive-)
 else()
   target_sources(ipms-agent PRIVATE src/linux/linux_service.cpp)
 endif()

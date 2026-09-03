@@ -4,9 +4,9 @@ set -euo pipefail
 NODE_VERSION="24.20.0"
 PNPM_VERSION="11.24.0"
 REPOSITORY_URL="https://github.com/Alvestrasza/ipms.git"
-AGENT_PACKAGE_NAME="ipms-agent-windows-x64-0.1.31.zip"
-AGENT_PACKAGE_SHA256="9c22c5e243b0aae2213b8d23f28f1e16e0e828a78981aa47bd64adc1d127a196"
-AGENT_PACKAGE_URL="https://github.com/Alvestrasza/ipms/releases/download/v0.1.40/${AGENT_PACKAGE_NAME}"
+AGENT_PACKAGE_NAME="ipms-agent-windows-x64-0.1.32.zip"
+AGENT_PACKAGE_SHA256="f6b52e7e1cc3c3ce1a16a1e82ef8810f4363dc9b6d4b989cd112a064ca9a27a8"
+AGENT_PACKAGE_URL="https://github.com/Alvestrasza/ipms/releases/download/v0.1.41/${AGENT_PACKAGE_NAME}"
 
 usage() {
     echo "Usage: sudo install-dev.sh --public-host HOST --management-source IP_OR_CIDR --agent-source IP_OR_CIDR [--agent-source IP_OR_CIDR ...] --release-ref COMMIT --tenant-slug SLUG --tenant-name NAME [--admin-username USER]" >&2
@@ -212,10 +212,12 @@ fi
 sed -i \
     -e '/^IPMS_AGENT_WINDOWS_PACKAGE_PATH=/d' \
     -e '/^IPMS_AGENT_WINDOWS_PACKAGE_SHA256=/d' \
+    -e '/^IPMS_AGENT_WINDOWS_VERSION=/d' \
     "$control_plane_env"
 {
     echo "IPMS_AGENT_WINDOWS_PACKAGE_PATH=${agent_package}"
     echo "IPMS_AGENT_WINDOWS_PACKAGE_SHA256=${AGENT_PACKAGE_SHA256}"
+    echo "IPMS_AGENT_WINDOWS_VERSION=0.1.32"
 } >> "$control_plane_env"
 if ! grep -q '^IPMS_CERTIFICATE_PROBE_TOKEN=' "$control_plane_env"; then
     generated_probe_token=$(openssl rand -hex 32)

@@ -162,6 +162,14 @@ restore point.
   TCP 5985 fallback with mandatory NTLM WS-Man message encryption and a clear
   residual-risk warning. Credentials are encrypted only until the first attempt
   and the path cannot execute operator-supplied scripts or commands.
+- Provide a tenant-administrator Agent inventory under **Administration >
+  Infrastructure > Agents** with FQDN, derived contact state, operating system,
+  installed and target versions, compliance, last contact, and bounded update
+  and uninstall actions. After a one-time Agent 0.1.32 bootstrap, routine
+  lifecycle jobs use the Agent-initiated mTLS channel, preserve device identity,
+  allow only compiled fixed actions, verify the artifact digest twice, roll back
+  a failed update, and produce tenant-scoped audit events. Signed manifests,
+  Authenticode, MSI packaging, and rollout rings remain customer-release gates.
 - Implement a read-only Hyper-V connector for host, cluster, VM, and basic
   resource discovery through the C++20 Windows Agent and its signed,
   built-in `hyper-v-host` Management Pack.
@@ -206,6 +214,9 @@ restore point.
 ### v0.1.0 Non-Goals
 
 - State-changing VM, iLO, network, storage, backup, or restore operations.
+- Generic remote command, PowerShell, script, shell, or operator-provided Agent
+  execution. The fixed IPMS Agent update and uninstall lifecycle is the only
+  self-management exception.
 - Scale-Out migration, customer Cloud tenancy, or a production Edge Gateway
   rollout.
 - Full monitoring, backup, network, or storage management.

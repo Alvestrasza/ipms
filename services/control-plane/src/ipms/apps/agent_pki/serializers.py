@@ -3,7 +3,7 @@ import re
 
 from rest_framework import serializers
 
-from .models import WindowsAgentDeployment
+from .models import AgentLifecycleJob, WindowsAgentDeployment
 
 
 HOSTNAME_PATTERN = re.compile(
@@ -64,6 +64,32 @@ class WindowsAgentDeploymentSerializer(serializers.ModelSerializer):
             "status",
             "error_code",
             "created_at",
+            "started_at",
+            "completed_at",
+        )
+        read_only_fields = fields
+
+
+class AgentLifecycleRequestSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=AgentLifecycleJob.Action.choices)
+
+
+class AgentLifecycleJobSerializer(serializers.ModelSerializer):
+    enrollment_id = serializers.UUIDField(read_only=True)
+    tenant_id = serializers.UUIDField(read_only=True)
+
+    class Meta:
+        model = AgentLifecycleJob
+        fields = (
+            "id",
+            "tenant_id",
+            "enrollment_id",
+            "action",
+            "status",
+            "target_version",
+            "result_code",
+            "created_at",
+            "delivered_at",
             "started_at",
             "completed_at",
         )

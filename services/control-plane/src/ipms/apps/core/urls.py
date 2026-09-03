@@ -1,6 +1,8 @@
 from django.urls import include, path
 
 from ipms.apps.agent_pki.views import (
+    AgentAdministrationListView,
+    AgentLifecycleView,
     WindowsAgentDeploymentDetailView,
     WindowsAgentDeploymentListCreateView,
     WindowsAgentDeploymentPreflightView,
@@ -47,6 +49,16 @@ urlpatterns = [
         "agents/windows/deployments/<uuid:pk>/",
         WindowsAgentDeploymentDetailView.as_view(),
         name="windows-agent-deployment-detail",
+    ),
+    path(
+        "agents/",
+        AgentAdministrationListView.as_view(),
+        name="agent-administration-list",
+    ),
+    path(
+        "agents/<uuid:pk>/lifecycle/",
+        AgentLifecycleView.as_view(),
+        name="agent-lifecycle",
     ),
     path("connectors/", ConnectorEndpointListView.as_view(), name="connector-list"),
     path("connectors/bmc/", BmcConnectorEnrollmentView.as_view(), name="bmc-enroll"),

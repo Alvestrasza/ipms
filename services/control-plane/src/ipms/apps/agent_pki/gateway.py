@@ -98,6 +98,8 @@ def _parse_http_request(header: bytes) -> tuple[str, dict[str, str], int]:
         "/v1/enroll",
         "/v1/inventory",
         "/v1/telemetry",
+        "/v1/lifecycle-result",
+        "/v1/lifecycle-artifact",
     }:
         raise ValidationError("The Agent Gateway HTTP route is invalid.")
     headers: dict[str, str] = {}
@@ -136,6 +138,23 @@ async def _http_reply(writer: asyncio.StreamWriter, status: int, document: dict)
     await writer.drain()
 
 
+async def _http_binary_reply(
+    writer: asyncio.StreamWriter,
+    body: bytes,
+    digest: str,
+) -> None:
+    writer.write(
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: application/octet-stream\r\n"
+        f"Content-Length: {len(body)}\r\n"
+        f"X-Content-SHA256: {digest}\r\n"
+        "Cache-Control: no-store\r\n"
+        "Connection: close\r\n\r\n".encode()
+        + body
+    )
+    await writer.drain()
+
+
 async def _handle_http_connection(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
@@ -146,6 +165,11 @@ async def _handle_http_connection(
         confirm_telemetry,
         enroll_agent,
         validate_peer_certificate,
+    )
+    from ipms.apps.agent_pki.lifecycle import (
+        lifecycle_artifact,
+        offer_lifecycle_job,
+        record_lifecycle_result,
     )
 
     header = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=15)
@@ -181,6 +205,32 @@ async def _handle_http_connection(
     )
     if document.get("device_uri") != enrollment.device_uri:
         raise ValidationError("The Agent message identity is invalid.")
+    if path == "/v1/lifecycle-artifact":
+        if document.get("type") != "lifecycle_artifact":
+            raise ValidationError("The Agent lifecycle artifact request is invalid.")
+        binary, digest = await _database_call_async(
+            lifecycle_artifact,
+            enrollment,
+            job_id=str(document.get("job_id", "")),
+        )
+        await _http_binary_reply(writer, binary, digest)
+        return
+    if path == "/v1/lifecycle-result":
+        if document.get("type") != "lifecycle_result":
+            raise ValidationError("The Agent lifecycle result is invalid.")
+        await _database_call_async(
+            record_lifecycle_result,
+            enrollment,
+            job_id=str(document.get("job_id", "")),
+            result=str(document.get("result", "")),
+            result_code=str(document.get("result_code", "")),
+        )
+        await _http_reply(
+            writer,
+            200,
+            {"type": "accepted", "correlation_id": document.get("correlation_id")},
+        )
+        return
     if path == "/v1/inventory" and document.get("type") == "inventory":
         await _database_call_async(
             confirm_inventory,
@@ -197,11 +247,14 @@ async def _handle_http_connection(
         )
     else:
         raise ValidationError("The Agent HTTP message type is invalid.")
-    await _http_reply(
-        writer,
-        200,
-        {"type": "accepted", "correlation_id": document.get("correlation_id")},
-    )
+    response = {
+        "type": "accepted",
+        "correlation_id": document.get("correlation_id"),
+    }
+    assignment = await _database_call_async(offer_lifecycle_job, enrollment)
+    if assignment:
+        response["lifecycle"] = assignment
+    await _http_reply(writer, 200, response)
 
 
 async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:

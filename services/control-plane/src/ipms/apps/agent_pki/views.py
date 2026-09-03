@@ -1,9 +1,12 @@
 import ipaddress
+from datetime import timedelta
 
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist, ValidationError as DjangoValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
+from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -24,9 +27,12 @@ from .deployment_approval import (
     create_windows_deployment_approval,
     load_windows_deployment_approval,
 )
-from .models import WindowsAgentDeployment
+from .lifecycle import ACTIVE_STATUSES, create_lifecycle_job
+from .models import AgentEnrollment, AgentLifecycleJob, WindowsAgentDeployment
 from .permissions import CanDeployAgents
 from .serializers import (
+    AgentLifecycleJobSerializer,
+    AgentLifecycleRequestSerializer,
     WindowsAgentDeploymentPreflightSerializer,
     WindowsAgentDeploymentRequestSerializer,
     WindowsAgentDeploymentSerializer,
@@ -253,3 +259,139 @@ class WindowsAgentDeploymentDetailView(APIView):
             tenant=request.tenant,
         )
         return Response(WindowsAgentDeploymentSerializer(deployment).data)
+
+
+def _version_tuple(value: str) -> tuple[int, int, int] | None:
+    parts = value.split(".")
+    if len(parts) != 3 or any(not part.isdigit() for part in parts):
+        return None
+    return tuple(int(part) for part in parts)
+
+
+class AgentAdministrationListView(APIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess, CanDeployAgents)
+
+    def get(self, request):
+        from ipms.apps.discovery.models import WindowsServer
+
+        servers = {
+            server.source_id: server
+            for server in WindowsServer.objects.filter(
+                tenant=request.tenant,
+                inventory_source=WindowsServer.InventorySource.AGENT,
+            )
+        }
+        target_version = settings.AGENT_WINDOWS_VERSION
+        target_tuple = _version_tuple(target_version)
+        now = timezone.now()
+        enrollments = AgentEnrollment.objects.filter(
+            tenant=request.tenant,
+        ).prefetch_related(
+            Prefetch(
+                "lifecycle_jobs",
+                queryset=AgentLifecycleJob.objects.filter(status__in=ACTIVE_STATUSES),
+                to_attr="active_lifecycle_jobs",
+            )
+        )
+        documents = []
+        for enrollment in enrollments:
+            server = servers.get(enrollment.device_uri)
+            last_seen = server.last_seen_at if server else enrollment.last_seen_at
+            if enrollment.status == AgentEnrollment.Status.REVOKED:
+                state = "revoked"
+            elif last_seen is None:
+                state = "not-seen"
+            elif last_seen >= now - timedelta(seconds=45):
+                state = "online"
+            elif last_seen >= now - timedelta(minutes=5):
+                state = "stale"
+            else:
+                state = "offline"
+            current_version = server.agent_version if server else ""
+            current_tuple = _version_tuple(current_version)
+            lifecycle_capable = (
+                enrollment.status == AgentEnrollment.Status.ACTIVE
+                and current_tuple is not None
+                and current_tuple >= (0, 1, 32)
+            )
+            compliance = "unknown"
+            if current_tuple is not None and target_tuple is not None:
+                compliance = "current" if current_tuple >= target_tuple else "outdated"
+            active_job = next(
+                (job for job in enrollment.active_lifecycle_jobs),
+                None,
+            )
+            documents.append(
+                {
+                    "enrollment_id": str(enrollment.id),
+                    "device_uri": enrollment.device_uri,
+                    "fqdn": (server.fqdn or server.hostname) if server else enrollment.display_name,
+                    "operating_system": server.operating_system if server else "",
+                    "os_version": server.os_version if server else "",
+                    "agent_version": current_version,
+                    "target_version": target_version,
+                    "status": state,
+                    "compliance": compliance,
+                    "lifecycle_capable": lifecycle_capable,
+                    "last_seen_at": last_seen,
+                    "active_job": AgentLifecycleJobSerializer(active_job).data if active_job else None,
+                }
+            )
+        return Response(documents)
+
+
+class AgentLifecycleView(APIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess, CanDeployAgents)
+
+    def post(self, request, pk):
+        serializer = AgentLifecycleRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        enrollment = get_object_or_404(
+            AgentEnrollment,
+            id=pk,
+            tenant=request.tenant,
+        )
+        from ipms.apps.discovery.models import WindowsServer
+
+        server = WindowsServer.objects.filter(
+            tenant=request.tenant,
+            inventory_source=WindowsServer.InventorySource.AGENT,
+            source_id=enrollment.device_uri,
+        ).first()
+        current_version = _version_tuple(server.agent_version if server else "")
+        if current_version is None or current_version < (0, 1, 32):
+            raise PublicApiError("agent_lifecycle_bootstrap_required")
+        action = serializer.validated_data["action"]
+        target_version = _version_tuple(settings.AGENT_WINDOWS_VERSION)
+        if (
+            action == AgentLifecycleJob.Action.UPDATE
+            and target_version is not None
+            and current_version >= target_version
+        ):
+            raise PublicApiError("agent_already_current")
+        actor = _actor(request)
+        try:
+            with transaction.atomic():
+                job = create_lifecycle_job(
+                    enrollment=enrollment,
+                    action=action,
+                    actor=actor,
+                )
+                AuditEvent.objects.create(
+                    tenant=request.tenant,
+                    actor=actor,
+                    action=f"agent.lifecycle.{action}.queue",
+                    object_type="agent_lifecycle_job",
+                    object_id=str(job.id),
+                    outcome=AuditEvent.Outcome.SUCCEEDED,
+                    details={
+                        "device_uri": enrollment.device_uri,
+                        "target_version": job.target_version,
+                    },
+                )
+        except (DjangoValidationError, IntegrityError) as exc:
+            raise PublicApiError("agent_lifecycle_job_rejected") from exc
+        return Response(
+            AgentLifecycleJobSerializer(job).data,
+            status=status.HTTP_201_CREATED,
+        )

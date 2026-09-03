@@ -2,7 +2,7 @@
 
 The IPMS Agent is a native C++20 service for customer-managed Windows and Linux systems. It will establish an outbound, mutually authenticated connection to the IPMS Control Plane and collect only capabilities explicitly assigned to the enrolled device.
 
-The initial implementation contains the pack registry and the read-only `windows-server-core` pack. The Windows executable can run in inventory-only diagnostic mode with `--console`, perform one bounded connection cycle with `--run-once`, or run as the `IPMS Agent` Windows service. Version 0.1.17 enrolls with a non-exportable LocalMachine ECDSA P-256 key, validates the one-time Gateway certificate pin, installs the dedicated Agent trust chain, and sends bounded inventory through TLS 1.3 and mTLS. Version 0.1.27 adds installed Windows Server roles, role services, and features to that inventory. Version 0.1.28 makes the installer language-independent, automatically omits shell integration on Windows Server Core, and rolls back newly created service artifacts when installation fails. Version 0.1.29 statically links the MSVC runtime so a minimal Windows Server Core installation does not require a separately installed Visual C++ Redistributable. Version 0.1.30 retries enrollment every ten seconds until the first inventory succeeds, while retaining the five-minute steady-state inventory interval. Version 0.1.31 normalizes unavailable Windows adapter link-speed sentinels so Hyper-V inventory remains valid.
+The initial implementation contains the pack registry and the read-only `windows-server-core` pack. The Windows executable can run in inventory-only diagnostic mode with `--console`, perform one bounded connection cycle with `--run-once`, or run as the `IPMS Agent` Windows service. Version 0.1.17 enrolls with a non-exportable LocalMachine ECDSA P-256 key, validates the one-time Gateway certificate pin, installs the dedicated Agent trust chain, and sends bounded inventory through TLS 1.3 and mTLS. Version 0.1.27 adds installed Windows Server roles, role services, and features to that inventory. Version 0.1.28 makes the installer language-independent, automatically omits shell integration on Windows Server Core, and rolls back newly created service artifacts when installation fails. Version 0.1.29 statically links the MSVC runtime so a minimal Windows Server Core installation does not require a separately installed Visual C++ Redistributable. Version 0.1.30 retries enrollment every ten seconds until the first inventory succeeds, while retaining the five-minute steady-state inventory interval. Version 0.1.31 normalizes unavailable Windows adapter link-speed sentinels so Hyper-V inventory remains valid. Version 0.1.32 adds the native fixed-action lifecycle updater, device-bound artifact retrieval, independent digest verification, rollback, and result reporting.
 
 ## Installed roles and features
 
@@ -65,6 +65,11 @@ ctest --test-dir build/agent --output-on-failure
 ```
 
 The Windows target links only Windows SDK libraries. No package manager, runtime download, or third-party dependency is required for this foundation.
+
+The Windows package also contains `ipms-agent-updater.exe`. It accepts only the
+compiled `update` and `uninstall` lifecycle actions. It does not execute scripts,
+shell commands, operator-provided paths, or arbitrary URLs. See
+[`ADR-0006`](../docs/architecture/ADR-0006-AGENT-LIFECYCLE-CHANNEL.md).
 
 ## Windows installation
 

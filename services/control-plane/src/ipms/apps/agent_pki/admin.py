@@ -5,6 +5,7 @@ from .models import (
     AgentEnrollmentToken,
     AgentGatewayIdentity,
     AgentIssuer,
+    AgentLifecycleJob,
     AgentPkiPolicy,
     AgentRevocation,
     WindowsAgentDeployment,
@@ -66,6 +67,18 @@ class AgentEnrollmentTokenAdmin(ReadOnlyAgentPkiAdmin):
 @admin.register(AgentRevocation)
 class AgentRevocationAdmin(ReadOnlyAgentPkiAdmin):
     list_display = ("enrollment", "tenant", "reason", "revoked_at", "revoked_by")
+
+
+@admin.register(AgentLifecycleJob)
+class AgentLifecycleJobAdmin(ReadOnlyAgentPkiAdmin):
+    list_display = (
+        "enrollment",
+        "tenant",
+        "action",
+        "status",
+        "target_version",
+        "created_at",
+    )
 
 
 @admin.register(WindowsAgentDeployment)
