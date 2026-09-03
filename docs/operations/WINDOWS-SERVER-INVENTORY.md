@@ -2,7 +2,7 @@
 
 ## Scope
 
-IPMS `0.1.27` provides tenant-scoped read-only portal inventory and detail
+IPMS `0.1.46` provides tenant-scoped read-only portal inventory and detail
 views for physical and virtual Windows systems. Native Agent enrollment and
 bounded inventory ingestion are available; Hyper-V provider discovery and all
 state-changing Windows or virtualization operations remain outside this
@@ -22,10 +22,13 @@ and use the same Control Plane inventory contract.
 ## Normalized inventory
 
 `GET /api/v1/windows-servers/` returns only the selected tenant's records. The
-optional `server_type=physical|virtual|unknown` query parameter supports the
-separate portal views. `GET /api/v1/windows-servers/{id}/` returns one selected
-tenant record for the detail page. Neither endpoint has a browser-facing
-create, update, or delete method, and a cross-tenant identifier returns `404`.
+optional `server_type=physical|virtual|unknown` and exact `role=<technical-name>`
+query parameters support the separate portal and installed-role views.
+`GET /api/v1/windows-server-roles/` returns bounded physical and virtual server
+counts for every installed top-level role in the selected tenant.
+`GET /api/v1/windows-servers/{id}/` returns one selected tenant record for the
+detail page. None of these endpoints has a browser-facing create, update, or
+delete method, and a cross-tenant identifier returns `404`.
 
 The normalized record prepares these fields:
 
@@ -65,11 +68,13 @@ The Agent reads installed roles and features directly from
 state `1` (installed). It does not run `Get-WindowsFeature` or any other
 PowerShell command. The Control Plane accepts no more than 512 unique entries,
 validates their exact schema and type, stores them on the certificate-bound
-tenant record, and exposes them only through the tenant-scoped detail API.
+tenant record, and projects top-level roles into an indexed read model. Role
+services and features remain available on the tenant-scoped detail API but do
+not create navigation entries.
 
 ## Current acceptance boundary
 
-The following are accepted through `0.1.27`:
+The following are accepted through `0.1.46`:
 
 - localized physical and virtual Windows Server navigation;
 - live empty states that distinguish unavailable data from an empty inventory;
@@ -79,6 +84,8 @@ The following are accepted through `0.1.27`:
   inventory source, Management Packs, and timestamps;
 - a read-only installed roles and features table that distinguishes successful
   empty collection, unavailable collection, and older Agent inventory;
+- tenant-scoped, collapsible physical and virtual Windows role navigation with
+  per-role server counts and exact server filtering;
 - a current-sample-only telemetry surface for CPU, memory, and fixed-volume
   utilization, refreshed by the portal every ten seconds;
 - a tenant-filtered read-only list and detail API and database migration; and

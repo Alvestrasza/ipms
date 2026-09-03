@@ -3,6 +3,7 @@ import { Bell, CircleUserRound, Search } from "lucide-react";
 import { getDictionary } from "@/i18n/dictionaries";
 import { resolveLocale } from "@/i18n/server";
 import type { AuthenticatedSession, TenantSummary } from "@/lib/auth-types";
+import { getWindowsServerRoles } from "@/lib/server-windows";
 import { AddSystemDialog } from "./add-system-dialog";
 import { LanguageSwitcher } from "./language-switcher";
 import { LogoutButton } from "./logout-button";
@@ -15,13 +16,18 @@ export async function ConsoleShell({
   session,
   tenant,
   activeSection = "overview",
+  activeWindowsRole,
 }: {
   children: React.ReactNode;
   session: AuthenticatedSession;
   tenant: TenantSummary;
   activeSection?: ActiveSection;
+  activeWindowsRole?: string;
 }) {
-  const locale = await resolveLocale();
+  const [locale, windowsRoles] = await Promise.all([
+    resolveLocale(),
+    getWindowsServerRoles(tenant.id),
+  ]);
   const dictionary = getDictionary(locale);
   const roleLabels = {
     platform_admin: dictionary.shell.platformAdmin,
@@ -33,9 +39,11 @@ export async function ConsoleShell({
     <div className="console-shell">
       <Sidebar
         activeSection={activeSection}
+        activeWindowsRole={activeWindowsRole}
         canAdmin={
           session.user.is_platform_admin || tenant.role === "tenant_admin"
         }
+        windowsRoles={windowsRoles}
       />
       <div className="console-workspace">
         <header className="topbar">

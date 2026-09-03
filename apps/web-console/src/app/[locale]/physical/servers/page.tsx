@@ -15,15 +15,35 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: dictionary.windowsServers.physicalTitle };
 }
 
-export default async function PhysicalWindowsServersPage() {
+export default async function PhysicalWindowsServersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ role?: string | string[] }>;
+}) {
   const locale = await resolveLocale();
   const dictionary = getDictionary(locale);
   const session = await getServerSession();
   if (!session?.authenticated) redirect(`/${locale}/login`);
   const tenant = selectedTenant(session, await cookies());
   if (!tenant) redirect(`/${locale}/login?reason=no-tenant`);
+  const roleParameter = (await searchParams).role;
+  const requestedRole = Array.isArray(roleParameter)
+    ? roleParameter[0]
+    : roleParameter;
+  if (
+    requestedRole &&
+    (requestedRole !== requestedRole.trim() || requestedRole.length > 255)
+  ) {
+    redirect(`/${locale}/physical/servers`);
+  }
+  const role =
+    requestedRole &&
+    requestedRole === requestedRole.trim() &&
+    requestedRole.length <= 255
+      ? requestedRole
+      : undefined;
 
-  const inventory = await getWindowsServers(tenant.id, "physical");
+  const inventory = await getWindowsServers(tenant.id, "physical", role);
   if (!inventory.sessionValid) redirect(`/${locale}/login`);
 
   return (
@@ -31,6 +51,7 @@ export default async function PhysicalWindowsServersPage() {
       session={session}
       tenant={tenant}
       activeSection="physical-servers"
+      activeWindowsRole={role}
     >
       <div
         className={`preview-notice ${inventory.available ? "preview-notice--live" : ""}`}
@@ -60,6 +81,7 @@ export default async function PhysicalWindowsServersPage() {
       <WindowsServerInventory
         servers={inventory.servers}
         serverType="physical"
+        roleLabel={role}
         locale={locale}
         copy={dictionary.windowsServers}
       />

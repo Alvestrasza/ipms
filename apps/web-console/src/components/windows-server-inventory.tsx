@@ -63,11 +63,13 @@ function formatDate(value: string | null, locale: "de" | "en", empty: string) {
 export function WindowsServerInventory({
   servers,
   serverType,
+  roleLabel,
   locale,
   copy,
 }: {
   servers: WindowsServer[];
   serverType: "physical" | "virtual";
+  roleLabel?: string;
   locale: "de" | "en";
   copy: Copy;
 }) {
@@ -153,6 +155,7 @@ export function WindowsServerInventory({
               {serverType === "physical"
                 ? copy.managedPhysicalHeading
                 : copy.managedVirtualHeading}
+              {roleLabel ? ` · ${roleLabel}` : ""}
             </h2>
           </div>
           <span className="panel__metric">

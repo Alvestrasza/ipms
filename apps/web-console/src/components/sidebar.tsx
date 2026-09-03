@@ -17,8 +17,10 @@ import Link from "next/link";
 
 import { getDictionary } from "@/i18n/dictionaries";
 import { resolveLocale } from "@/i18n/server";
+import type { WindowsServerRoleSummary } from "@/lib/windows-server-types";
 
 import { Brand } from "./brand";
+import { WindowsRoleNavigation } from "./windows-role-navigation";
 
 export type ActiveSection =
   | "overview"
@@ -32,10 +34,14 @@ export type ActiveSection =
 
 export async function Sidebar({
   activeSection,
+  activeWindowsRole,
   canAdmin,
+  windowsRoles,
 }: {
   activeSection: ActiveSection;
+  activeWindowsRole?: string;
   canAdmin: boolean;
+  windowsRoles: WindowsServerRoleSummary[];
 }) {
   const locale = await resolveLocale();
   const dictionary = getDictionary(locale);
@@ -130,18 +136,16 @@ export async function Sidebar({
               {item.section === "physical" && physicalExpanded ? (
                 <ul className="nav-tree">
                   <li>
-                    <Link
-                      className={`nav-subitem ${activeSection === "physical-servers" ? "nav-subitem--active" : ""}`}
+                    <WindowsRoleNavigation
+                      active={activeSection === "physical-servers"}
+                      activeRole={activeWindowsRole}
+                      collapseLabel={dictionary.navigation.collapse}
+                      expandLabel={dictionary.navigation.expand}
                       href={`/${locale}/physical/servers` as Route}
-                      aria-current={
-                        activeSection === "physical-servers"
-                          ? "page"
-                          : undefined
-                      }
-                    >
-                      <MonitorCog aria-hidden="true" size={15} />
-                      <span>{dictionary.navigation.physicalServers}</span>
-                    </Link>
+                      label={dictionary.navigation.physicalServers}
+                      roles={windowsRoles}
+                      serverType="physical"
+                    />
                   </li>
                   <li>
                     <Link
@@ -192,14 +196,16 @@ export async function Sidebar({
               {item.section === "virtual" && virtualExpanded ? (
                 <ul className="nav-tree">
                   <li>
-                    <Link
-                      className="nav-subitem nav-subitem--active"
+                    <WindowsRoleNavigation
+                      active
+                      activeRole={activeWindowsRole}
+                      collapseLabel={dictionary.navigation.collapse}
+                      expandLabel={dictionary.navigation.expand}
                       href={`/${locale}/virtual` as Route}
-                      aria-current="page"
-                    >
-                      <MonitorCog aria-hidden="true" size={15} />
-                      <span>{dictionary.navigation.virtualServers}</span>
-                    </Link>
+                      label={dictionary.navigation.virtualServers}
+                      roles={windowsRoles}
+                      serverType="virtual"
+                    />
                   </li>
                 </ul>
               ) : null}

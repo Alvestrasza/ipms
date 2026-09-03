@@ -6,7 +6,7 @@ from datetime import timezone as datetime_timezone
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -35,6 +35,7 @@ from .models import (
     DiscoveryJob,
     PhysicalSystem,
     WindowsServer,
+    WindowsServerRole,
     WindowsServerTelemetry,
 )
 from .permissions import CanManageConnectors
@@ -371,7 +372,61 @@ class WindowsServerListView(ListAPIView):
         server_type = self.request.query_params.get("server_type", "")
         if server_type in WindowsServer.ServerType.values:
             queryset = queryset.filter(server_type=server_type)
+        role = self.request.query_params.get("role", "")
+        if role:
+            if role != role.strip() or len(role) > 255:
+                raise ValidationError({"role": ["invalid_role"]})
+            queryset = queryset.filter(installed_roles__name=role).distinct()
         return queryset.select_related("connector")
+
+
+class WindowsServerRoleListView(APIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess)
+
+    def get(self, request):
+        rows = (
+            WindowsServerRole.objects.filter(server__tenant=request.tenant)
+            .values("name", "display_name", "server__server_type")
+            .annotate(server_count=Count("server_id", distinct=True))
+            .order_by()
+        )
+        roles: dict[str, dict] = {}
+        for row in rows:
+            name = row["name"]
+            role = roles.setdefault(
+                name,
+                {
+                    "name": name,
+                    "physical_count": 0,
+                    "virtual_count": 0,
+                    "display_names": {},
+                },
+            )
+            server_type = row["server__server_type"]
+            if server_type == WindowsServer.ServerType.PHYSICAL:
+                role["physical_count"] += row["server_count"]
+            elif server_type == WindowsServer.ServerType.VIRTUAL:
+                role["virtual_count"] += row["server_count"]
+            display_name = row["display_name"]
+            role["display_names"][display_name] = (
+                role["display_names"].get(display_name, 0) + row["server_count"]
+            )
+
+        response = []
+        for role in roles.values():
+            display_name = sorted(
+                role.pop("display_names").items(),
+                key=lambda item: (-item[1], item[0].casefold(), item[0]),
+            )[0][0]
+            response.append({**role, "display_name": display_name})
+        response.sort(
+            key=lambda item: (
+                item["display_name"].casefold(),
+                item["display_name"],
+                item["name"],
+            )
+        )
+        return Response(response)
 
 
 class WindowsServerDetailView(RetrieveAPIView):

@@ -41,6 +41,13 @@ export type WindowsInstalledRoleFeature = {
   type: "role" | "role-service" | "feature";
 };
 
+export type WindowsServerRoleSummary = {
+  name: string;
+  display_name: string;
+  physical_count: number;
+  virtual_count: number;
+};
+
 export type WindowsServerTelemetry = {
   server_id: string;
   cpu_used_percent: number;

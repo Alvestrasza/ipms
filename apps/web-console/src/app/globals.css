@@ -236,6 +236,55 @@ a {
 .nav-subitem--active {
   box-shadow: inset 2px 0 var(--color-accent-crimson);
 }
+.nav-subitem-branch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 2px;
+}
+.nav-subitem-branch > .nav-subitem {
+  min-width: 0;
+}
+.nav-tree-toggle {
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 5px;
+  color: var(--color-text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+.nav-tree-toggle:hover,
+.nav-tree-toggle:focus-visible {
+  color: var(--color-text-primary);
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+.nav-role-tree {
+  margin-top: 2px !important;
+}
+.nav-role-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.nav-role-item > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-role-count {
+  min-width: 20px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  color: var(--color-text-muted);
+  background: var(--surface-panel-raised);
+  font-size: 0.62rem;
+  line-height: 1;
+  text-align: center;
+}
 .sidebar__footer {
   display: grid;
   gap: 3px;

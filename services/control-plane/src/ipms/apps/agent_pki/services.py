@@ -884,7 +884,7 @@ def confirm_inventory(
     inventory: object,
     agent_version: str,
 ) -> None:
-    from ipms.apps.discovery.models import WindowsServer
+    from ipms.apps.discovery.models import WindowsServer, WindowsServerRole
 
     if not isinstance(inventory, dict) or len(inventory) > 32:
         raise ValidationError("The Agent inventory document is invalid.")
@@ -942,7 +942,7 @@ def confirm_inventory(
     if enrollment.first_inventory_at is None:
         updates["first_inventory_at"] = now
     AgentEnrollment.objects.filter(id=enrollment.id).update(**updates)
-    WindowsServer.objects.update_or_create(
+    server, _ = WindowsServer.objects.update_or_create(
         tenant=enrollment.tenant,
         inventory_source=WindowsServer.InventorySource.AGENT,
         source_id=enrollment.device_uri,
@@ -977,6 +977,18 @@ def confirm_inventory(
             "last_seen_at": now,
             "discovered_at": now,
         },
+    )
+    server.installed_roles.all().delete()
+    WindowsServerRole.objects.bulk_create(
+        [
+            WindowsServerRole(
+                server=server,
+                name=item["name"],
+                display_name=item["display_name"],
+            )
+            for item in installed_roles_features
+            if item["type"] == "role"
+        ]
     )
 
 

@@ -393,6 +393,10 @@ class ManagedAgentPkiTests(TestCase):
             [item["name"] for item in server.installed_roles_features],
             ["Web-Common-Http", "Web-Server"],
         )
+        self.assertEqual(
+            list(server.installed_roles.values_list("name", flat=True)),
+            ["Web-Server"],
+        )
         self.assertEqual(server.agent_state, WindowsServer.AgentState.ONLINE)
         self.assertEqual(server.management_packs, ["windows-server-core"])
 
@@ -429,6 +433,7 @@ class ManagedAgentPkiTests(TestCase):
         server.refresh_from_db()
         self.assertEqual(server.network_interfaces[0]["transmit_link_speed_bps"], 0)
         self.assertEqual(server.network_interfaces[0]["receive_link_speed_bps"], 0)
+        self.assertFalse(server.installed_roles.exists())
 
         with self.assertRaises(ValidationError):
             confirm_inventory(enrollment, agent_version="0.1.17", inventory={})

@@ -22,9 +22,10 @@ Redfish profiles are selectable but require dedicated hardware compatibility
 acceptance before they are described as supported.
 
 The Windows Server portal foundation provides separate tenant-scoped views for
-physical and virtual servers. Its normalized read-only API is prepared for the
-native IPMS Agent and future Hyper-V discovery without exposing an inventory
-write path to browsers.
+physical and virtual servers, including collapsible navigation and exact
+server filtering for every installed top-level Windows role. Its normalized
+read-only API is prepared for the native IPMS Agent and future Hyper-V
+discovery without exposing an inventory write path to browsers.
 
 The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 

@@ -23,6 +23,7 @@ from ipms.apps.discovery.views import (
     PhysicalSystemListView,
     WindowsServerDetailView,
     WindowsServerListView,
+    WindowsServerRoleListView,
     WindowsServerTelemetryView,
 )
 
@@ -90,6 +91,11 @@ urlpatterns = [
     ),
     path("physical-systems/", PhysicalSystemListView.as_view(), name="physical-list"),
     path("windows-servers/", WindowsServerListView.as_view(), name="windows-server-list"),
+    path(
+        "windows-server-roles/",
+        WindowsServerRoleListView.as_view(),
+        name="windows-server-role-list",
+    ),
     path(
         "windows-servers/<uuid:pk>/",
         WindowsServerDetailView.as_view(),

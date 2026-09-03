@@ -25,6 +25,7 @@ from .models import (
     DiscoveryJob,
     PhysicalSystem,
     WindowsServer,
+    WindowsServerRole,
     WindowsServerTelemetry,
 )
 from .secrets import load_connector_secret
@@ -78,6 +79,11 @@ class WindowsServerInventoryApiTests(TestCase):
             last_seen_at=timezone.now(),
             discovered_at=timezone.now(),
         )
+        WindowsServerRole.objects.create(
+            server=self.physical,
+            name="DNS",
+            display_name="DNS Server",
+        )
         self.virtual = WindowsServer.objects.create(
             tenant=self.tenant,
             source_id="hyper-v-virtual-fixture",
@@ -127,13 +133,18 @@ class WindowsServerInventoryApiTests(TestCase):
             ],
             observed_at=timezone.now(),
         )
-        WindowsServer.objects.create(
+        other_server = WindowsServer.objects.create(
             tenant=self.other_tenant,
             source_id="other-tenant-fixture",
             inventory_source=WindowsServer.InventorySource.AGENT,
             server_type=WindowsServer.ServerType.PHYSICAL,
             hostname="other-tenant-fixture",
             discovered_at=timezone.now(),
+        )
+        WindowsServerRole.objects.create(
+            server=other_server,
+            name="AD-Domain-Services",
+            display_name="Active Directory Domain Services",
         )
         self.url = reverse("core:windows-server-list")
         self.client.force_login(self.reader)
@@ -160,6 +171,60 @@ class WindowsServerInventoryApiTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual([item["id"] for item in response.json()], [str(self.physical.id)])
+
+    def test_role_filter_returns_only_matching_selected_tenant_servers(self) -> None:
+        response = self.client.get(
+            self.url,
+            {"server_type": WindowsServer.ServerType.PHYSICAL, "role": "DNS"},
+            **self.headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["id"] for item in response.json()], [str(self.physical.id)])
+
+        no_match = self.client.get(
+            self.url,
+            {"server_type": WindowsServer.ServerType.VIRTUAL, "role": "DNS"},
+            **self.headers(),
+        )
+        self.assertEqual(no_match.status_code, 200)
+        self.assertEqual(no_match.json(), [])
+
+    def test_invalid_role_filter_is_rejected(self) -> None:
+        response = self.client.get(
+            self.url,
+            {"role": f" {'x' * 255}"},
+            **self.headers(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"]["code"], "invalid_request")
+
+    def test_role_navigation_summary_is_tenant_scoped_and_read_only(self) -> None:
+        url = reverse("core:windows-server-role-list")
+        response = self.client.get(url, **self.headers())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            [
+                {
+                    "name": "DNS",
+                    "display_name": "DNS Server",
+                    "physical_count": 1,
+                    "virtual_count": 0,
+                }
+            ],
+        )
+        self.assertEqual(
+            self.client.post(
+                url,
+                data={},
+                content_type="application/json",
+                **self.headers(),
+            ).status_code,
+            405,
+        )
 
     def test_inventory_api_is_read_only(self) -> None:
         response = self.client.post(

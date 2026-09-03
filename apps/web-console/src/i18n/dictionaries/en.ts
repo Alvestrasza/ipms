@@ -158,6 +158,8 @@ export const en = {
     bmcEvents: "Event logs",
     virtual: "Virtual infrastructure",
     virtualServers: "Windows servers",
+    expand: "Expand",
+    collapse: "Collapse",
     monitoring: "Monitoring",
     network: "Network",
     storage: "Storage",
@@ -167,7 +169,7 @@ export const en = {
     infrastructure: "Infrastructure",
     agents: "Agents",
     soon: "Soon",
-    version: "IPMS v0.1.45 development",
+    version: "IPMS v0.1.46 development",
   },
   agentAdministration: {
     title: "Agent administration",

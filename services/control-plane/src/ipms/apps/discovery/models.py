@@ -258,6 +258,32 @@ class WindowsServer(models.Model):
         return self.fqdn or self.hostname
 
 
+class WindowsServerRole(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    server = models.ForeignKey(
+        WindowsServer,
+        on_delete=models.CASCADE,
+        related_name="installed_roles",
+    )
+    name = models.CharField(max_length=255)
+    display_name = models.CharField(max_length=255)
+
+    class Meta:
+        ordering = ("display_name", "name")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("server", "name"),
+                name="unique_windows_server_role",
+            )
+        ]
+        indexes = [
+            models.Index(fields=("name", "server"), name="windows_role_server_idx")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.server}: {self.name}"
+
+
 class WindowsServerTelemetry(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
