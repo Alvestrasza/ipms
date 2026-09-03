@@ -282,6 +282,241 @@ struct installed_server_feature {
   std::string type;
 };
 
+struct legacy_server_feature {
+  std::uint32_t id;
+  std::uint32_t parent_id;
+  std::wstring display_name;
+};
+
+bool is_legacy_server_role(std::uint32_t id) {
+  switch (id) {
+    case 1:
+    case 2:
+    case 3:
+    case 5:
+    case 6:
+    case 7:
+    case 8:
+    case 9:
+    case 10:
+    case 11:
+    case 12:
+    case 13:
+    case 14:
+    case 16:
+    case 17:
+    case 18:
+    case 19:
+    case 20:
+    case 21:
+    case 404:
+    case 409:
+    case 468:
+    case 481:
+    case 485:
+      return true;
+    default:
+      return false;
+  }
+}
+
+std::wstring legacy_server_feature_name(std::uint32_t id) {
+  return L"win32-server-feature-" + std::to_wstring(id);
+}
+
+const legacy_server_feature* find_legacy_server_feature(
+    const std::vector<legacy_server_feature>& features,
+    std::uint32_t id) {
+  const auto match = std::lower_bound(
+      features.begin(),
+      features.end(),
+      id,
+      [](const legacy_server_feature& feature, std::uint32_t candidate) {
+        return feature.id < candidate;
+      });
+  return match != features.end() && match->id == id ? &*match : nullptr;
+}
+
+bool is_legacy_role_service(
+    const std::vector<legacy_server_feature>& features,
+    std::uint32_t parent_id) {
+  for (std::size_t depth = 0; parent_id != 0 && depth < 32; ++depth) {
+    if (is_legacy_server_role(parent_id)) return true;
+    const auto* parent = find_legacy_server_feature(features, parent_id);
+    if (parent == nullptr || parent->parent_id == parent_id) return false;
+    parent_id = parent->parent_id;
+  }
+  return false;
+}
+
+std::optional<std::vector<installed_server_feature>>
+read_legacy_installed_server_features(std::string& failure_reason) {
+  com_scope com;
+  if (!com.initialized) {
+    failure_reason = "com_initialization_failed";
+    return std::nullopt;
+  }
+  const HRESULT security = CoInitializeSecurity(
+      nullptr,
+      -1,
+      nullptr,
+      nullptr,
+      RPC_C_AUTHN_LEVEL_DEFAULT,
+      RPC_C_IMP_LEVEL_IMPERSONATE,
+      nullptr,
+      EOAC_NONE,
+      nullptr);
+  if (FAILED(security) && security != RPC_E_TOO_LATE) {
+    failure_reason = "com_security_failed";
+    return std::nullopt;
+  }
+
+  Microsoft::WRL::ComPtr<IWbemLocator> locator;
+  if (FAILED(CoCreateInstance(
+          CLSID_WbemLocator,
+          nullptr,
+          CLSCTX_INPROC_SERVER,
+          IID_PPV_ARGS(&locator)))) {
+    failure_reason = "wmi_locator_failed";
+    return std::nullopt;
+  }
+  BSTR namespace_path = SysAllocString(L"ROOT\\CIMV2");
+  if (namespace_path == nullptr) {
+    failure_reason = "allocation_failed";
+    return std::nullopt;
+  }
+  Microsoft::WRL::ComPtr<IWbemServices> services;
+  const HRESULT connection = locator->ConnectServer(
+      namespace_path,
+      nullptr,
+      nullptr,
+      nullptr,
+      0,
+      nullptr,
+      nullptr,
+      &services);
+  SysFreeString(namespace_path);
+  if (FAILED(connection) || !services) {
+    failure_reason = "server_feature_fallback_unavailable";
+    return std::nullopt;
+  }
+  if (FAILED(CoSetProxyBlanket(
+          services.Get(),
+          RPC_C_AUTHN_WINNT,
+          RPC_C_AUTHZ_NONE,
+          nullptr,
+          RPC_C_AUTHN_LEVEL_CALL,
+          RPC_C_IMP_LEVEL_IMPERSONATE,
+          nullptr,
+          EOAC_NONE))) {
+    failure_reason = "wmi_proxy_failed";
+    return std::nullopt;
+  }
+
+  BSTR language = SysAllocString(L"WQL");
+  BSTR statement = SysAllocString(
+      L"SELECT ID, ParentID, Name FROM Win32_ServerFeature");
+  if (language == nullptr || statement == nullptr) {
+    if (language != nullptr) SysFreeString(language);
+    if (statement != nullptr) SysFreeString(statement);
+    failure_reason = "allocation_failed";
+    return std::nullopt;
+  }
+  Microsoft::WRL::ComPtr<IEnumWbemClassObject> rows;
+  const HRESULT query_result = services->ExecQuery(
+      language,
+      statement,
+      WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
+      nullptr,
+      &rows);
+  SysFreeString(language);
+  SysFreeString(statement);
+  if (FAILED(query_result) || !rows) {
+    failure_reason = "server_feature_fallback_query_failed";
+    return std::nullopt;
+  }
+
+  std::vector<legacy_server_feature> legacy_features;
+  const auto query_deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(60);
+  for (;;) {
+    Microsoft::WRL::ComPtr<IWbemClassObject> row;
+    ULONG returned = 0;
+    const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+        query_deadline - std::chrono::steady_clock::now());
+    if (remaining <= std::chrono::milliseconds::zero()) {
+      failure_reason = "server_feature_fallback_query_timeout";
+      return std::nullopt;
+    }
+    const auto maximum_wait = std::chrono::milliseconds(5'000);
+    const auto wait_time = static_cast<LONG>(
+        (remaining < maximum_wait ? remaining : maximum_wait).count());
+    const HRESULT next = rows->Next(
+        wait_time,
+        1,
+        row.ReleaseAndGetAddressOf(),
+        &returned);
+    if (next == WBEM_S_FALSE && returned == 0) break;
+    if (FAILED(next)) {
+      failure_reason = "server_feature_fallback_query_failed";
+      return std::nullopt;
+    }
+    if (returned == 0 || !row) {
+      if (next == WBEM_S_TIMEDOUT) continue;
+      failure_reason = "server_feature_fallback_result_invalid";
+      return std::nullopt;
+    }
+    const auto id = wmi_uint32(row.Get(), L"ID");
+    const auto parent_id = wmi_uint32(row.Get(), L"ParentID");
+    const auto display_name = wmi_string(row.Get(), L"Name");
+    if (!id || !parent_id || display_name.empty()) {
+      failure_reason = "server_feature_fallback_result_invalid";
+      return std::nullopt;
+    }
+    if (legacy_features.size() >= 512) {
+      failure_reason = "item_limit_exceeded";
+      return std::nullopt;
+    }
+    if (display_name.size() > 255) {
+      failure_reason = "value_limit_exceeded";
+      return std::nullopt;
+    }
+    legacy_features.push_back({*id, *parent_id, display_name});
+  }
+
+  std::sort(
+      legacy_features.begin(),
+      legacy_features.end(),
+      [](const auto& left, const auto& right) { return left.id < right.id; });
+  legacy_features.erase(
+      std::unique(
+          legacy_features.begin(),
+          legacy_features.end(),
+          [](const auto& left, const auto& right) { return left.id == right.id; }),
+      legacy_features.end());
+
+  std::vector<installed_server_feature> features;
+  features.reserve(legacy_features.size());
+  for (const auto& feature : legacy_features) {
+    std::string type = "feature";
+    if (is_legacy_server_role(feature.id)) {
+      type = "role";
+    } else if (is_legacy_role_service(legacy_features, feature.parent_id)) {
+      type = "role-service";
+    }
+    features.push_back({
+        legacy_server_feature_name(feature.id),
+        feature.display_name,
+        feature.parent_id == 0
+            ? std::wstring{}
+            : legacy_server_feature_name(feature.parent_id),
+        std::move(type),
+    });
+  }
+  failure_reason.clear();
+  return features;
+}
+
 std::optional<std::vector<installed_server_feature>> read_installed_server_features(
     std::string& failure_reason) {
   failure_reason.clear();
@@ -445,7 +680,14 @@ std::optional<std::vector<installed_server_feature>> read_installed_server_featu
 std::string installed_server_features_json(
     bool& collected,
     std::string& failure_reason) {
-  const auto features = read_installed_server_features(failure_reason);
+  auto features = read_installed_server_features(failure_reason);
+  if (!features &&
+      failure_reason != "allocation_failed" &&
+      failure_reason != "item_limit_exceeded" &&
+      failure_reason != "value_limit_exceeded" &&
+      failure_reason != "payload_limit_exceeded") {
+    features = read_legacy_installed_server_features(failure_reason);
+  }
   collected = false;
   if (!features) return "[]";
   constexpr std::streamoff k_max_serialized_feature_bytes = 32'768;

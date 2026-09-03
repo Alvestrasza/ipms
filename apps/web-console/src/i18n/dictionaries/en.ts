@@ -169,7 +169,7 @@ export const en = {
     infrastructure: "Infrastructure",
     agents: "Agents",
     soon: "Soon",
-    version: "IPMS v0.1.50 development",
+    version: "IPMS v0.1.51 development",
   },
   agentAdministration: {
     title: "Agent administration",
@@ -511,6 +511,14 @@ export const en = {
         "The Windows Server Manager query exceeded its time limit.",
       server_manager_result_invalid:
         "The Windows Server Manager provider returned an invalid result.",
+      server_feature_fallback_unavailable:
+        "The installed Windows Server feature inventory is unavailable.",
+      server_feature_fallback_query_failed:
+        "The installed Windows Server feature query failed.",
+      server_feature_fallback_query_timeout:
+        "The installed Windows Server feature query exceeded its time limit.",
+      server_feature_fallback_result_invalid:
+        "Windows returned an invalid installed server feature result.",
       item_limit_exceeded:
         "The installed item count exceeded the safety limit.",
       value_limit_exceeded: "An installed item exceeded the safety limit.",

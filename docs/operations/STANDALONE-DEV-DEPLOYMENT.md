@@ -45,7 +45,6 @@ Run the release's installer from a privileged SSH session:
 sudo bash deploy/standalone/install-dev.sh \
   --public-host ipms-dev.example.invalid \
   --management-source 192.0.2.10 \
-  --agent-source 198.51.100.20 \
   --release-ref 0000000000000000000000000000000000000000 \
   --tenant-slug development \
   --tenant-name "Development"
@@ -55,11 +54,12 @@ The bootstrap username defaults to `admin`. A deployment may override it with
 `--admin-username`, but it must never use a shared or predictable password.
 Every installation generates its own random one-time password.
 
-The management source controls SSH and HTTPS access. Each repeatable
-`--agent-source` value controls only inbound Agent Gateway access on TCP 9419.
-Use individual host addresses where practical, or deliberately selected Agent
-network CIDRs when the deployment requires them. Do not use unrestricted
-sources for a development appliance.
+The management source controls SSH and HTTPS access. The Appliance listens for
+Agent-initiated mTLS connections on TCP 9419 and permits that port from all IPv4
+and IPv6 sources. Customer environments must restrict network reachability with
+their central firewall or an equivalent upstream control. Network exposure does
+not replace mutual certificate authentication, tenant-bound Agent identities,
+revocation, throttling, or protocol validation at the Gateway.
 
 ## First Sign-In
 

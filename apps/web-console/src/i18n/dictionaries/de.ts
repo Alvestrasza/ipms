@@ -181,7 +181,7 @@ export const de = {
     infrastructure: "Infrastruktur",
     agents: "Agenten",
     soon: "Bald",
-    version: "IPMS v0.1.50 Entwicklung",
+    version: "IPMS v0.1.51 Entwicklung",
   },
   agentAdministration: {
     title: "Agent-Verwaltung",
@@ -531,6 +531,14 @@ export const de = {
         "Die Abfrage des Windows-Server-Manager-Providers hat das Zeitlimit überschritten.",
       server_manager_result_invalid:
         "Der Windows-Server-Manager-Provider hat ein ungültiges Ergebnis geliefert.",
+      server_feature_fallback_unavailable:
+        "Das installierte Windows-Server-Featureinventar ist nicht verfügbar.",
+      server_feature_fallback_query_failed:
+        "Die Abfrage der installierten Windows-Server-Features ist fehlgeschlagen.",
+      server_feature_fallback_query_timeout:
+        "Die Abfrage der installierten Windows-Server-Features hat das Zeitlimit überschritten.",
+      server_feature_fallback_result_invalid:
+        "Windows hat ein ungültiges Ergebnis für die installierten Server-Features geliefert.",
       item_limit_exceeded:
         "Die Anzahl der installierten Einträge hat die Sicherheitsgrenze überschritten.",
       value_limit_exceeded:

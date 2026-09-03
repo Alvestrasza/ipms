@@ -444,7 +444,7 @@ class ManagedAgentPkiTests(TestCase):
         }
         confirm_inventory(
             enrollment,
-            agent_version="0.1.35",
+            agent_version="0.1.36",
             inventory=unavailable_inventory,
         )
         server.refresh_from_db()
@@ -461,7 +461,7 @@ class ManagedAgentPkiTests(TestCase):
         ):
             confirm_inventory(
                 enrollment,
-                agent_version="0.1.35",
+                agent_version="0.1.36",
                 inventory=unavailable_inventory,
             )
 

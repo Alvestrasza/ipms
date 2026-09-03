@@ -65,12 +65,12 @@ class AgentLifecycleTests(TestCase):
         self.addCleanup(self.temp.cleanup)
         self.package = Path(self.temp.name) / "agent.zip"
         with zipfile.ZipFile(self.package, "w") as archive:
-            archive.writestr("ipms-agent.exe", b"synthetic-agent-0.1.35")
+            archive.writestr("ipms-agent.exe", b"synthetic-agent-0.1.36")
         self.package_digest = hashlib.sha256(self.package.read_bytes()).hexdigest()
         self.settings = override_settings(
             AGENT_WINDOWS_PACKAGE_PATH=str(self.package),
             AGENT_WINDOWS_PACKAGE_SHA256=self.package_digest,
-            AGENT_WINDOWS_VERSION="0.1.35",
+            AGENT_WINDOWS_VERSION="0.1.36",
         )
         self.settings.enable()
         self.addCleanup(self.settings.disable)
@@ -89,7 +89,7 @@ class AgentLifecycleTests(TestCase):
         self.assertEqual(document["fqdn"], "managed-agent.example.invalid")
         self.assertEqual(document["status"], "online")
         self.assertEqual(document["agent_version"], "0.1.32")
-        self.assertEqual(document["target_version"], "0.1.35")
+        self.assertEqual(document["target_version"], "0.1.36")
         self.assertEqual(document["compliance"], "outdated")
         self.assertTrue(document["lifecycle_capable"])
         self.assertFalse(document["can_remove"])
@@ -248,8 +248,8 @@ class AgentLifecycleTests(TestCase):
         self.assertEqual(response.status_code, 201)
         job = AgentLifecycleJob.objects.get(id=response.json()["id"])
         self.assertEqual(job.status, AgentLifecycleJob.Status.QUEUED)
-        self.assertEqual(job.target_version, "0.1.35")
-        self.assertEqual(job.artifact_sha256, hashlib.sha256(b"synthetic-agent-0.1.35").hexdigest())
+        self.assertEqual(job.target_version, "0.1.36")
+        self.assertEqual(job.artifact_sha256, hashlib.sha256(b"synthetic-agent-0.1.36").hexdigest())
         self.assertTrue(
             AuditEvent.objects.filter(
                 tenant=self.tenant,
@@ -261,7 +261,7 @@ class AgentLifecycleTests(TestCase):
         assignment = offer_lifecycle_job(self.enrollment)
         self.assertEqual(assignment["job_id"], str(job.id))
         binary, digest = lifecycle_artifact(self.enrollment, job_id=str(job.id))
-        self.assertEqual(binary, b"synthetic-agent-0.1.35")
+        self.assertEqual(binary, b"synthetic-agent-0.1.36")
         self.assertEqual(digest, job.artifact_sha256)
         record_lifecycle_result(
             self.enrollment,

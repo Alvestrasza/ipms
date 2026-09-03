@@ -197,6 +197,22 @@ class WindowsServer(models.Model):
             "server_manager_result_invalid",
             "Server Manager result invalid",
         )
+        SERVER_FEATURE_FALLBACK_UNAVAILABLE = (
+            "server_feature_fallback_unavailable",
+            "Server feature fallback unavailable",
+        )
+        SERVER_FEATURE_FALLBACK_QUERY_FAILED = (
+            "server_feature_fallback_query_failed",
+            "Server feature fallback query failed",
+        )
+        SERVER_FEATURE_FALLBACK_QUERY_TIMEOUT = (
+            "server_feature_fallback_query_timeout",
+            "Server feature fallback query timeout",
+        )
+        SERVER_FEATURE_FALLBACK_RESULT_INVALID = (
+            "server_feature_fallback_result_invalid",
+            "Server feature fallback result invalid",
+        )
         ITEM_LIMIT_EXCEEDED = "item_limit_exceeded", "Item limit exceeded"
         VALUE_LIMIT_EXCEEDED = "value_limit_exceeded", "Value limit exceeded"
         PAYLOAD_LIMIT_EXCEEDED = "payload_limit_exceeded", "Payload limit exceeded"
