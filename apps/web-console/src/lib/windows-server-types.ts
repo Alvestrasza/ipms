@@ -89,6 +89,20 @@ export type WindowsServer = {
     | "not-reported"
     | "collected"
     | "unavailable";
+  installed_roles_features_error?:
+    | "com_initialization_failed"
+    | "com_security_failed"
+    | "wmi_locator_failed"
+    | "allocation_failed"
+    | "server_manager_provider_unavailable"
+    | "wmi_proxy_failed"
+    | "server_manager_query_failed"
+    | "server_manager_query_timeout"
+    | "server_manager_result_invalid"
+    | "item_limit_exceeded"
+    | "value_limit_exceeded"
+    | "payload_limit_exceeded"
+    | "";
   installed_roles_features?: WindowsInstalledRoleFeature[];
   last_seen_at: string | null;
   discovered_at: string;

@@ -169,7 +169,7 @@ export const en = {
     infrastructure: "Infrastructure",
     agents: "Agents",
     soon: "Soon",
-    version: "IPMS v0.1.49 development",
+    version: "IPMS v0.1.50 development",
   },
   agentAdministration: {
     title: "Agent administration",
@@ -494,6 +494,29 @@ export const en = {
       "Only roles, role services, and features reported as installed by Windows Server",
     rolesFeaturesUnavailable:
       "Windows Server role and feature inventory is unavailable on this system.",
+    rolesFeaturesReason: "Reason",
+    rolesFeaturesErrors: {
+      com_initialization_failed: "Windows inventory initialization failed.",
+      com_security_failed: "Windows inventory security initialization failed.",
+      wmi_locator_failed:
+        "Windows Management Instrumentation could not be initialized.",
+      allocation_failed:
+        "The bounded inventory operation could not allocate a required resource.",
+      server_manager_provider_unavailable:
+        "The Windows Server Manager provider is unavailable.",
+      wmi_proxy_failed:
+        "The local Windows Management Instrumentation connection could not be secured.",
+      server_manager_query_failed: "The Windows Server Manager query failed.",
+      server_manager_query_timeout:
+        "The Windows Server Manager query exceeded its time limit.",
+      server_manager_result_invalid:
+        "The Windows Server Manager provider returned an invalid result.",
+      item_limit_exceeded:
+        "The installed item count exceeded the safety limit.",
+      value_limit_exceeded: "An installed item exceeded the safety limit.",
+      payload_limit_exceeded:
+        "The installed roles and features payload exceeded the safety limit.",
+    },
     rolesFeaturesNotReported:
       "This Agent version has not reported role and feature inventory yet.",
     noRolesFeatures: "No installed roles or features were reported.",

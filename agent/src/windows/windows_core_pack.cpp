@@ -282,9 +282,14 @@ struct installed_server_feature {
   std::string type;
 };
 
-std::optional<std::vector<installed_server_feature>> read_installed_server_features() {
+std::optional<std::vector<installed_server_feature>> read_installed_server_features(
+    std::string& failure_reason) {
+  failure_reason.clear();
   com_scope com;
-  if (!com.initialized) return std::nullopt;
+  if (!com.initialized) {
+    failure_reason = "com_initialization_failed";
+    return std::nullopt;
+  }
   const HRESULT security = CoInitializeSecurity(
       nullptr,
       -1,
@@ -295,7 +300,10 @@ std::optional<std::vector<installed_server_feature>> read_installed_server_featu
       nullptr,
       EOAC_NONE,
       nullptr);
-  if (FAILED(security) && security != RPC_E_TOO_LATE) return std::nullopt;
+  if (FAILED(security) && security != RPC_E_TOO_LATE) {
+    failure_reason = "com_security_failed";
+    return std::nullopt;
+  }
 
   Microsoft::WRL::ComPtr<IWbemLocator> locator;
   if (FAILED(CoCreateInstance(
@@ -303,10 +311,14 @@ std::optional<std::vector<installed_server_feature>> read_installed_server_featu
           nullptr,
           CLSCTX_INPROC_SERVER,
           IID_PPV_ARGS(&locator)))) {
+    failure_reason = "wmi_locator_failed";
     return std::nullopt;
   }
   BSTR namespace_path = SysAllocString(L"ROOT\\Windows\\ServerManager");
-  if (namespace_path == nullptr) return std::nullopt;
+  if (namespace_path == nullptr) {
+    failure_reason = "allocation_failed";
+    return std::nullopt;
+  }
   Microsoft::WRL::ComPtr<IWbemServices> services;
   const HRESULT connection = locator->ConnectServer(
       namespace_path,
@@ -318,7 +330,10 @@ std::optional<std::vector<installed_server_feature>> read_installed_server_featu
       nullptr,
       &services);
   SysFreeString(namespace_path);
-  if (FAILED(connection) || !services) return std::nullopt;
+  if (FAILED(connection) || !services) {
+    failure_reason = "server_manager_provider_unavailable";
+    return std::nullopt;
+  }
   if (FAILED(CoSetProxyBlanket(
           services.Get(),
           RPC_C_AUTHN_WINNT,
@@ -328,6 +343,7 @@ std::optional<std::vector<installed_server_feature>> read_installed_server_featu
           RPC_C_IMP_LEVEL_IMPERSONATE,
           nullptr,
           EOAC_NONE))) {
+    failure_reason = "wmi_proxy_failed";
     return std::nullopt;
   }
 
@@ -338,6 +354,7 @@ std::optional<std::vector<installed_server_feature>> read_installed_server_featu
   if (language == nullptr || statement == nullptr) {
     if (language != nullptr) SysFreeString(language);
     if (statement != nullptr) SysFreeString(statement);
+    failure_reason = "allocation_failed";
     return std::nullopt;
   }
   Microsoft::WRL::ComPtr<IEnumWbemClassObject> rows;
@@ -349,7 +366,10 @@ std::optional<std::vector<installed_server_feature>> read_installed_server_featu
       &rows);
   SysFreeString(language);
   SysFreeString(statement);
-  if (FAILED(query_result) || !rows) return std::nullopt;
+  if (FAILED(query_result) || !rows) {
+    failure_reason = "server_manager_query_failed";
+    return std::nullopt;
+  }
 
   std::vector<installed_server_feature> features;
   const auto query_deadline =
@@ -359,7 +379,10 @@ std::optional<std::vector<installed_server_feature>> read_installed_server_featu
     ULONG returned = 0;
     const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
         query_deadline - std::chrono::steady_clock::now());
-    if (remaining <= std::chrono::milliseconds::zero()) return std::nullopt;
+    if (remaining <= std::chrono::milliseconds::zero()) {
+      failure_reason = "server_manager_query_timeout";
+      return std::nullopt;
+    }
     const auto maximum_wait = std::chrono::milliseconds(5'000);
     const auto wait_time = static_cast<LONG>(
         (remaining < maximum_wait ? remaining : maximum_wait).count());
@@ -369,9 +392,13 @@ std::optional<std::vector<installed_server_feature>> read_installed_server_featu
         row.ReleaseAndGetAddressOf(),
         &returned);
     if (next == WBEM_S_FALSE && returned == 0) break;
-    if (FAILED(next)) return std::nullopt;
+    if (FAILED(next)) {
+      failure_reason = "server_manager_query_failed";
+      return std::nullopt;
+    }
     if (returned == 0 || !row) {
       if (next == WBEM_S_TIMEDOUT) continue;
+      failure_reason = "server_manager_result_invalid";
       return std::nullopt;
     }
     const auto state = wmi_uint32(row.Get(), L"State");
@@ -385,12 +412,16 @@ std::optional<std::vector<installed_server_feature>> read_installed_server_featu
       case 2: normalized_type = "feature"; break;
       default: continue;
     }
-    if (features.size() >= 512) return std::nullopt;
+    if (features.size() >= 512) {
+      failure_reason = "item_limit_exceeded";
+      return std::nullopt;
+    }
     auto display_name = wmi_string(row.Get(), L"DisplayName");
     if (display_name.empty()) display_name = unique_name;
     const auto parent_name = wmi_string(row.Get(), L"ParentName");
     if (unique_name.size() > 255 || display_name.size() > 255 ||
         parent_name.size() > 255) {
+      failure_reason = "value_limit_exceeded";
       return std::nullopt;
     }
     features.push_back({
@@ -411,8 +442,10 @@ std::optional<std::vector<installed_server_feature>> read_installed_server_featu
   return features;
 }
 
-std::string installed_server_features_json(bool& collected) {
-  const auto features = read_installed_server_features();
+std::string installed_server_features_json(
+    bool& collected,
+    std::string& failure_reason) {
+  const auto features = read_installed_server_features(failure_reason);
   collected = false;
   if (!features) return "[]";
   constexpr std::streamoff k_max_serialized_feature_bytes = 32'768;
@@ -425,10 +458,14 @@ std::string installed_server_features_json(bool& collected) {
          << "\",\"display_name\":\"" << json_escape(utf8(feature.display_name))
          << "\",\"parent_name\":\"" << json_escape(utf8(feature.parent_name))
          << "\",\"type\":\"" << feature.type << "\"}";
-    if (json.tellp() > k_max_serialized_feature_bytes) return "[]";
+    if (json.tellp() > k_max_serialized_feature_bytes) {
+      failure_reason = "payload_limit_exceeded";
+      return "[]";
+    }
   }
   json << ']';
   collected = true;
+  failure_reason.clear();
   return json.str();
 }
 
@@ -629,7 +666,10 @@ std::string collect_windows_server_core_inventory_json() {
       L"SOFTWARE\\Microsoft\\Virtual Machine\\Guest\\Parameters",
       L"PhysicalHostNameFullyQualified");
   bool roles_features_collected = false;
-  const auto roles_features = installed_server_features_json(roles_features_collected);
+  std::string roles_features_error;
+  const auto roles_features = installed_server_features_json(
+      roles_features_collected,
+      roles_features_error);
   std::ostringstream json;
   json << "{\"schema_version\":\"1\",\"pack\":\"windows-server-core\","
        << "\"agent_gateway_port\":" << ipms::agent::k_default_agent_gateway_port << ","
@@ -649,6 +689,8 @@ std::string collect_windows_server_core_inventory_json() {
        << "\"memory_total_bytes\":" << memory.ullTotalPhys << ","
        << "\"installed_roles_features_status\":\""
        << (roles_features_collected ? "collected" : "unavailable") << "\","
+       << "\"installed_roles_features_error\":\""
+       << json_escape(roles_features_error) << "\","
        << "\"installed_roles_features\":" << roles_features << ","
        << "\"network_interfaces\":" << network_interfaces_json() << "}";
   return json.str();

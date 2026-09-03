@@ -19,7 +19,7 @@ class AgentGatewaySettingsTests(SimpleTestCase):
             "IPMS_AGENT_PKI_MASTER_KEY": "test-agent-pki-key",
             "IPMS_AGENT_WINDOWS_PACKAGE_PATH": "/tmp/ipms-agent.zip",
             "IPMS_AGENT_WINDOWS_PACKAGE_SHA256": "a" * 64,
-            "IPMS_AGENT_WINDOWS_VERSION": "0.1.34",
+            "IPMS_AGENT_WINDOWS_VERSION": "0.1.35",
             "IPMS_DATABASE_NAME": "ipms",
             "IPMS_DATABASE_USER": "ipms",
             "IPMS_DATABASE_PASSWORD": "test-password",
@@ -37,4 +37,4 @@ class AgentGatewaySettingsTests(SimpleTestCase):
 
         self.assertEqual(module.AGENT_WINDOWS_PACKAGE_PATH, "/tmp/ipms-agent.zip")
         self.assertEqual(module.AGENT_WINDOWS_PACKAGE_SHA256, "a" * 64)
-        self.assertEqual(module.AGENT_WINDOWS_VERSION, "0.1.34")
+        self.assertEqual(module.AGENT_WINDOWS_VERSION, "0.1.35")

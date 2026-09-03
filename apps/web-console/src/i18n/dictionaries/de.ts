@@ -181,7 +181,7 @@ export const de = {
     infrastructure: "Infrastruktur",
     agents: "Agenten",
     soon: "Bald",
-    version: "IPMS v0.1.49 Entwicklung",
+    version: "IPMS v0.1.50 Entwicklung",
   },
   agentAdministration: {
     title: "Agent-Verwaltung",
@@ -511,6 +511,33 @@ export const de = {
       "Nur von Windows Server als installiert gemeldete Rollen, Rollendienste und Features",
     rolesFeaturesUnavailable:
       "Das Rollen- und Featureinventar von Windows Server ist auf diesem System nicht verfügbar.",
+    rolesFeaturesReason: "Ursache",
+    rolesFeaturesErrors: {
+      com_initialization_failed:
+        "Die Windows-Inventarisierung konnte nicht initialisiert werden.",
+      com_security_failed:
+        "Die Sicherheitsinitialisierung der Windows-Inventarisierung ist fehlgeschlagen.",
+      wmi_locator_failed:
+        "Windows Management Instrumentation konnte nicht initialisiert werden.",
+      allocation_failed:
+        "Für die begrenzte Inventarisierung konnte eine benötigte Ressource nicht reserviert werden.",
+      server_manager_provider_unavailable:
+        "Der Windows-Server-Manager-Provider ist nicht verfügbar.",
+      wmi_proxy_failed:
+        "Die lokale Verbindung zu Windows Management Instrumentation konnte nicht abgesichert werden.",
+      server_manager_query_failed:
+        "Die Abfrage des Windows-Server-Manager-Providers ist fehlgeschlagen.",
+      server_manager_query_timeout:
+        "Die Abfrage des Windows-Server-Manager-Providers hat das Zeitlimit überschritten.",
+      server_manager_result_invalid:
+        "Der Windows-Server-Manager-Provider hat ein ungültiges Ergebnis geliefert.",
+      item_limit_exceeded:
+        "Die Anzahl der installierten Einträge hat die Sicherheitsgrenze überschritten.",
+      value_limit_exceeded:
+        "Ein installierter Eintrag hat die Sicherheitsgrenze überschritten.",
+      payload_limit_exceeded:
+        "Die Datenmenge der installierten Rollen und Features hat die Sicherheitsgrenze überschritten.",
+    },
     rolesFeaturesNotReported:
       "Diese Agentversion hat noch kein Rollen- und Featureinventar gemeldet.",
     noRolesFeatures:

@@ -4,9 +4,9 @@ set -euo pipefail
 NODE_VERSION="24.20.0"
 PNPM_VERSION="11.24.0"
 REPOSITORY_URL="https://github.com/Alvestrasza/ipms.git"
-AGENT_PACKAGE_NAME="ipms-agent-windows-x64-0.1.34.zip"
-AGENT_PACKAGE_SHA256="276c3df25ac6a0fa1640ccd628fb2087887a1e948b9242bb90616403c4ab2715"
-AGENT_PACKAGE_URL="https://github.com/Alvestrasza/ipms/releases/download/v0.1.49/${AGENT_PACKAGE_NAME}"
+AGENT_PACKAGE_NAME="ipms-agent-windows-x64-0.1.35.zip"
+AGENT_PACKAGE_SHA256="9182fb5a0637272559c68da4abe0838292d462a2fcd86f0f57bf2734f6c72964"
+AGENT_PACKAGE_URL="https://github.com/Alvestrasza/ipms/releases/download/v0.1.50/${AGENT_PACKAGE_NAME}"
 
 usage() {
     echo "Usage: sudo install-dev.sh --public-host HOST --management-source IP_OR_CIDR --agent-source IP_OR_CIDR [--agent-source IP_OR_CIDR ...] --release-ref COMMIT --tenant-slug SLUG --tenant-name NAME [--admin-username USER]" >&2
@@ -217,7 +217,7 @@ sed -i \
 {
     echo "IPMS_AGENT_WINDOWS_PACKAGE_PATH=${agent_package}"
     echo "IPMS_AGENT_WINDOWS_PACKAGE_SHA256=${AGENT_PACKAGE_SHA256}"
-    echo "IPMS_AGENT_WINDOWS_VERSION=0.1.34"
+    echo "IPMS_AGENT_WINDOWS_VERSION=0.1.35"
 } >> "$control_plane_env"
 if ! grep -q '^IPMS_CERTIFICATE_PROBE_TOKEN=' "$control_plane_env"; then
     generated_probe_token=$(openssl rand -hex 32)
@@ -288,7 +288,7 @@ install -o root -g ipms-agent-gateway -m 0640 /dev/null "$agent_gateway_env"
     echo "IPMS_AGENT_PKI_MASTER_KEY=${agent_pki_master_key}"
     echo "IPMS_AGENT_WINDOWS_PACKAGE_PATH=${agent_package}"
     echo "IPMS_AGENT_WINDOWS_PACKAGE_SHA256=${AGENT_PACKAGE_SHA256}"
-    echo "IPMS_AGENT_WINDOWS_VERSION=0.1.34"
+    echo "IPMS_AGENT_WINDOWS_VERSION=0.1.35"
     echo "IPMS_DATABASE_NAME=ipms"
     echo "IPMS_DATABASE_USER=ipms"
     echo "IPMS_DATABASE_PASSWORD=${database_password}"

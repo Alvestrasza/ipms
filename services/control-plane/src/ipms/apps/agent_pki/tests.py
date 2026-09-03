@@ -389,6 +389,7 @@ class ManagedAgentPkiTests(TestCase):
         self.assertEqual(server.hypervisor_host, "hypervisor.example.invalid")
         self.assertEqual(server.network_interfaces[0]["name"], "Ethernet")
         self.assertEqual(server.installed_roles_features_status, "collected")
+        self.assertEqual(server.installed_roles_features_error, "")
         self.assertEqual(
             [item["name"] for item in server.installed_roles_features],
             ["Web-Common-Http", "Web-Server"],
@@ -434,6 +435,35 @@ class ManagedAgentPkiTests(TestCase):
         self.assertEqual(server.network_interfaces[0]["transmit_link_speed_bps"], 0)
         self.assertEqual(server.network_interfaces[0]["receive_link_speed_bps"], 0)
         self.assertFalse(server.installed_roles.exists())
+
+        unavailable_inventory = {
+            **sentinel_inventory,
+            "installed_roles_features_status": "unavailable",
+            "installed_roles_features_error": "server_manager_query_timeout",
+            "installed_roles_features": [],
+        }
+        confirm_inventory(
+            enrollment,
+            agent_version="0.1.35",
+            inventory=unavailable_inventory,
+        )
+        server.refresh_from_db()
+        self.assertEqual(server.installed_roles_features_status, "unavailable")
+        self.assertEqual(
+            server.installed_roles_features_error,
+            "server_manager_query_timeout",
+        )
+
+        unavailable_inventory["installed_roles_features_error"] = "raw-provider-error"
+        with self.assertRaisesMessage(
+            ValidationError,
+            "installed roles and features error is invalid",
+        ):
+            confirm_inventory(
+                enrollment,
+                agent_version="0.1.35",
+                inventory=unavailable_inventory,
+            )
 
         with self.assertRaises(ValidationError):
             confirm_inventory(enrollment, agent_version="0.1.17", inventory={})

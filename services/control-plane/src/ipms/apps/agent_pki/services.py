@@ -916,6 +916,16 @@ def confirm_inventory(
     )
     if roles_features_status not in WindowsServer.RolesFeaturesStatus.values:
         raise ValidationError("The Agent installed roles and features status is invalid.")
+    roles_features_error = _bounded_inventory_string(
+        inventory,
+        "installed_roles_features_error",
+        64,
+    )
+    if (
+        roles_features_error
+        and roles_features_error not in WindowsServer.RolesFeaturesError.values
+    ):
+        raise ValidationError("The Agent installed roles and features error is invalid.")
     installed_roles_features = _bounded_installed_roles_features(
         inventory.get("installed_roles_features", [])
     )
@@ -926,6 +936,8 @@ def confirm_inventory(
         raise ValidationError(
             "The Agent must not report roles or features without a collected status."
         )
+    if roles_features_status == WindowsServer.RolesFeaturesStatus.COLLECTED:
+        roles_features_error = ""
     if machine_type not in {"", *WindowsServer.ServerType.values}:
         raise ValidationError("The Agent machine type is invalid.")
     logical_processors = inventory.get("logical_processors")
@@ -965,6 +977,7 @@ def confirm_inventory(
             "health": WindowsServer.Health.HEALTHY,
             "management_packs": ["windows-server-core"],
             "installed_roles_features_status": roles_features_status,
+            "installed_roles_features_error": roles_features_error,
             "installed_roles_features": installed_roles_features,
             "network_interfaces": network_interfaces,
             "detail_snapshot": {

@@ -125,6 +125,9 @@ export async function WindowsServerDetailPage({
       ? dictionary.windowsServers.sourceAgent
       : dictionary.windowsServers.sourceHyperV;
   const installedRolesFeatures = server.installed_roles_features ?? [];
+  const rolesFeaturesError = server.installed_roles_features_error
+    ? copy.rolesFeaturesErrors[server.installed_roles_features_error]
+    : "";
   const roleFeatureTypeLabels = {
     role: copy.roleType,
     "role-service": copy.roleServiceType,
@@ -284,6 +287,9 @@ export async function WindowsServerDetailPage({
         {server.installed_roles_features_status === "unavailable" ? (
           <p className="network-inventory__empty">
             {copy.rolesFeaturesUnavailable}
+            {rolesFeaturesError
+              ? ` ${copy.rolesFeaturesReason}: ${rolesFeaturesError}`
+              : ""}
           </p>
         ) : server.installed_roles_features_status !== "collected" ? (
           <p className="network-inventory__empty">

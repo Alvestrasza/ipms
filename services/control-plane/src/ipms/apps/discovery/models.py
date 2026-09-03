@@ -172,6 +172,35 @@ class WindowsServer(models.Model):
         COLLECTED = "collected", "Collected"
         UNAVAILABLE = "unavailable", "Unavailable"
 
+    class RolesFeaturesError(models.TextChoices):
+        COM_INITIALIZATION_FAILED = (
+            "com_initialization_failed",
+            "COM initialization failed",
+        )
+        COM_SECURITY_FAILED = "com_security_failed", "COM security failed"
+        WMI_LOCATOR_FAILED = "wmi_locator_failed", "WMI locator failed"
+        ALLOCATION_FAILED = "allocation_failed", "Allocation failed"
+        SERVER_MANAGER_PROVIDER_UNAVAILABLE = (
+            "server_manager_provider_unavailable",
+            "Server Manager provider unavailable",
+        )
+        WMI_PROXY_FAILED = "wmi_proxy_failed", "WMI proxy failed"
+        SERVER_MANAGER_QUERY_FAILED = (
+            "server_manager_query_failed",
+            "Server Manager query failed",
+        )
+        SERVER_MANAGER_QUERY_TIMEOUT = (
+            "server_manager_query_timeout",
+            "Server Manager query timeout",
+        )
+        SERVER_MANAGER_RESULT_INVALID = (
+            "server_manager_result_invalid",
+            "Server Manager result invalid",
+        )
+        ITEM_LIMIT_EXCEEDED = "item_limit_exceeded", "Item limit exceeded"
+        VALUE_LIMIT_EXCEEDED = "value_limit_exceeded", "Value limit exceeded"
+        PAYLOAD_LIMIT_EXCEEDED = "payload_limit_exceeded", "Payload limit exceeded"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
         Tenant,
@@ -227,6 +256,7 @@ class WindowsServer(models.Model):
         choices=RolesFeaturesStatus.choices,
         default=RolesFeaturesStatus.NOT_REPORTED,
     )
+    installed_roles_features_error = models.CharField(max_length=64, blank=True)
     installed_roles_features = models.JSONField(default=list, blank=True)
     network_interfaces = models.JSONField(default=list, blank=True)
     detail_snapshot = models.JSONField(default=dict, blank=True)
