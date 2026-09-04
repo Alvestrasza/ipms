@@ -2,8 +2,8 @@
 
 - Status: Accepted for the development foundation
 - Decision date: 2026-09-04
-- Application version: 0.2.5
-- First capable Windows Agent: 0.2.5
+- Application version: 0.2.6
+- First capable Windows Agent: 0.2.6
 
 ## Context
 
@@ -31,9 +31,9 @@ Agent-initiated TCP 9419 mTLS connection. The assignment contains only:
 
 The native Agent independently validates the action, GUID, bounded display
 name, expected state, and current state. It resolves the target by enumerating
-the bounded local VM set and comparing normalized GUIDs from both provider
-identity fields and object paths instead of injecting the identifier into a
-WMI expression. The matching provider object must also reproduce the
+the bounded local VM set with the same provider-safe projection used for
+inventory and comparing normalized GUIDs instead of injecting the identifier
+into a WMI expression. The matching provider object must also reproduce the
 inventory-recorded display name; a mismatch is rejected as an identity
 conflict. Start, stop, pause, and resume map to compiled-in
 `Msvm_ComputerSystem.RequestStateChange` values. Graceful shutdown uses the

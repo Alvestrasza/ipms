@@ -319,7 +319,7 @@ virtual_machine_lookup find_virtual_machine(
     const std::string& expected_name) {
   auto rows = execute_query(
       services,
-      L"SELECT __PATH, Name, ElementName, EnabledState FROM Msvm_ComputerSystem");
+      L"SELECT Name, ElementName, EnabledState FROM Msvm_ComputerSystem");
   if (!rows) return {};
   ComPtr<IWbemClassObject> identity_match;
   bool identity_conflict = false;
