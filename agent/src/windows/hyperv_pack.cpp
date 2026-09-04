@@ -859,7 +859,15 @@ std::vector<std::uint8_t> capture_console_frame(
     const auto size = static_cast<std::size_t>(upper - lower + 1);
     auto decoded_width = width;
     auto decoded_height = height;
-    if (size != static_cast<std::size_t>(decoded_width) * decoded_height * 2) {
+    const auto matches_payload = [size](std::uint64_t candidate_width,
+                                        std::uint64_t candidate_height) {
+      const auto expected = static_cast<std::size_t>(candidate_width) *
+                            static_cast<std::size_t>(candidate_height) * 2;
+      // A supported provider may append one fixed DWORD after the complete
+      // RGB565 surface. Never interpret that provider trailer as image data.
+      return size == expected || size == expected + sizeof(std::uint32_t);
+    };
+    if (!matches_payload(decoded_width, decoded_height)) {
       // Some supported Hyper-V providers return the current video-head buffer
       // even when a different thumbnail size was requested. Accept that fixed,
       // provider-owned result only when its documented current dimensions
@@ -874,18 +882,21 @@ std::vector<std::uint8_t> capture_console_frame(
       if (current_width && current_height && *current_width >= 160 &&
           *current_width <= 1920 && *current_height >= 120 &&
           *current_height <= 1200 &&
-          size == static_cast<std::size_t>(*current_width) * *current_height * 2) {
+          matches_payload(*current_width, *current_height)) {
         decoded_width = static_cast<std::uint16_t>(*current_width);
         decoded_height = static_cast<std::uint16_t>(*current_height);
       }
     }
-    if (size == static_cast<std::size_t>(decoded_width) * decoded_height * 2) {
-      rgb565.resize(size);
-      for (LONG index = lower; index <= upper; ++index) {
+    if (matches_payload(decoded_width, decoded_height)) {
+      const auto image_bytes = static_cast<std::size_t>(decoded_width) *
+                               decoded_height * 2;
+      rgb565.resize(image_bytes);
+      for (std::size_t offset = 0; offset < image_bytes; ++offset) {
+        LONG index = lower + static_cast<LONG>(offset);
         if (FAILED(SafeArrayGetElement(
                 image.parray,
                 &index,
-                &rgb565[static_cast<std::size_t>(index - lower)]))) {
+                &rgb565[offset]))) {
           rgb565.clear();
           failure_code = "console_frame_image_read_failed";
           break;

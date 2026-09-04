@@ -12,7 +12,7 @@ param(
 
     [string]$DisplayName = 'IPMS Agent',
 
-    [string]$AgentVersion = '0.2.19',
+    [string]$AgentVersion = '0.2.20',
 
     [string]$Publisher = 'Alvestrasza Corporation',
 

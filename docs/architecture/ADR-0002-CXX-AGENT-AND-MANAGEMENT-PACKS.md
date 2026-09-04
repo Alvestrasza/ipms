@@ -19,7 +19,7 @@ Management Packs are signed, versioned policy declarations. A pack may only acti
 `hyper-v-host` depends on `windows-server-core`. Its inventory capabilities are
 read-only. Version 0.2.12 adds the separately governed, compiled start, graceful
 shutdown, stop, pause, and resume actions defined by ADR-0008 without accepting
-arbitrary commands or provider expressions. Version 0.2.19 provides the typed,
+arbitrary commands or provider expressions. Version 0.2.20 provides the typed,
 single-session virtual machine console capability defined by ADR-0010. It may
 activate only compiled frame-capture, keyboard, mouse, and secure-attention
 operations.

@@ -15,7 +15,7 @@ def api_information(request: Request) -> Response:
         {
             "name": "IPMS Control Plane API",
             "version": "v1",
-            "application_version": "0.2.24",
+            "application_version": "0.2.25",
         }
     )
 

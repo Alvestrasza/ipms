@@ -367,7 +367,7 @@ Migration from IPMS Appliance to IPMS Scale-Out must remain supported.
 - Provide VM views grouped by cluster and host.
 - Implement safe, audited VM operations such as start, shutdown, restart, and
   selected configuration workflows.
-- Application 0.2.24 and Windows Agent 0.2.19 provide the first interactive
+- Application 0.2.25 and Windows Agent 0.2.20 provide the first interactive
   Hyper-V console foundation. It enforces one database-backed, lease-bound
   session per VM, owner-only viewing and input, direct keyboard and mouse
   control, and an explicit secure-attention action over the existing outbound
