@@ -307,26 +307,39 @@ bool consume_rows(
 struct virtual_machine_lookup {
   ComPtr<IWbemClassObject> system;
   bool query_succeeded{false};
+  bool identity_conflict{false};
 };
 
 virtual_machine_lookup find_virtual_machine(
     IWbemServices* services,
-    const std::string& normalized_source_id) {
+    const std::string& normalized_source_id,
+    const std::string& expected_name) {
   auto rows = execute_query(
       services,
-      L"SELECT __PATH, Name, EnabledState FROM Msvm_ComputerSystem");
+      L"SELECT __PATH, Name, ElementName, EnabledState FROM Msvm_ComputerSystem");
   if (!rows) return {};
-  ComPtr<IWbemClassObject> match;
+  ComPtr<IWbemClassObject> identity_match;
+  bool identity_conflict = false;
   const bool completed = consume_rows(
       rows.Get(),
       k_max_virtual_machines + 1,
       std::chrono::steady_clock::now() + std::chrono::seconds(10),
-      [&match, &normalized_source_id](IWbemClassObject* row) {
-        if (!match && normalized_guid(wmi_string(row, L"Name")) == normalized_source_id) {
-          match = row;
+      [&identity_match,
+       &identity_conflict,
+       &normalized_source_id,
+       &expected_name](IWbemClassObject* row) {
+        const auto name_id = normalized_guid(wmi_string(row, L"Name"));
+        const auto path_id = guid_from_instance_id(wmi_string(row, L"__PATH"));
+        if (!identity_match &&
+            (name_id == normalized_source_id || path_id == normalized_source_id)) {
+          if (utf8(wmi_string(row, L"ElementName")) != expected_name) {
+            identity_conflict = true;
+          } else {
+            identity_match = row;
+          }
         }
       });
-  return {match, completed};
+  return {identity_match, completed, identity_conflict};
 }
 
 struct shutdown_component_lookup {
@@ -358,11 +371,13 @@ shutdown_component_lookup find_shutdown_component(
 bool wait_for_virtual_machine_state(
     IWbemServices* services,
     const std::string& normalized_source_id,
+    const std::string& expected_name,
     const std::string& expected_state,
     unsigned attempts) {
   for (unsigned attempt = 0; attempt < attempts; ++attempt) {
     std::this_thread::sleep_for(std::chrono::seconds(2));
-    const auto refreshed = find_virtual_machine(services, normalized_source_id);
+    const auto refreshed =
+        find_virtual_machine(services, normalized_source_id, expected_name);
     if (refreshed.query_succeeded && refreshed.system &&
         normalized_state(
             wmi_uint64(refreshed.system.Get(), L"EnabledState").value_or(0)) ==
@@ -592,6 +607,7 @@ hyperv_inventory_result collect_hyperv_inventory() {
 
 hyperv_action_result execute_hyperv_virtual_machine_action(
     const std::string& source_id,
+    const std::string& expected_name,
     const std::string& action) {
   if (!is_guid(source_id)) return {false, "invalid_vm_identity"};
   auto normalized_source_id = source_id;
@@ -632,8 +648,10 @@ hyperv_action_result execute_hyperv_virtual_machine_action(
     return {false, "wmi_proxy_failed"};
   }
 
-  const auto lookup = find_virtual_machine(services.Get(), normalized_source_id);
+  const auto lookup =
+      find_virtual_machine(services.Get(), normalized_source_id, expected_name);
   if (!lookup.query_succeeded) return {false, "vm_lookup_failed"};
+  if (lookup.identity_conflict) return {false, "vm_identity_conflict"};
   if (!lookup.system) return {false, "vm_not_found"};
   auto system = lookup.system;
   const auto current_state = normalized_state(
@@ -728,7 +746,7 @@ hyperv_action_result execute_hyperv_virtual_machine_action(
       return {false, "guest_shutdown_rejected"};
     }
     return wait_for_virtual_machine_state(
-               services.Get(), normalized_source_id, expected_state, 90)
+               services.Get(), normalized_source_id, expected_name, expected_state, 90)
                ? hyperv_action_result{true, "state_confirmed"}
                : hyperv_action_result{false, "state_confirmation_timeout"};
   }
@@ -781,7 +799,7 @@ hyperv_action_result execute_hyperv_virtual_machine_action(
   if (return_value != 0 && return_value != 4096) return {false, "action_rejected"};
 
   return wait_for_virtual_machine_state(
-             services.Get(), normalized_source_id, expected_state, 30)
+             services.Get(), normalized_source_id, expected_name, expected_state, 30)
              ? hyperv_action_result{true, "state_confirmed"}
              : hyperv_action_result{false, "state_confirmation_timeout"};
 }

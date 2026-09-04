@@ -21,9 +21,11 @@ struct hyperv_action_result {
 };
 
 // Executes one fixed local Hyper-V lifecycle operation. The Control Plane can
-// select only a VM GUID and one of the compiled-in actions.
+// select only an inventoried VM GUID, its recorded display name, and one of the
+// compiled-in actions. Both identities must agree locally before mutation.
 hyperv_action_result execute_hyperv_virtual_machine_action(
     const std::string& source_id,
+    const std::string& expected_name,
     const std::string& action);
 
 }  // namespace ipms::agent::windows

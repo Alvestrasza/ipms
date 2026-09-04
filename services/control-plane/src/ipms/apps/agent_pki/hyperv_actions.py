@@ -38,7 +38,7 @@ EXPECTED_STATES = {
     HyperVVirtualMachineActionJob.Action.RESUME: HyperVVirtualMachine.State.RUNNING,
 }
 RESULT_CODE_PATTERN = re.compile(r"^[a-z0-9_]{1,64}$")
-FIRST_CAPABLE_AGENT_VERSION = (0, 2, 3)
+FIRST_CAPABLE_AGENT_VERSION = (0, 2, 4)
 
 
 def _version_tuple(value: str) -> tuple[int, int, int] | None:
@@ -129,6 +129,7 @@ def offer_hyperv_action_job(enrollment) -> dict | None:
         "job_id": str(job.id),
         "action": job.action,
         "vm_source_id": job.vm_source_id,
+        "vm_name": job.vm_name,
         "expected_state": EXPECTED_STATES[job.action],
     }
 

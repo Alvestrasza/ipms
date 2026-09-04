@@ -50,7 +50,7 @@ class HyperVVirtualMachineActionTests(TestCase):
             fqdn="hyperv-host.example.invalid",
             operating_system="Microsoft Windows Server",
             hyperv_inventory_status=WindowsServer.HyperVInventoryStatus.COLLECTED,
-            agent_version="0.2.3",
+            agent_version="0.2.4",
             agent_state=WindowsServer.AgentState.ONLINE,
             health=WindowsServer.Health.HEALTHY,
             discovered_at=timezone.now(),
@@ -121,6 +121,7 @@ class HyperVVirtualMachineActionTests(TestCase):
                 "job_id": str(job.id),
                 "action": "pause",
                 "vm_source_id": self.vm.source_id,
+                "vm_name": self.vm.name,
                 "expected_state": "paused",
             },
         )
@@ -153,6 +154,7 @@ class HyperVVirtualMachineActionTests(TestCase):
                 "job_id": str(job.id),
                 "action": "shutdown",
                 "vm_source_id": self.vm.source_id,
+                "vm_name": self.vm.name,
                 "expected_state": "stopped",
             },
         )
@@ -176,7 +178,7 @@ class HyperVVirtualMachineActionTests(TestCase):
         self.assertEqual(self.vm.state, HyperVVirtualMachine.State.RUNNING)
 
     def test_legacy_agent_cannot_receive_a_vm_action(self) -> None:
-        self.host.agent_version = "0.2.2"
+        self.host.agent_version = "0.2.3"
         self.host.save(update_fields=("agent_version",))
         with self.assertRaises(ValidationError):
             create_hyperv_action_job(

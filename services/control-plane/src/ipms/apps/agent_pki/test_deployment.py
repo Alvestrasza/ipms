@@ -95,7 +95,7 @@ class WindowsAgentDeploymentScriptTests(TestCase):
         self.assertIn("$backup", update)
         self.assertIn("throw $updateFailure", update)
         self.assertIn("Start-Service -Name 'IPMS Agent'", update)
-        self.assertIn("$targetVersion = '0.2.3'", update)
+        self.assertIn("$targetVersion = '0.2.4'", update)
         self.assertIn("-Name DisplayVersion", update)
         self.assertIn("-Value $previousVersion", update)
 

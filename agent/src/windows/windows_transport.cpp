@@ -31,7 +31,7 @@
 namespace {
 using Microsoft::WRL::ComPtr;
 constexpr std::size_t k_max_document_bytes = 65'536;
-constexpr wchar_t k_agent_version[] = L"0.2.3";
+constexpr wchar_t k_agent_version[] = L"0.2.4";
 constexpr std::size_t k_max_artifact_bytes = 64 * 1024 * 1024;
 
 struct internet_closer { void operator()(void* handle) const { if (handle) WinHttpCloseHandle(handle); } };
@@ -335,7 +335,7 @@ struct http_response { DWORD status{}; std::string body; };
 
 http_response post_json(const std::wstring& hostname, std::uint16_t port, const std::wstring& path,
                         const std::string& body, const std::string* pin, PCCERT_CONTEXT client_certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.3", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.4", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent HTTP session could not be created.");
   WinHttpSetTimeouts(session.get(), 10'000, 10'000, 30'000, 30'000);
@@ -397,7 +397,7 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
 }
 
 http_response post_binary(const state& identity, const std::string& body, PCCERT_CONTEXT certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.3", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.4", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent artifact session could not be created.");
   WinHttpSetTimeouts(session.get(), 10'000, 10'000, 60'000, 60'000);
@@ -498,6 +498,13 @@ bool safe_lifecycle_value(const std::string& value, std::size_t maximum = 64) {
   return !value.empty() && value.size() <= maximum &&
          std::all_of(value.begin(), value.end(), [](const unsigned char character) {
            return std::isalnum(character) || character == '-' || character == '.' || character == '_';
+         });
+}
+
+bool safe_vm_name(const std::string& value) {
+  return !value.empty() && value.size() <= 255 &&
+         std::all_of(value.begin(), value.end(), [](const unsigned char character) {
+           return character >= 0x20 && character != 0x7f;
          });
 }
 
@@ -613,12 +620,14 @@ void process_hyperv_action_assignment(
   const auto job_id = json_string(*assignment, "job_id");
   const auto action = json_string(*assignment, "action");
   const auto vm_source_id = json_string(*assignment, "vm_source_id");
+  const auto vm_name = json_string(*assignment, "vm_name");
   const auto expected_state = json_string(*assignment, "expected_state");
-  if (!job_id || !action || !vm_source_id || !expected_state ||
+  if (!job_id || !action || !vm_source_id || !vm_name || !expected_state ||
       !safe_lifecycle_value(*job_id) ||
       (*action != "start" && *action != "shutdown" && *action != "stop" &&
        *action != "pause" && *action != "resume") ||
       !safe_lifecycle_value(*vm_source_id) ||
+      !safe_vm_name(*vm_name) ||
       (*expected_state != "running" && *expected_state != "stopped" && *expected_state != "paused")) {
     throw std::runtime_error("The Hyper-V virtual machine action assignment is invalid.");
   }
@@ -631,7 +640,7 @@ void process_hyperv_action_assignment(
   }
   report_hyperv_action_result(identity, certificate, *job_id, "running", "accepted");
   const auto result = ipms::agent::windows::execute_hyperv_virtual_machine_action(
-      *vm_source_id, *action);
+      *vm_source_id, *vm_name, *action);
   try {
     report_hyperv_action_result(
         identity,

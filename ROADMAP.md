@@ -283,12 +283,14 @@ normalization. Windows software inventory deliberately reports update state as
 unknown until a bounded, non-triggering Windows Update source is implemented;
 it does not start an update scan merely to populate inventory.
 
-Build 0.2.3 provides controlled Hyper-V workload mutations: tenant
+Build 0.2.4 provides controlled Hyper-V workload mutations: tenant
 administrators can start, pause, resume, gracefully shut down, or stop a
 virtual machine from its context menu. The Control Plane creates a tenant-bound
 durable job, the enrolled host Agent accepts only the five compiled-in actions
-for an exact normalized VM GUID, and all requests, deliveries, and results are
-audited. Graceful shutdown uses the Hyper-V guest shutdown integration service
+for a normalized VM GUID, resolves provider identity variations from local
+object paths, requires the recorded VM name to agree, and audits every request,
+delivery, and result.
+Graceful shutdown uses the Hyper-V guest shutdown integration service
 without forcing applications to close. Stop remains an immediate power-off
 operation and therefore requires an explicit data-loss confirmation. Arbitrary
 PowerShell, WMI queries, methods, scripts, and command arguments remain outside

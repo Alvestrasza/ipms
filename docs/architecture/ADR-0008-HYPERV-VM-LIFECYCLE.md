@@ -2,8 +2,8 @@
 
 - Status: Accepted for the development foundation
 - Decision date: 2026-09-04
-- Application version: 0.2.3
-- First capable Windows Agent: 0.2.3
+- Application version: 0.2.4
+- First capable Windows Agent: 0.2.4
 
 ## Context
 
@@ -25,13 +25,17 @@ Agent-initiated TCP 9419 mTLS connection. The assignment contains only:
 
 - the durable job identifier;
 - one literal action: `start`, `shutdown`, `stop`, `pause`, or `resume`;
-- the normalized VM GUID; and
+- the normalized VM GUID;
+- the inventory-recorded VM display name; and
 - the expected normalized final state.
 
-The native Agent independently validates the action, GUID, expected state, and
-current state. It resolves the target by enumerating the bounded local VM set
-and comparing normalized GUIDs instead of injecting the identifier into a WMI
-expression. Start, stop, pause, and resume map to compiled-in
+The native Agent independently validates the action, GUID, bounded display
+name, expected state, and current state. It resolves the target by enumerating
+the bounded local VM set and comparing normalized GUIDs from both provider
+identity fields and object paths instead of injecting the identifier into a
+WMI expression. The matching provider object must also reproduce the
+inventory-recorded display name; a mismatch is rejected as an identity
+conflict. Start, stop, pause, and resume map to compiled-in
 `Msvm_ComputerSystem.RequestStateChange` values. Graceful shutdown uses the
 compiled-in `Msvm_ShutdownComponent.InitiateShutdown` method with `Force=false`
 and a fixed audit-safe reason. The Agent polls the local provider for the final
@@ -62,8 +66,8 @@ immediately; the next inventory observation remains authoritative.
 
 - The Agent keeps no inbound listener and the Control Plane never connects to
   a Hyper-V host directly.
-- Agent identity, tenant, Hyper-V host inventory, VM GUID, and job are bound
-  before delivery.
+- Agent identity, tenant, Hyper-V host inventory, VM GUID, recorded display
+  name, and job are bound before delivery.
 - Requests, deliveries, running acknowledgements, and terminal outcomes are
   audited without recording secrets or raw provider payloads.
 - A terminal result that cannot be returned immediately is stored locally and
