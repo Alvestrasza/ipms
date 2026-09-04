@@ -34,6 +34,9 @@
   --color-accent-crimson-text: #9f2f28;
   --color-accent-blue: #176187;
   --color-success: #247250;
+  --color-warning: #7a4f00;
+  --color-critical: #a23530;
+  --color-unknown: #566671;
   --surface-navigation: #edf1f3;
   --surface-page: #f4f6f7;
   --surface-panel: #ffffff;

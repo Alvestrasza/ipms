@@ -9,7 +9,7 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-IPMS application build `0.2.15` adds tenant-scoped user administration and a
+IPMS application build `0.2.16` adds tenant-scoped user administration and a
 central role-permission model to the inventory and controlled workload-action
 foundation. A
 standalone development
