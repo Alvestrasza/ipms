@@ -186,7 +186,7 @@ export const en = {
     infrastructure: "Infrastructure",
     agents: "Agents",
     soon: "Soon",
-    version: "IPMS v0.2.2 development",
+    version: "IPMS v0.2.3 development",
   },
   linuxSystems: {
     liveData: "Live tenant-scoped Linux inventory from enrolled Agents.",
@@ -534,6 +534,7 @@ export const en = {
     actionMenu: "Virtual machine actions",
     actions: {
       start: "Start",
+      shutdown: "Shut down",
       stop: "Stop",
       pause: "Pause",
       resume: "Resume",
@@ -542,10 +543,12 @@ export const en = {
     confirmBody: "Run {action} for {name}?",
     stopWarning:
       "Stop immediately powers off the virtual machine. Unsaved guest data may be lost.",
+    shutdownHint:
+      "Shut down requests an orderly guest operating-system shutdown through Hyper-V integration services.",
     cancel: "Cancel",
     confirm: "Run action",
     queued: "The action is queued and waiting for the Hyper-V host Agent.",
-    actionFailed: "The virtual machine action could not be completed.",
+    actionFailed: "The virtual machine action could not be completed ({code}).",
     states: {
       running: "Running",
       stopped: "Stopped",

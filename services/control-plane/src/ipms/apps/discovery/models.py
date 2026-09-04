@@ -461,6 +461,7 @@ class HyperVVirtualMachine(models.Model):
 class HyperVVirtualMachineActionJob(models.Model):
     class Action(models.TextChoices):
         START = "start", "Start"
+        SHUTDOWN = "shutdown", "Shut down"
         STOP = "stop", "Stop"
         PAUSE = "pause", "Pause"
         RESUME = "resume", "Resume"

@@ -27,7 +27,7 @@ export type HyperVVirtualMachine = {
   observed_at: string;
 };
 
-export type HyperVAction = "start" | "stop" | "pause" | "resume";
+export type HyperVAction = "start" | "shutdown" | "stop" | "pause" | "resume";
 
 export type HyperVActionJob = {
   id: string;

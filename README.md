@@ -9,7 +9,7 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-IPMS application build `0.2.2` adds the first controlled workload action to
+IPMS application build `0.2.3` adds controlled Hyper-V workload actions to
 the inventory foundation. A
 standalone development
 Appliance currently runs the tenant-aware Django Control Plane, PostgreSQL,
@@ -25,8 +25,9 @@ acceptance before they are described as supported.
 Windows workstations are separated from Windows servers and grouped by product
 family, starting with Windows 11 LTSC. Hyper-V hosts report a bounded VM
 inventory with state, vCPU, memory, uptime, configuration version, and guest IP
-addresses. Tenant administrators can start, pause, resume, and stop a VM through
-an audited durable job and the enrolled host Agent. Windows and Linux Agents report hardware, network, installed
+addresses. Tenant administrators can start, pause, resume, gracefully shut
+down, and stop a VM through an audited durable job and the enrolled host
+Agent. Windows and Linux Agents report hardware, network, installed
 software, and operating-system update posture through the outbound mTLS
 Gateway. The first Sophos Firewall, Loadbalancer.org ADC, and HPE Comware 7.1
 connector foundations provide fixed read-only discovery operations; live

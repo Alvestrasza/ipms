@@ -2,16 +2,16 @@
 
 - Status: Accepted for the development foundation
 - Decision date: 2026-09-04
-- Application version: 0.2.2
-- First capable Windows Agent: 0.2.2
+- Application version: 0.2.3
+- First capable Windows Agent: 0.2.3
 
 ## Context
 
 IPMS must progress from Hyper-V inventory to controlled operations without
 turning the Agent into a generic remote-administration channel. Administrators
-need start, pause, resume, and stop directly from the VM inventory, including a
-discoverable context menu. A stop can cause guest data loss and must not be an
-accidental one-click operation.
+need start, pause, resume, graceful shutdown, and stop directly from the VM
+inventory, including a discoverable context menu. A stop can cause guest data
+loss and must not be an accidental one-click operation.
 
 ## Decision
 
@@ -24,20 +24,25 @@ The enrolled Windows Agent retrieves the assignment through its existing
 Agent-initiated TCP 9419 mTLS connection. The assignment contains only:
 
 - the durable job identifier;
-- one literal action: `start`, `stop`, `pause`, or `resume`;
+- one literal action: `start`, `shutdown`, `stop`, `pause`, or `resume`;
 - the normalized VM GUID; and
 - the expected normalized final state.
 
 The native Agent independently validates the action, GUID, expected state, and
-current state. It maps the action to a compiled-in
-`Msvm_ComputerSystem.RequestStateChange` value and polls the local provider for
-the final state. No arbitrary WMI query, method, PowerShell, script, command,
-path, URL, or free-form argument crosses the management boundary.
+current state. It resolves the target by enumerating the bounded local VM set
+and comparing normalized GUIDs instead of injecting the identifier into a WMI
+expression. Start, stop, pause, and resume map to compiled-in
+`Msvm_ComputerSystem.RequestStateChange` values. Graceful shutdown uses the
+compiled-in `Msvm_ShutdownComponent.InitiateShutdown` method with `Force=false`
+and a fixed audit-safe reason. The Agent polls the local provider for the final
+state. No arbitrary WMI query, method, PowerShell, script, command, path, URL,
+or free-form argument crosses the management boundary.
 
 The Web Console exposes actions through a mouse context menu and the keyboard
-context-menu gesture. Every action opens a confirmation dialog. Stop is styled
-as destructive and explicitly warns that it immediately powers off the VM and
-may lose unsaved guest data.
+context-menu gesture. Every action opens a confirmation dialog. Graceful
+shutdown explains that it depends on the Hyper-V guest shutdown integration
+service. Stop is styled as destructive and explicitly warns that it immediately
+powers off the VM and may lose unsaved guest data.
 
 ## State contract
 
@@ -46,6 +51,7 @@ may lose unsaved guest data.
 | Start | Stopped | Running |
 | Pause | Running | Paused |
 | Resume | Paused | Running |
+| Shut down | Running | Stopped |
 | Stop | Running or paused | Stopped |
 
 Jobs use `queued`, `delivered`, `running`, `succeeded`, `failed`, or
@@ -62,8 +68,11 @@ immediately; the next inventory observation remains authoritative.
   audited without recording secrets or raw provider payloads.
 - A terminal result that cannot be returned immediately is stored locally and
   retried through the next authenticated Agent cycle.
-- Stop is deliberately an immediate power-off. A separate guest-aware shutdown
-  action requires its own integration-service detection and policy decision.
+- Graceful shutdown never sets `Force=true`. A missing or unavailable guest
+  shutdown integration service produces an explicit terminal failure and does
+  not fall back to Stop.
+- Stop is deliberately an immediate power-off and remains a separate,
+  destructive choice.
 
 ## Acceptance boundary
 

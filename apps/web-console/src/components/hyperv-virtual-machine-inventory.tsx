@@ -8,6 +8,7 @@ import {
   MemoryStick,
   Play,
   Power,
+  PowerOff,
   Square,
   X,
 } from "lucide-react";
@@ -46,6 +47,7 @@ type Copy = {
   confirmTitle: string;
   confirmBody: string;
   stopWarning: string;
+  shutdownHint: string;
   cancel: string;
   confirm: string;
   queued: string;
@@ -59,7 +61,7 @@ const wait = (milliseconds: number) =>
   new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 
 function availableActions(vm: HyperVVirtualMachine): HyperVAction[] {
-  if (vm.state === "running") return ["pause", "stop"];
+  if (vm.state === "running") return ["pause", "shutdown", "stop"];
   if (vm.state === "paused") return ["resume", "stop"];
   if (vm.state === "stopped") return ["start"];
   return [];
@@ -67,6 +69,7 @@ function availableActions(vm: HyperVVirtualMachine): HyperVAction[] {
 
 function actionIcon(action: HyperVAction) {
   if (action === "pause") return <CirclePause aria-hidden="true" size={16} />;
+  if (action === "shutdown") return <PowerOff aria-hidden="true" size={16} />;
   if (action === "stop") return <Square aria-hidden="true" size={16} />;
   return <CirclePlay aria-hidden="true" size={16} />;
 }
@@ -166,7 +169,7 @@ export function HyperVVirtualMachineInventory({
       let job = (await response.json()) as HyperVActionJob;
       for (
         let attempt = 0;
-        attempt < 75 &&
+        attempt < 210 &&
         !["succeeded", "failed", "cancelled"].includes(job.status);
         attempt += 1
       ) {
@@ -187,8 +190,9 @@ export function HyperVVirtualMachineInventory({
       setPending(null);
       setMessage("");
       router.refresh();
-    } catch {
-      setError(copy.actionFailed);
+    } catch (caught) {
+      const code = caught instanceof Error ? caught.message : "action_failed";
+      setError(copy.actionFailed.replace("{code}", code));
       setMessage("");
     } finally {
       setBusy(false);
@@ -391,6 +395,9 @@ export function HyperVVirtualMachineInventory({
               </p>
               {pending.action === "stop" ? (
                 <p className="hyperv-stop-warning">{copy.stopWarning}</p>
+              ) : null}
+              {pending.action === "shutdown" ? (
+                <p className="hyperv-action-progress">{copy.shutdownHint}</p>
               ) : null}
               {message ? (
                 <p className="hyperv-action-progress" role="status">

@@ -236,14 +236,14 @@ std::string normalized_state(std::uint64_t enabled_state) {
 std::optional<std::uint16_t> requested_state_for_action(const std::string& action) {
   if (action == "start") return static_cast<std::uint16_t>(2);
   if (action == "stop") return static_cast<std::uint16_t>(3);
-  if (action == "pause") return static_cast<std::uint16_t>(32768);
+  if (action == "pause") return static_cast<std::uint16_t>(32776);
   if (action == "resume") return static_cast<std::uint16_t>(32777);
   return std::nullopt;
 }
 
 std::string expected_state_for_action(const std::string& action) {
   if (action == "start" || action == "resume") return "running";
-  if (action == "stop") return "stopped";
+  if (action == "shutdown" || action == "stop") return "stopped";
   if (action == "pause") return "paused";
   return {};
 }
@@ -302,6 +302,75 @@ bool consume_rows(
     ++count;
     consumer(row.Get());
   }
+}
+
+struct virtual_machine_lookup {
+  ComPtr<IWbemClassObject> system;
+  bool query_succeeded{false};
+};
+
+virtual_machine_lookup find_virtual_machine(
+    IWbemServices* services,
+    const std::string& normalized_source_id) {
+  auto rows = execute_query(
+      services,
+      L"SELECT __PATH, Name, EnabledState FROM Msvm_ComputerSystem");
+  if (!rows) return {};
+  ComPtr<IWbemClassObject> match;
+  const bool completed = consume_rows(
+      rows.Get(),
+      k_max_virtual_machines + 1,
+      std::chrono::steady_clock::now() + std::chrono::seconds(10),
+      [&match, &normalized_source_id](IWbemClassObject* row) {
+        if (!match && normalized_guid(wmi_string(row, L"Name")) == normalized_source_id) {
+          match = row;
+        }
+      });
+  return {match, completed};
+}
+
+struct shutdown_component_lookup {
+  ComPtr<IWbemClassObject> component;
+  bool query_succeeded{false};
+};
+
+shutdown_component_lookup find_shutdown_component(
+    IWbemServices* services,
+    const std::string& normalized_source_id) {
+  auto rows = execute_query(
+      services,
+      L"SELECT __PATH, SystemName, DeviceID FROM Msvm_ShutdownComponent");
+  if (!rows) return {};
+  ComPtr<IWbemClassObject> match;
+  const bool completed = consume_rows(
+      rows.Get(),
+      k_max_virtual_machines + 1,
+      std::chrono::steady_clock::now() + std::chrono::seconds(10),
+      [&match, &normalized_source_id](IWbemClassObject* row) {
+        if (match) return;
+        auto id = normalized_guid(wmi_string(row, L"SystemName"));
+        if (id.empty()) id = guid_from_instance_id(wmi_string(row, L"DeviceID"));
+        if (id == normalized_source_id) match = row;
+      });
+  return {match, completed};
+}
+
+bool wait_for_virtual_machine_state(
+    IWbemServices* services,
+    const std::string& normalized_source_id,
+    const std::string& expected_state,
+    unsigned attempts) {
+  for (unsigned attempt = 0; attempt < attempts; ++attempt) {
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    const auto refreshed = find_virtual_machine(services, normalized_source_id);
+    if (refreshed.query_succeeded && refreshed.system &&
+        normalized_state(
+            wmi_uint64(refreshed.system.Get(), L"EnabledState").value_or(0)) ==
+            expected_state) {
+      return true;
+    }
+  }
+  return false;
 }
 
 std::string virtual_machines_json(const std::map<std::string, virtual_machine>& vms) {
@@ -525,9 +594,17 @@ hyperv_action_result execute_hyperv_virtual_machine_action(
     const std::string& source_id,
     const std::string& action) {
   if (!is_guid(source_id)) return {false, "invalid_vm_identity"};
+  auto normalized_source_id = source_id;
+  std::transform(
+      normalized_source_id.begin(),
+      normalized_source_id.end(),
+      normalized_source_id.begin(),
+      [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
   const auto requested_state = requested_state_for_action(action);
   const auto expected_state = expected_state_for_action(action);
-  if (!requested_state || expected_state.empty()) return {false, "invalid_action"};
+  if ((action != "shutdown" && !requested_state) || expected_state.empty()) {
+    return {false, "invalid_action"};
+  }
   if (!hyperv_service_installed()) return {false, "hyperv_unavailable"};
 
   com_scope com;
@@ -555,26 +632,106 @@ hyperv_action_result execute_hyperv_virtual_machine_action(
     return {false, "wmi_proxy_failed"};
   }
 
-  const auto source_id_wide = std::wstring(source_id.begin(), source_id.end());
-  const auto query = L"SELECT __PATH, EnabledState FROM Msvm_ComputerSystem WHERE Name='" +
-                     source_id_wide + L"'";
-  auto systems = execute_query(services.Get(), query.c_str());
-  if (!systems) return {false, "vm_lookup_failed"};
-  ComPtr<IWbemClassObject> system;
-  ULONG returned = 0;
-  if (FAILED(systems->Next(5'000, 1, system.ReleaseAndGetAddressOf(), &returned)) ||
-      returned != 1 || !system) {
-    return {false, "vm_not_found"};
-  }
+  const auto lookup = find_virtual_machine(services.Get(), normalized_source_id);
+  if (!lookup.query_succeeded) return {false, "vm_lookup_failed"};
+  if (!lookup.system) return {false, "vm_not_found"};
+  auto system = lookup.system;
   const auto current_state = normalized_state(
       wmi_uint64(system.Get(), L"EnabledState").value_or(0));
   if (current_state == expected_state) return {true, "already_in_requested_state"};
   const bool allowed =
       (action == "start" && current_state == "stopped") ||
+      (action == "shutdown" && current_state == "running") ||
       (action == "stop" && (current_state == "running" || current_state == "paused")) ||
       (action == "pause" && current_state == "running") ||
       (action == "resume" && current_state == "paused");
   if (!allowed) return {false, "invalid_vm_state"};
+
+  if (action == "shutdown") {
+    const auto component_lookup =
+        find_shutdown_component(services.Get(), normalized_source_id);
+    if (!component_lookup.query_succeeded) {
+      return {false, "guest_shutdown_lookup_failed"};
+    }
+    if (!component_lookup.component) return {false, "guest_shutdown_unavailable"};
+    const auto component_path =
+        wmi_string(component_lookup.component.Get(), L"__PATH");
+    if (component_path.empty()) return {false, "guest_shutdown_unavailable"};
+
+    ComPtr<IWbemClassObject> component_class;
+    BSTR component_class_name = SysAllocString(L"Msvm_ShutdownComponent");
+    if (!component_class_name) return {false, "allocation_failed"};
+    const HRESULT component_class_result = services->GetObject(
+        component_class_name, 0, nullptr, &component_class, nullptr);
+    SysFreeString(component_class_name);
+    if (FAILED(component_class_result) || !component_class) {
+      return {false, "guest_shutdown_contract_unavailable"};
+    }
+    ComPtr<IWbemClassObject> shutdown_signature;
+    BSTR shutdown_method = SysAllocString(L"InitiateShutdown");
+    if (!shutdown_method) return {false, "allocation_failed"};
+    const HRESULT shutdown_method_result = component_class->GetMethod(
+        shutdown_method, 0, &shutdown_signature, nullptr);
+    if (FAILED(shutdown_method_result) || !shutdown_signature) {
+      SysFreeString(shutdown_method);
+      return {false, "guest_shutdown_contract_unavailable"};
+    }
+    ComPtr<IWbemClassObject> shutdown_input;
+    if (FAILED(shutdown_signature->SpawnInstance(0, &shutdown_input)) ||
+        !shutdown_input) {
+      SysFreeString(shutdown_method);
+      return {false, "guest_shutdown_input_failed"};
+    }
+    VARIANT force_value{};
+    VariantInit(&force_value);
+    force_value.vt = VT_BOOL;
+    force_value.boolVal = VARIANT_FALSE;
+    const HRESULT force_result =
+        shutdown_input->Put(L"Force", 0, &force_value, 0);
+    VariantClear(&force_value);
+    VARIANT reason_value{};
+    VariantInit(&reason_value);
+    reason_value.vt = VT_BSTR;
+    reason_value.bstrVal =
+        SysAllocString(L"IPMS administrator requested a graceful shutdown.");
+    const HRESULT reason_result = reason_value.bstrVal
+                                      ? shutdown_input->Put(
+                                            L"Reason", 0, &reason_value, 0)
+                                      : E_OUTOFMEMORY;
+    VariantClear(&reason_value);
+    if (FAILED(force_result) || FAILED(reason_result)) {
+      SysFreeString(shutdown_method);
+      return {false, "guest_shutdown_input_failed"};
+    }
+    BSTR shutdown_path = SysAllocString(component_path.c_str());
+    if (!shutdown_path) {
+      SysFreeString(shutdown_method);
+      return {false, "allocation_failed"};
+    }
+    ComPtr<IWbemClassObject> shutdown_output;
+    const HRESULT shutdown_result = services->ExecMethod(
+        shutdown_path,
+        shutdown_method,
+        0,
+        nullptr,
+        shutdown_input.Get(),
+        &shutdown_output,
+        nullptr);
+    SysFreeString(shutdown_path);
+    SysFreeString(shutdown_method);
+    if (FAILED(shutdown_result) || !shutdown_output) {
+      return {false, "guest_shutdown_execution_failed"};
+    }
+    const auto shutdown_return =
+        wmi_uint64(shutdown_output.Get(), L"ReturnValue").value_or(1);
+    if (shutdown_return != 0 && shutdown_return != 4096) {
+      return {false, "guest_shutdown_rejected"};
+    }
+    return wait_for_virtual_machine_state(
+               services.Get(), normalized_source_id, expected_state, 90)
+               ? hyperv_action_result{true, "state_confirmed"}
+               : hyperv_action_result{false, "state_confirmation_timeout"};
+  }
 
   const auto object_path = wmi_string(system.Get(), L"__PATH");
   if (object_path.empty()) return {false, "vm_path_unavailable"};
@@ -623,21 +780,10 @@ hyperv_action_result execute_hyperv_virtual_machine_action(
   const auto return_value = wmi_uint64(output.Get(), L"ReturnValue").value_or(1);
   if (return_value != 0 && return_value != 4096) return {false, "action_rejected"};
 
-  for (unsigned attempt = 0; attempt < 30; ++attempt) {
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-    auto verification = execute_query(services.Get(), query.c_str());
-    if (!verification) continue;
-    ComPtr<IWbemClassObject> refreshed;
-    ULONG refreshed_count = 0;
-    if (SUCCEEDED(verification->Next(
-            2'000, 1, refreshed.ReleaseAndGetAddressOf(), &refreshed_count)) &&
-        refreshed_count == 1 && refreshed &&
-        normalized_state(wmi_uint64(refreshed.Get(), L"EnabledState").value_or(0)) ==
-            expected_state) {
-      return {true, "state_confirmed"};
-    }
-  }
-  return {false, "state_confirmation_timeout"};
+  return wait_for_virtual_machine_state(
+             services.Get(), normalized_source_id, expected_state, 30)
+             ? hyperv_action_result{true, "state_confirmed"}
+             : hyperv_action_result{false, "state_confirmation_timeout"};
 }
 
 }  // namespace ipms::agent::windows
