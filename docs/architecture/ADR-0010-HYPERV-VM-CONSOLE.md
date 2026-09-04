@@ -58,7 +58,10 @@ state against the local Hyper-V V2 provider. It resolves the current setting
 object through the documented `Msvm_SettingsDefineState` association, avoiding
 ambiguous or truncated host-wide setting scans. It then uses the documented
 `GetVirtualSystemThumbnailImage` method for a bounded RGB565 frame and Windows
-Imaging Component for in-memory PNG encoding. It uses the fixed
+Imaging Component for in-memory PNG encoding. A provider result is accepted
+only when its byte count matches the requested or reported current video-head
+surface. The compatibility path also permits one observed fixed DWORD trailer,
+which is never interpreted as image data. It uses the fixed
 `Msvm_Keyboard` and `Msvm_SyntheticMouse` methods for input, including the
 dedicated `TypeCtrlAltDel` operation. The server cannot supply a WMI query,
 class, method, path, command, script, executable, URL, or guest credential.
@@ -100,7 +103,9 @@ The native Windows build and contract tests prove that the console remains a
 compiled-in capability. The web build proves the localized modal and input
 surface compile as a production Next.js application.
 
-Live acceptance has verified session exclusivity on a supported Hyper-V host.
-Frame color, keyboard layout, mouse coordinate mapping, secure attention, host
-failover behavior, and provider timeouts still require acceptance with the
-0.2.21 Agent package.
+Live acceptance with Agent 0.2.21 has verified session exclusivity, repeated
+1024x768 PNG frames, absolute mouse movement, key press and release
+acknowledgement, clean session release, and removal of the transient frame.
+Frame color, keyboard layout, visual mouse-coordinate mapping, mouse buttons,
+wheel input, secure attention, host failover behavior, and provider timeouts
+remain explicit manual acceptance items.
