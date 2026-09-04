@@ -743,8 +743,9 @@ std::string thumbnail_failure_code(std::uint64_t return_value) {
 std::vector<std::uint8_t> capture_console_frame(
     IWbemServices* services,
     IWbemClassObject* settings,
-    std::uint16_t width,
-    std::uint16_t height,
+    const std::string& source_id,
+    std::uint16_t& width,
+    std::uint16_t& height,
     std::string& failure_code) {
   const auto settings_path = wmi_object_path(settings);
   if (settings_path.empty()) {
@@ -856,7 +857,29 @@ std::vector<std::uint8_t> capture_console_frame(
   if (SUCCEEDED(SafeArrayGetLBound(image.parray, 1, &lower)) &&
       SUCCEEDED(SafeArrayGetUBound(image.parray, 1, &upper)) && upper >= lower) {
     const auto size = static_cast<std::size_t>(upper - lower + 1);
-    if (size == static_cast<std::size_t>(width) * height * 2) {
+    auto decoded_width = width;
+    auto decoded_height = height;
+    if (size != static_cast<std::size_t>(decoded_width) * decoded_height * 2) {
+      // Some supported Hyper-V providers return the current video-head buffer
+      // even when a different thumbnail size was requested. Accept that fixed,
+      // provider-owned result only when its documented current dimensions
+      // account for the complete RGB565 payload.
+      auto video_head = find_related_device(services, L"Msvm_VideoHead", source_id);
+      const auto current_width = video_head
+          ? wmi_uint64(video_head.Get(), L"CurrentHorizontalResolution")
+          : std::nullopt;
+      const auto current_height = video_head
+          ? wmi_uint64(video_head.Get(), L"CurrentVerticalResolution")
+          : std::nullopt;
+      if (current_width && current_height && *current_width >= 160 &&
+          *current_width <= 1920 && *current_height >= 120 &&
+          *current_height <= 1200 &&
+          size == static_cast<std::size_t>(*current_width) * *current_height * 2) {
+        decoded_width = static_cast<std::uint16_t>(*current_width);
+        decoded_height = static_cast<std::uint16_t>(*current_height);
+      }
+    }
+    if (size == static_cast<std::size_t>(decoded_width) * decoded_height * 2) {
       rgb565.resize(size);
       for (LONG index = lower; index <= upper; ++index) {
         if (FAILED(SafeArrayGetElement(
@@ -868,6 +891,8 @@ std::vector<std::uint8_t> capture_console_frame(
           break;
         }
       }
+      width = decoded_width;
+      height = decoded_height;
     } else {
       failure_code = "console_frame_image_size_mismatch";
     }
@@ -1323,7 +1348,8 @@ hyperv_console_result execute_hyperv_console_cycle(
   if (!settings) return {false, "console_settings_unavailable", {}, 0, 0, acknowledged};
   std::string frame_failure_code;
   auto png = capture_console_frame(
-      connection.value.Get(), settings.Get(), width, height, frame_failure_code);
+      connection.value.Get(), settings.Get(), normalized_source_id, width, height,
+      frame_failure_code);
   if (png.empty()) {
     if (frame_failure_code.empty()) frame_failure_code = "console_frame_unavailable";
     return {false, frame_failure_code, {}, 0, 0, acknowledged};
