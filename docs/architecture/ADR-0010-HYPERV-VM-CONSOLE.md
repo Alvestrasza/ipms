@@ -2,8 +2,8 @@
 
 - Status: Accepted for the development foundation
 - Decision date: 2026-09-05
-- Application version: 0.2.20
-- First compatible Windows Agent: 0.2.15
+- Application version: 0.2.21
+- First compatible Windows Agent: 0.2.16
 
 ## Context
 
@@ -103,4 +103,4 @@ surface compile as a production Next.js application.
 Live acceptance has verified session exclusivity on a supported Hyper-V host.
 Frame color, keyboard layout, mouse coordinate mapping, secure attention, host
 failover behavior, and provider timeouts still require acceptance with the
-0.2.15 Agent package.
+0.2.16 Agent package.

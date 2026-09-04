@@ -784,10 +784,13 @@ std::vector<std::uint8_t> capture_console_frame(
   VariantInit(&height_value);
   target.vt = VT_BSTR;
   target.bstrVal = SysAllocString(settings_path.c_str());
-  width_value.vt = VT_UI2;
-  width_value.uiVal = width;
-  height_value.vt = VT_UI2;
-  height_value.uiVal = height;
+  // The spawned WMI method input object exposes these CIM uint16 values
+  // through Automation-compatible signed 32-bit VARIANTs. The Hyper-V
+  // provider rejects VT_UI2 here even though the MOF declaration is uint16.
+  width_value.vt = VT_I4;
+  width_value.lVal = width;
+  height_value.vt = VT_I4;
+  height_value.lVal = height;
   const bool put = target.bstrVal &&
                    SUCCEEDED(input->Put(L"TargetSystem", 0, &target, 0)) &&
                    SUCCEEDED(input->Put(L"WidthPixels", 0, &width_value, 0)) &&
