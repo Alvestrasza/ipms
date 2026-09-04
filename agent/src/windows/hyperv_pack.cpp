@@ -363,28 +363,48 @@ virtual_machine_lookup find_virtual_machine(
 
 struct shutdown_component_lookup {
   ComPtr<IWbemClassObject> component;
+  std::wstring object_path;
   bool query_succeeded{false};
 };
+
+std::wstring escaped_wmi_key_value(const std::wstring& value) {
+  if (value.empty() || value.size() > 1'024) return {};
+  std::wstring escaped;
+  escaped.reserve(value.size() + 16);
+  for (const wchar_t character : value) {
+    if (character < 0x20 || character == 0x7f) return {};
+    if (character == L'\\' || character == L'"') escaped.push_back(L'\\');
+    escaped.push_back(character);
+  }
+  return escaped;
+}
 
 shutdown_component_lookup find_shutdown_component(
     IWbemServices* services,
     const std::string& normalized_source_id) {
   auto rows = execute_query(
       services,
-      L"SELECT __PATH, SystemName, DeviceID FROM Msvm_ShutdownComponent");
+      L"SELECT SystemName, DeviceID FROM Msvm_ShutdownComponent");
   if (!rows) return {};
   ComPtr<IWbemClassObject> match;
+  std::wstring match_path;
   const bool completed = consume_rows(
       rows.Get(),
       k_max_virtual_machines + 1,
       std::chrono::steady_clock::now() + std::chrono::seconds(10),
-      [&match, &normalized_source_id](IWbemClassObject* row) {
+      [&match, &match_path, &normalized_source_id](IWbemClassObject* row) {
         if (match) return;
+        const auto device_id = wmi_string(row, L"DeviceID");
         auto id = normalized_guid(wmi_string(row, L"SystemName"));
-        if (id.empty()) id = guid_from_instance_id(wmi_string(row, L"DeviceID"));
-        if (id == normalized_source_id) match = row;
+        if (id.empty()) id = guid_from_instance_id(device_id);
+        const auto escaped_device_id = escaped_wmi_key_value(device_id);
+        if (id == normalized_source_id && !escaped_device_id.empty()) {
+          match = row;
+          match_path = L"Msvm_ShutdownComponent.DeviceID=\"" +
+                       escaped_device_id + L"\"";
+        }
       });
-  return {match, completed};
+  return {match, match_path, completed};
 }
 
 bool wait_for_virtual_machine_state(
@@ -698,8 +718,7 @@ hyperv_action_result execute_hyperv_virtual_machine_action(
       return {false, "guest_shutdown_lookup_failed"};
     }
     if (!component_lookup.component) return {false, "guest_shutdown_unavailable"};
-    const auto component_path =
-        wmi_string(component_lookup.component.Get(), L"__PATH");
+    const auto component_path = component_lookup.object_path;
     if (component_path.empty()) return {false, "guest_shutdown_unavailable"};
 
     ComPtr<IWbemClassObject> component_class;
@@ -777,8 +796,10 @@ hyperv_action_result execute_hyperv_virtual_machine_action(
                : hyperv_action_result{false, "state_confirmation_timeout"};
   }
 
-  const auto object_path = wmi_string(system.Get(), L"__PATH");
-  if (object_path.empty()) return {false, "vm_path_unavailable"};
+  const std::wstring object_path =
+      L"Msvm_ComputerSystem.Name=\"" +
+      std::wstring(normalized_source_id.begin(), normalized_source_id.end()) +
+      L"\"";
   ComPtr<IWbemClassObject> class_object;
   BSTR class_name = SysAllocString(L"Msvm_ComputerSystem");
   if (!class_name) return {false, "allocation_failed"};
