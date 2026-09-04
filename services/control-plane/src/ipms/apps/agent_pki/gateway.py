@@ -17,6 +17,7 @@ MAX_HTTP_HEADER_BYTES = 16_384
 ALLOWED_AGENT_MESSAGES = {
     "hello",
     "inventory",
+    "software_inventory",
     "telemetry",
     "acknowledgement",
     "health",
@@ -97,6 +98,7 @@ def _parse_http_request(header: bytes) -> tuple[str, dict[str, str], int]:
     if method != "POST" or version != "HTTP/1.1" or path not in {
         "/v1/enroll",
         "/v1/inventory",
+        "/v1/software-inventory",
         "/v1/telemetry",
         "/v1/lifecycle-result",
         "/v1/lifecycle-artifact",
@@ -162,6 +164,7 @@ async def _handle_http_connection(
 ) -> None:
     from ipms.apps.agent_pki.services import (
         confirm_inventory,
+        confirm_software_inventory,
         confirm_telemetry,
         enroll_agent,
         validate_peer_certificate,
@@ -238,6 +241,16 @@ async def _handle_http_connection(
             inventory=document.get("inventory"),
             agent_version=str(document.get("agent_version", "")),
         )
+    elif (
+        path == "/v1/software-inventory"
+        and document.get("type") == "software_inventory"
+    ):
+        await _database_call_async(
+            confirm_software_inventory,
+            enrollment,
+            document=document.get("software_inventory"),
+            agent_version=str(document.get("agent_version", "")),
+        )
     elif path == "/v1/telemetry" and document.get("type") == "telemetry":
         await _database_call_async(
             confirm_telemetry,
@@ -260,6 +273,7 @@ async def _handle_http_connection(
 async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     from ipms.apps.agent_pki.services import (
         confirm_inventory,
+        confirm_software_inventory,
         confirm_telemetry,
         enroll_agent,
         renew_agent_certificate,
@@ -311,6 +325,13 @@ async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.Stream
                     confirm_inventory,
                     enrollment,
                     inventory=document.get("inventory"),
+                    agent_version=str(document.get("agent_version", "")),
+                )
+            if document["type"] == "software_inventory":
+                await _database_call_async(
+                    confirm_software_inventory,
+                    enrollment,
+                    document=document.get("software_inventory"),
                     agent_version=str(document.get("agent_version", "")),
                 )
             if document["type"] == "telemetry":

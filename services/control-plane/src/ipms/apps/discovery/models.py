@@ -10,6 +10,9 @@ class ConnectorEndpoint(models.Model):
     class ConnectorType(models.TextChoices):
         ILO_REDFISH = "ilo-redfish", "iLO Redfish"
         HYPER_V = "hyper-v", "Hyper-V"
+        SOPHOS_FIREWALL = "sophos-firewall", "Sophos Firewall"
+        LOADBALANCER_ORG = "loadbalancer-org", "Loadbalancer.org ADC"
+        HPE_COMWARE = "hpe-comware", "HPE Comware"
 
     class Health(models.TextChoices):
         UNKNOWN = "unknown", "Unknown"
@@ -36,7 +39,7 @@ class ConnectorEndpoint(models.Model):
         default=BmcFamily.HPE_ILO4,
     )
     display_name = models.CharField(max_length=255)
-    base_url = models.URLField(max_length=512)
+    base_url = models.CharField(max_length=512)
     credential_reference = models.UUIDField(unique=True, default=uuid.uuid4)
     tls_certificate_sha256 = models.CharField(max_length=64)
     enabled = models.BooleanField(default=True)
@@ -83,6 +86,41 @@ class ConnectorSecret(models.Model):
 
     def __str__(self) -> str:
         return f"Connector credential {self.id}"
+
+
+class ManagedInfrastructureDevice(models.Model):
+    class Category(models.TextChoices):
+        FIREWALL = "firewall", "Firewall"
+        LOAD_BALANCER = "load-balancer", "Load balancer"
+        SWITCH = "switch", "Switch"
+
+    class Health(models.TextChoices):
+        HEALTHY = "healthy", "Healthy"
+        WARNING = "warning", "Warning"
+        CRITICAL = "critical", "Critical"
+        UNKNOWN = "unknown", "Unknown"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.PROTECT, related_name="managed_infrastructure_devices")
+    connector = models.OneToOneField(ConnectorEndpoint, on_delete=models.PROTECT, related_name="managed_device")
+    category = models.CharField(max_length=24, choices=Category.choices)
+    name = models.CharField(max_length=255)
+    vendor = models.CharField(max_length=128)
+    product = models.CharField(max_length=128)
+    model = models.CharField(max_length=255, blank=True)
+    software_version = models.CharField(max_length=255, blank=True)
+    serial_number = models.CharField(max_length=255, blank=True)
+    uptime_seconds = models.PositiveBigIntegerField(blank=True, null=True)
+    health = models.CharField(max_length=16, choices=Health.choices, default=Health.UNKNOWN)
+    interfaces = models.JSONField(default=list, blank=True)
+    details = models.JSONField(default=dict, blank=True)
+    discovered_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("category", "name")
+        constraints = [models.UniqueConstraint(fields=("tenant", "connector"), name="unique_tenant_managed_device_connector")]
 
 
 class PhysicalSystem(models.Model):
@@ -420,6 +458,166 @@ class HyperVVirtualMachine(models.Model):
         return f"{self.host}: {self.name}"
 
 
+class LinuxSystem(models.Model):
+    class SystemType(models.TextChoices):
+        PHYSICAL = "physical", "Physical"
+        VIRTUAL = "virtual", "Virtual"
+        UNKNOWN = "unknown", "Unknown"
+
+    class Health(models.TextChoices):
+        HEALTHY = "healthy", "Healthy"
+        WARNING = "warning", "Warning"
+        CRITICAL = "critical", "Critical"
+        UNKNOWN = "unknown", "Unknown"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.PROTECT,
+        related_name="linux_systems",
+    )
+    inventory_source = models.CharField(max_length=32, default="agent")
+    source_id = models.CharField(max_length=64)
+    hostname = models.CharField(max_length=255)
+    fqdn = models.CharField(max_length=255)
+    system_type = models.CharField(
+        max_length=16,
+        choices=SystemType.choices,
+        default=SystemType.UNKNOWN,
+    )
+    distribution = models.CharField(max_length=255, blank=True)
+    distribution_version = models.CharField(max_length=128, blank=True)
+    kernel_version = models.CharField(max_length=128, blank=True)
+    architecture = models.CharField(max_length=32, blank=True)
+    manufacturer = models.CharField(max_length=255, blank=True)
+    model = models.CharField(max_length=255, blank=True)
+    serial_number = models.CharField(max_length=255, blank=True)
+    logical_processors = models.PositiveIntegerField(blank=True, null=True)
+    memory_bytes = models.PositiveBigIntegerField(blank=True, null=True)
+    agent_version = models.CharField(max_length=32)
+    health = models.CharField(
+        max_length=16,
+        choices=Health.choices,
+        default=Health.UNKNOWN,
+    )
+    network_interfaces = models.JSONField(default=list, blank=True)
+    fixed_volumes = models.JSONField(default=list, blank=True)
+    last_seen_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("fqdn", "hostname")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant", "inventory_source", "source_id"),
+                name="unique_linux_inventory_source",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant", "system_type"),
+                name="linux_tenant_type_idx",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.fqdn or self.hostname
+
+
+class SoftwareInventorySnapshot(models.Model):
+    class Platform(models.TextChoices):
+        WINDOWS = "windows", "Windows"
+        LINUX = "linux", "Linux"
+
+    class Status(models.TextChoices):
+        RECEIVING = "receiving", "Receiving"
+        COMPLETED = "completed", "Completed"
+
+    id = models.UUIDField(primary_key=True, editable=False)
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.PROTECT,
+        related_name="software_inventory_snapshots",
+    )
+    enrollment = models.ForeignKey(
+        "agent_pki.AgentEnrollment",
+        on_delete=models.PROTECT,
+        related_name="software_inventory_snapshots",
+    )
+    platform = models.CharField(max_length=16, choices=Platform.choices)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.RECEIVING,
+    )
+    page_count = models.PositiveSmallIntegerField()
+    received_pages = models.JSONField(default=list, blank=True)
+    reboot_required = models.BooleanField(blank=True, null=True)
+    update_scan_status = models.CharField(max_length=32, default="unknown")
+    last_update_scan_at = models.DateTimeField(blank=True, null=True)
+    last_update_install_at = models.DateTimeField(blank=True, null=True)
+    package_count = models.PositiveIntegerField(default=0)
+    updates_available = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(
+                fields=("tenant", "enrollment", "status"),
+                name="software_snapshot_lookup_idx",
+            )
+        ]
+
+
+class SoftwarePackage(models.Model):
+    class UpdateState(models.TextChoices):
+        CURRENT = "current", "Current"
+        AVAILABLE = "update-available", "Update available"
+        UNKNOWN = "unknown", "Unknown"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.PROTECT,
+        related_name="software_packages",
+    )
+    snapshot = models.ForeignKey(
+        SoftwareInventorySnapshot,
+        on_delete=models.CASCADE,
+        related_name="packages",
+    )
+    source_id = models.CharField(max_length=255)
+    name = models.CharField(max_length=255)
+    installed_version = models.CharField(max_length=255, blank=True)
+    available_version = models.CharField(max_length=255, blank=True)
+    publisher = models.CharField(max_length=255, blank=True)
+    package_type = models.CharField(max_length=32)
+    update_state = models.CharField(
+        max_length=24,
+        choices=UpdateState.choices,
+        default=UpdateState.UNKNOWN,
+    )
+    is_os_component = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ("name", "source_id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("snapshot", "source_id"),
+                name="unique_snapshot_software_package",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant", "update_state"),
+                name="software_tenant_update_idx",
+            )
+        ]
+
+
 class WindowsServerTelemetry(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -592,6 +790,9 @@ class DiscoveryJob(models.Model):
     class ConnectorType(models.TextChoices):
         ILO_REDFISH = "ilo-redfish", "iLO Redfish"
         HYPER_V = "hyper-v", "Hyper-V"
+        SOPHOS_FIREWALL = "sophos-firewall", "Sophos Firewall"
+        LOADBALANCER_ORG = "loadbalancer-org", "Loadbalancer.org ADC"
+        HPE_COMWARE = "hpe-comware", "HPE Comware"
 
     class Status(models.TextChoices):
         QUEUED = "queued", "Queued"

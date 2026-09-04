@@ -17,15 +17,22 @@ int main() {
   if (!ipms::agent::is_allowed_server_message(ipms::agent::ServerMessageType::agent_update_manifest)) return 8;
   if (!ipms::agent::is_allowed_server_message(ipms::agent::ServerMessageType::certificate_rotation)) return 9;
   const auto& packs = ipms::agent::builtin_management_packs();
-  if (packs.size() != 2) return 10;
-  if (packs[0].id != "windows-server-core") return 11;
-  if (packs[1].id != "hyper-v-host") return 12;
-  if (packs[1].dependencies.size() != 1) return 13;
-  if (packs[1].dependencies[0] != "windows-server-core") return 14;
+  if (packs.size() != 4) return 10;
+  const auto hyperv = std::find_if(
+      packs.begin(), packs.end(), [](const auto& pack) { return pack.id == "hyper-v-host"; });
+  const auto windows = std::find_if(
+      packs.begin(), packs.end(), [](const auto& pack) { return pack.id == "windows-server-core"; });
+  const auto software = std::find_if(
+      packs.begin(), packs.end(), [](const auto& pack) { return pack.id == "windows-software"; });
+  const auto linux = std::find_if(
+      packs.begin(), packs.end(), [](const auto& pack) { return pack.id == "linux-core"; });
+  if (windows == packs.end() || hyperv == packs.end() || software == packs.end() || linux == packs.end()) return 11;
+  if (hyperv->dependencies.size() != 1 || hyperv->dependencies[0] != "windows-server-core") return 12;
+  if (software->dependencies.size() != 1 || software->dependencies[0] != "windows-server-core") return 13;
   for (const auto& pack : packs) if (!ipms::agent::is_valid_pack_assignment(pack)) return 15;
   if (std::find(
-          packs[0].capabilities.begin(),
-          packs[0].capabilities.end(),
-          "windows.roles-features") == packs[0].capabilities.end()) return 16;
+          windows->capabilities.begin(),
+          windows->capabilities.end(),
+          "windows.roles-features") == windows->capabilities.end()) return 16;
   return 0;
 }

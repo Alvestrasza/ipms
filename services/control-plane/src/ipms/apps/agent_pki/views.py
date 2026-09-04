@@ -33,6 +33,7 @@ from .permissions import CanDeployAgents
 from .serializers import (
     AgentLifecycleJobSerializer,
     AgentLifecycleRequestSerializer,
+    LinuxAgentEnrollmentRequestSerializer,
     WindowsAgentDeploymentPreflightSerializer,
     WindowsAgentDeploymentRequestSerializer,
     WindowsAgentDeploymentSerializer,
@@ -58,6 +59,38 @@ def _http_origin(address: str, port: int) -> str:
     except ValueError:
         host = address
     return f"http://{host}:{port}/wsman"
+
+
+class LinuxAgentEnrollmentView(APIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess, CanDeployAgents)
+
+    def post(self, request):
+        serializer = LinuxAgentEnrollmentRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            enrollment, bootstrap_token, fingerprint = create_enrollment_token(
+                tenant=request.tenant,
+                display_name=serializer.validated_data["display_name"],
+                actor=_actor(request),
+                platform=AgentEnrollment.Platform.LINUX,
+            )
+            policy = request.tenant.agent_pki_policy
+        except (DjangoValidationError, ObjectDoesNotExist) as exc:
+            raise PublicApiError("agent_pki_unavailable") from exc
+        return Response(
+            {
+                "enrollment_id": str(enrollment.id),
+                "bootstrap_document": {
+                    "device_uri": enrollment.device_uri,
+                    "gateway_dns_name": policy.gateway_dns_name,
+                    "gateway_port": policy.gateway_port,
+                    "gateway_fingerprint_sha256": fingerprint,
+                    "bootstrap_token": bootstrap_token,
+                },
+                "expires_in_minutes": 30,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class WindowsAgentDeploymentPreflightView(APIView):
@@ -324,13 +357,20 @@ class AgentAdministrationListView(APIView):
     permission_classes = (IsAuthenticated, HasSelectedTenantAccess, CanDeployAgents)
 
     def get(self, request):
-        from ipms.apps.discovery.models import WindowsServer
+        from ipms.apps.discovery.models import LinuxSystem, WindowsServer
 
         servers = {
             server.source_id: server
             for server in WindowsServer.objects.filter(
                 tenant=request.tenant,
                 inventory_source=WindowsServer.InventorySource.AGENT,
+            )
+        }
+        linux_systems = {
+            system.source_id: system
+            for system in LinuxSystem.objects.filter(
+                tenant=request.tenant,
+                inventory_source="agent",
             )
         }
         target_version = settings.AGENT_WINDOWS_VERSION
@@ -349,12 +389,18 @@ class AgentAdministrationListView(APIView):
         )
         documents = []
         for enrollment in enrollments:
-            server = servers.get(enrollment.device_uri)
+            server = (
+                linux_systems.get(enrollment.device_uri)
+                if enrollment.platform == AgentEnrollment.Platform.LINUX
+                else servers.get(enrollment.device_uri)
+            )
             last_seen = server.last_seen_at if server else enrollment.last_seen_at
             state = _agent_contact_state(enrollment, server, now=now)
             current_version = server.agent_version if server else ""
             current_tuple = _version_tuple(current_version)
             lifecycle_capable = (
+                enrollment.platform == AgentEnrollment.Platform.WINDOWS
+                and
                 enrollment.status == AgentEnrollment.Status.ACTIVE
                 and current_tuple is not None
                 and current_tuple >= (0, 1, 32)
@@ -370,9 +416,18 @@ class AgentAdministrationListView(APIView):
                 {
                     "enrollment_id": str(enrollment.id),
                     "device_uri": enrollment.device_uri,
+                    "platform": enrollment.platform,
                     "fqdn": (server.fqdn or server.hostname) if server else enrollment.display_name,
-                    "operating_system": server.operating_system if server else "",
-                    "os_version": server.os_version if server else "",
+                    "operating_system": (
+                        (server.distribution if enrollment.platform == AgentEnrollment.Platform.LINUX else server.operating_system)
+                        if server
+                        else ""
+                    ),
+                    "os_version": (
+                        (server.distribution_version if enrollment.platform == AgentEnrollment.Platform.LINUX else server.os_version)
+                        if server
+                        else ""
+                    ),
                     "agent_version": current_version,
                     "target_version": target_version,
                     "status": state,
@@ -390,7 +445,7 @@ class AgentAdministrationDetailView(APIView):
     permission_classes = (IsAuthenticated, HasSelectedTenantAccess, CanDeployAgents)
 
     def delete(self, request, pk):
-        from ipms.apps.discovery.models import WindowsServer
+        from ipms.apps.discovery.models import LinuxSystem, WindowsServer
 
         actor = _actor(request)
         now = timezone.now()
@@ -407,6 +462,12 @@ class AgentAdministrationDetailView(APIView):
                 inventory_source=WindowsServer.InventorySource.AGENT,
                 source_id=enrollment.device_uri,
             ).first()
+            if server is None and enrollment.platform == AgentEnrollment.Platform.LINUX:
+                server = LinuxSystem.objects.select_for_update().filter(
+                    tenant=request.tenant,
+                    inventory_source="agent",
+                    source_id=enrollment.device_uri,
+                ).first()
             contact_state = _agent_contact_state(enrollment, server, now=now)
             if contact_state not in {"offline", "not-seen", "revoked"}:
                 raise PublicApiError("agent_removal_not_allowed")
@@ -474,6 +535,8 @@ class AgentLifecycleView(APIView):
                     tenant=request.tenant,
                     status=AgentEnrollment.Status.ACTIVE,
                 )
+                if enrollment.platform != AgentEnrollment.Platform.WINDOWS:
+                    raise PublicApiError("agent_lifecycle_not_supported")
                 server = WindowsServer.objects.filter(
                     tenant=request.tenant,
                     inventory_source=WindowsServer.InventorySource.AGENT,

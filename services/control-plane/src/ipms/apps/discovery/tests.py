@@ -18,6 +18,8 @@ from .connectors.ilo_redfish import (
     _safe_redfish_error_identifiers,
     discover_ilo,
 )
+from .connectors.loadbalancer_org import discover_loadbalancer
+from .connectors.sophos_firewall import SophosConnectorError, discover_sophos
 from .models import (
     BmcCommunicationLog,
     ConnectorEndpoint,
@@ -1512,3 +1514,70 @@ class IloPortalEnrollmentTests(TestCase):
                 detail_snapshot={"schema_version": 1, "subsystems": []},
             )
         ]
+
+
+class ManagedNetworkConnectorAdapterTests(TestCase):
+    class FakeClient:
+        def __init__(self, payload: bytes, status: int = 200) -> None:
+            self.payload = payload
+            self.status = status
+            self.calls: list[tuple[str, str, bytes | None, dict[str, str]]] = []
+
+        def request(
+            self,
+            method: str,
+            path: str,
+            *,
+            body: bytes | None = None,
+            headers: dict[str, str] | None = None,
+        ) -> tuple[int, dict[str, str], bytes]:
+            self.calls.append((method, path, body, headers or {}))
+            return self.status, {}, self.payload
+
+    def test_sophos_uses_fixed_multipart_read_request_and_parses_interfaces(
+        self,
+    ) -> None:
+        client = self.FakeClient(
+            b'<Response APIVersion="2200.1"><Login><status>Authentication '
+            b'Successful</status></Login><Interface><Name>Port1</Name><Zone>LAN</Zone>'
+            b'<IPAddress>192.0.2.1</IPAddress><Status>Up</Status></Interface></Response>'
+        )
+
+        observation = discover_sophos(client, "read-only&user", "test<secret")
+
+        self.assertEqual(observation.interfaces[0]["name"], "Port1")
+        method, path, body, headers = client.calls[0]
+        self.assertEqual((method, path), ("POST", "/webconsole/APIController"))
+        self.assertIn("multipart/form-data", headers["Content-Type"])
+        self.assertIn(b"<Get><Interface/></Get>", body or b"")
+        self.assertIn(b"read-only&amp;user", body or b"")
+        self.assertNotIn("secret", path)
+
+    def test_sophos_rejects_xml_entities(self) -> None:
+        client = self.FakeClient(
+            b'<!DOCTYPE Response [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>'
+            b"<Response><Login><status>&xxe;</status></Login></Response>"
+        )
+
+        with self.assertRaisesMessage(SophosConnectorError, "api_response_invalid"):
+            discover_sophos(client, "reader", "test-secret")
+
+    def test_loadbalancer_uses_only_fixed_read_only_address_inventory(self) -> None:
+        client = self.FakeClient(b'{"lbapi":[{"addresses":[]}]}')
+
+        observation = discover_loadbalancer(
+            client,
+            "read-only",
+            "test-password",
+            "test-api-key",
+        )
+
+        method, path, body, headers = client.calls[0]
+        self.assertEqual((method, path), ("POST", "/api/v2/"))
+        self.assertEqual(
+            json.loads(body or b"{}"),
+            {"lbcli": [{"action": "address", "function": "get"}]},
+        )
+        self.assertIn("Authorization", headers)
+        self.assertIn("X-LB-APIKEY", headers)
+        self.assertEqual(observation.details["address_inventory"], "collected")

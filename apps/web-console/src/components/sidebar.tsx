@@ -31,12 +31,15 @@ export type ActiveSection =
   | "physical"
   | "physical-servers"
   | "physical-clients"
+  | "physical-linux"
   | "bmc"
   | "bmc-logs"
   | "bmc-events"
   | "virtual"
   | "virtual-clients"
+  | "virtual-linux"
   | "hyper-v-vms"
+  | "network"
   | "admin-agents";
 
 export async function Sidebar({
@@ -60,6 +63,7 @@ export async function Sidebar({
     "physical",
     "physical-servers",
     "physical-clients",
+    "physical-linux",
     "bmc",
     "bmc-logs",
     "bmc-events",
@@ -67,6 +71,7 @@ export async function Sidebar({
   const virtualExpanded = [
     "virtual",
     "virtual-clients",
+    "virtual-linux",
     "hyper-v-vms",
   ].includes(activeSection);
   const hasHyperVHosts = windowsRoles.some(
@@ -106,7 +111,9 @@ export async function Sidebar({
     {
       label: dictionary.navigation.network,
       icon: Network,
-      enabled: false as const,
+      href: `/${locale}/network`,
+      section: "network" as const,
+      enabled: true as const,
     },
     {
       label: dictionary.navigation.storage,
@@ -181,6 +188,18 @@ export async function Sidebar({
                       label={dictionary.navigation.physicalClients}
                       serverType="physical"
                     />
+                  </li>
+                  <li>
+                    <Link
+                      className={`nav-subitem ${activeSection === "physical-linux" ? "nav-subitem--active" : ""}`}
+                      href={`/${locale}/physical/linux` as Route}
+                      aria-current={
+                        activeSection === "physical-linux" ? "page" : undefined
+                      }
+                    >
+                      <ServerCog aria-hidden="true" size={15} />
+                      <span>{dictionary.navigation.physicalLinux}</span>
+                    </Link>
                   </li>
                   <li>
                     <Link
@@ -270,6 +289,18 @@ export async function Sidebar({
                       label={dictionary.navigation.virtualClients}
                       serverType="virtual"
                     />
+                  </li>
+                  <li>
+                    <Link
+                      className={`nav-subitem ${activeSection === "virtual-linux" ? "nav-subitem--active" : ""}`}
+                      href={`/${locale}/virtual/linux` as Route}
+                      aria-current={
+                        activeSection === "virtual-linux" ? "page" : undefined
+                      }
+                    >
+                      <ServerCog aria-hidden="true" size={15} />
+                      <span>{dictionary.navigation.virtualLinux}</span>
+                    </Link>
                   </li>
                 </ul>
               ) : null}

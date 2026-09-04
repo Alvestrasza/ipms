@@ -3,6 +3,7 @@
 #include "ipms/agent/configuration.hpp"
 #include "ipms/agent/windows_core_pack.hpp"
 #include "ipms/agent/windows_telemetry.hpp"
+#include "ipms/agent/windows_software_pack.hpp"
 
 #include <windows.h>
 #include <bcrypt.h>
@@ -29,7 +30,7 @@
 namespace {
 using Microsoft::WRL::ComPtr;
 constexpr std::size_t k_max_document_bytes = 65'536;
-constexpr wchar_t k_agent_version[] = L"0.1.37";
+constexpr wchar_t k_agent_version[] = L"0.2.0";
 constexpr std::size_t k_max_artifact_bytes = 64 * 1024 * 1024;
 
 struct internet_closer { void operator()(void* handle) const { if (handle) WinHttpCloseHandle(handle); } };
@@ -306,7 +307,7 @@ struct http_response { DWORD status{}; std::string body; };
 
 http_response post_json(const std::wstring& hostname, std::uint16_t port, const std::wstring& path,
                         const std::string& body, const std::string* pin, PCCERT_CONTEXT client_certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.1.37", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.0", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent HTTP session could not be created.");
   WinHttpSetTimeouts(session.get(), 10'000, 10'000, 30'000, 30'000);
@@ -368,7 +369,7 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
 }
 
 http_response post_binary(const state& identity, const std::string& body, PCCERT_CONTEXT certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.1.37", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.0", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent artifact session could not be created.");
   WinHttpSetTimeouts(session.get(), 10'000, 10'000, 60'000, 60'000);
@@ -630,6 +631,27 @@ TransportResult run_inventory_cycle() {
     const auto response = post_json(identity.gateway, identity.port, L"/v1/inventory", body, nullptr, certificate.get());
     if (response.status != 200 || json_string(response.body, "type") != std::optional<std::string>("accepted"))
       throw std::runtime_error("The Agent inventory was rejected.");
+    for (const auto& software_inventory : collect_windows_software_inventory_pages()) {
+      const std::string software_body =
+          "{\"type\":\"software_inventory\",\"device_uri\":\"" +
+          json_escape(identity.device_uri) +
+          "\",\"correlation_id\":\"windows-agent-software\",\"agent_version\":\"" +
+          utf8(k_agent_version) + "\",\"software_inventory\":" + software_inventory + "}";
+      if (software_body.size() > k_max_document_bytes) {
+        throw std::runtime_error("The Agent software inventory page is too large.");
+      }
+      const auto software_response = post_json(
+          identity.gateway,
+          identity.port,
+          L"/v1/software-inventory",
+          software_body,
+          nullptr,
+          certificate.get());
+      if (software_response.status != 200 ||
+          json_string(software_response.body, "type") != std::optional<std::string>("accepted")) {
+        throw std::runtime_error("The Agent software inventory was rejected.");
+      }
+    }
     process_lifecycle_assignment(response.body, identity, certificate.get());
     return {true, L"Enrollment and inventory delivery succeeded."};
   } catch (const std::exception& error) {

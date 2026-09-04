@@ -551,9 +551,18 @@ def retire_overlap_issuer(*, tenant, issuer_id, actor: str):
 
 
 @transaction.atomic
-def create_enrollment_token(*, tenant, display_name: str, actor: str, lifetime_minutes: int = 30):
+def create_enrollment_token(
+    *,
+    tenant,
+    display_name: str,
+    actor: str,
+    platform: str = AgentEnrollment.Platform.WINDOWS,
+    lifetime_minutes: int = 30,
+):
     if not 5 <= lifetime_minutes <= 1440:
         raise ValidationError("Enrollment token lifetime must be between 5 and 1440 minutes.")
+    if platform not in AgentEnrollment.Platform.values:
+        raise ValidationError("The Agent platform is invalid.")
     policy = AgentPkiPolicy.objects.select_related("gateway_identity").get(tenant=tenant)
     if policy.trust_mode == AgentPkiPolicy.TrustMode.EXTERNAL_CERTIFICATES:
         raise ValidationError(
@@ -565,6 +574,7 @@ def create_enrollment_token(*, tenant, display_name: str, actor: str, lifetime_m
         device_id=device_id,
         device_uri=f"urn:ipms:agent:{device_id}",
         display_name=display_name,
+        platform=platform,
     )
     raw_token = secrets.token_urlsafe(32)
     AgentEnrollmentToken.objects.create(
@@ -582,7 +592,7 @@ def create_enrollment_token(*, tenant, display_name: str, actor: str, lifetime_m
         object_type="agent_enrollment",
         object_id=enrollment.id,
         outcome=AuditEvent.Outcome.SUCCEEDED,
-        details={"expires_in_minutes": lifetime_minutes},
+        details={"expires_in_minutes": lifetime_minutes, "platform": platform},
     )
     return enrollment, raw_token, policy.gateway_identity.fingerprint_sha256
 
@@ -956,6 +966,97 @@ def _bounded_hyperv_virtual_machines(value: object) -> list[dict]:
     return sorted(result, key=lambda item: item["source_id"])
 
 
+def _confirm_linux_inventory(
+    enrollment: AgentEnrollment,
+    *,
+    inventory: dict,
+    agent_version: str,
+) -> None:
+    from ipms.apps.discovery.models import LinuxSystem
+
+    if enrollment.platform != AgentEnrollment.Platform.LINUX:
+        raise ValidationError("The Agent inventory platform does not match enrollment.")
+
+    if set(inventory) - {
+        "schema_version",
+        "pack",
+        "agent_gateway_port",
+        "hostname",
+        "fqdn",
+        "distribution",
+        "distribution_version",
+        "kernel_version",
+        "architecture",
+        "manufacturer",
+        "model",
+        "serial_number",
+        "machine_type",
+        "logical_processors",
+        "memory_total_bytes",
+        "network_interfaces",
+        "fixed_volumes",
+    }:
+        raise ValidationError("The Linux Agent inventory document is invalid.")
+    if not isinstance(agent_version, str) or not 1 <= len(agent_version) <= 64:
+        raise ValidationError("The Agent version is invalid.")
+    hostname = _bounded_inventory_string(inventory, "hostname", 255, required=True)
+    fqdn = _bounded_inventory_string(inventory, "fqdn", 255)
+    distribution = _bounded_inventory_string(inventory, "distribution", 255)
+    distribution_version = _bounded_inventory_string(
+        inventory, "distribution_version", 128
+    )
+    kernel_version = _bounded_inventory_string(inventory, "kernel_version", 128)
+    architecture = _bounded_inventory_string(inventory, "architecture", 32)
+    manufacturer = _bounded_inventory_string(inventory, "manufacturer", 255)
+    model = _bounded_inventory_string(inventory, "model", 255)
+    serial_number = _bounded_inventory_string(inventory, "serial_number", 255)
+    machine_type = _bounded_inventory_string(inventory, "machine_type", 16)
+    if machine_type not in LinuxSystem.SystemType.values:
+        raise ValidationError("The Linux Agent machine type is invalid.")
+    logical_processors = inventory.get("logical_processors")
+    memory_bytes = inventory.get("memory_total_bytes")
+    gateway_port = inventory.get("agent_gateway_port")
+    if type(logical_processors) is not int or not 1 <= logical_processors <= 65_535:
+        raise ValidationError("The Linux Agent processor count is invalid.")
+    if type(memory_bytes) is not int or not 1 <= memory_bytes <= 2**63 - 1:
+        raise ValidationError("The Linux Agent memory size is invalid.")
+    if type(gateway_port) is not int or not 1 <= gateway_port <= 65_535:
+        raise ValidationError("The Linux Agent Gateway port is invalid.")
+    network_interfaces = _bounded_network_interfaces(
+        inventory.get("network_interfaces", [])
+    )
+    fixed_volumes = _bounded_fixed_volumes(inventory.get("fixed_volumes", []))
+    now = timezone.now()
+    updates = {"last_seen_at": now}
+    if enrollment.first_inventory_at is None:
+        updates["first_inventory_at"] = now
+    AgentEnrollment.objects.filter(id=enrollment.id).update(**updates)
+    LinuxSystem.objects.update_or_create(
+        tenant=enrollment.tenant,
+        inventory_source="agent",
+        source_id=enrollment.device_uri,
+        defaults={
+            "hostname": hostname,
+            "fqdn": fqdn or hostname,
+            "system_type": machine_type,
+            "distribution": distribution,
+            "distribution_version": distribution_version,
+            "kernel_version": kernel_version,
+            "architecture": architecture,
+            "manufacturer": manufacturer,
+            "model": model,
+            "serial_number": serial_number,
+            "logical_processors": logical_processors,
+            "memory_bytes": memory_bytes,
+            "agent_version": agent_version,
+            "health": LinuxSystem.Health.HEALTHY,
+            "network_interfaces": network_interfaces,
+            "fixed_volumes": fixed_volumes,
+            "last_seen_at": now,
+        },
+    )
+
+
 @transaction.atomic
 def confirm_inventory(
     enrollment: AgentEnrollment,
@@ -972,10 +1073,22 @@ def confirm_inventory(
     if not isinstance(inventory, dict) or len(inventory) > 32:
         raise ValidationError("The Agent inventory document is invalid.")
     if (
+        inventory.get("schema_version") == "1"
+        and inventory.get("pack") == "linux-core"
+    ):
+        _confirm_linux_inventory(
+            enrollment,
+            inventory=inventory,
+            agent_version=agent_version,
+        )
+        return
+    if (
         inventory.get("schema_version") != "1"
         or inventory.get("pack") != "windows-server-core"
     ):
         raise ValidationError("The Agent inventory schema or Management Pack is invalid.")
+    if enrollment.platform != AgentEnrollment.Platform.WINDOWS:
+        raise ValidationError("The Agent inventory platform does not match enrollment.")
     if not isinstance(agent_version, str) or not 1 <= len(agent_version) <= 64:
         raise ValidationError("The Agent version is invalid.")
     hostname = _bounded_inventory_string(inventory, "hostname", 255, required=True)
@@ -1293,6 +1406,222 @@ def confirm_telemetry(
         agent_state=WindowsServer.AgentState.ONLINE,
         last_seen_at=now,
     )
+
+
+def _bounded_optional_timestamp(value: object):
+    from django.utils.dateparse import parse_datetime
+
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str) or len(value) > 64:
+        raise ValidationError("The Agent software-inventory timestamp is invalid.")
+    parsed = parse_datetime(value)
+    if parsed is None or parsed.tzinfo is None:
+        raise ValidationError("The Agent software-inventory timestamp is invalid.")
+    return parsed
+
+
+def _bounded_software_packages(value: object) -> list[dict]:
+    from ipms.apps.discovery.models import SoftwarePackage
+
+    if not isinstance(value, list) or len(value) > 128:
+        raise ValidationError("The Agent software package page is invalid.")
+    result = []
+    source_ids = set()
+    for package in value:
+        if not isinstance(package, dict) or set(package) != {
+            "source_id",
+            "name",
+            "installed_version",
+            "available_version",
+            "publisher",
+            "package_type",
+            "update_state",
+            "is_os_component",
+        }:
+            raise ValidationError("The Agent software package is invalid.")
+        source_id = _bounded_object_string(package, "source_id", 255)
+        name = _bounded_object_string(package, "name", 255)
+        installed_version = _bounded_object_string(
+            package, "installed_version", 255
+        )
+        available_version = _bounded_object_string(
+            package, "available_version", 255
+        )
+        publisher = _bounded_object_string(package, "publisher", 255)
+        package_type = _bounded_object_string(package, "package_type", 32)
+        update_state = _bounded_object_string(package, "update_state", 24)
+        is_os_component = package.get("is_os_component")
+        if (
+            not source_id
+            or source_id in source_ids
+            or not name
+            or not package_type
+            or update_state not in SoftwarePackage.UpdateState.values
+            or type(is_os_component) is not bool
+        ):
+            raise ValidationError("The Agent software package is invalid.")
+        if update_state == SoftwarePackage.UpdateState.AVAILABLE and not available_version:
+            raise ValidationError("An available software update requires a version.")
+        source_ids.add(source_id)
+        result.append(
+            {
+                "source_id": source_id,
+                "name": name,
+                "installed_version": installed_version,
+                "available_version": available_version,
+                "publisher": publisher,
+                "package_type": package_type,
+                "update_state": update_state,
+                "is_os_component": is_os_component,
+            }
+        )
+    return result
+
+
+@transaction.atomic
+def confirm_software_inventory(
+    enrollment: AgentEnrollment,
+    *,
+    document: object,
+    agent_version: str,
+) -> None:
+    from ipms.apps.discovery.models import (
+        LinuxSystem,
+        SoftwareInventorySnapshot,
+        SoftwarePackage,
+        WindowsServer,
+    )
+
+    if not isinstance(document, dict) or set(document) != {
+        "schema_version",
+        "platform",
+        "snapshot_id",
+        "page_index",
+        "page_count",
+        "reboot_required",
+        "update_scan_status",
+        "last_update_scan_at",
+        "last_update_install_at",
+        "packages",
+    }:
+        raise ValidationError("The Agent software inventory document is invalid.")
+    if document.get("schema_version") != "1":
+        raise ValidationError("The Agent software inventory schema is invalid.")
+    if not isinstance(agent_version, str) or not 1 <= len(agent_version) <= 64:
+        raise ValidationError("The Agent version is invalid.")
+    platform = document.get("platform")
+    if platform not in SoftwareInventorySnapshot.Platform.values:
+        raise ValidationError("The Agent software inventory platform is invalid.")
+    if platform != enrollment.platform:
+        raise ValidationError("The Agent software platform does not match enrollment.")
+    try:
+        snapshot_id = uuid.UUID(str(document.get("snapshot_id")))
+    except ValueError as exc:
+        raise ValidationError("The Agent software snapshot identity is invalid.") from exc
+    page_index = document.get("page_index")
+    page_count = document.get("page_count")
+    if (
+        type(page_index) is not int
+        or type(page_count) is not int
+        or not 1 <= page_count <= 64
+        or not 0 <= page_index < page_count
+    ):
+        raise ValidationError("The Agent software inventory page is invalid.")
+    reboot_required = document.get("reboot_required")
+    if reboot_required is not None and type(reboot_required) is not bool:
+        raise ValidationError("The Agent reboot-required value is invalid.")
+    update_scan_status = _bounded_object_string(document, "update_scan_status", 32)
+    if update_scan_status not in {"current", "updates-available", "unknown", "unavailable"}:
+        raise ValidationError("The Agent update scan status is invalid.")
+    packages = _bounded_software_packages(document.get("packages"))
+    if platform == SoftwareInventorySnapshot.Platform.WINDOWS:
+        system_exists = WindowsServer.objects.filter(
+            tenant=enrollment.tenant,
+            source_id=enrollment.device_uri,
+        ).exists()
+    else:
+        system_exists = LinuxSystem.objects.filter(
+            tenant=enrollment.tenant,
+            source_id=enrollment.device_uri,
+        ).exists()
+    if not system_exists:
+        raise ValidationError("Agent inventory is required before software inventory.")
+    snapshot, created = SoftwareInventorySnapshot.objects.select_for_update().get_or_create(
+        id=snapshot_id,
+        defaults={
+            "tenant": enrollment.tenant,
+            "enrollment": enrollment,
+            "platform": platform,
+            "page_count": page_count,
+            "reboot_required": reboot_required,
+            "update_scan_status": update_scan_status,
+            "last_update_scan_at": _bounded_optional_timestamp(
+                document.get("last_update_scan_at")
+            ),
+            "last_update_install_at": _bounded_optional_timestamp(
+                document.get("last_update_install_at")
+            ),
+        },
+    )
+    if (
+        not created
+        and (
+            snapshot.tenant_id != enrollment.tenant_id
+            or snapshot.enrollment_id != enrollment.id
+            or snapshot.platform != platform
+            or snapshot.page_count != page_count
+            or snapshot.status != SoftwareInventorySnapshot.Status.RECEIVING
+            or snapshot.reboot_required != reboot_required
+            or snapshot.update_scan_status != update_scan_status
+            or snapshot.last_update_scan_at
+            != _bounded_optional_timestamp(document.get("last_update_scan_at"))
+            or snapshot.last_update_install_at
+            != _bounded_optional_timestamp(document.get("last_update_install_at"))
+        )
+    ):
+        raise ValidationError("The Agent software snapshot scope is invalid.")
+    if page_index in snapshot.received_pages:
+        raise ValidationError("The Agent software inventory page was already received.")
+    existing_source_ids = set(
+        SoftwarePackage.objects.filter(
+            snapshot=snapshot,
+            source_id__in=[package["source_id"] for package in packages],
+        ).values_list("source_id", flat=True)
+    )
+    if existing_source_ids:
+        raise ValidationError("The Agent software package is duplicated across pages.")
+    SoftwarePackage.objects.bulk_create(
+        [
+            SoftwarePackage(
+                tenant=enrollment.tenant,
+                snapshot=snapshot,
+                **package,
+            )
+            for package in packages
+        ]
+    )
+    snapshot.received_pages = sorted([*snapshot.received_pages, page_index])
+    snapshot.save(update_fields=("received_pages",))
+    if len(snapshot.received_pages) == snapshot.page_count:
+        snapshot.status = SoftwareInventorySnapshot.Status.COMPLETED
+        snapshot.completed_at = timezone.now()
+        snapshot.package_count = snapshot.packages.count()
+        snapshot.updates_available = snapshot.packages.filter(
+            update_state=SoftwarePackage.UpdateState.AVAILABLE
+        ).count()
+        snapshot.save(
+            update_fields=(
+                "status",
+                "completed_at",
+                "package_count",
+                "updates_available",
+            )
+        )
+        SoftwareInventorySnapshot.objects.filter(
+            enrollment=enrollment,
+        ).exclude(id=snapshot.id).delete()
+    AgentEnrollment.objects.filter(id=enrollment.id).update(last_seen_at=timezone.now())
 
 
 @transaction.atomic

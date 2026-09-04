@@ -12,15 +12,20 @@ from django.utils.dateparse import parse_datetime
 from ipms.apps.audit.models import AuditEvent
 
 from .connectors.ilo_redfish import RedfishConnectorError, RedfishTransport, discover_ilo
+from .connectors.hpe_comware import ComwareConnectorError, discover_comware
+from .connectors.loadbalancer_org import LoadbalancerConnectorError, discover_loadbalancer
+from .connectors.pinned_https import PinnedHttpsClient
+from .connectors.sophos_firewall import SophosConnectorError, discover_sophos
 from .models import (
     BmcCommunicationLog,
     BmcEventLogEntry,
     ConnectorEndpoint,
     ConnectorSecret,
     DiscoveryJob,
+    ManagedInfrastructureDevice,
     PhysicalSystem,
 )
-from .secrets import load_connector_secret
+from .secrets import load_connector_secret_document
 
 
 class ConnectorExecutionError(Exception):
@@ -62,7 +67,7 @@ def _communication_logger(endpoint: ConnectorEndpoint, correlation_id):
     return record
 
 
-def _validate_private_target(base_url: str) -> None:
+def _validate_private_target(base_url: str) -> tuple[str, ...]:
     hostname = urlsplit(base_url).hostname
     if not hostname:
         raise ConnectorExecutionError("target_invalid")
@@ -84,6 +89,7 @@ def _validate_private_target(base_url: str) -> None:
             )
         ):
             raise ConnectorExecutionError("target_not_private")
+    return tuple(sorted(addresses))
 
 
 def _finish_failed(
@@ -138,21 +144,77 @@ def process_discovery_job(job: DiscoveryJob) -> None:
     endpoint.save(update_fields=("last_attempt_at", "updated_at"))
 
     try:
-        _validate_private_target(endpoint.base_url)
-        username, password = load_connector_secret(
+        validated_addresses = _validate_private_target(endpoint.base_url)
+        secret_document = load_connector_secret_document(
             tenant_id=endpoint.tenant_id,
             secret_id=endpoint.credential_reference,
         )
-        observations, summary = discover_ilo(
-            RedfishTransport(
-                endpoint.base_url,
-                endpoint.tls_certificate_sha256,
-                timeout=settings.BMC_CONNECT_TIMEOUT_SECONDS,
-                event_callback=_communication_logger(endpoint, job.correlation_id),
-            ),
-            username,
-            password,
-        )
+        username = secret_document["username"]
+        password = secret_document["password"]
+        device_observation = None
+        if endpoint.connector_type == ConnectorEndpoint.ConnectorType.ILO_REDFISH:
+            observations, summary = discover_ilo(
+                RedfishTransport(
+                    endpoint.base_url,
+                    endpoint.tls_certificate_sha256,
+                    timeout=settings.BMC_CONNECT_TIMEOUT_SECONDS,
+                    event_callback=_communication_logger(endpoint, job.correlation_id),
+                ),
+                username,
+                password,
+            )
+        elif endpoint.connector_type == ConnectorEndpoint.ConnectorType.SOPHOS_FIREWALL:
+            device_observation = discover_sophos(
+                PinnedHttpsClient(
+                    endpoint.base_url,
+                    endpoint.tls_certificate_sha256,
+                    timeout=settings.BMC_CONNECT_TIMEOUT_SECONDS,
+                ),
+                username,
+                password,
+            )
+            observations, summary = [], {
+                "device_count": "1",
+                "interface_count": str(len(device_observation.interfaces)),
+            }
+        elif endpoint.connector_type == ConnectorEndpoint.ConnectorType.LOADBALANCER_ORG:
+            extra = secret_document.get("extra", {})
+            if not isinstance(extra, dict):
+                raise ValueError("invalid connector secret")
+            device_observation = discover_loadbalancer(
+                PinnedHttpsClient(
+                    endpoint.base_url,
+                    endpoint.tls_certificate_sha256,
+                    timeout=settings.BMC_CONNECT_TIMEOUT_SECONDS,
+                ),
+                username,
+                password,
+                str(extra.get("api_key", "")),
+            )
+            observations, summary = [], {
+                "device_count": "1",
+                "interface_count": str(len(device_observation.interfaces)),
+            }
+        elif endpoint.connector_type == ConnectorEndpoint.ConnectorType.HPE_COMWARE:
+            target = urlsplit(endpoint.base_url)
+            extra = secret_document.get("extra", {})
+            if not isinstance(extra, dict):
+                raise ValueError("invalid connector secret")
+            device_observation = discover_comware(
+                validated_addresses[0],
+                target.port or 161,
+                username,
+                password,
+                str(extra.get("privacy_key", "")),
+            )
+            observations, summary = [], {
+                "device_count": "1",
+                "interface_count": str(
+                    device_observation.details.get("interface_count") or 0
+                ),
+            }
+        else:
+            raise ConnectorExecutionError("connector_type_unsupported")
     except ConnectorExecutionError as exc:
         _finish_failed(job, endpoint, exc.code)
         return
@@ -164,6 +226,9 @@ def process_discovery_job(job: DiscoveryJob) -> None:
         return
     except RedfishConnectorError as exc:
         _finish_failed(job, endpoint, exc.code, exc.detail)
+        return
+    except (SophosConnectorError, LoadbalancerConnectorError, ComwareConnectorError) as exc:
+        _finish_failed(job, endpoint, exc.code)
         return
 
     completed_at = timezone.now()
@@ -216,6 +281,31 @@ def process_discovery_job(job: DiscoveryJob) -> None:
                     },
                 )
                 event_log_count += 1
+        if device_observation is not None:
+            if endpoint.connector_type == ConnectorEndpoint.ConnectorType.SOPHOS_FIREWALL:
+                category, vendor, product = ManagedInfrastructureDevice.Category.FIREWALL, "Sophos", "Sophos Firewall"
+            elif endpoint.connector_type == ConnectorEndpoint.ConnectorType.LOADBALANCER_ORG:
+                category, vendor, product = ManagedInfrastructureDevice.Category.LOAD_BALANCER, "Loadbalancer.org", "Enterprise ADC"
+            else:
+                category, vendor, product = ManagedInfrastructureDevice.Category.SWITCH, "HPE", "Comware 7 switch"
+            ManagedInfrastructureDevice.objects.update_or_create(
+                tenant=endpoint.tenant,
+                connector=endpoint,
+                defaults={
+                    "category": category,
+                    "name": device_observation.name or endpoint.display_name,
+                    "vendor": vendor,
+                    "product": product,
+                    "model": getattr(device_observation, "model", ""),
+                    "software_version": device_observation.software_version,
+                    "serial_number": getattr(device_observation, "serial_number", ""),
+                    "uptime_seconds": getattr(device_observation, "uptime_seconds", None),
+                    "health": ManagedInfrastructureDevice.Health.HEALTHY,
+                    "interfaces": getattr(device_observation, "interfaces", []),
+                    "details": device_observation.details,
+                    "discovered_at": completed_at,
+                },
+            )
         summary = {**summary, "event_log_count": str(event_log_count)}
         job.status = DiscoveryJob.Status.SUCCEEDED
         job.result_summary = summary
@@ -255,7 +345,12 @@ def process_discovery_queue(*, limit: int = 5) -> int:
                 .select_related("connector", "connector__tenant")
                 .filter(
                     status=DiscoveryJob.Status.QUEUED,
-                    connector_type=DiscoveryJob.ConnectorType.ILO_REDFISH,
+                    connector_type__in=(
+                        DiscoveryJob.ConnectorType.ILO_REDFISH,
+                        DiscoveryJob.ConnectorType.SOPHOS_FIREWALL,
+                        DiscoveryJob.ConnectorType.LOADBALANCER_ORG,
+                        DiscoveryJob.ConnectorType.HPE_COMWARE,
+                    ),
                 )
                 .order_by("created_at")
                 .first()

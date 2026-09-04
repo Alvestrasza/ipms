@@ -24,9 +24,12 @@ def _associated_data(tenant_id: UUID, secret_id: UUID) -> bytes:
     return f"ipms:connector-secret:v1:{tenant_id}:{secret_id}".encode()
 
 
-def store_connector_secret(*, tenant, secret_id: UUID, username: str, password: str) -> ConnectorSecret:
+def store_connector_secret(*, tenant, secret_id: UUID, username: str, password: str, extra: dict | None = None) -> ConnectorSecret:
+    document = {"username": username, "password": password}
+    if extra:
+        document["extra"] = extra
     plaintext = json.dumps(
-        {"username": username, "password": password},
+        document,
         separators=(",", ":"),
     ).encode()
     nonce = os.urandom(12)
@@ -48,6 +51,11 @@ def store_connector_secret(*, tenant, secret_id: UUID, username: str, password: 
 
 
 def load_connector_secret(*, tenant_id: UUID, secret_id: UUID) -> tuple[str, str]:
+    document = load_connector_secret_document(tenant_id=tenant_id, secret_id=secret_id)
+    return document["username"], document["password"]
+
+
+def load_connector_secret_document(*, tenant_id: UUID, secret_id: UUID) -> dict:
     secret = ConnectorSecret.objects.get(id=secret_id, tenant_id=tenant_id)
     plaintext = AESGCM(_key()).decrypt(
         bytes(secret.nonce),
@@ -55,4 +63,6 @@ def load_connector_secret(*, tenant_id: UUID, secret_id: UUID) -> tuple[str, str
         _associated_data(tenant_id, secret_id),
     )
     document = json.loads(plaintext)
-    return document["username"], document["password"]
+    if not isinstance(document, dict) or not isinstance(document.get("username"), str) or not isinstance(document.get("password"), str):
+        raise ValueError("The connector credential document is invalid.")
+    return document

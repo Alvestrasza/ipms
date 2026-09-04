@@ -1846,6 +1846,30 @@ td strong {
 .icon-button--danger:hover:not(:disabled) {
   background: color-mix(in srgb, var(--color-critical) 12%, transparent);
 }
+
+.connector-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.connector-actions .form-error {
+  max-width: 18rem;
+  margin: 0 0 0 0.35rem;
+}
+.connector-interface-details {
+  min-width: 22rem;
+  margin-top: 0.45rem;
+  color: var(--color-text-muted);
+}
+.connector-interface-details summary {
+  cursor: pointer;
+  font-size: 0.72rem;
+}
+.connector-interface-details table {
+  margin-top: 0.5rem;
+  font-size: 0.68rem;
+}
 .danger-button {
   min-height: 36px;
   display: inline-flex;

@@ -6,17 +6,21 @@
 
 #ifdef _WIN32
 #include "ipms/agent/windows_core_pack.hpp"
+#include "ipms/agent/windows_software_pack.hpp"
 #include "ipms/agent/windows_telemetry.hpp"
 #include "ipms/agent/windows_transport.hpp"
 #include "ipms/agent/windows_updater.hpp"
 namespace ipms::agent::windows { int run_windows_service(); }
 #else
+#include "ipms/agent/linux_inventory.hpp"
+#include "ipms/agent/linux_transport.hpp"
 namespace ipms::agent::linux { int run_linux_service(); }
 #endif
 
 int main(int argc, char** argv) {
   const bool console = argc == 2 && std::string_view(argv[1]) == "--console";
   const bool telemetry_console = argc == 2 && std::string_view(argv[1]) == "--telemetry-console";
+  const bool software_console = argc == 2 && std::string_view(argv[1]) == "--software-console";
   const bool run_once = argc == 2 && std::string_view(argv[1]) == "--run-once";
   for (const auto& pack : ipms::agent::builtin_management_packs()) if (!ipms::agent::is_valid_pack_assignment(pack)) return 2;
 #ifdef _WIN32
@@ -29,6 +33,12 @@ int main(int argc, char** argv) {
   }
   if (console) { std::cout << ipms::agent::windows::collect_windows_server_core_inventory_json() << '\n'; return 0; }
   if (telemetry_console) { std::cout << ipms::agent::windows::collect_windows_telemetry_json() << '\n'; return 0; }
+  if (software_console) {
+    for (const auto& page : ipms::agent::windows::collect_windows_software_inventory_pages()) {
+      std::cout << page << '\n';
+    }
+    return 0;
+  }
   if (run_once) {
     const auto inventory = ipms::agent::windows::run_inventory_cycle();
     if (!inventory.succeeded) {
@@ -41,7 +51,16 @@ int main(int argc, char** argv) {
   }
   return ipms::agent::windows::run_windows_service();
 #else
-  (void)console;
+  if (console) { std::cout << ipms::agent::linux::collect_linux_inventory_json() << '\n'; return 0; }
+  if (software_console) {
+    for (const auto& page : ipms::agent::linux::collect_linux_software_inventory_pages()) std::cout << page << '\n';
+    return 0;
+  }
+  if (run_once) {
+    const auto result = ipms::agent::linux::run_inventory_cycle();
+    std::cout << result.message << '\n';
+    return result.succeeded ? 0 : 3;
+  }
   (void)telemetry_console;
   return ipms::agent::linux::run_linux_service();
 #endif

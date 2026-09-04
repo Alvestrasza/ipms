@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ipms-control-plane"
-version = "0.1.52"
+version = "0.2.0"
 description = "IPMS tenant-aware infrastructure management control plane"
 readme = "README.md"
 requires-python = ">=3.14,<3.15"
@@ -12,10 +12,12 @@ license = { text = "Proprietary" }
 dependencies = [
   "cryptography==50.0.1",
   "Django==6.1",
+  "defusedxml==0.7.1",
   "djangorestframework==3.18.0",
   "gunicorn==26.2.0",
   "psycopg[binary]==3.3.4",
   "pypsrp==0.9.1",
+  "pysnmp==7.1.29",
 ]
 
 [tool.setuptools]

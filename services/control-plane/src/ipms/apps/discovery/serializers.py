@@ -10,6 +10,10 @@ from .models import (
     DiscoveryJob,
     PhysicalSystem,
     HyperVVirtualMachine,
+    LinuxSystem,
+    ManagedInfrastructureDevice,
+    SoftwareInventorySnapshot,
+    SoftwarePackage,
     WindowsServer,
     WindowsServerTelemetry,
 )
@@ -152,6 +156,87 @@ class ConnectorCredentialSerializer(serializers.Serializer):
         write_only=True,
         trim_whitespace=False,
     )
+    privacy_key = serializers.CharField(
+        max_length=4096,
+        write_only=True,
+        trim_whitespace=False,
+        required=False,
+        default="",
+    )
+    api_key = serializers.CharField(
+        max_length=4096,
+        write_only=True,
+        trim_whitespace=False,
+        required=False,
+        default="",
+    )
+
+
+class ManagedDeviceEndpointSerializer(serializers.Serializer):
+    connector_type = serializers.ChoiceField(
+        choices=(
+            ConnectorEndpoint.ConnectorType.SOPHOS_FIREWALL,
+            ConnectorEndpoint.ConnectorType.LOADBALANCER_ORG,
+            ConnectorEndpoint.ConnectorType.HPE_COMWARE,
+        )
+    )
+    display_name = serializers.CharField(max_length=255)
+    address = serializers.CharField(max_length=253)
+    port = serializers.IntegerField(min_value=1, max_value=65535)
+
+    def validate_address(self, value: str) -> str:
+        return BmcEndpointSerializer().validate_address(value)
+
+    def validate(self, attrs):
+        address = f"[{attrs['address']}]" if ":" in attrs["address"] else attrs["address"]
+        scheme = "snmp" if attrs["connector_type"] == ConnectorEndpoint.ConnectorType.HPE_COMWARE else "https"
+        attrs["base_url"] = f"{scheme}://{address}:{attrs['port']}"
+        return attrs
+
+
+class ManagedDeviceCertificateProbeSerializer(ManagedDeviceEndpointSerializer):
+    def validate_connector_type(self, value: str) -> str:
+        if value == ConnectorEndpoint.ConnectorType.HPE_COMWARE:
+            raise serializers.ValidationError("SNMP connectors do not use a TLS certificate.")
+        return value
+
+
+class ManagedDeviceEnrollmentSerializer(ManagedDeviceEndpointSerializer):
+    username = serializers.CharField(max_length=255, write_only=True)
+    password = serializers.CharField(max_length=4096, write_only=True, trim_whitespace=False)
+    privacy_key = serializers.CharField(max_length=4096, write_only=True, trim_whitespace=False, required=False, default="")
+    api_key = serializers.CharField(max_length=4096, write_only=True, trim_whitespace=False, required=False, default="")
+    certificate_trust_token = serializers.CharField(max_length=4096, write_only=True, required=False, default="")
+    confirm_certificate_trust = serializers.BooleanField(write_only=True, default=False)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if attrs["connector_type"] == ConnectorEndpoint.ConnectorType.HPE_COMWARE:
+            if not attrs["privacy_key"]:
+                raise serializers.ValidationError({"privacy_key": ["SNMPv3 authPriv requires a privacy key."]})
+        else:
+            if not attrs["certificate_trust_token"]:
+                raise serializers.ValidationError({"certificate_trust_token": ["Certificate confirmation is required."]})
+            if (
+                attrs["connector_type"]
+                == ConnectorEndpoint.ConnectorType.LOADBALANCER_ORG
+                and not attrs["api_key"]
+            ):
+                raise serializers.ValidationError(
+                    {"api_key": ["The Loadbalancer.org API key is required."]}
+                )
+        return attrs
+
+
+class ManagedInfrastructureDeviceSerializer(serializers.ModelSerializer):
+    tenant_id = serializers.UUIDField(read_only=True)
+    connector_id = serializers.UUIDField(read_only=True)
+    connector_type = serializers.CharField(source="connector.connector_type", read_only=True)
+
+    class Meta:
+        model = ManagedInfrastructureDevice
+        fields = ("id", "tenant_id", "connector_id", "connector_type", "category", "name", "vendor", "product", "model", "software_version", "serial_number", "uptime_seconds", "health", "interfaces", "details", "discovered_at")
+        read_only_fields = fields
 
 class PhysicalSystemSerializer(serializers.ModelSerializer):
     tenant_id = serializers.UUIDField(read_only=True)
@@ -285,6 +370,91 @@ class HyperVVirtualMachineSerializer(serializers.ModelSerializer):
             "configuration_version",
             "ip_addresses",
             "observed_at",
+        )
+        read_only_fields = fields
+
+
+class LinuxSystemSerializer(serializers.ModelSerializer):
+    tenant_id = serializers.UUIDField(read_only=True)
+
+    class Meta:
+        model = LinuxSystem
+        fields = (
+            "id",
+            "tenant_id",
+            "source_id",
+            "hostname",
+            "fqdn",
+            "system_type",
+            "distribution",
+            "distribution_version",
+            "kernel_version",
+            "architecture",
+            "manufacturer",
+            "model",
+            "serial_number",
+            "logical_processors",
+            "memory_bytes",
+            "agent_version",
+            "health",
+            "network_interfaces",
+            "fixed_volumes",
+            "last_seen_at",
+        )
+        read_only_fields = fields
+
+
+class SoftwareInventorySnapshotSerializer(serializers.ModelSerializer):
+    tenant_id = serializers.UUIDField(read_only=True)
+    enrollment_id = serializers.UUIDField(read_only=True)
+    device_uri = serializers.CharField(
+        source="enrollment.device_uri",
+        read_only=True,
+    )
+    display_name = serializers.CharField(
+        source="enrollment.display_name",
+        read_only=True,
+    )
+
+    class Meta:
+        model = SoftwareInventorySnapshot
+        fields = (
+            "id",
+            "tenant_id",
+            "enrollment_id",
+            "device_uri",
+            "display_name",
+            "platform",
+            "status",
+            "reboot_required",
+            "update_scan_status",
+            "last_update_scan_at",
+            "last_update_install_at",
+            "package_count",
+            "updates_available",
+            "completed_at",
+        )
+        read_only_fields = fields
+
+
+class SoftwarePackageSerializer(serializers.ModelSerializer):
+    tenant_id = serializers.UUIDField(read_only=True)
+    snapshot_id = serializers.UUIDField(read_only=True)
+
+    class Meta:
+        model = SoftwarePackage
+        fields = (
+            "id",
+            "tenant_id",
+            "snapshot_id",
+            "source_id",
+            "name",
+            "installed_version",
+            "available_version",
+            "publisher",
+            "package_type",
+            "update_state",
+            "is_os_component",
         )
         read_only_fields = fields
 

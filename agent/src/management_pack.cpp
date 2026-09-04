@@ -6,8 +6,10 @@ namespace ipms::agent {
 
 const std::vector<ManagementPack>& builtin_management_packs() {
   static const std::vector<ManagementPack> packs{
-      {"windows-server-core", "0.1.37", AccessMode::read_inventory, {}, {"windows.os", "windows.hardware", "windows.storage", "windows.network", "windows.roles-features"}},
-      {"hyper-v-host", "0.1.37", AccessMode::read_inventory, {"windows-server-core"}, {"hyperv.host", "hyperv.virtual-machines", "hyperv.network"}},
+      {"windows-server-core", "0.2.0", AccessMode::read_inventory, {}, {"windows.os", "windows.hardware", "windows.storage", "windows.network", "windows.roles-features"}},
+      {"windows-software", "0.2.0", AccessMode::read_inventory, {"windows-server-core"}, {"windows.software", "windows.update-posture"}},
+      {"hyper-v-host", "0.2.0", AccessMode::read_inventory, {"windows-server-core"}, {"hyperv.host", "hyperv.virtual-machines", "hyperv.network"}},
+      {"linux-core", "0.2.0", AccessMode::read_inventory, {}, {"linux.os", "linux.hardware", "linux.storage", "linux.network", "linux.software", "linux.update-posture"}},
   };
   return packs;
 }

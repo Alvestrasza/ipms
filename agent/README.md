@@ -2,7 +2,12 @@
 
 The IPMS Agent is a native C++20 service for customer-managed Windows and Linux systems. It will establish an outbound, mutually authenticated connection to the IPMS Control Plane and collect only capabilities explicitly assigned to the enrolled device.
 
-The initial implementation contains the pack registry and the read-only `windows-server-core` pack. The Windows executable can run in inventory-only diagnostic mode with `--console`, perform one bounded connection cycle with `--run-once`, or run as the `IPMS Agent` Windows service. Version 0.1.17 enrolls with a non-exportable LocalMachine ECDSA P-256 key, validates the one-time Gateway certificate pin, installs the dedicated Agent trust chain, and sends bounded inventory through TLS 1.3 and mTLS. Version 0.1.27 adds installed Windows Server roles, role services, and features to that inventory. Version 0.1.28 makes the installer language-independent, automatically omits shell integration on Windows Server Core, and rolls back newly created service artifacts when installation fails. Version 0.1.29 statically links the MSVC runtime so a minimal Windows Server Core installation does not require a separately installed Visual C++ Redistributable. Version 0.1.30 retries enrollment every ten seconds until the first inventory succeeds, while retaining the five-minute steady-state inventory interval. Version 0.1.31 normalizes unavailable Windows adapter link-speed sentinels so Hyper-V inventory remains valid. Version 0.1.32 adds the native fixed-action lifecycle updater, device-bound artifact retrieval, independent digest verification, rollback, and result reporting. Version 0.1.33 keeps the Server Manager query bounded to one minute while allowing slow provider initialization to complete. Version 0.1.34 waits for the service process to exit, retries bounded file replacement locks, reports terminal failure paths, restores the service after failed updates, and stages its hardened update runner from the current Agent binary so future lifecycle updates do not depend on an outdated helper executable. Version 0.1.35 adds bounded, non-sensitive failure classification for Windows Server role and feature collection so provider, timeout, result, and payload failures can be distinguished without exposing raw host diagnostics. Version 0.1.36 adds a native read-only installed-server-feature fallback for systems without the Server Manager WMI provider and preserves stable role hierarchy identifiers across display languages. Version 0.1.37 separates native workstation, server, and domain-controller identity from physical or virtual placement, normalizes the Windows 11 LTSC registry compatibility name, and adds bounded local Hyper-V virtual-machine inventory.
+The implementation contains the pack registry and fixed read-only Windows and
+Linux inventory capabilities. Build 0.2.0 adds a native Linux service and
+bounded, paged installed-software and update-posture inventory. Both platforms
+use the same Agent-initiated TCP 9419 enrollment and mTLS trust boundary. The
+Windows executable also reports roles/features and local Hyper-V VMs; it never
+invokes `Win32_Product`, PowerShell, or a server-supplied query.
 
 ## Installed roles and features
 
@@ -30,6 +35,23 @@ configuration version, and integration-service-reported IP addresses. A
 45-second deadline, bounded related-object reads, and a 40-KiB JSON limit keep
 the shared Gateway message below its transport ceiling. The pack never calls a
 Hyper-V mutation method and accepts no WMI expression from the Control Plane.
+
+## Software and update inventory
+
+Windows reads machine-wide uninstall registration from both registry views and
+bounded Windows Update history timestamps. It does not trigger Windows
+Installer repair and does not start a Windows Update scan. Linux reads the
+native dpkg database and uses a fixed, argument-only `apt-get` simulation to
+derive pending package updates. Payloads are split into bounded pages before
+they enter the common mTLS channel. See
+[`CROSS-PLATFORM-SOFTWARE-INVENTORY.md`](../docs/architecture/CROSS-PLATFORM-SOFTWARE-INVENTORY.md).
+
+## Linux installation
+
+The Linux package contains the native binary, a hardened systemd unit, and an
+installer. Its private key, certificate, and settings are stored under
+`/var/lib/ipms-agent` with root-only permissions. See
+[`LINUX-AGENT-INSTALLATION.md`](../docs/operations/LINUX-AGENT-INSTALLATION.md).
 
 ## Local configuration
 

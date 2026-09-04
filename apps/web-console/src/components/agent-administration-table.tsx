@@ -54,12 +54,14 @@ export function AgentAdministrationTable({
   const selectedOutdated = filtered.filter(
     (agent) =>
       selected.has(agent.enrollment_id) &&
+      agent.platform === "windows" &&
       agent.compliance === "outdated" &&
       !agent.active_job &&
       agent.status !== "revoked",
   );
   const outdated = filtered.filter(
     (agent) =>
+      agent.platform === "windows" &&
       agent.compliance === "outdated" &&
       !agent.active_job &&
       agent.status !== "revoked",
@@ -163,23 +165,29 @@ export function AgentAdministrationTable({
 
   async function updateSelected() {
     const bootstrap = selectedOutdated.find(
-      (agent) => !agent.lifecycle_capable,
+      (agent) => agent.platform === "windows" && !agent.lifecycle_capable,
     );
     if (bootstrap) {
       setBootstrapAgent(bootstrap);
       return;
     }
-    for (const agent of selectedOutdated) await queue(agent, "update");
+    for (const agent of selectedOutdated.filter(
+      (item) => item.platform === "windows",
+    ))
+      await queue(agent, "update");
     setSelected(new Set());
   }
 
   async function updateAllOutdated() {
-    const bootstrap = outdated.find((agent) => !agent.lifecycle_capable);
+    const bootstrap = outdated.find(
+      (agent) => agent.platform === "windows" && !agent.lifecycle_capable,
+    );
     if (bootstrap) {
       setBootstrapAgent(bootstrap);
       return;
     }
-    for (const agent of outdated) await queue(agent, "update");
+    for (const agent of outdated.filter((item) => item.platform === "windows"))
+      await queue(agent, "update");
   }
 
   return (
@@ -252,6 +260,7 @@ export function AgentAdministrationTable({
                   <td>
                     <input
                       type="checkbox"
+                      disabled={agent.platform !== "windows"}
                       checked={selected.has(agent.enrollment_id)}
                       onChange={() => toggle(agent.enrollment_id)}
                       aria-label={`${copy.select} ${agent.fqdn}`}
@@ -290,7 +299,8 @@ export function AgentAdministrationTable({
                         ? ` · v${agent.target_version}`
                         : ""}
                     </small>
-                    {!agent.lifecycle_capable ? (
+                    {agent.platform === "windows" &&
+                    !agent.lifecycle_capable ? (
                       <small>{copy.bootstrapRequired}</small>
                     ) : null}
                   </td>
@@ -301,7 +311,10 @@ export function AgentAdministrationTable({
                         className="icon-button icon-button--compact"
                         type="button"
                         disabled={
-                          isBusy || pending || agent.compliance !== "outdated"
+                          agent.platform !== "windows" ||
+                          isBusy ||
+                          pending ||
+                          agent.compliance !== "outdated"
                         }
                         onClick={() => {
                           if (agent.lifecycle_capable)
@@ -325,7 +338,10 @@ export function AgentAdministrationTable({
                         className="icon-button icon-button--compact icon-button--danger"
                         type="button"
                         disabled={
-                          isBusy || pending || agent.status === "revoked"
+                          agent.platform !== "windows" ||
+                          isBusy ||
+                          pending ||
+                          agent.status === "revoked"
                         }
                         onClick={() => {
                           if (!agent.lifecycle_capable) {

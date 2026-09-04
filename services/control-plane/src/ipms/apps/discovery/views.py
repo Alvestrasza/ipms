@@ -35,6 +35,10 @@ from .models import (
     DiscoveryJob,
     PhysicalSystem,
     HyperVVirtualMachine,
+    LinuxSystem,
+    ManagedInfrastructureDevice,
+    SoftwareInventorySnapshot,
+    SoftwarePackage,
     WindowsServer,
     WindowsServerRole,
     WindowsServerTelemetry,
@@ -54,6 +58,12 @@ from .serializers import (
     WindowsServerSerializer,
     WindowsServerTelemetrySerializer,
     HyperVVirtualMachineSerializer,
+    LinuxSystemSerializer,
+    ManagedDeviceCertificateProbeSerializer,
+    ManagedDeviceEnrollmentSerializer,
+    ManagedInfrastructureDeviceSerializer,
+    SoftwareInventorySnapshotSerializer,
+    SoftwarePackageSerializer,
     neutralize_public_protocol_text,
     public_bmc_family,
 )
@@ -64,7 +74,6 @@ def _active_connector(request, pk):
         ConnectorEndpoint,
         id=pk,
         tenant=request.tenant,
-        connector_type=ConnectorEndpoint.ConnectorType.ILO_REDFISH,
         removed_at__isnull=True,
     )
 
@@ -79,7 +88,7 @@ def _queue_discovery(endpoint: ConnectorEndpoint, actor: str) -> DiscoveryJob:
     return DiscoveryJob.objects.create(
         tenant=endpoint.tenant,
         connector=endpoint,
-        connector_type=DiscoveryJob.ConnectorType.ILO_REDFISH,
+        connector_type=endpoint.connector_type,
         requested_by=actor,
     )
 
@@ -93,6 +102,115 @@ class ConnectorEndpointListView(ListAPIView):
             tenant=self.request.tenant,
             removed_at__isnull=True,
         )
+
+
+class ManagedInfrastructureDeviceListView(ListAPIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess)
+    serializer_class = ManagedInfrastructureDeviceSerializer
+
+    def get_queryset(self):
+        queryset = ManagedInfrastructureDevice.objects.filter(
+            tenant=self.request.tenant,
+            connector__removed_at__isnull=True,
+        ).select_related("connector")
+        category = self.request.query_params.get("category", "")
+        if category:
+            if category not in ManagedInfrastructureDevice.Category.values:
+                raise ValidationError({"category": ["invalid_category"]})
+            queryset = queryset.filter(category=category)
+        return queryset
+
+
+class ManagedDeviceCertificateProbeView(APIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess, CanManageConnectors)
+
+    def post(self, request):
+        serializer = ManagedDeviceCertificateProbeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            observation = request_bmc_certificate_probe(
+                data["base_url"],
+                timeout=settings.BMC_CONNECT_TIMEOUT_SECONDS,
+                port=settings.CERTIFICATE_PROBE_PORT,
+                token=settings.CERTIFICATE_PROBE_TOKEN,
+            )
+        except CertificateProbeError as exc:
+            raise ValidationError({"certificate": [exc.code]}) from exc
+        return Response({
+            "certificate": observation.public_document(),
+            "requires_explicit_trust": not observation.trusted_by_system,
+            "certificate_trust_token": create_certificate_trust_token(
+                tenant_id=str(request.tenant.id),
+                base_url=data["base_url"],
+                observation=observation,
+            ),
+        })
+
+
+class ManagedDeviceEnrollmentView(APIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess, CanManageConnectors)
+
+    def post(self, request):
+        serializer = ManagedDeviceEnrollmentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        fingerprint = ""
+        if data["connector_type"] != ConnectorEndpoint.ConnectorType.HPE_COMWARE:
+            try:
+                trust = load_certificate_trust_token(data["certificate_trust_token"])
+            except CertificateProbeError as exc:
+                raise ValidationError({"certificate_trust_token": [exc.code]}) from exc
+            if trust.get("tenant_id") != str(request.tenant.id) or trust.get("base_url") != data["base_url"]:
+                raise ValidationError({"certificate_trust_token": ["certificate_trust_scope_mismatch"]})
+            if not trust.get("trusted_by_system") and not data["confirm_certificate_trust"]:
+                raise ValidationError({"confirm_certificate_trust": ["explicit_certificate_trust_required"]})
+            try:
+                observation = request_bmc_certificate_probe(
+                    data["base_url"],
+                    timeout=settings.BMC_CONNECT_TIMEOUT_SECONDS,
+                    port=settings.CERTIFICATE_PROBE_PORT,
+                    token=settings.CERTIFICATE_PROBE_TOKEN,
+                )
+            except CertificateProbeError as exc:
+                raise ValidationError({"certificate": [exc.code]}) from exc
+            if observation.fingerprint_sha256 != trust.get("fingerprint_sha256"):
+                raise ValidationError(
+                    {"certificate": ["certificate_changed_during_enrollment"]}
+                )
+            fingerprint = observation.fingerprint_sha256
+        if ConnectorEndpoint.objects.filter(tenant=request.tenant, base_url=data["base_url"], removed_at__isnull=True).exists():
+            raise ValidationError({"address": ["This endpoint is already enrolled."]})
+        with transaction.atomic():
+            endpoint = ConnectorEndpoint.objects.create(
+                tenant=request.tenant,
+                connector_type=data["connector_type"],
+                display_name=data["display_name"],
+                base_url=data["base_url"],
+                tls_certificate_sha256=fingerprint,
+            )
+            store_connector_secret(
+                tenant=request.tenant,
+                secret_id=endpoint.credential_reference,
+                username=data["username"],
+                password=data["password"],
+                extra={
+                    "privacy_key": data.get("privacy_key", ""),
+                    "api_key": data.get("api_key", ""),
+                },
+            )
+            job = _queue_discovery(endpoint, request.user.get_username())
+            AuditEvent.objects.create(
+                tenant=request.tenant,
+                actor=request.user.get_username(),
+                action="connector.enroll",
+                object_type="connector_endpoint",
+                object_id=str(endpoint.id),
+                outcome=AuditEvent.Outcome.SUCCEEDED,
+                correlation_id=job.correlation_id,
+                details={"connector_type": endpoint.connector_type, "job_id": str(job.id)},
+            )
+        return Response({"connector": ConnectorEndpointSerializer(endpoint).data, "discovery_job": DiscoveryJobSerializer(job).data}, status=status.HTTP_201_CREATED)
 
 
 class BmcCertificateProbeView(APIView):
@@ -239,11 +357,30 @@ class ConnectorCredentialView(APIView):
         endpoint = _active_connector(request, pk)
         serializer = ConnectorCredentialSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        if (
+            endpoint.connector_type == ConnectorEndpoint.ConnectorType.HPE_COMWARE
+            and not serializer.validated_data["privacy_key"]
+        ):
+            raise ValidationError(
+                {"privacy_key": ["SNMPv3 authPriv requires a privacy key."]}
+            )
+        if (
+            endpoint.connector_type
+            == ConnectorEndpoint.ConnectorType.LOADBALANCER_ORG
+            and not serializer.validated_data["api_key"]
+        ):
+            raise ValidationError(
+                {"api_key": ["The Loadbalancer.org API key is required."]}
+            )
         store_connector_secret(
             tenant=request.tenant,
             secret_id=endpoint.credential_reference,
             username=serializer.validated_data["username"],
             password=serializer.validated_data["password"],
+            extra={
+                "privacy_key": serializer.validated_data["privacy_key"],
+                "api_key": serializer.validated_data["api_key"],
+            },
         )
         endpoint.health = ConnectorEndpoint.Health.UNKNOWN
         endpoint.last_error_code = ""
@@ -267,15 +404,16 @@ class ConnectorCredentialView(APIView):
             correlation_id=job.correlation_id,
             details={"connector_type": endpoint.connector_type, "job_id": str(job.id)},
         )
-        BmcCommunicationLog.objects.create(
-            tenant=request.tenant,
-            connector=endpoint,
-            bmc_name=endpoint.display_name,
-            bmc_family=endpoint.bmc_family,
-            severity=BmcCommunicationLog.Severity.INFO,
-            event_type="credential.rotated",
-            correlation_id=job.correlation_id,
-        )
+        if endpoint.connector_type == ConnectorEndpoint.ConnectorType.ILO_REDFISH:
+            BmcCommunicationLog.objects.create(
+                tenant=request.tenant,
+                connector=endpoint,
+                bmc_name=endpoint.display_name,
+                bmc_family=endpoint.bmc_family,
+                severity=BmcCommunicationLog.Severity.INFO,
+                event_type="credential.rotated",
+                correlation_id=job.correlation_id,
+            )
         return Response(
             {"discovery_job": DiscoveryJobSerializer(job).data},
             status=status.HTTP_202_ACCEPTED,
@@ -289,14 +427,15 @@ class ConnectorDetailView(APIView):
     def delete(self, request, pk):
         endpoint = _active_connector(request, pk)
         endpoint = ConnectorEndpoint.objects.select_for_update().get(id=endpoint.id)
-        BmcCommunicationLog.objects.create(
-            tenant=request.tenant,
-            connector=endpoint,
-            bmc_name=endpoint.display_name,
-            bmc_family=endpoint.bmc_family,
-            severity=BmcCommunicationLog.Severity.INFO,
-            event_type="connector.removed",
-        )
+        if endpoint.connector_type == ConnectorEndpoint.ConnectorType.ILO_REDFISH:
+            BmcCommunicationLog.objects.create(
+                tenant=request.tenant,
+                connector=endpoint,
+                bmc_name=endpoint.display_name,
+                bmc_family=endpoint.bmc_family,
+                severity=BmcCommunicationLog.Severity.INFO,
+                event_type="connector.removed",
+            )
         ConnectorSecret.objects.filter(
             id=endpoint.credential_reference,
             tenant=request.tenant,
@@ -519,6 +658,75 @@ class HyperVVirtualMachineListView(ListAPIView):
                 raise ValidationError({"state": ["invalid_state"]})
             queryset = queryset.filter(state=state)
         return queryset.select_related("host")
+
+
+class LinuxSystemListView(ListAPIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess)
+    serializer_class = LinuxSystemSerializer
+
+    def get_queryset(self):
+        queryset = LinuxSystem.objects.filter(tenant=self.request.tenant)
+        system_type = self.request.query_params.get("system_type", "")
+        if system_type:
+            if system_type not in LinuxSystem.SystemType.values:
+                raise ValidationError({"system_type": ["invalid_system_type"]})
+            queryset = queryset.filter(system_type=system_type)
+        return queryset
+
+
+class LinuxSystemDetailView(RetrieveAPIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess)
+    serializer_class = LinuxSystemSerializer
+
+    def get_queryset(self):
+        return LinuxSystem.objects.filter(tenant=self.request.tenant)
+
+
+class SoftwareInventorySnapshotListView(ListAPIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess)
+    serializer_class = SoftwareInventorySnapshotSerializer
+
+    def get_queryset(self):
+        queryset = SoftwareInventorySnapshot.objects.filter(
+            tenant=self.request.tenant,
+            status=SoftwareInventorySnapshot.Status.COMPLETED,
+        ).select_related("enrollment")
+        enrollment = self.request.query_params.get("enrollment", "")
+        if enrollment:
+            try:
+                enrollment_id = uuid.UUID(enrollment)
+            except ValueError as exc:
+                raise ValidationError({"enrollment": ["invalid_enrollment"]}) from exc
+            queryset = queryset.filter(enrollment_id=enrollment_id)
+        device_uri = self.request.query_params.get("device_uri", "").strip()
+        if device_uri:
+            if len(device_uri) > 64 or not device_uri.startswith("urn:ipms:agent:"):
+                raise ValidationError({"device_uri": ["invalid_device_uri"]})
+            queryset = queryset.filter(enrollment__device_uri=device_uri)
+        return queryset
+
+
+class SoftwarePackageListView(ListAPIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess)
+    serializer_class = SoftwarePackageSerializer
+
+    def get_queryset(self):
+        snapshot = get_object_or_404(
+            SoftwareInventorySnapshot,
+            id=self.kwargs["pk"],
+            tenant=self.request.tenant,
+            status=SoftwareInventorySnapshot.Status.COMPLETED,
+        )
+        queryset = SoftwarePackage.objects.filter(
+            tenant=self.request.tenant,
+            snapshot=snapshot,
+        )
+        update_state = self.request.query_params.get("update_state", "")
+        if update_state:
+            if update_state not in SoftwarePackage.UpdateState.values:
+                raise ValidationError({"update_state": ["invalid_update_state"]})
+            queryset = queryset.filter(update_state=update_state)
+        return queryset
 
 
 class WindowsServerDetailView(RetrieveAPIView):

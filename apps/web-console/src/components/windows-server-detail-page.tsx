@@ -13,12 +13,14 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { ConsoleShell } from "@/components/console-shell";
+import { SoftwareInventoryPanel } from "@/components/software-inventory-panel";
 import { StatusPill } from "@/components/status-pill";
 import { WindowsServerTelemetry } from "@/components/windows-server-telemetry";
 import { documentLocale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionaries";
 import { resolveLocale } from "@/i18n/server";
 import { getServerSession } from "@/lib/server-auth";
+import { getSoftwareInventory } from "@/lib/server-software";
 import { getWindowsServer } from "@/lib/server-windows";
 import { selectedTenant } from "@/lib/tenant-selection";
 
@@ -107,6 +109,7 @@ export async function WindowsServerDetailPage({
     if (target) redirect(target as Route);
     notFound();
   }
+  const software = await getSoftwareInventory(tenant.id, server.source_id);
 
   const agentLabels = {
     "not-enrolled": dictionary.windowsServers.notEnrolled,
@@ -347,6 +350,13 @@ export async function WindowsServerDetailPage({
           free: copy.telemetryFree,
           observed: copy.telemetryObserved,
         }}
+      />
+
+      <SoftwareInventoryPanel
+        copy={dictionary.softwareInventory}
+        locale={locale}
+        snapshot={software.snapshot}
+        packages={software.packages}
       />
 
       <section

@@ -18,6 +18,7 @@ export type AgentLifecycleJob = {
 export type ManagedAgent = {
   enrollment_id: string;
   device_uri: string;
+  platform: "windows" | "linux";
   fqdn: string;
   operating_system: string;
   os_version: string;

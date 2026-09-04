@@ -9,23 +9,26 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-IPMS application build `0.1.41` is in the v0.1.0 read-only foundation phase. A
+IPMS application build `0.2.0` extends the read-only foundation. A
 standalone development
 Appliance currently runs the tenant-aware Django Control Plane, PostgreSQL,
 the multilingual Next.js Web Console, and the isolated connector worker.
 
 The implemented physical-infrastructure foundation includes read-only HPE iLO
-Redfish discovery, portal-managed BMC enrollment, explicit certificate review,
+API discovery, portal-managed BMC enrollment, explicit certificate review,
 encrypted write-only credentials, credential rotation, soft removal, safe
 communication metadata, filtering, and CSV export. Dell iDRAC and generic
 Redfish profiles are selectable but require dedicated hardware compatibility
 acceptance before they are described as supported.
 
-The Windows Server portal foundation provides separate tenant-scoped views for
-physical and virtual servers, including collapsible navigation and exact
-server filtering for every installed top-level Windows role. Its normalized
-read-only API is prepared for the native IPMS Agent and future Hyper-V
-discovery without exposing an inventory write path to browsers.
+Windows workstations are separated from Windows servers and grouped by product
+family, starting with Windows 11 LTSC. Hyper-V hosts report a bounded VM
+inventory with state, vCPU, memory, uptime, configuration version, and guest IP
+addresses. Windows and Linux Agents report hardware, network, installed
+software, and operating-system update posture through the outbound mTLS
+Gateway. The first Sophos Firewall, Loadbalancer.org ADC, and HPE Comware 7.1
+connector foundations provide fixed read-only discovery operations; live
+compatibility acceptance remains device- and firmware-specific.
 
 The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 
@@ -40,6 +43,8 @@ The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 - [Windows Server inventory preparation](docs/operations/WINDOWS-SERVER-INVENTORY.md)
 - [Agent PKI and mTLS Gateway operations](docs/operations/AGENT-PKI-AND-GATEWAY.md)
 - [Windows Agent installation and local configuration](docs/operations/WINDOWS-AGENT-INSTALLATION.md)
+- [Linux Agent installation](docs/operations/LINUX-AGENT-INSTALLATION.md)
+- [Network connector management](docs/operations/NETWORK-CONNECTOR-MANAGEMENT.md)
 - [Windows Agent 0.1.16 foundation acceptance](docs/operations/WINDOWS-AGENT-0.1.16-ACCEPTANCE.md)
 - [Windows Agent 0.1.17 enrollment and inventory](docs/operations/WINDOWS-AGENT-0.1.17-ENROLLMENT.md)
 - [Portal Windows Agent deployment](docs/operations/PORTAL-WINDOWS-AGENT-DEPLOYMENT.md)
@@ -55,6 +60,8 @@ The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 - [ADR-0004: Local Agent Configuration and Control Panel Integration](docs/architecture/ADR-0004-LOCAL-AGENT-CONFIGURATION.md)
 - [ADR-0005: Portal Windows Agent Deployment](docs/architecture/ADR-0005-PORTAL-WINDOWS-AGENT-DEPLOYMENT.md)
 - [Agent contract](docs/architecture/AGENT-CONTRACT.md)
+- [Cross-platform software inventory](docs/architecture/CROSS-PLATFORM-SOFTWARE-INVENTORY.md)
+- [Network connector security boundary](docs/architecture/NETWORK-CONNECTOR-BOUNDARY.md)
 
 ## Source Layout
 

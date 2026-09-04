@@ -53,6 +53,10 @@ class WindowsAgentDeploymentPreflightSerializer(serializers.Serializer):
         return WindowsAgentDeploymentRequestSerializer().validate_address(value)
 
 
+class LinuxAgentEnrollmentRequestSerializer(serializers.Serializer):
+    display_name = serializers.CharField(max_length=255)
+
+
 class WindowsAgentDeploymentSerializer(serializers.ModelSerializer):
     tenant_id = serializers.UUIDField(read_only=True)
 

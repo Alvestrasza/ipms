@@ -119,6 +119,10 @@ class AgentGatewayIdentity(models.Model):
 
 
 class AgentEnrollment(models.Model):
+    class Platform(models.TextChoices):
+        WINDOWS = "windows", "Windows"
+        LINUX = "linux", "Linux"
+
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
         ACTIVE = "active", "Active"
@@ -134,6 +138,11 @@ class AgentEnrollment(models.Model):
     device_id = models.UUIDField(default=uuid.uuid4, editable=False)
     device_uri = models.CharField(max_length=64, unique=True)
     display_name = models.CharField(max_length=255)
+    platform = models.CharField(
+        max_length=16,
+        choices=Platform.choices,
+        default=Platform.WINDOWS,
+    )
     status = models.CharField(
         max_length=16,
         choices=Status.choices,

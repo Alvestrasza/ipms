@@ -17,7 +17,13 @@ from django.core.management.base import CommandError
 from django.test import TestCase
 
 from ipms.apps.audit.models import AuditEvent
-from ipms.apps.discovery.models import WindowsServer, WindowsServerTelemetry
+from ipms.apps.discovery.models import (
+    LinuxSystem,
+    SoftwareInventorySnapshot,
+    SoftwarePackage,
+    WindowsServer,
+    WindowsServerTelemetry,
+)
 from ipms.apps.tenancy.models import Tenant
 
 from .crypto import (
@@ -39,6 +45,7 @@ from .services import (
     configure_external_issuing_pki,
     create_enrollment_token,
     confirm_inventory,
+    confirm_software_inventory,
     confirm_telemetry,
     enroll_agent,
     export_gateway_runtime,
@@ -260,7 +267,7 @@ class ManagedAgentPkiTests(TestCase):
         self.assertEqual(context.minimum_version, ssl.TLSVersion.TLSv1_3)
         self.assertEqual(context.verify_mode, ssl.CERT_OPTIONAL)
         if os.name != "nt":
-            self.assertEqual((runtime / "gateway.key").stat().st_mode & 0o777, 0o600)
+            self.assertEqual((runtime / "gateway.key").stat().st_mode & 0o777, 0o640)
         self.assertTrue((runtime / "agent-trust.pem").read_text().startswith("-----BEGIN CERTIFICATE-----"))
 
     def test_gateway_envelope_is_bounded_and_rejects_non_objects(self) -> None:
@@ -560,6 +567,101 @@ class ManagedAgentPkiTests(TestCase):
                 agent_version="0.1.37",
                 inventory=inventory,
             )
+
+    def test_linux_inventory_and_paged_software_snapshot_are_tenant_scoped(self) -> None:
+        enrollment, raw_token, _ = create_enrollment_token(
+            tenant=self.tenant,
+            display_name="Synthetic Linux System",
+            actor="test-operator",
+            platform=AgentEnrollment.Platform.LINUX,
+        )
+        enrollment, _, _ = enroll_agent(raw_token=raw_token, csr_pem=create_csr()[1])
+        confirm_inventory(
+            enrollment,
+            agent_version="0.2.0",
+            inventory={
+                "schema_version": "1",
+                "pack": "linux-core",
+                "agent_gateway_port": 9419,
+                "hostname": "linux-fixture",
+                "fqdn": "linux-fixture.example.invalid",
+                "distribution": "Ubuntu",
+                "distribution_version": "26.04",
+                "kernel_version": "7.0.0-fixture",
+                "architecture": "x86_64",
+                "manufacturer": "Synthetic Vendor",
+                "model": "Synthetic VM",
+                "serial_number": "fixture-serial",
+                "machine_type": "virtual",
+                "logical_processors": 4,
+                "memory_total_bytes": 8 * 1024**3,
+                "network_interfaces": [],
+                "fixed_volumes": [],
+            },
+        )
+        system = LinuxSystem.objects.get(source_id=enrollment.device_uri)
+        self.assertEqual(system.tenant, self.tenant)
+        self.assertEqual(system.system_type, LinuxSystem.SystemType.VIRTUAL)
+        self.assertEqual(system.distribution, "Ubuntu")
+
+        snapshot_id = uuid.uuid4()
+        common = {
+            "schema_version": "1",
+            "platform": "linux",
+            "snapshot_id": str(snapshot_id),
+            "page_count": 2,
+            "reboot_required": False,
+            "update_scan_status": "updates-available",
+            "last_update_scan_at": "2026-09-04T00:00:00Z",
+            "last_update_install_at": None,
+        }
+        confirm_software_inventory(
+            enrollment,
+            agent_version="0.2.0",
+            document={
+                **common,
+                "page_index": 0,
+                "packages": [
+                    {
+                        "source_id": "dpkg:alpha:amd64",
+                        "name": "alpha",
+                        "installed_version": "1.0",
+                        "available_version": "1.1",
+                        "publisher": "",
+                        "package_type": "deb",
+                        "update_state": "update-available",
+                        "is_os_component": True,
+                    }
+                ],
+            },
+        )
+        snapshot = SoftwareInventorySnapshot.objects.get(id=snapshot_id)
+        self.assertEqual(snapshot.status, SoftwareInventorySnapshot.Status.RECEIVING)
+        confirm_software_inventory(
+            enrollment,
+            agent_version="0.2.0",
+            document={
+                **common,
+                "page_index": 1,
+                "packages": [
+                    {
+                        "source_id": "dpkg:beta:amd64",
+                        "name": "beta",
+                        "installed_version": "2.0",
+                        "available_version": "",
+                        "publisher": "",
+                        "package_type": "deb",
+                        "update_state": "current",
+                        "is_os_component": False,
+                    }
+                ],
+            },
+        )
+        snapshot.refresh_from_db()
+        self.assertEqual(snapshot.status, SoftwareInventorySnapshot.Status.COMPLETED)
+        self.assertEqual(snapshot.package_count, 2)
+        self.assertEqual(snapshot.updates_available, 1)
+        self.assertEqual(SoftwarePackage.objects.filter(snapshot=snapshot).count(), 2)
 
     def test_telemetry_replaces_only_the_current_certificate_tenant_sample(self) -> None:
         enrollment, raw_token, _ = create_enrollment_token(

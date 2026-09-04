@@ -265,6 +265,24 @@ Agent into a remote administration channel.
 - Live connector acceptance remains pending until a supported endpoint and a
   dedicated read-only credential are provided for each product family.
 
+### v0.2.0 Implementation Checkpoint
+
+Build 0.2.0 provides the native Linux Agent, cross-platform paged software
+inventory, Linux package update posture, Windows update-history timestamps,
+Windows client classification, Hyper-V VM inventory, and the first constrained
+read-only operations for Sophos Firewall, Loadbalancer.org ADC, and HPE
+Comware 7.1 devices. Connector credentials are encrypted and write-only; HTTPS
+certificates require an explicit current trust decision and Comware requires
+SNMPv3 authPriv.
+
+The following compatibility work remains an acceptance requirement rather than
+an implemented claim: live validation on every supported vendor/firmware
+combination, Sophos route and HA normalization, Loadbalancer.org HA and virtual
+service normalization, and Comware IRF, VLAN, LACP, LLDP, and health-counter
+normalization. Windows software inventory deliberately reports update state as
+unknown until a bounded, non-triggering Windows Update source is implemented;
+it does not start an update scan merely to populate inventory.
+
 ## Licensing and Editions
 
 - IPMS is proprietary software distributed under an A-Corp agreement or EULA.

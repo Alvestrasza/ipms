@@ -8,6 +8,7 @@ import {
   Plus,
   ShieldAlert,
   ShieldCheck,
+  TerminalSquare,
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -22,6 +23,12 @@ type Deployment = {
   id: string;
   status: "queued" | "running" | "succeeded" | "failed";
   error_code: string;
+};
+
+type LinuxEnrollment = {
+  enrollment_id: string;
+  bootstrap_document: Record<string, string | number>;
+  expires_in_minutes: number;
 };
 
 type WindowsCertificate = {
@@ -93,11 +100,14 @@ export function AddSystemDialog({
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [bmcOpen, setBmcOpen] = useState(false);
   const [windowsOpen, setWindowsOpen] = useState(false);
+  const [linuxOpen, setLinuxOpen] = useState(false);
   const [busy, setBusy] = useState<"checking" | "queuing" | null>(null);
   const [error, setError] = useState("");
   const [password, setPassword] = useState("");
   const [deployment, setDeployment] = useState<Deployment | null>(null);
   const [preflight, setPreflight] = useState<WindowsPreflight | null>(null);
+  const [linuxEnrollment, setLinuxEnrollment] =
+    useState<LinuxEnrollment | null>(null);
 
   useEffect(() => {
     if (!deployment || !["queued", "running"].includes(deployment.status)) {
@@ -143,6 +153,52 @@ export function AddSystemDialog({
     setDeployment(null);
     setPreflight(null);
     setError("");
+  }
+
+  function closeLinux() {
+    if (busy) return;
+    setLinuxOpen(false);
+    setLinuxEnrollment(null);
+    setError("");
+  }
+
+  async function createLinuxEnrollment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy("queuing");
+    setError("");
+    const form = new FormData(event.currentTarget);
+    try {
+      const response = await fetch("/api/v1/agents/linux/enrollments/", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrfToken,
+          "X-IPMS-Tenant-ID": tenantId,
+        },
+        body: JSON.stringify({ display_name: form.get("display_name") }),
+      });
+      if (!response.ok) throw new Error("linux-enrollment-failed");
+      setLinuxEnrollment((await response.json()) as LinuxEnrollment);
+    } catch {
+      setError(copy.linuxEnrollmentFailed);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function downloadLinuxEnrollment() {
+    if (!linuxEnrollment) return;
+    const blob = new Blob(
+      [`${JSON.stringify(linuxEnrollment.bootstrap_document, null, 2)}\n`],
+      { type: "application/json" },
+    );
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "enrollment.json";
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   function deploymentError(code: string | null) {
@@ -338,6 +394,18 @@ export function AddSystemDialog({
                 >
                   <X aria-hidden="true" size={17} />
                 </button>
+                <button
+                  className="system-choice"
+                  type="button"
+                  onClick={() => {
+                    setSelectorOpen(false);
+                    setLinuxOpen(true);
+                  }}
+                >
+                  <TerminalSquare aria-hidden="true" size={31} />
+                  <strong>{copy.linux}</strong>
+                  <span>{copy.linuxHint}</span>
+                </button>
               </div>
               <p>{copy.description}</p>
               <div className="system-choice-grid">
@@ -381,6 +449,101 @@ export function AddSystemDialog({
         showTrigger={false}
         showSuccessMessage={false}
       />
+
+      {linuxOpen ? (
+        <DialogPortal>
+          <div className="modal-backdrop">
+            <section
+              className="modal-card modal-card--wide"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="linux-enrollment-heading"
+            >
+              <div className="wizard__header">
+                <div>
+                  <p className="eyebrow">{copy.linuxEyebrow}</p>
+                  <h3 id="linux-enrollment-heading">{copy.linuxHeading}</h3>
+                </div>
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={closeLinux}
+                  aria-label={copy.close}
+                >
+                  <X aria-hidden="true" size={17} />
+                </button>
+              </div>
+              {linuxEnrollment ? (
+                <div className="deployment-status" role="status">
+                  <ShieldCheck aria-hidden="true" size={24} />
+                  <div>
+                    <strong>{copy.linuxEnrollmentReady}</strong>
+                    <span>{copy.linuxEnrollmentInstructions}</span>
+                    <button
+                      className="primary-button"
+                      type="button"
+                      onClick={downloadLinuxEnrollment}
+                    >
+                      {copy.downloadEnrollment}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <form className="wizard" onSubmit={createLinuxEnrollment}>
+                  <label>
+                    {copy.name}
+                    <input
+                      name="display_name"
+                      type="text"
+                      required
+                      maxLength={255}
+                    />
+                  </label>
+                  <div className="security-note">
+                    <ShieldCheck aria-hidden="true" size={20} />
+                    <span>{copy.linuxSecurityNote}</span>
+                  </div>
+                  {error ? (
+                    <p className="form-error" role="alert">
+                      {error}
+                    </p>
+                  ) : null}
+                  <div className="wizard__actions">
+                    <button
+                      className="outline-button"
+                      type="button"
+                      onClick={() => {
+                        setLinuxOpen(false);
+                        setSelectorOpen(true);
+                      }}
+                      disabled={Boolean(busy)}
+                    >
+                      <ArrowLeft aria-hidden="true" size={15} />
+                      {copy.back}
+                    </button>
+                    <button
+                      className="primary-button"
+                      type="submit"
+                      disabled={Boolean(busy)}
+                    >
+                      {busy ? (
+                        <LoaderCircle
+                          className="spin"
+                          aria-hidden="true"
+                          size={16}
+                        />
+                      ) : (
+                        <TerminalSquare aria-hidden="true" size={16} />
+                      )}{" "}
+                      {copy.createEnrollment}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </section>
+          </div>
+        </DialogPortal>
+      ) : null}
 
       {windowsOpen ? (
         <DialogPortal>

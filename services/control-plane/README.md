@@ -22,6 +22,10 @@ The initial scaffold provides:
   AES-256-GCM credential storage, and a separately sandboxed queue worker; and
 - request correlation and a common API error envelope; and
 - tests for endpoint policy and model invariants.
+- tenant-scoped Windows client, Hyper-V VM, Linux system, software/update, and
+  managed network-device inventory; and
+- constrained Sophos Firewall, Loadbalancer.org ADC, and HPE Comware 7.1
+  read-only connector adapters.
 
 External identity-provider and tenant-management APIs are not yet implemented.
 The iLO enrollment endpoint creates read-only discovery jobs but no endpoint in
@@ -84,6 +88,18 @@ deployment database.
 - `GET /api/v1/physical-systems/` exposes normalized tenant-owned hardware
   inventory, including the versioned system-overview snapshot, without raw
   Redfish payloads.
+- `POST /api/v1/agents/linux/enrollments/` creates a short-lived one-time Linux
+  Agent bootstrap document for a tenant administrator.
+- `GET /api/v1/linux-systems/` and `GET /api/v1/linux-systems/{id}/` expose
+  normalized physical and virtual Linux inventory.
+- `GET /api/v1/software-inventory/` and its package endpoint expose only
+  completed tenant-owned software snapshots.
+- `POST /api/v1/connectors/devices/certificate/` probes an HTTPS network-device
+  certificate through the isolated trust path.
+- `POST /api/v1/connectors/devices/` enrolls one supported network connector and
+  queues its fixed read-only discovery.
+- `GET /api/v1/managed-devices/` exposes normalized firewall, load-balancer,
+  and switch inventory without raw vendor responses.
 
 `IPMS_BMC_CONNECT_TIMEOUT_SECONDS` sets the bounded timeout for certificate and
 Redfish HTTPS exchanges. It defaults to `20` and accepts values from `5` to
