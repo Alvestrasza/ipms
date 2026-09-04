@@ -221,7 +221,7 @@ std::string normalized_state(std::uint64_t enabled_state) {
     case 3: return "stopped";
     case 4: return "stopping";
     case 6: return "offline";
-    case 9: return "quiesced";
+    case 9: return "paused";
     case 10: return "starting";
     case 32768: return "paused";
     case 32769: return "suspended";
@@ -236,7 +236,7 @@ std::string normalized_state(std::uint64_t enabled_state) {
 std::optional<std::uint16_t> requested_state_for_action(const std::string& action) {
   if (action == "start") return static_cast<std::uint16_t>(2);
   if (action == "stop") return static_cast<std::uint16_t>(3);
-  if (action == "pause") return static_cast<std::uint16_t>(32768);
+  if (action == "pause") return static_cast<std::uint16_t>(9);
   if (action == "resume") return static_cast<std::uint16_t>(2);
   return std::nullopt;
 }

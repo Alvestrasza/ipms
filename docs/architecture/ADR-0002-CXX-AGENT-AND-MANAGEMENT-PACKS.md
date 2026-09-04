@@ -17,7 +17,7 @@ Management Packs are signed, versioned policy declarations. A pack may only acti
 `windows-server-core` is read-only and collects bounded operating-system, hardware, storage, network, service, patch, and health inventory. The initial implementation begins with OS, processor, and memory inventory.
 
 `hyper-v-host` depends on `windows-server-core`. Its inventory capabilities are
-read-only. Version 0.2.9 adds the separately governed, compiled start, graceful
+read-only. Version 0.2.10 adds the separately governed, compiled start, graceful
 shutdown, stop, pause, and resume actions defined by ADR-0008 without accepting
 arbitrary commands or provider expressions.
 
