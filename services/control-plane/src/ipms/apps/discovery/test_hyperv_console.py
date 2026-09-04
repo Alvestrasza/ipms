@@ -50,7 +50,7 @@ class HyperVConsoleTests(TestCase):
             fqdn="hyperv-host.example.invalid",
             operating_system="Microsoft Windows Server",
             hyperv_inventory_status=WindowsServer.HyperVInventoryStatus.COLLECTED,
-            agent_version="0.2.20",
+            agent_version="0.2.21",
             agent_state=WindowsServer.AgentState.ONLINE,
             health=WindowsServer.Health.HEALTHY,
             discovered_at=timezone.now(),

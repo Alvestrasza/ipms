@@ -554,7 +554,7 @@ bool invoke_input_method(
     const wchar_t* class_name,
     const wchar_t* method,
     const std::vector<std::pair<const wchar_t*, VARIANT>>& parameters) {
-  const auto path = wmi_string(device, L"__PATH");
+  const auto path = wmi_object_path(device);
   if (path.empty()) return false;
   ComPtr<IWbemClassObject> device_class;
   BSTR allocated_class = SysAllocString(class_name);
@@ -610,8 +610,8 @@ bool apply_console_input(
     }
     VARIANT key{};
     VariantInit(&key);
-    key.vt = VT_UI4;
-    key.ulVal = input.key_code;
+    key.vt = VT_I4;
+    key.lVal = static_cast<LONG>(input.key_code);
     return invoke_input_method(
         services,
         keyboard.Get(),
@@ -644,8 +644,8 @@ bool apply_console_input(
     VARIANT down{};
     VariantInit(&button);
     VariantInit(&down);
-    button.vt = VT_UI4;
-    button.ulVal = input.button;
+    button.vt = VT_I4;
+    button.lVal = static_cast<LONG>(input.button);
     down.vt = VT_BOOL;
     down.boolVal = input.is_down ? VARIANT_TRUE : VARIANT_FALSE;
     return invoke_input_method(

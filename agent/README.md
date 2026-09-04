@@ -3,7 +3,7 @@
 The IPMS Agent is a native C++20 service for customer-managed Windows and Linux systems. It will establish an outbound, mutually authenticated connection to the IPMS Control Plane and collect only capabilities explicitly assigned to the enrolled device.
 
 The implementation contains the pack registry and fixed read-only Windows and
-Linux inventory capabilities. Windows build 0.2.20 and Linux build 0.2.12
+Linux inventory capabilities. Windows build 0.2.21 and Linux build 0.2.12
 include native services and bounded, paged installed-software and
 update-posture inventory. Both platforms
 use the same Agent-initiated TCP 9419 enrollment and mTLS trust boundary. The
@@ -49,7 +49,7 @@ polls the resulting state before reporting success. The assignment contains no
 WMI expression, method name, script, command, path, URL, or free-form argument.
 Stop remains an immediate power-off operation.
 
-Agent 0.2.20 provides the compiled-in `hyperv.vm.console` capability. For one
+Agent 0.2.21 provides the compiled-in `hyperv.vm.console` capability. For one
 Control Plane lease-bound session, the Agent validates the VM identity and
 running state, captures a bounded console image through the local Hyper-V V2
 provider, and applies only typed keyboard, mouse, or secure-attention input.
