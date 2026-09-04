@@ -107,6 +107,12 @@ std::wstring wmi_string(IWbemClassObject* object, const wchar_t* property) {
   return text;
 }
 
+std::wstring wmi_object_path(IWbemClassObject* object) {
+  auto path = wmi_string(object, L"__PATH");
+  if (path.empty()) path = wmi_string(object, L"__RELPATH");
+  return path;
+}
+
 std::optional<std::uint64_t> wmi_uint64(
     IWbemClassObject* object,
     const wchar_t* property) {
@@ -740,7 +746,7 @@ std::vector<std::uint8_t> capture_console_frame(
     std::uint16_t width,
     std::uint16_t height,
     std::string& failure_code) {
-  const auto settings_path = wmi_string(settings, L"__PATH");
+  const auto settings_path = wmi_object_path(settings);
   if (settings_path.empty()) {
     failure_code = "console_frame_setting_path_missing";
     return {};
@@ -802,7 +808,7 @@ std::vector<std::uint8_t> capture_console_frame(
     return {};
   }
   auto services_rows = execute_query(
-      services, L"SELECT __PATH FROM Msvm_VirtualSystemManagementService");
+      services, L"SELECT * FROM Msvm_VirtualSystemManagementService");
   ComPtr<IWbemClassObject> service;
   if (services_rows) {
     consume_rows(
@@ -810,7 +816,7 @@ std::vector<std::uint8_t> capture_console_frame(
         std::chrono::steady_clock::now() + std::chrono::seconds(5),
         [&service](IWbemClassObject* row) { if (!service) service = row; });
   }
-  const auto service_path = service ? wmi_string(service.Get(), L"__PATH") : L"";
+  const auto service_path = service ? wmi_object_path(service.Get()) : L"";
   if (service_path.empty()) {
     SysFreeString(method);
     failure_code = "console_frame_service_instance_missing";
