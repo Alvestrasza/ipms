@@ -203,7 +203,7 @@ export const de = {
     infrastructure: "Infrastruktur",
     agents: "Agenten",
     soon: "Bald",
-    version: "IPMS v0.2.16 Entwicklung",
+    version: "IPMS v0.2.17 Entwicklung",
   },
   linuxSystems: {
     liveData:
@@ -625,8 +625,6 @@ export const de = {
     confirmBody: "{action} für {name} ausführen?",
     stopWarning:
       "Stoppen schaltet die virtuelle Maschine sofort aus. Nicht gespeicherte Daten im Gast können verloren gehen.",
-    shutdownHint:
-      "Herunterfahren fordert über die Hyper-V-Integrationsdienste eine reguläre Abschaltung des Gastbetriebssystems an.",
     cancel: "Abbrechen",
     confirm: "Aktion ausführen",
     queued: "Die Aktion wartet auf die Übernahme durch den Hyper-V-Host-Agent.",

@@ -47,7 +47,6 @@ type Copy = {
   confirmTitle: string;
   confirmBody: string;
   stopWarning: string;
-  shutdownHint: string;
   cancel: string;
   confirm: string;
   queued: string;
@@ -56,7 +55,8 @@ type Copy = {
 };
 
 type Menu = { vm: HyperVVirtualMachine; x: number; y: number };
-type Pending = { vm: HyperVVirtualMachine; action: HyperVAction };
+type ActionRequest = { vm: HyperVVirtualMachine; action: HyperVAction };
+type StopConfirmation = { vm: HyperVVirtualMachine; action: "stop" };
 const wait = (milliseconds: number) =>
   new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 
@@ -110,7 +110,7 @@ export function HyperVVirtualMachineInventory({
 }) {
   const router = useRouter();
   const [menu, setMenu] = useState<Menu | null>(null);
-  const [pending, setPending] = useState<Pending | null>(null);
+  const [pending, setPending] = useState<StopConfirmation | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -138,7 +138,7 @@ export function HyperVVirtualMachineInventory({
   );
 
   function openMenu(vm: HyperVVirtualMachine, x: number, y: number) {
-    if (!canManage || availableActions(vm).length === 0) return;
+    if (busy || !canManage || availableActions(vm).length === 0) return;
     setMenu({
       vm,
       x: Math.max(8, Math.min(x, window.innerWidth - 220)),
@@ -146,14 +146,13 @@ export function HyperVVirtualMachineInventory({
     });
   }
 
-  async function runAction() {
-    if (!pending) return;
+  async function runAction(request: ActionRequest) {
     setBusy(true);
     setError("");
     setMessage(copy.queued);
     try {
       const response = await fetch(
-        `/api/v1/hyper-v/virtual-machines/${pending.vm.id}/actions/`,
+        `/api/v1/hyper-v/virtual-machines/${request.vm.id}/actions/`,
         {
           method: "POST",
           credentials: "same-origin",
@@ -162,7 +161,7 @@ export function HyperVVirtualMachineInventory({
             "X-CSRFToken": csrfToken,
             "X-IPMS-Tenant-ID": tenantId,
           },
-          body: JSON.stringify({ action: pending.action }),
+          body: JSON.stringify({ action: request.action }),
         },
       );
       if (!response.ok) throw new Error("queue_failed");
@@ -197,6 +196,17 @@ export function HyperVVirtualMachineInventory({
     } finally {
       setBusy(false);
     }
+  }
+
+  function requestAction(vm: HyperVVirtualMachine, action: HyperVAction) {
+    setMenu(null);
+    setError("");
+    setMessage("");
+    if (action === "stop") {
+      setPending({ vm, action });
+      return;
+    }
+    void runAction({ vm, action });
   }
 
   return (
@@ -258,6 +268,11 @@ export function HyperVVirtualMachineInventory({
         {error && !pending ? (
           <p className="form-error hyperv-action-message" role="alert">
             {error}
+          </p>
+        ) : null}
+        {message && !pending ? (
+          <p className="hyperv-action-progress" role="status">
+            {message}
           </p>
         ) : null}
         {virtualMachines.length ? (
@@ -353,11 +368,8 @@ export function HyperVVirtualMachineInventory({
               className={
                 action === "stop" ? "hyperv-context-menu__danger" : undefined
               }
-              onClick={() => {
-                setPending({ vm: menu.vm, action });
-                setMenu(null);
-                setError("");
-              }}
+              disabled={busy}
+              onClick={() => requestAction(menu.vm, action)}
             >
               {actionIcon(action)}
               <span>{copy.actions[action]}</span>
@@ -374,9 +386,7 @@ export function HyperVVirtualMachineInventory({
               aria-modal="true"
               aria-labelledby="hyperv-action-heading"
             >
-              <div
-                className={`modal-card__heading ${pending.action === "stop" ? "modal-card__heading--danger" : ""}`}
-              >
+              <div className="modal-card__heading modal-card__heading--danger">
                 <h3 id="hyperv-action-heading">{copy.confirmTitle}</h3>
                 <button
                   className="icon-button"
@@ -393,12 +403,7 @@ export function HyperVVirtualMachineInventory({
                   .replace("{action}", copy.actions[pending.action])
                   .replace("{name}", pending.vm.name)}
               </p>
-              {pending.action === "stop" ? (
-                <p className="hyperv-stop-warning">{copy.stopWarning}</p>
-              ) : null}
-              {pending.action === "shutdown" ? (
-                <p className="hyperv-action-progress">{copy.shutdownHint}</p>
-              ) : null}
+              <p className="hyperv-stop-warning">{copy.stopWarning}</p>
               {message ? (
                 <p className="hyperv-action-progress" role="status">
                   {message}
@@ -419,14 +424,10 @@ export function HyperVVirtualMachineInventory({
                   {copy.cancel}
                 </button>
                 <button
-                  className={
-                    pending.action === "stop"
-                      ? "danger-button"
-                      : "primary-button"
-                  }
+                  className="danger-button"
                   type="button"
                   disabled={busy}
-                  onClick={runAction}
+                  onClick={() => void runAction(pending)}
                 >
                   {copy.confirm}
                 </button>

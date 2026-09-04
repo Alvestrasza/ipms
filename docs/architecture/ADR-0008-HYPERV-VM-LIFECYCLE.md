@@ -2,7 +2,7 @@
 
 - Status: Accepted for the development foundation
 - Decision date: 2026-09-04
-- Application version: 0.2.12
+- Application version: 0.2.17
 - First capable Windows Agent: 0.2.12
 
 ## Context
@@ -52,10 +52,10 @@ state. No arbitrary WMI query, method, PowerShell, script, command, path, URL,
 or free-form argument crosses the management boundary.
 
 The Web Console exposes actions through a mouse context menu and the keyboard
-context-menu gesture. Every action opens a confirmation dialog. Graceful
-shutdown explains that it depends on the Hyper-V guest shutdown integration
-service. Stop is styled as destructive and explicitly warns that it immediately
-powers off the VM and may lose unsaved guest data.
+context-menu gesture. Start, pause, resume, and graceful shutdown are queued
+immediately after selection. Stop alone opens a confirmation dialog because it
+is destructive; the dialog explicitly warns that it immediately powers off the
+VM and may lose unsaved guest data.
 
 ## State contract
 
