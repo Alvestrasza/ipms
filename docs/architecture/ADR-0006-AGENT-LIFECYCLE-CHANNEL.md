@@ -98,7 +98,6 @@ rollout rings, and clean-VM update/uninstall acceptance.
 ## Consequences
 
 Routine fleet lifecycle operations no longer require stored endpoint
-administrator credentials after the one-time 0.1.32 bootstrap. The fixed
-lifecycle actions are the only state-changing exception in the v0.1.0 Agent
-foundation; they manage IPMS itself and do not change customer workloads,
-Hyper-V configuration, BMCs, networks, storage, or backups.
+administrator credentials after the one-time 0.1.32 bootstrap. These actions
+manage IPMS itself. Workload operations use separate capability, authorization,
+job, confirmation, and audit contracts rather than widening this channel.

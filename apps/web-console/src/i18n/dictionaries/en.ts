@@ -186,7 +186,7 @@ export const en = {
     infrastructure: "Infrastructure",
     agents: "Agents",
     soon: "Soon",
-    version: "IPMS v0.2.1 development",
+    version: "IPMS v0.2.2 development",
   },
   linuxSystems: {
     liveData: "Live tenant-scoped Linux inventory from enrolled Agents.",
@@ -510,7 +510,8 @@ export const en = {
       "Hyper-V virtual machine inventory is currently unavailable.",
     eyebrow: "Hyper-V inventory",
     heading: "Virtual machines",
-    descriptionPrefix: "Read-only virtual machine inventory for",
+    descriptionPrefix: "Virtual machine inventory and lifecycle controls for",
+    managed: "Managed",
     summary: "Hyper-V virtual machine summary",
     total: "Virtual machines",
     running: "Running",
@@ -528,7 +529,23 @@ export const en = {
     ipAddresses: "IP addresses",
     noVirtualMachines: "No Hyper-V virtual machines discovered",
     noVirtualMachinesHint:
-      "An enrolled Hyper-V host Agent populates this table through its fixed read-only capability.",
+      "An enrolled Hyper-V host Agent populates this table through its fixed inventory capability.",
+    contextHint: "Right-click a virtual machine to open its lifecycle actions.",
+    actionMenu: "Virtual machine actions",
+    actions: {
+      start: "Start",
+      stop: "Stop",
+      pause: "Pause",
+      resume: "Resume",
+    },
+    confirmTitle: "Confirm virtual machine action",
+    confirmBody: "Run {action} for {name}?",
+    stopWarning:
+      "Stop immediately powers off the virtual machine. Unsaved guest data may be lost.",
+    cancel: "Cancel",
+    confirm: "Run action",
+    queued: "The action is queued and waiting for the Hyper-V host Agent.",
+    actionFailed: "The virtual machine action could not be completed.",
     states: {
       running: "Running",
       stopped: "Stopped",

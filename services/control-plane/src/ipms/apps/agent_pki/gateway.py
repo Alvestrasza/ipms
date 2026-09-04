@@ -102,6 +102,7 @@ def _parse_http_request(header: bytes) -> tuple[str, dict[str, str], int]:
         "/v1/telemetry",
         "/v1/lifecycle-result",
         "/v1/lifecycle-artifact",
+        "/v1/hyperv-action-result",
     }:
         raise ValidationError("The Agent Gateway HTTP route is invalid.")
     headers: dict[str, str] = {}
@@ -174,6 +175,10 @@ async def _handle_http_connection(
         offer_lifecycle_job,
         record_lifecycle_result,
     )
+    from ipms.apps.agent_pki.hyperv_actions import (
+        offer_hyperv_action_job,
+        record_hyperv_action_result,
+    )
 
     header = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=15)
     path, _, content_length = _parse_http_request(header)
@@ -234,6 +239,22 @@ async def _handle_http_connection(
             {"type": "accepted", "correlation_id": document.get("correlation_id")},
         )
         return
+    if path == "/v1/hyperv-action-result":
+        if document.get("type") != "hyperv_action_result":
+            raise ValidationError("The Hyper-V virtual machine action result is invalid.")
+        await _database_call_async(
+            record_hyperv_action_result,
+            enrollment,
+            job_id=str(document.get("job_id", "")),
+            result=str(document.get("result", "")),
+            result_code=str(document.get("result_code", "")),
+        )
+        await _http_reply(
+            writer,
+            200,
+            {"type": "accepted", "correlation_id": document.get("correlation_id")},
+        )
+        return
     if path == "/v1/inventory" and document.get("type") == "inventory":
         await _database_call_async(
             confirm_inventory,
@@ -267,6 +288,10 @@ async def _handle_http_connection(
     assignment = await _database_call_async(offer_lifecycle_job, enrollment)
     if assignment:
         response["lifecycle"] = assignment
+    else:
+        hyperv_action = await _database_call_async(offer_hyperv_action_job, enrollment)
+        if hyperv_action:
+            response["hyperv_action"] = hyperv_action
     await _http_reply(writer, 200, response)
 
 

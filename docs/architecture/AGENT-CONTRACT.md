@@ -8,7 +8,7 @@ This contract defines the boundary between IPMS Control Plane and an enrolled IP
 
 - Each agent has a unique device identity, tenant association, and short-lived client certificate issued during a guided enrollment ceremony.
 - The agent initiates one persistent mTLS connection to the IPMS Agent Gateway on TCP 9419. The server authenticates the device and the agent authenticates the Control Plane certificate chain.
-- The authenticated connection is bidirectional. The Agent submits inventory, health, job status, acknowledgements, and audit-safe errors; the Gateway may send only signed Management Pack assignments, bounded inventory requests, certificate-rotation instructions, and signed agent-update manifests.
+- The authenticated connection is bidirectional. The Agent submits inventory, health, job status, acknowledgements, and audit-safe errors; the Gateway may send only signed Management Pack assignments, bounded inventory requests, certificate-rotation instructions, signed agent-update manifests, and separately authorized fixed lifecycle actions compiled into the Agent.
 - Managed systems do not accept inbound Agent Gateway connections. The Control Plane pushes messages through the Agent-initiated stream; it never dials an agent.
 
 The portal bootstrap in ADR-0005 is a narrowly scoped installation exception,
@@ -48,9 +48,11 @@ anti-rollback policy, and MSI delivery remain mandatory before customer release.
 | Pack | Capabilities | Access |
 | --- | --- | --- |
 | `windows-server-core` | OS, hardware, storage, network, and installed role/feature inventory | Read-only |
-| `hyper-v-host` | Hyper-V host, VM, and virtual-network inventory | Read-only |
+| `hyper-v-host` | Hyper-V host, VM, virtual-network inventory, and fixed VM lifecycle actions | Management |
 
-`hyper-v-host` requires `windows-server-core`. Both packs are available only on Windows and neither performs a state-changing Hyper-V operation.
+`hyper-v-host` requires `windows-server-core`. Its four fixed state-changing
+operations are governed by
+[ADR-0008](ADR-0008-HYPERV-VM-LIFECYCLE.md); the dependency remains read-only.
 
 The Windows core pack separates five-minute configuration inventory from a
 ten-second current utilization sample. Live telemetry is limited to native,
@@ -72,7 +74,8 @@ virtual placement. Windows `ProductType` is read natively with a fixed registry
 fallback, and the Windows 11 LTSC compatibility product name is normalized when
 WMI is unavailable. The `hyper-v-host` capability uses fixed local WMI v2 reads
 and reports a bounded VM collection. The Control Plane cannot supply WMI text,
-commands, scripts, or mutation requests.
+commands, scripts, method names, or free-form arguments. Agent 0.2.2 adds only
+the four compiled lifecycle actions defined by ADR-0008.
 
 ## Control-plane requirements
 

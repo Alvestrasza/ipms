@@ -16,6 +16,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -230,6 +231,21 @@ std::string normalized_state(std::uint64_t enabled_state) {
     case 32777: return "resuming";
     default: return "unknown";
   }
+}
+
+std::optional<std::uint16_t> requested_state_for_action(const std::string& action) {
+  if (action == "start") return static_cast<std::uint16_t>(2);
+  if (action == "stop") return static_cast<std::uint16_t>(3);
+  if (action == "pause") return static_cast<std::uint16_t>(32768);
+  if (action == "resume") return static_cast<std::uint16_t>(32777);
+  return std::nullopt;
+}
+
+std::string expected_state_for_action(const std::string& action) {
+  if (action == "start" || action == "resume") return "running";
+  if (action == "stop") return "stopped";
+  if (action == "pause") return "paused";
+  return {};
 }
 
 bool hyperv_service_installed() {
@@ -503,6 +519,125 @@ hyperv_inventory_result collect_hyperv_inventory() {
     return {"unavailable", "payload_limit_exceeded", "[]"};
   }
   return {"collected", "", json};
+}
+
+hyperv_action_result execute_hyperv_virtual_machine_action(
+    const std::string& source_id,
+    const std::string& action) {
+  if (!is_guid(source_id)) return {false, "invalid_vm_identity"};
+  const auto requested_state = requested_state_for_action(action);
+  const auto expected_state = expected_state_for_action(action);
+  if (!requested_state || expected_state.empty()) return {false, "invalid_action"};
+  if (!hyperv_service_installed()) return {false, "hyperv_unavailable"};
+
+  com_scope com;
+  if (!com.initialized) return {false, "com_initialization_failed"};
+  const HRESULT security = CoInitializeSecurity(
+      nullptr, -1, nullptr, nullptr, RPC_C_AUTHN_LEVEL_DEFAULT,
+      RPC_C_IMP_LEVEL_IMPERSONATE, nullptr, EOAC_NONE, nullptr);
+  if (FAILED(security) && security != RPC_E_TOO_LATE) return {false, "com_security_failed"};
+
+  ComPtr<IWbemLocator> locator;
+  if (FAILED(CoCreateInstance(CLSID_WbemLocator, nullptr, CLSCTX_INPROC_SERVER,
+                              IID_PPV_ARGS(&locator)))) {
+    return {false, "wmi_locator_failed"};
+  }
+  BSTR namespace_path = SysAllocString(L"ROOT\\Virtualization\\V2");
+  if (!namespace_path) return {false, "allocation_failed"};
+  ComPtr<IWbemServices> services;
+  const HRESULT connection = locator->ConnectServer(
+      namespace_path, nullptr, nullptr, nullptr, 0, nullptr, nullptr, &services);
+  SysFreeString(namespace_path);
+  if (FAILED(connection) || !services) return {false, "hyperv_provider_unavailable"};
+  if (FAILED(CoSetProxyBlanket(
+          services.Get(), RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE, nullptr,
+          RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE, nullptr, EOAC_NONE))) {
+    return {false, "wmi_proxy_failed"};
+  }
+
+  const auto source_id_wide = std::wstring(source_id.begin(), source_id.end());
+  const auto query = L"SELECT __PATH, EnabledState FROM Msvm_ComputerSystem WHERE Name='" +
+                     source_id_wide + L"'";
+  auto systems = execute_query(services.Get(), query.c_str());
+  if (!systems) return {false, "vm_lookup_failed"};
+  ComPtr<IWbemClassObject> system;
+  ULONG returned = 0;
+  if (FAILED(systems->Next(5'000, 1, system.ReleaseAndGetAddressOf(), &returned)) ||
+      returned != 1 || !system) {
+    return {false, "vm_not_found"};
+  }
+  const auto current_state = normalized_state(
+      wmi_uint64(system.Get(), L"EnabledState").value_or(0));
+  if (current_state == expected_state) return {true, "already_in_requested_state"};
+  const bool allowed =
+      (action == "start" && current_state == "stopped") ||
+      (action == "stop" && (current_state == "running" || current_state == "paused")) ||
+      (action == "pause" && current_state == "running") ||
+      (action == "resume" && current_state == "paused");
+  if (!allowed) return {false, "invalid_vm_state"};
+
+  const auto object_path = wmi_string(system.Get(), L"__PATH");
+  if (object_path.empty()) return {false, "vm_path_unavailable"};
+  ComPtr<IWbemClassObject> class_object;
+  BSTR class_name = SysAllocString(L"Msvm_ComputerSystem");
+  if (!class_name) return {false, "allocation_failed"};
+  const HRESULT class_result = services->GetObject(
+      class_name, 0, nullptr, &class_object, nullptr);
+  SysFreeString(class_name);
+  if (FAILED(class_result) || !class_object) return {false, "action_contract_unavailable"};
+  ComPtr<IWbemClassObject> input_signature;
+  BSTR method_name = SysAllocString(L"RequestStateChange");
+  if (!method_name) return {false, "allocation_failed"};
+  const HRESULT method_result = class_object->GetMethod(
+      method_name, 0, &input_signature, nullptr);
+  if (FAILED(method_result) || !input_signature) {
+    SysFreeString(method_name);
+    return {false, "action_contract_unavailable"};
+  }
+  ComPtr<IWbemClassObject> input;
+  if (FAILED(input_signature->SpawnInstance(0, &input)) || !input) {
+    SysFreeString(method_name);
+    return {false, "action_input_failed"};
+  }
+  VARIANT state_value{};
+  VariantInit(&state_value);
+  state_value.vt = VT_UI2;
+  state_value.uiVal = *requested_state;
+  const HRESULT put_result = input->Put(L"RequestedState", 0, &state_value, 0);
+  VariantClear(&state_value);
+  if (FAILED(put_result)) {
+    SysFreeString(method_name);
+    return {false, "action_input_failed"};
+  }
+  BSTR path = SysAllocString(object_path.c_str());
+  if (!path) {
+    SysFreeString(method_name);
+    return {false, "allocation_failed"};
+  }
+  ComPtr<IWbemClassObject> output;
+  const HRESULT execute_result = services->ExecMethod(
+      path, method_name, 0, nullptr, input.Get(), &output, nullptr);
+  SysFreeString(path);
+  SysFreeString(method_name);
+  if (FAILED(execute_result) || !output) return {false, "action_execution_failed"};
+  const auto return_value = wmi_uint64(output.Get(), L"ReturnValue").value_or(1);
+  if (return_value != 0 && return_value != 4096) return {false, "action_rejected"};
+
+  for (unsigned attempt = 0; attempt < 30; ++attempt) {
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    auto verification = execute_query(services.Get(), query.c_str());
+    if (!verification) continue;
+    ComPtr<IWbemClassObject> refreshed;
+    ULONG refreshed_count = 0;
+    if (SUCCEEDED(verification->Next(
+            2'000, 1, refreshed.ReleaseAndGetAddressOf(), &refreshed_count)) &&
+        refreshed_count == 1 && refreshed &&
+        normalized_state(wmi_uint64(refreshed.Get(), L"EnabledState").value_or(0)) ==
+            expected_state) {
+      return {true, "state_confirmed"};
+    }
+  }
+  return {false, "state_confirmation_timeout"};
 }
 
 }  // namespace ipms::agent::windows

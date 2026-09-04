@@ -15,4 +15,15 @@ struct hyperv_inventory_result {
 // Control Plane.
 hyperv_inventory_result collect_hyperv_inventory();
 
+struct hyperv_action_result {
+  bool succeeded;
+  std::string result_code;
+};
+
+// Executes one fixed local Hyper-V lifecycle operation. The Control Plane can
+// select only a VM GUID and one of the compiled-in actions.
+hyperv_action_result execute_hyperv_virtual_machine_action(
+    const std::string& source_id,
+    const std::string& action);
+
 }  // namespace ipms::agent::windows

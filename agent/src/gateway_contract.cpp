@@ -13,6 +13,7 @@ bool is_allowed_server_message(ServerMessageType message_type) {
     case ServerMessageType::inventory_collection_request:
     case ServerMessageType::agent_update_manifest:
     case ServerMessageType::certificate_rotation:
+    case ServerMessageType::hyperv_virtual_machine_action:
       return true;
   }
   return false;

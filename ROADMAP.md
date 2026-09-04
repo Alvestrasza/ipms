@@ -283,6 +283,15 @@ normalization. Windows software inventory deliberately reports update state as
 unknown until a bounded, non-triggering Windows Update source is implemented;
 it does not start an update scan merely to populate inventory.
 
+Build 0.2.2 adds the first controlled workload mutation: tenant administrators
+can start, pause, resume, or stop a Hyper-V virtual machine from its context
+menu. The Control Plane creates a tenant-bound durable job, the enrolled host
+Agent accepts only the four compiled-in actions for an exact VM GUID, and all
+requests, deliveries, and results are audited. Stop is an immediate power-off
+operation and therefore requires an explicit data-loss confirmation. Arbitrary
+PowerShell, WMI queries, methods, scripts, and command arguments remain outside
+the Agent contract.
+
 ## Licensing and Editions
 
 - IPMS is proprietary software distributed under an A-Corp agreement or EULA.

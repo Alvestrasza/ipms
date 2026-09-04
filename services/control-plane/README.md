@@ -100,6 +100,9 @@ deployment database.
   queues its fixed read-only discovery.
 - `GET /api/v1/managed-devices/` exposes normalized firewall, load-balancer,
   and switch inventory without raw vendor responses.
+- `POST /api/v1/hyper-v/virtual-machines/{id}/actions/` queues one authorized,
+  tenant-bound start, stop, pause, or resume job; its job endpoint exposes only
+  bounded status and result metadata.
 
 `IPMS_BMC_CONNECT_TIMEOUT_SECONDS` sets the bounded timeout for certificate and
 Redfish HTTPS exchanges. It defaults to `20` and accepts values from `5` to

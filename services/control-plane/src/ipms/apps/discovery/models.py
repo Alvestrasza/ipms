@@ -458,6 +458,75 @@ class HyperVVirtualMachine(models.Model):
         return f"{self.host}: {self.name}"
 
 
+class HyperVVirtualMachineActionJob(models.Model):
+    class Action(models.TextChoices):
+        START = "start", "Start"
+        STOP = "stop", "Stop"
+        PAUSE = "pause", "Pause"
+        RESUME = "resume", "Resume"
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Queued"
+        DELIVERED = "delivered", "Delivered"
+        RUNNING = "running", "Running"
+        SUCCEEDED = "succeeded", "Succeeded"
+        FAILED = "failed", "Failed"
+        CANCELLED = "cancelled", "Cancelled"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.PROTECT,
+        related_name="hyperv_action_jobs",
+    )
+    enrollment = models.ForeignKey(
+        "agent_pki.AgentEnrollment",
+        on_delete=models.PROTECT,
+        related_name="hyperv_action_jobs",
+    )
+    virtual_machine = models.ForeignKey(
+        HyperVVirtualMachine,
+        on_delete=models.SET_NULL,
+        related_name="action_jobs",
+        blank=True,
+        null=True,
+    )
+    vm_source_id = models.CharField(max_length=64)
+    vm_name = models.CharField(max_length=255)
+    action = models.CharField(max_length=16, choices=Action.choices)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.QUEUED,
+    )
+    requested_by = models.CharField(max_length=255)
+    result_code = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    delivered_at = models.DateTimeField(blank=True, null=True)
+    started_at = models.DateTimeField(blank=True, null=True)
+    completed_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(
+                fields=("tenant", "-created_at"),
+                name="hyperv_action_tenant_time",
+            ),
+            models.Index(
+                fields=("enrollment", "status"),
+                name="hyperv_action_agent_state",
+            ),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("enrollment", "vm_source_id"),
+                condition=models.Q(status__in=("queued", "delivered", "running")),
+                name="unique_active_hyperv_vm_action",
+            )
+        ]
+
+
 class LinuxSystem(models.Model):
     class SystemType(models.TextChoices):
         PHYSICAL = "physical", "Physical"

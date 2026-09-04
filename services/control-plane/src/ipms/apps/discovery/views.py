@@ -5,6 +5,7 @@ import uuid
 from datetime import timezone as datetime_timezone
 
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Count, Q
 from django.http import HttpResponse
@@ -35,6 +36,7 @@ from .models import (
     DiscoveryJob,
     PhysicalSystem,
     HyperVVirtualMachine,
+    HyperVVirtualMachineActionJob,
     LinuxSystem,
     ManagedInfrastructureDevice,
     SoftwareInventorySnapshot,
@@ -43,7 +45,7 @@ from .models import (
     WindowsServerRole,
     WindowsServerTelemetry,
 )
-from .permissions import CanManageConnectors
+from .permissions import CanManageConnectors, CanManageInfrastructure
 from .secrets import store_connector_secret
 from .serializers import (
     BmcCertificateProbeSerializer,
@@ -58,6 +60,8 @@ from .serializers import (
     WindowsServerSerializer,
     WindowsServerTelemetrySerializer,
     HyperVVirtualMachineSerializer,
+    HyperVVirtualMachineActionJobSerializer,
+    HyperVVirtualMachineActionRequestSerializer,
     LinuxSystemSerializer,
     ManagedDeviceCertificateProbeSerializer,
     ManagedDeviceEnrollmentSerializer,
@@ -658,6 +662,54 @@ class HyperVVirtualMachineListView(ListAPIView):
                 raise ValidationError({"state": ["invalid_state"]})
             queryset = queryset.filter(state=state)
         return queryset.select_related("host")
+
+
+class HyperVVirtualMachineActionView(APIView):
+    permission_classes = (
+        IsAuthenticated,
+        HasSelectedTenantAccess,
+        CanManageInfrastructure,
+    )
+
+    def post(self, request, pk):
+        from ipms.apps.agent_pki.hyperv_actions import create_hyperv_action_job
+
+        virtual_machine = get_object_or_404(
+            HyperVVirtualMachine.objects.select_related("host"),
+            id=pk,
+            tenant=request.tenant,
+            host__tenant=request.tenant,
+        )
+        serializer = HyperVVirtualMachineActionRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            job = create_hyperv_action_job(
+                virtual_machine=virtual_machine,
+                action=serializer.validated_data["action"],
+                actor=request.user.get_username(),
+            )
+        except DjangoValidationError as exc:
+            raise ValidationError({"action": exc.messages}) from exc
+        return Response(
+            HyperVVirtualMachineActionJobSerializer(job).data,
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class HyperVVirtualMachineActionJobView(APIView):
+    permission_classes = (
+        IsAuthenticated,
+        HasSelectedTenantAccess,
+        CanManageInfrastructure,
+    )
+
+    def get(self, request, pk):
+        job = get_object_or_404(
+            HyperVVirtualMachineActionJob,
+            id=pk,
+            tenant=request.tenant,
+        )
+        return Response(HyperVVirtualMachineActionJobSerializer(job).data)
 
 
 class LinuxSystemListView(ListAPIView):

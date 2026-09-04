@@ -10,6 +10,7 @@ from .models import (
     DiscoveryJob,
     PhysicalSystem,
     HyperVVirtualMachine,
+    HyperVVirtualMachineActionJob,
     LinuxSystem,
     ManagedInfrastructureDevice,
     SoftwareInventorySnapshot,
@@ -370,6 +371,35 @@ class HyperVVirtualMachineSerializer(serializers.ModelSerializer):
             "configuration_version",
             "ip_addresses",
             "observed_at",
+        )
+        read_only_fields = fields
+
+
+class HyperVVirtualMachineActionRequestSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=HyperVVirtualMachineActionJob.Action.choices)
+
+
+class HyperVVirtualMachineActionJobSerializer(serializers.ModelSerializer):
+    tenant_id = serializers.UUIDField(read_only=True)
+    enrollment_id = serializers.UUIDField(read_only=True)
+    virtual_machine_id = serializers.UUIDField(read_only=True, allow_null=True)
+
+    class Meta:
+        model = HyperVVirtualMachineActionJob
+        fields = (
+            "id",
+            "tenant_id",
+            "enrollment_id",
+            "virtual_machine_id",
+            "vm_source_id",
+            "vm_name",
+            "action",
+            "status",
+            "result_code",
+            "created_at",
+            "delivered_at",
+            "started_at",
+            "completed_at",
         )
         read_only_fields = fields
 

@@ -200,7 +200,7 @@ export const de = {
     infrastructure: "Infrastruktur",
     agents: "Agenten",
     soon: "Bald",
-    version: "IPMS v0.2.1 Entwicklung",
+    version: "IPMS v0.2.2 Entwicklung",
   },
   linuxSystems: {
     liveData:
@@ -529,7 +529,8 @@ export const de = {
     unavailableData: "Das Hyper-V-VM-Inventar ist derzeit nicht verfügbar.",
     eyebrow: "Hyper-V-Inventar",
     heading: "Virtuelle Maschinen",
-    descriptionPrefix: "Schreibgeschütztes VM-Inventar für",
+    descriptionPrefix: "VM-Inventar und Betriebsaktionen für",
+    managed: "Verwaltet",
     summary: "Übersicht der Hyper-V-VMs",
     total: "Virtuelle Maschinen",
     running: "Gestartet",
@@ -547,7 +548,24 @@ export const de = {
     ipAddresses: "IP-Adressen",
     noVirtualMachines: "Keine Hyper-V-VMs erkannt",
     noVirtualMachinesHint:
-      "Ein eingebundener Hyper-V-Host-Agent füllt diese Tabelle über seine feste schreibgeschützte Funktion.",
+      "Ein eingebundener Hyper-V-Host-Agent füllt diese Tabelle über seine feste Inventurfunktion.",
+    contextHint:
+      "Mit einem Rechtsklick auf eine VM öffnest du ihre Betriebsaktionen.",
+    actionMenu: "Aktionen für virtuelle Maschinen",
+    actions: {
+      start: "Starten",
+      stop: "Stoppen",
+      pause: "Pausieren",
+      resume: "Fortsetzen",
+    },
+    confirmTitle: "VM-Aktion bestätigen",
+    confirmBody: "{action} für {name} ausführen?",
+    stopWarning:
+      "Stoppen schaltet die virtuelle Maschine sofort aus. Nicht gespeicherte Daten im Gast können verloren gehen.",
+    cancel: "Abbrechen",
+    confirm: "Aktion ausführen",
+    queued: "Die Aktion wartet auf die Übernahme durch den Hyper-V-Host-Agent.",
+    actionFailed: "Die VM-Aktion konnte nicht abgeschlossen werden.",
     states: {
       running: "Gestartet",
       stopped: "Beendet",

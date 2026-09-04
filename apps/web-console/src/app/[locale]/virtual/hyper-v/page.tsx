@@ -44,11 +44,18 @@ export default async function HyperVVirtualMachinesPage() {
             .
           </p>
         </div>
-        <span className="read-only-badge">{dictionary.overview.readOnly}</span>
+        <span className="read-only-badge">
+          {dictionary.hyperVInventory.managed}
+        </span>
       </section>
       <HyperVVirtualMachineInventory
         copy={dictionary.hyperVInventory}
         virtualMachines={inventory.virtualMachines}
+        csrfToken={session.csrf_token}
+        tenantId={tenant.id}
+        canManage={
+          session.user.is_platform_admin || tenant.role === "tenant_admin"
+        }
       />
     </ConsoleShell>
   );

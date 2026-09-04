@@ -16,7 +16,10 @@ Management Packs are signed, versioned policy declarations. A pack may only acti
 
 `windows-server-core` is read-only and collects bounded operating-system, hardware, storage, network, service, patch, and health inventory. The initial implementation begins with OS, processor, and memory inventory.
 
-`hyper-v-host` depends on `windows-server-core` and is read-only. It will collect Hyper-V host, switch, VM, cluster, and storage inventory only after its provider contract and fixture acceptance are added.
+`hyper-v-host` depends on `windows-server-core`. Its inventory capabilities are
+read-only. Version 0.2.2 adds the separately governed, compiled start, stop,
+pause, and resume actions defined by ADR-0008 without accepting arbitrary
+commands or provider expressions.
 
 ## Consequences
 
@@ -24,4 +27,6 @@ Management Packs are signed, versioned policy declarations. A pack may only acti
 - LocalSystem remains a local API privilege only; server policy cannot expand it into arbitrary remote execution.
 - TCP 9419 is the on-premises Agent Gateway firewall contract. A future Cloud profile may explicitly select TCP 443 as an egress fallback without changing this default.
 - Agent binary updates require a separately signed, versioned installer and rollback path. A pack assignment cannot add new executable functionality.
-- v0.1.0 remains read-only. State-changing packs require a separate ADR, authorization model, audit events, acceptance tests, and license policy.
+- v0.1.0 remains read-only. Every state-changing pack requires a separate ADR,
+  authorization model, audit events, acceptance tests, and license policy;
+  Hyper-V VM lifecycle is the first such post-v0.1 capability.

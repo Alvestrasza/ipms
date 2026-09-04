@@ -3,11 +3,13 @@
 The IPMS Agent is a native C++20 service for customer-managed Windows and Linux systems. It will establish an outbound, mutually authenticated connection to the IPMS Control Plane and collect only capabilities explicitly assigned to the enrolled device.
 
 The implementation contains the pack registry and fixed read-only Windows and
-Linux inventory capabilities. Build 0.2.1 adds a native Linux service and
+Linux inventory capabilities. Build 0.2.2 includes a native Linux service and
 bounded, paged installed-software and update-posture inventory. Both platforms
 use the same Agent-initiated TCP 9419 enrollment and mTLS trust boundary. The
-Windows executable also reports roles/features and local Hyper-V VMs; it never
-invokes `Win32_Product`, PowerShell, or a server-supplied query.
+Windows executable also reports roles/features and local Hyper-V VMs. Its
+Hyper-V pack accepts only fixed start, stop, pause, and resume assignments for
+an exact VM GUID; it never invokes `Win32_Product`, PowerShell, or a
+server-supplied query or method.
 
 ## Installed roles and features
 
@@ -27,14 +29,21 @@ Windows Server role navigation.
 
 ## Hyper-V virtual machines
 
-When the local Hyper-V Virtual Machine Management service is installed, Agent
-0.1.37 queries the local `Root\Virtualization\V2` provider through fixed,
+When the local Hyper-V Virtual Machine Management service is installed, the Agent
+queries the local `Root\Virtualization\V2` provider through fixed,
 compiled WMI reads. It reports at most 128 virtual machines with stable ID,
 name, normalized state, vCPU count, assigned or startup memory, uptime,
 configuration version, and integration-service-reported IP addresses. A
 45-second deadline, bounded related-object reads, and a 40-KiB JSON limit keep
-the shared Gateway message below its transport ceiling. The pack never calls a
-Hyper-V mutation method and accepts no WMI expression from the Control Plane.
+the shared Gateway message below its transport ceiling.
+
+Agent 0.2.2 adds a separate lifecycle capability. It maps the four literal
+actions `start`, `stop`, `pause`, and `resume` to compiled-in
+`Msvm_ComputerSystem.RequestStateChange` values, verifies the VM GUID and
+current state, and polls the resulting state before reporting success. The
+assignment contains no WMI expression, method name, script, command, path, or
+free-form argument. Stop is an immediate power-off operation rather than a
+guest-aware shutdown.
 
 ## Software and update inventory
 

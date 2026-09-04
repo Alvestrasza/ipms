@@ -1,6 +1,7 @@
 #include "ipms/agent/windows_transport.hpp"
 
 #include "ipms/agent/configuration.hpp"
+#include "ipms/agent/hyperv_pack.hpp"
 #include "ipms/agent/windows_core_pack.hpp"
 #include "ipms/agent/windows_telemetry.hpp"
 #include "ipms/agent/windows_software_pack.hpp"
@@ -30,7 +31,7 @@
 namespace {
 using Microsoft::WRL::ComPtr;
 constexpr std::size_t k_max_document_bytes = 65'536;
-constexpr wchar_t k_agent_version[] = L"0.2.1";
+constexpr wchar_t k_agent_version[] = L"0.2.2";
 constexpr std::size_t k_max_artifact_bytes = 64 * 1024 * 1024;
 
 struct internet_closer { void operator()(void* handle) const { if (handle) WinHttpCloseHandle(handle); } };
@@ -124,6 +125,33 @@ std::optional<std::string> json_string(const std::string& document, const std::s
       case 't': value.push_back('\t'); break;
       default: return std::nullopt;
     }
+  }
+  return std::nullopt;
+}
+
+std::optional<std::string> json_object(const std::string& document, const std::string& key) {
+  const std::string marker = "\"" + key + "\"";
+  auto position = document.find(marker);
+  if (position == std::string::npos) return std::nullopt;
+  position = document.find(':', position + marker.size());
+  if (position == std::string::npos) return std::nullopt;
+  position = document.find_first_not_of(" \t\r\n", position + 1);
+  if (position == std::string::npos || document[position] != '{') return std::nullopt;
+  const auto start = position;
+  unsigned depth = 0;
+  bool in_string = false;
+  bool escaped = false;
+  for (; position < document.size(); ++position) {
+    const char character = document[position];
+    if (in_string) {
+      if (escaped) escaped = false;
+      else if (character == '\\') escaped = true;
+      else if (character == '"') in_string = false;
+      continue;
+    }
+    if (character == '"') in_string = true;
+    else if (character == '{') ++depth;
+    else if (character == '}' && --depth == 0) return document.substr(start, position - start + 1);
   }
   return std::nullopt;
 }
@@ -307,7 +335,7 @@ struct http_response { DWORD status{}; std::string body; };
 
 http_response post_json(const std::wstring& hostname, std::uint16_t port, const std::wstring& path,
                         const std::string& body, const std::string* pin, PCCERT_CONTEXT client_certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.1", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.2", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent HTTP session could not be created.");
   WinHttpSetTimeouts(session.get(), 10'000, 10'000, 30'000, 30'000);
@@ -369,7 +397,7 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
 }
 
 http_response post_binary(const state& identity, const std::string& body, PCCERT_CONTEXT certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.1", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.2", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent artifact session could not be created.");
   WinHttpSetTimeouts(session.get(), 10'000, 10'000, 60'000, 60'000);
@@ -523,12 +551,14 @@ void launch_updater(const std::string& job_id, const std::string& action,
 
 void process_lifecycle_assignment(const std::string& response_document, const state& identity,
                                   PCCERT_CONTEXT certificate) {
-  const auto job_id = json_string(response_document, "job_id");
-  const auto action = json_string(response_document, "action");
+  const auto assignment = json_object(response_document, "lifecycle");
+  if (!assignment) return;
+  const auto job_id = json_string(*assignment, "job_id");
+  const auto action = json_string(*assignment, "action");
   if (!job_id || !action) return;
-  const auto target_version = json_string(response_document, "target_version").value_or("");
+  const auto target_version = json_string(*assignment, "target_version").value_or("");
   const auto expected_sha256 = normalized_fingerprint(
-      json_string(response_document, "artifact_sha256").value_or(""));
+      json_string(*assignment, "artifact_sha256").value_or(""));
   if (!safe_lifecycle_value(*job_id) || (*action != "update" && *action != "uninstall"))
     throw std::runtime_error("The Agent lifecycle assignment is invalid.");
   std::filesystem::path staged_binary;
@@ -548,6 +578,87 @@ void process_lifecycle_assignment(const std::string& response_document, const st
   }
   report_result(identity, certificate, *job_id, "running", "accepted");
   launch_updater(*job_id, *action, target_version, expected_sha256, staged_binary);
+}
+
+void report_hyperv_action_result(
+    const state& identity,
+    PCCERT_CONTEXT certificate,
+    const std::string& job_id,
+    const std::string& result,
+    const std::string& result_code) {
+  if (!safe_lifecycle_value(job_id) || !safe_lifecycle_value(result, 16) ||
+      !safe_lifecycle_value(result_code)) {
+    throw std::runtime_error("The Hyper-V virtual machine action result is invalid.");
+  }
+  const std::string body =
+      "{\"type\":\"hyperv_action_result\",\"device_uri\":\"" +
+      json_escape(identity.device_uri) + "\",\"correlation_id\":\"hyperv-" +
+      json_escape(job_id) + "\",\"job_id\":\"" + json_escape(job_id) +
+      "\",\"result\":\"" + json_escape(result) + "\",\"result_code\":\"" +
+      json_escape(result_code) + "\"}";
+  const auto response = post_json(
+      identity.gateway, identity.port, L"/v1/hyperv-action-result", body, nullptr, certificate);
+  if (response.status != 200 ||
+      json_string(response.body, "type") != std::optional<std::string>("accepted")) {
+    throw std::runtime_error("The Hyper-V virtual machine action result was rejected.");
+  }
+}
+
+void process_hyperv_action_assignment(
+    const std::string& response_document,
+    const state& identity,
+    PCCERT_CONTEXT certificate) {
+  const auto assignment = json_object(response_document, "hyperv_action");
+  if (!assignment) return;
+  const auto job_id = json_string(*assignment, "job_id");
+  const auto action = json_string(*assignment, "action");
+  const auto vm_source_id = json_string(*assignment, "vm_source_id");
+  const auto expected_state = json_string(*assignment, "expected_state");
+  if (!job_id || !action || !vm_source_id || !expected_state ||
+      !safe_lifecycle_value(*job_id) ||
+      (*action != "start" && *action != "stop" && *action != "pause" && *action != "resume") ||
+      !safe_lifecycle_value(*vm_source_id) ||
+      (*expected_state != "running" && *expected_state != "stopped" && *expected_state != "paused")) {
+    throw std::runtime_error("The Hyper-V virtual machine action assignment is invalid.");
+  }
+  const std::string locally_expected =
+      (*action == "stop") ? "stopped" : ((*action == "pause") ? "paused" : "running");
+  if (*expected_state != locally_expected) {
+    throw std::runtime_error("The Hyper-V virtual machine action contract does not match.");
+  }
+  report_hyperv_action_result(identity, certificate, *job_id, "running", "accepted");
+  const auto result = ipms::agent::windows::execute_hyperv_virtual_machine_action(
+      *vm_source_id, *action);
+  try {
+    report_hyperv_action_result(
+        identity,
+        certificate,
+        *job_id,
+        result.succeeded ? "succeeded" : "failed",
+        result.result_code);
+  } catch (...) {
+    const std::string pending =
+        "{\"job_id\":\"" + json_escape(*job_id) + "\",\"result\":\"" +
+        (result.succeeded ? "succeeded" : "failed") + "\",\"result_code\":\"" +
+        json_escape(result.result_code) + "\"}";
+    write_atomically(data_directory() / L"hyperv-action-result.json", pending);
+    throw;
+  }
+}
+
+void report_pending_hyperv_action_result(const state& identity, PCCERT_CONTEXT certificate) {
+  const auto path = data_directory() / L"hyperv-action-result.json";
+  if (!std::filesystem::is_regular_file(path)) return;
+  const auto document = read_bounded_file(path);
+  const auto job_id = json_string(document, "job_id");
+  const auto result = json_string(document, "result");
+  const auto code = json_string(document, "result_code");
+  if (!job_id || !result || !code) {
+    throw std::runtime_error("The pending Hyper-V virtual machine action result is invalid.");
+  }
+  report_hyperv_action_result(identity, certificate, *job_id, *result, *code);
+  std::error_code ignored;
+  std::filesystem::remove(path, ignored);
 }
 
 void report_pending_result(const state& identity, PCCERT_CONTEXT certificate) {
@@ -624,6 +735,7 @@ TransportResult run_inventory_cycle() {
     cert_context certificate(find_agent_certificate(identity.certificate_sha256));
     if (!certificate) throw std::runtime_error("The enrolled Agent certificate is unavailable.");
     report_pending_result(identity, certificate.get());
+    report_pending_hyperv_action_result(identity, certificate.get());
     const auto inventory = collect_windows_server_core_inventory_json();
     const std::string body = "{\"type\":\"inventory\",\"device_uri\":\"" + json_escape(identity.device_uri) +
                              "\",\"correlation_id\":\"windows-agent-cycle\",\"agent_version\":\"" +
@@ -653,6 +765,7 @@ TransportResult run_inventory_cycle() {
       }
     }
     process_lifecycle_assignment(response.body, identity, certificate.get());
+    process_hyperv_action_assignment(response.body, identity, certificate.get());
     return {true, L"Enrollment and inventory delivery succeeded."};
   } catch (const std::exception& error) {
     try { return {false, wide(error.what())}; }
@@ -671,6 +784,7 @@ TransportResult run_telemetry_cycle() {
     cert_context certificate(find_agent_certificate(identity.certificate_sha256));
     if (!certificate) throw std::runtime_error("The enrolled Agent certificate is unavailable.");
     report_pending_result(identity, certificate.get());
+    report_pending_hyperv_action_result(identity, certificate.get());
     const auto telemetry = collect_windows_telemetry_json();
     if (telemetry.empty()) throw std::runtime_error("The Agent telemetry snapshot is unavailable.");
     const std::string body = "{\"type\":\"telemetry\",\"device_uri\":\"" + json_escape(identity.device_uri) +
@@ -680,6 +794,7 @@ TransportResult run_telemetry_cycle() {
     if (response.status != 200 || json_string(response.body, "type") != std::optional<std::string>("accepted"))
       throw std::runtime_error("The Agent telemetry was rejected.");
     process_lifecycle_assignment(response.body, identity, certificate.get());
+    process_hyperv_action_assignment(response.body, identity, certificate.get());
     return {true, L"Telemetry delivery succeeded."};
   } catch (const std::exception& error) {
     try { return {false, wide(error.what())}; }

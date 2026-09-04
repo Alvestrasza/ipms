@@ -23,6 +23,8 @@ from ipms.apps.discovery.views import (
     ConnectorEndpointListView,
     PhysicalSystemListView,
     HyperVVirtualMachineListView,
+    HyperVVirtualMachineActionJobView,
+    HyperVVirtualMachineActionView,
     LinuxSystemDetailView,
     LinuxSystemListView,
     ManagedDeviceCertificateProbeView,
@@ -123,6 +125,16 @@ urlpatterns = [
         "hyper-v/virtual-machines/",
         HyperVVirtualMachineListView.as_view(),
         name="hyperv-virtual-machine-list",
+    ),
+    path(
+        "hyper-v/virtual-machines/<uuid:pk>/actions/",
+        HyperVVirtualMachineActionView.as_view(),
+        name="hyperv-virtual-machine-action",
+    ),
+    path(
+        "hyper-v/actions/<uuid:pk>/",
+        HyperVVirtualMachineActionJobView.as_view(),
+        name="hyperv-virtual-machine-action-job",
     ),
     path("linux-systems/", LinuxSystemListView.as_view(), name="linux-system-list"),
     path(

@@ -17,6 +17,7 @@ enum class ServerMessageType {
   inventory_collection_request,
   agent_update_manifest,
   certificate_rotation,
+  hyperv_virtual_machine_action,
 };
 
 struct AgentGatewayConfig {

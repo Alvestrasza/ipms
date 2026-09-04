@@ -1,7 +1,26 @@
-import { Boxes, Cpu, MemoryStick, Play, Power } from "lucide-react";
+"use client";
 
+import {
+  Boxes,
+  CirclePause,
+  CirclePlay,
+  Cpu,
+  MemoryStick,
+  Play,
+  Power,
+  Square,
+  X,
+} from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+
+import { DialogPortal } from "@/components/dialog-portal";
 import { StatusPill } from "@/components/status-pill";
-import type { HyperVVirtualMachine } from "@/lib/server-hyperv";
+import type {
+  HyperVAction,
+  HyperVActionJob,
+  HyperVVirtualMachine,
+} from "@/lib/hyperv-types";
 
 type Copy = {
   summary: string;
@@ -21,12 +40,39 @@ type Copy = {
   ipAddresses: string;
   noVirtualMachines: string;
   noVirtualMachinesHint: string;
+  contextHint: string;
+  actionMenu: string;
+  actions: Record<HyperVAction, string>;
+  confirmTitle: string;
+  confirmBody: string;
+  stopWarning: string;
+  cancel: string;
+  confirm: string;
+  queued: string;
+  actionFailed: string;
   states: Record<string, string>;
 };
 
+type Menu = { vm: HyperVVirtualMachine; x: number; y: number };
+type Pending = { vm: HyperVVirtualMachine; action: HyperVAction };
+const wait = (milliseconds: number) =>
+  new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+
+function availableActions(vm: HyperVVirtualMachine): HyperVAction[] {
+  if (vm.state === "running") return ["pause", "stop"];
+  if (vm.state === "paused") return ["resume", "stop"];
+  if (vm.state === "stopped") return ["start"];
+  return [];
+}
+
+function actionIcon(action: HyperVAction) {
+  if (action === "pause") return <CirclePause aria-hidden="true" size={16} />;
+  if (action === "stop") return <Square aria-hidden="true" size={16} />;
+  return <CirclePlay aria-hidden="true" size={16} />;
+}
+
 function formatMemory(bytes: number | null) {
-  if (bytes === null) return "—";
-  return `${Math.round(bytes / 1024 ** 3)} GiB`;
+  return bytes === null ? "—" : `${Math.round(bytes / 1024 ** 3)} GiB`;
 }
 
 function formatUptime(seconds: number | null) {
@@ -49,16 +95,106 @@ function stateStatus(state: HyperVVirtualMachine["state"]) {
 export function HyperVVirtualMachineInventory({
   copy,
   virtualMachines,
+  csrfToken,
+  tenantId,
+  canManage,
 }: {
   copy: Copy;
   virtualMachines: HyperVVirtualMachine[];
+  csrfToken: string;
+  tenantId: string;
+  canManage: boolean;
 }) {
+  const router = useRouter();
+  const [menu, setMenu] = useState<Menu | null>(null);
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const close = () => setMenu(null);
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    window.addEventListener("click", close);
+    window.addEventListener("keydown", handleEscape);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", handleEscape);
+      window.removeEventListener("resize", close);
+    };
+  }, []);
+
   const running = virtualMachines.filter((vm) => vm.state === "running").length;
   const stopped = virtualMachines.filter((vm) => vm.state === "stopped").length;
   const memory = virtualMachines.reduce(
     (total, vm) => total + (vm.memory_bytes ?? 0),
     0,
   );
+
+  function openMenu(vm: HyperVVirtualMachine, x: number, y: number) {
+    if (!canManage || availableActions(vm).length === 0) return;
+    setMenu({
+      vm,
+      x: Math.max(8, Math.min(x, window.innerWidth - 220)),
+      y: Math.max(8, Math.min(y, window.innerHeight - 190)),
+    });
+  }
+
+  async function runAction() {
+    if (!pending) return;
+    setBusy(true);
+    setError("");
+    setMessage(copy.queued);
+    try {
+      const response = await fetch(
+        `/api/v1/hyper-v/virtual-machines/${pending.vm.id}/actions/`,
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": csrfToken,
+            "X-IPMS-Tenant-ID": tenantId,
+          },
+          body: JSON.stringify({ action: pending.action }),
+        },
+      );
+      if (!response.ok) throw new Error("queue_failed");
+      let job = (await response.json()) as HyperVActionJob;
+      for (
+        let attempt = 0;
+        attempt < 75 &&
+        !["succeeded", "failed", "cancelled"].includes(job.status);
+        attempt += 1
+      ) {
+        await wait(1_000);
+        const statusResponse = await fetch(
+          `/api/v1/hyper-v/actions/${job.id}/`,
+          {
+            cache: "no-store",
+            credentials: "same-origin",
+            headers: { "X-IPMS-Tenant-ID": tenantId },
+          },
+        );
+        if (!statusResponse.ok) throw new Error("status_failed");
+        job = (await statusResponse.json()) as HyperVActionJob;
+      }
+      if (job.status !== "succeeded")
+        throw new Error(job.result_code || "action_failed");
+      setPending(null);
+      setMessage("");
+      router.refresh();
+    } catch {
+      setError(copy.actionFailed);
+      setMessage("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <>
       <section className="summary-grid" aria-label={copy.summary}>
@@ -112,6 +248,14 @@ export function HyperVVirtualMachineInventory({
             <strong>{virtualMachines.length}</strong>
           </span>
         </div>
+        {canManage && virtualMachines.length > 0 ? (
+          <p className="hyperv-context-hint">{copy.contextHint}</p>
+        ) : null}
+        {error && !pending ? (
+          <p className="form-error hyperv-action-message" role="alert">
+            {error}
+          </p>
+        ) : null}
         {virtualMachines.length ? (
           <div className="table-scroll">
             <table>
@@ -129,7 +273,34 @@ export function HyperVVirtualMachineInventory({
               </thead>
               <tbody>
                 {virtualMachines.map((vm) => (
-                  <tr key={vm.id}>
+                  <tr
+                    key={vm.id}
+                    className={
+                      canManage && availableActions(vm).length
+                        ? "hyperv-vm-row--actionable"
+                        : undefined
+                    }
+                    tabIndex={
+                      canManage && availableActions(vm).length ? 0 : undefined
+                    }
+                    onContextMenu={(event) => {
+                      if (canManage && availableActions(vm).length) {
+                        event.preventDefault();
+                        openMenu(vm, event.clientX, event.clientY);
+                      }
+                    }}
+                    onKeyDown={(event) => {
+                      if (
+                        event.key === "ContextMenu" ||
+                        (event.shiftKey && event.key === "F10")
+                      ) {
+                        event.preventDefault();
+                        const bounds =
+                          event.currentTarget.getBoundingClientRect();
+                        openMenu(vm, bounds.left + 48, bounds.top + 32);
+                      }
+                    }}
+                  >
                     <td>
                       <strong>{vm.name}</strong>
                     </td>
@@ -162,6 +333,101 @@ export function HyperVVirtualMachineInventory({
           </div>
         )}
       </section>
+      {menu ? (
+        <div
+          className="hyperv-context-menu"
+          role="menu"
+          aria-label={copy.actionMenu}
+          style={{ left: menu.x, top: menu.y }}
+        >
+          <strong>{menu.vm.name}</strong>
+          {availableActions(menu.vm).map((action) => (
+            <button
+              key={action}
+              type="button"
+              role="menuitem"
+              className={
+                action === "stop" ? "hyperv-context-menu__danger" : undefined
+              }
+              onClick={() => {
+                setPending({ vm: menu.vm, action });
+                setMenu(null);
+                setError("");
+              }}
+            >
+              {actionIcon(action)}
+              <span>{copy.actions[action]}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {pending ? (
+        <DialogPortal>
+          <div className="modal-backdrop">
+            <section
+              className="modal-card"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="hyperv-action-heading"
+            >
+              <div
+                className={`modal-card__heading ${pending.action === "stop" ? "modal-card__heading--danger" : ""}`}
+              >
+                <h3 id="hyperv-action-heading">{copy.confirmTitle}</h3>
+                <button
+                  className="icon-button"
+                  type="button"
+                  aria-label={copy.cancel}
+                  disabled={busy}
+                  onClick={() => setPending(null)}
+                >
+                  <X aria-hidden="true" size={17} />
+                </button>
+              </div>
+              <p>
+                {copy.confirmBody
+                  .replace("{action}", copy.actions[pending.action])
+                  .replace("{name}", pending.vm.name)}
+              </p>
+              {pending.action === "stop" ? (
+                <p className="hyperv-stop-warning">{copy.stopWarning}</p>
+              ) : null}
+              {message ? (
+                <p className="hyperv-action-progress" role="status">
+                  {message}
+                </p>
+              ) : null}
+              {error ? (
+                <p className="form-error" role="alert">
+                  {error}
+                </p>
+              ) : null}
+              <div className="modal-card__actions">
+                <button
+                  className="outline-button"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setPending(null)}
+                >
+                  {copy.cancel}
+                </button>
+                <button
+                  className={
+                    pending.action === "stop"
+                      ? "danger-button"
+                      : "primary-button"
+                  }
+                  type="button"
+                  disabled={busy}
+                  onClick={runAction}
+                >
+                  {copy.confirm}
+                </button>
+              </div>
+            </section>
+          </div>
+        </DialogPortal>
+      ) : null}
     </>
   );
 }

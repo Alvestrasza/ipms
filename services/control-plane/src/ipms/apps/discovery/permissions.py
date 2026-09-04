@@ -15,3 +15,7 @@ class CanManageConnectors(BasePermission):
             is_active=True,
             role=TenantMembership.Role.TENANT_ADMIN,
         ).exists()
+
+
+class CanManageInfrastructure(CanManageConnectors):
+    message = "Infrastructure management requires tenant administrator access."
