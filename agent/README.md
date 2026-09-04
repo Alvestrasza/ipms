@@ -3,7 +3,7 @@
 The IPMS Agent is a native C++20 service for customer-managed Windows and Linux systems. It will establish an outbound, mutually authenticated connection to the IPMS Control Plane and collect only capabilities explicitly assigned to the enrolled device.
 
 The implementation contains the pack registry and fixed read-only Windows and
-Linux inventory capabilities. Build 0.2.11 includes a native Linux service and
+Linux inventory capabilities. Build 0.2.12 includes a native Linux service and
 bounded, paged installed-software and update-posture inventory. Both platforms
 use the same Agent-initiated TCP 9419 enrollment and mTLS trust boundary. The
 Windows executable also reports roles/features and local Hyper-V VMs. Its
@@ -37,7 +37,7 @@ configuration version, and integration-service-reported IP addresses. A
 45-second deadline, bounded related-object reads, and a 40-KiB JSON limit keep
 the shared Gateway message below its transport ceiling.
 
-Agent 0.2.11 provides a separate lifecycle capability. It maps `start`, `stop`,
+Agent 0.2.12 provides a separate lifecycle capability. It maps `start`, `stop`,
 `pause`, and `resume` to compiled-in `Msvm_ComputerSystem.RequestStateChange`
 target states. Hyper-V WMI provider V2 pause requests `Quiesce` and normalizes
 that stable observation to `paused`; resume requests the enabled state. `shutdown`

@@ -384,7 +384,7 @@ shutdown_component_lookup find_shutdown_component(
     const std::string& normalized_source_id) {
   auto rows = execute_query(
       services,
-      L"SELECT InstanceID, SystemName, DeviceID FROM Msvm_ShutdownComponent");
+      L"SELECT SystemName, DeviceID FROM Msvm_ShutdownComponent");
   if (!rows) return {};
   ComPtr<IWbemClassObject> match;
   std::wstring match_path;
@@ -394,16 +394,20 @@ shutdown_component_lookup find_shutdown_component(
       std::chrono::steady_clock::now() + std::chrono::seconds(10),
       [&match, &match_path, &normalized_source_id](IWbemClassObject* row) {
         if (match) return;
-        const auto instance_id = wmi_string(row, L"InstanceID");
+        const auto system_name = wmi_string(row, L"SystemName");
         const auto device_id = wmi_string(row, L"DeviceID");
-        auto id = normalized_guid(wmi_string(row, L"SystemName"));
-        if (id.empty()) id = guid_from_instance_id(instance_id);
+        auto id = normalized_guid(system_name);
         if (id.empty()) id = guid_from_instance_id(device_id);
-        const auto escaped_instance_id = escaped_wmi_key_value(instance_id);
-        if (id == normalized_source_id && !escaped_instance_id.empty()) {
+        const auto escaped_system_name = escaped_wmi_key_value(system_name);
+        const auto escaped_device_id = escaped_wmi_key_value(device_id);
+        if (id == normalized_source_id && !escaped_system_name.empty() &&
+            !escaped_device_id.empty()) {
           match = row;
-          match_path = L"Msvm_ShutdownComponent.InstanceID=\"" +
-                       escaped_instance_id + L"\"";
+          match_path =
+              L"Msvm_ShutdownComponent.CreationClassName=\"Msvm_ShutdownComponent\","
+              L"DeviceID=\"" + escaped_device_id +
+              L"\",SystemCreationClassName=\"Msvm_ComputerSystem\",SystemName=\"" +
+              escaped_system_name + L"\"";
         }
       });
   return {match, match_path, completed};

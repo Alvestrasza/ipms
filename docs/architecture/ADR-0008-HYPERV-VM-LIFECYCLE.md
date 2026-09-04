@@ -2,8 +2,8 @@
 
 - Status: Accepted for the development foundation
 - Decision date: 2026-09-04
-- Application version: 0.2.11
-- First capable Windows Agent: 0.2.11
+- Application version: 0.2.12
+- First capable Windows Agent: 0.2.12
 
 ## Context
 
@@ -36,7 +36,7 @@ inventory and comparing normalized GUIDs instead of injecting the identifier
 into a WMI expression. After identity validation, the Agent constructs the
 fixed class-key object path locally from the validated GUID. The shutdown
 component path is constructed from the matched provider component's locally
-read, bounded, escaped `InstanceID` key. The matching provider object must also reproduce the
+read, bounded, escaped `CIM_LogicalDevice` keys. The matching provider object must also reproduce the
 inventory-recorded display name; a mismatch is rejected as an identity
 conflict. Start, stop, pause, and resume map to compiled-in
 `Msvm_ComputerSystem.RequestStateChange` values using the provider-required COM

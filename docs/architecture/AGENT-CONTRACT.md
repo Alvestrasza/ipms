@@ -74,7 +74,7 @@ virtual placement. Windows `ProductType` is read natively with a fixed registry
 fallback, and the Windows 11 LTSC compatibility product name is normalized when
 WMI is unavailable. The `hyper-v-host` capability uses fixed local WMI v2 reads
 and reports a bounded VM collection. The Control Plane cannot supply WMI text,
-commands, scripts, method names, or free-form arguments. Agent 0.2.11 adds only
+commands, scripts, method names, or free-form arguments. Agent 0.2.12 adds only
 the five compiled lifecycle actions defined by ADR-0008.
 
 ## Control-plane requirements
