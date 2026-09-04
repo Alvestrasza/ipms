@@ -2,8 +2,8 @@
 
 - Status: Accepted for the development foundation
 - Decision date: 2026-09-05
-- Application version: 0.2.18
-- First capable Windows Agent: 0.2.13
+- Application version: 0.2.19
+- First compatible Windows Agent: 0.2.14
 
 ## Context
 
@@ -54,7 +54,9 @@ outbound TCP 9419 mTLS channel. The assignment contains only:
   attention.
 
 The native Agent revalidates the VM GUID, recorded display name, and running
-state against the local Hyper-V V2 provider. It uses the documented
+state against the local Hyper-V V2 provider. It resolves the current setting
+object through the documented `Msvm_SettingsDefineState` association, avoiding
+ambiguous or truncated host-wide setting scans. It then uses the documented
 `GetVirtualSystemThumbnailImage` method for a bounded RGB565 frame and Windows
 Imaging Component for in-memory PNG encoding. It uses the fixed
 `Msvm_Keyboard` and `Msvm_SyntheticMouse` methods for input, including the
@@ -94,7 +96,7 @@ The native Windows build and contract tests prove that the console remains a
 compiled-in capability. The web build proves the localized modal and input
 surface compile as a production Next.js application.
 
-Release acceptance still requires a signed Agent package installed on a
-supported Hyper-V host and live verification of frame color, keyboard layout,
-mouse coordinate mapping, secure attention, host failover behavior, and
-provider timeouts.
+Live acceptance has verified session exclusivity on a supported Hyper-V host.
+Frame color, keyboard layout, mouse coordinate mapping, secure attention, host
+failover behavior, and provider timeouts still require acceptance with the
+0.2.14 Agent package.

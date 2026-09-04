@@ -516,26 +516,30 @@ ComPtr<IWbemClassObject> find_related_device(
 ComPtr<IWbemClassObject> find_realized_settings(
     IWbemServices* services,
     const std::string& source_id) {
-  auto rows = execute_query(
-      services,
-      L"SELECT __PATH, VirtualSystemIdentifier, VirtualSystemType "
-      L"FROM Msvm_VirtualSystemSettingData");
+  // Resolve the current setting object through the documented
+  // Msvm_SettingsDefineState association. Scanning the whole settings class is
+  // both ambiguous in the presence of checkpoints and bounded by our global
+  // WMI row limit, which can hide a valid VM on larger hosts.
+  const std::wstring vm_id(source_id.begin(), source_id.end());
+  const std::wstring query =
+      L"ASSOCIATORS OF {Msvm_ComputerSystem.CreationClassName=\"Msvm_ComputerSystem\","
+      L"Name=\"" + vm_id +
+      L"\"} WHERE AssocClass=Msvm_SettingsDefineState "
+      L"ResultClass=Msvm_VirtualSystemSettingData "
+      L"Role=ManagedElement ResultRole=SettingData";
+  auto rows = execute_query(services, query.c_str());
   if (!rows) return {};
   ComPtr<IWbemClassObject> match;
-  consume_rows(
-      rows.Get(), k_max_related_rows,
+  const bool completed = consume_rows(
+      rows.Get(), 8,
       std::chrono::steady_clock::now() + std::chrono::seconds(10),
       [&match, &source_id](IWbemClassObject* row) {
         if (match || normalized_guid(wmi_string(row, L"VirtualSystemIdentifier")) != source_id) {
           return;
         }
-        if (_wcsicmp(
-                wmi_string(row, L"VirtualSystemType").c_str(),
-                L"Microsoft:Hyper-V:System:Realized") == 0) {
-          match = row;
-        }
+        match = row;
       });
-  return match;
+  return completed ? match : ComPtr<IWbemClassObject>{};
 }
 
 bool invoke_input_method(
@@ -747,10 +751,10 @@ std::vector<std::uint8_t> capture_console_frame(
   VariantInit(&height_value);
   target.vt = VT_BSTR;
   target.bstrVal = SysAllocString(settings_path.c_str());
-  width_value.vt = VT_I4;
-  width_value.lVal = width;
-  height_value.vt = VT_I4;
-  height_value.lVal = height;
+  width_value.vt = VT_UI2;
+  width_value.uiVal = width;
+  height_value.vt = VT_UI2;
+  height_value.uiVal = height;
   const bool put = target.bstrVal &&
                    SUCCEEDED(input->Put(L"TargetSystem", 0, &target, 0)) &&
                    SUCCEEDED(input->Put(L"WidthPixels", 0, &width_value, 0)) &&
