@@ -384,7 +384,7 @@ shutdown_component_lookup find_shutdown_component(
     const std::string& normalized_source_id) {
   auto rows = execute_query(
       services,
-      L"SELECT SystemName, DeviceID FROM Msvm_ShutdownComponent");
+      L"SELECT InstanceID, SystemName, DeviceID FROM Msvm_ShutdownComponent");
   if (!rows) return {};
   ComPtr<IWbemClassObject> match;
   std::wstring match_path;
@@ -394,14 +394,16 @@ shutdown_component_lookup find_shutdown_component(
       std::chrono::steady_clock::now() + std::chrono::seconds(10),
       [&match, &match_path, &normalized_source_id](IWbemClassObject* row) {
         if (match) return;
+        const auto instance_id = wmi_string(row, L"InstanceID");
         const auto device_id = wmi_string(row, L"DeviceID");
         auto id = normalized_guid(wmi_string(row, L"SystemName"));
+        if (id.empty()) id = guid_from_instance_id(instance_id);
         if (id.empty()) id = guid_from_instance_id(device_id);
-        const auto escaped_device_id = escaped_wmi_key_value(device_id);
-        if (id == normalized_source_id && !escaped_device_id.empty()) {
+        const auto escaped_instance_id = escaped_wmi_key_value(instance_id);
+        if (id == normalized_source_id && !escaped_instance_id.empty()) {
           match = row;
-          match_path = L"Msvm_ShutdownComponent.DeviceID=\"" +
-                       escaped_device_id + L"\"";
+          match_path = L"Msvm_ShutdownComponent.InstanceID=\"" +
+                       escaped_instance_id + L"\"";
         }
       });
   return {match, match_path, completed};
@@ -783,7 +785,11 @@ hyperv_action_result execute_hyperv_virtual_machine_action(
     SysFreeString(shutdown_path);
     SysFreeString(shutdown_method);
     if (FAILED(shutdown_result) || !shutdown_output) {
-      return {false, "guest_shutdown_execution_failed"};
+      return {
+          false,
+          "guest_shutdown_execution_failed_" +
+              std::to_string(static_cast<std::uint32_t>(shutdown_result)),
+      };
     }
     const auto shutdown_return =
         wmi_uint64(shutdown_output.Get(), L"ReturnValue").value_or(1);
