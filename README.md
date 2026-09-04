@@ -9,7 +9,7 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-IPMS application build `0.2.7` adds controlled Hyper-V workload actions to
+IPMS application build `0.2.8` adds controlled Hyper-V workload actions to
 the inventory foundation. A
 standalone development
 Appliance currently runs the tenant-aware Django Control Plane, PostgreSQL,

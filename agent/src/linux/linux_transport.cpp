@@ -27,7 +27,7 @@
 #include <unistd.h>
 
 namespace {
-constexpr std::string_view k_agent_version = "0.2.7";
+constexpr std::string_view k_agent_version = "0.2.8";
 constexpr std::size_t k_max_document_bytes = 65'536;
 
 struct curl_cleanup { void operator()(CURL* value) const { if (value) curl_easy_cleanup(value); } };

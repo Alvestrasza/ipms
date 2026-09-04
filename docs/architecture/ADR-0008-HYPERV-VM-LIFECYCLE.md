@@ -2,8 +2,8 @@
 
 - Status: Accepted for the development foundation
 - Decision date: 2026-09-04
-- Application version: 0.2.7
-- First capable Windows Agent: 0.2.7
+- Application version: 0.2.8
+- First capable Windows Agent: 0.2.8
 
 ## Context
 
@@ -39,7 +39,9 @@ component path is constructed from the matched provider component's locally
 read, bounded, escaped key. The matching provider object must also reproduce the
 inventory-recorded display name; a mismatch is rejected as an identity
 conflict. Start, stop, pause, and resume map to compiled-in
-`Msvm_ComputerSystem.RequestStateChange` values. Graceful shutdown uses the
+`Msvm_ComputerSystem.RequestStateChange` values using the provider-required COM
+automation representation for the fixed CIM `uint16` state value. Graceful
+shutdown uses the
 compiled-in `Msvm_ShutdownComponent.InitiateShutdown` method with `Force=false`
 and a fixed audit-safe reason. The Agent polls the local provider for the final
 state. No arbitrary WMI query, method, PowerShell, script, command, path, URL,

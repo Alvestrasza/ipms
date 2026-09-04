@@ -6,10 +6,10 @@ namespace ipms::agent {
 
 const std::vector<ManagementPack>& builtin_management_packs() {
   static const std::vector<ManagementPack> packs{
-      {"windows-server-core", "0.2.7", AccessMode::read_inventory, {}, {"windows.os", "windows.hardware", "windows.storage", "windows.network", "windows.roles-features"}},
-      {"windows-software", "0.2.7", AccessMode::read_inventory, {"windows-server-core"}, {"windows.software", "windows.update-posture"}},
-      {"hyper-v-host", "0.2.7", AccessMode::management, {"windows-server-core"}, {"hyperv.host", "hyperv.virtual-machines", "hyperv.network", "hyperv.vm.lifecycle"}},
-      {"linux-core", "0.2.7", AccessMode::read_inventory, {}, {"linux.os", "linux.hardware", "linux.storage", "linux.network", "linux.software", "linux.update-posture"}},
+      {"windows-server-core", "0.2.8", AccessMode::read_inventory, {}, {"windows.os", "windows.hardware", "windows.storage", "windows.network", "windows.roles-features"}},
+      {"windows-software", "0.2.8", AccessMode::read_inventory, {"windows-server-core"}, {"windows.software", "windows.update-posture"}},
+      {"hyper-v-host", "0.2.8", AccessMode::management, {"windows-server-core"}, {"hyperv.host", "hyperv.virtual-machines", "hyperv.network", "hyperv.vm.lifecycle"}},
+      {"linux-core", "0.2.8", AccessMode::read_inventory, {}, {"linux.os", "linux.hardware", "linux.storage", "linux.network", "linux.software", "linux.update-posture"}},
   };
   return packs;
 }

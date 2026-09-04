@@ -31,7 +31,7 @@
 namespace {
 using Microsoft::WRL::ComPtr;
 constexpr std::size_t k_max_document_bytes = 65'536;
-constexpr wchar_t k_agent_version[] = L"0.2.7";
+constexpr wchar_t k_agent_version[] = L"0.2.8";
 constexpr std::size_t k_max_artifact_bytes = 64 * 1024 * 1024;
 
 struct internet_closer { void operator()(void* handle) const { if (handle) WinHttpCloseHandle(handle); } };
@@ -335,7 +335,7 @@ struct http_response { DWORD status{}; std::string body; };
 
 http_response post_json(const std::wstring& hostname, std::uint16_t port, const std::wstring& path,
                         const std::string& body, const std::string* pin, PCCERT_CONTEXT client_certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.7", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.8", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent HTTP session could not be created.");
   WinHttpSetTimeouts(session.get(), 10'000, 10'000, 30'000, 30'000);
@@ -397,7 +397,7 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
 }
 
 http_response post_binary(const state& identity, const std::string& body, PCCERT_CONTEXT certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.7", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.8", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent artifact session could not be created.");
   WinHttpSetTimeouts(session.get(), 10'000, 10'000, 60'000, 60'000);

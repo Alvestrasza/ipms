@@ -823,8 +823,8 @@ hyperv_action_result execute_hyperv_virtual_machine_action(
   }
   VARIANT state_value{};
   VariantInit(&state_value);
-  state_value.vt = VT_UI2;
-  state_value.uiVal = *requested_state;
+  state_value.vt = VT_I4;
+  state_value.lVal = static_cast<LONG>(*requested_state);
   const HRESULT put_result = input->Put(L"RequestedState", 0, &state_value, 0);
   VariantClear(&state_value);
   if (FAILED(put_result)) {
