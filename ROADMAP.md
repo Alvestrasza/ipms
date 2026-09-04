@@ -267,7 +267,7 @@ Agent into a remote administration channel.
 
 ### v0.2.0 Implementation Checkpoint
 
-Build 0.2.0 provides the native Linux Agent, cross-platform paged software
+Build 0.2.1 provides the native Linux Agent, cross-platform paged software
 inventory, Linux package update posture, Windows update-history timestamps,
 Windows client classification, Hyper-V VM inventory, and the first constrained
 read-only operations for Sophos Firewall, Loadbalancer.org ADC, and HPE

@@ -3,7 +3,7 @@
 The IPMS Agent is a native C++20 service for customer-managed Windows and Linux systems. It will establish an outbound, mutually authenticated connection to the IPMS Control Plane and collect only capabilities explicitly assigned to the enrolled device.
 
 The implementation contains the pack registry and fixed read-only Windows and
-Linux inventory capabilities. Build 0.2.0 adds a native Linux service and
+Linux inventory capabilities. Build 0.2.1 adds a native Linux service and
 bounded, paged installed-software and update-posture inventory. Both platforms
 use the same Agent-initiated TCP 9419 enrollment and mTLS trust boundary. The
 Windows executable also reports roles/features and local Hyper-V VMs; it never
