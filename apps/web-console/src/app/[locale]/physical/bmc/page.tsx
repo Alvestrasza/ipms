@@ -11,6 +11,7 @@ import { ConsoleShell } from "@/components/console-shell";
 import { StatusPill } from "@/components/status-pill";
 import { getDictionary } from "@/i18n/dictionaries";
 import { resolveLocale } from "@/i18n/server";
+import { hasPermission } from "@/lib/auth-types";
 import { getServerSession } from "@/lib/server-auth";
 import { getPhysicalInfrastructure } from "@/lib/server-physical";
 import { selectedTenant } from "@/lib/tenant-selection";
@@ -33,8 +34,7 @@ export default async function BareMetalControllerPage() {
   const connectors = infrastructure.connectors.filter(
     (connector) => connector.connector_type === "bmc-api",
   );
-  const canManage =
-    session.user.is_platform_admin || tenant.role === "tenant_admin";
+  const canManage = hasPermission(tenant, "connectors.manage");
   const familyLabels = {
     "hpe-ilo4": dictionary.bmc.familyIlo4,
     "hpe-ilo-modern": dictionary.bmc.familyIloModern,

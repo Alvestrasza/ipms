@@ -2,13 +2,27 @@ export type TenantRole =
   | "platform_admin"
   | "tenant_admin"
   | "operator"
+  | "approver"
+  | "auditor"
   | "reader";
+
+export type PermissionCode =
+  | "inventory.view"
+  | "connectors.manage"
+  | "agents.view"
+  | "agents.manage"
+  | "virtual_machines.operate"
+  | "operations.approve"
+  | "audit.view"
+  | "users.view"
+  | "users.manage";
 
 export type TenantSummary = {
   id: string;
   slug: string;
   display_name: string;
   role: TenantRole;
+  permissions?: PermissionCode[];
 };
 
 export type AuthenticatedSession = {
@@ -28,3 +42,11 @@ export type AnonymousSession = {
 };
 
 export type IpmsSession = AuthenticatedSession | AnonymousSession;
+
+export function hasPermission(
+  tenant: TenantSummary,
+  permission: PermissionCode,
+): boolean {
+  if (tenant.permissions) return tenant.permissions.includes(permission);
+  return ["platform_admin", "tenant_admin"].includes(tenant.role);
+}

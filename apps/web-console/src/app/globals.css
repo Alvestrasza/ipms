@@ -1903,6 +1903,37 @@ td strong {
 .form-grid--endpoint {
   grid-template-columns: minmax(0, 1fr) 130px;
 }
+.form-grid--two-columns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.user-admin-dialog {
+  width: min(680px, 100%);
+}
+.user-admin-dialog label small {
+  color: var(--color-text-muted);
+  font-weight: 400;
+  line-height: 1.45;
+}
+.user-admin-dialog__identity {
+  display: grid;
+  gap: 4px;
+  padding: 0;
+  color: var(--color-text-secondary);
+}
+.user-admin-dialog__identity strong {
+  color: var(--color-text-primary);
+}
+.checkbox-field {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  justify-content: start;
+}
+.checkbox-field input {
+  width: 17px;
+  height: 17px;
+  min-height: auto;
+  padding: 0;
+}
 .connector-row__status-actions,
 .bmc-actions,
 .log-export {
@@ -2344,6 +2375,9 @@ td strong {
 }
 
 @media (max-width: 680px) {
+  .form-grid--two-columns {
+    grid-template-columns: 1fr;
+  }
   .agent-admin-toolbar__actions,
   .agent-search,
   .agent-admin-toolbar__actions .outline-button {

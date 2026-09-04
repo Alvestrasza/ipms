@@ -26,8 +26,8 @@ authorization, licensing, audit events, tests, and user approval.
 
 ## Lifecycle
 
-1. A tenant administrator enrolls an endpoint, trust policy, and protected
-   credential reference.
+1. An actor with `connectors.manage` enrolls an endpoint, trust policy, and
+   protected credential reference.
 2. The Control Plane validates tenant ownership and queues an attributable
    discovery job.
 3. A connector worker resolves the secret only for the lifetime of that job.

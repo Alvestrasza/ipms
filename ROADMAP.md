@@ -102,6 +102,8 @@ production.
   and Linux binaries with outbound mTLS connections to the Control Plane.
 - **Identity:** OIDC is the integration boundary. Keycloak is the initial
   reference identity provider, while customer OIDC providers remain supported.
+  IPMS remains authoritative for tenant memberships and effective permissions;
+  external subjects bind through the validated OIDC issuer and subject tuple.
 - **Packaging:** Container images are used for Appliance and Scale-Out
   components. Rootless execution, minimal base images, signed images, and
   vulnerability scanning are required before production use.
@@ -338,6 +340,10 @@ Migration from IPMS Appliance to IPMS Scale-Out must remain supported.
 
 - Implement tenant management, identity integration, RBAC, platform roles, and
   customer support access with explicit, time-limited approval.
+- The 0.2.13 foundation centralizes stable permission codes, tenant roles,
+  expiring memberships, local user administration, and the future OIDC subject
+  binding. Keycloak login, claim mapping, logout, and session revalidation
+  remain a separately accepted integration step.
 - Implement certificate authority integration, mTLS enrollment, certificate
   rotation, agent registration, and revocation.
 - Provide web-wizard and unattended bootstrap workflows.

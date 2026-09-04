@@ -6,6 +6,7 @@ import { ManagedDeviceWizard } from "@/components/managed-device-wizard";
 import { StatusPill } from "@/components/status-pill";
 import { getDictionary } from "@/i18n/dictionaries";
 import { resolveLocale } from "@/i18n/server";
+import { hasPermission } from "@/lib/auth-types";
 import { getServerSession } from "@/lib/server-auth";
 import { getManagedDevices } from "@/lib/server-devices";
 import { selectedTenant } from "@/lib/tenant-selection";
@@ -30,8 +31,7 @@ export default async function NetworkPage() {
   const inventory = await getManagedDevices(tenant.id);
   if (!inventory.sessionValid) redirect(`/${locale}/login`);
   const copy = dictionary.networkDevices;
-  const canManage =
-    session.user.is_platform_admin || tenant.role === "tenant_admin";
+  const canManage = hasPermission(tenant, "connectors.manage");
   const devicesByConnector = new Map(
     inventory.devices.map((device) => [device.connector_id, device]),
   );

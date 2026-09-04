@@ -1,16 +1,35 @@
 import json
 from ipaddress import ip_address
 
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, get_user_model, login, logout
+from django.db import IntegrityError, transaction
 from django.http import HttpRequest, JsonResponse
 from django.middleware.csrf import get_token
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from ipms.apps.audit.models import AuditEvent
+from ipms.apps.core.exceptions import PublicApiError
 
 from .access import tenants_for_user
 from .models import TenantMembership
+from .permissions import HasSelectedTenantAccess, HasTenantPermission
+from .rbac import (
+    Permission,
+    effective_memberships,
+    effective_tenant_permissions,
+    effective_tenant_role,
+    is_platform_administrator,
+)
+from .serializers import (
+    TenantMembershipUpdateSerializer,
+    TenantUserCreateSerializer,
+    tenant_user_payload,
+)
 
 
 MAX_LOGIN_BODY_BYTES = 8_192
@@ -53,12 +72,14 @@ def _login_error(request: HttpRequest, *, status: int) -> JsonResponse:
     )
 
 
-def _tenant_payload(user) -> list[dict[str, str]]:
+def _tenant_payload(user) -> list[dict[str, object]]:
     roles = {
         membership.tenant_id: membership.role
         for membership in TenantMembership.objects.filter(
             user=user,
-            is_active=True,
+            id__in=effective_memberships(
+                TenantMembership.objects.filter(user=user)
+            ).values("id"),
         )
     }
     return [
@@ -66,7 +87,8 @@ def _tenant_payload(user) -> list[dict[str, str]]:
             "id": str(tenant.id),
             "slug": tenant.slug,
             "display_name": tenant.display_name,
-            "role": "platform_admin" if user.is_staff else roles[tenant.id],
+            "role": effective_tenant_role(user, tenant),
+            "permissions": sorted(effective_tenant_permissions(user, tenant)),
         }
         for tenant in tenants_for_user(user)
     ]
@@ -85,7 +107,7 @@ def _session_payload(request: HttpRequest) -> dict:
             "username": request.user.get_username(),
             "display_name": request.user.get_full_name()
             or request.user.get_username(),
-            "is_platform_admin": request.user.is_staff,
+            "is_platform_admin": is_platform_administrator(request.user),
         },
         "tenants": _tenant_payload(request.user),
     }
@@ -153,3 +175,153 @@ def logout_view(request: HttpRequest) -> JsonResponse:
         )
     logout(request)
     return JsonResponse(_session_payload(request))
+
+
+class CanViewUsers(HasTenantPermission):
+    message = "User viewing permission is required."
+    required_permission = Permission.USERS_VIEW
+
+
+class CanManageUsers(HasTenantPermission):
+    message = "User management permission is required."
+    required_permission = Permission.USERS_MANAGE
+
+
+def _membership_queryset(request):
+    return TenantMembership.objects.filter(tenant=request.tenant).select_related(
+        "user"
+    ).prefetch_related("user__ipms_external_identities")
+
+
+def _audit_user_change(request, *, action: str, membership, outcome: str, details=None):
+    AuditEvent.objects.create(
+        tenant=request.tenant,
+        actor=request.user.get_username()[:255],
+        action=action,
+        object_type="tenant_membership",
+        object_id=str(membership.id),
+        outcome=outcome,
+        correlation_id=request.correlation_id,
+        source_ip=_source_ip(request),
+        details=details or {},
+    )
+
+
+class TenantUserListCreateView(APIView):
+    permission_classes = (
+        IsAuthenticated,
+        HasSelectedTenantAccess,
+        CanViewUsers,
+    )
+
+    def get(self, request):
+        return Response(
+            [tenant_user_payload(item) for item in _membership_queryset(request)]
+        )
+
+    def post(self, request):
+        if Permission.USERS_MANAGE not in effective_tenant_permissions(
+            request.user, request.tenant
+        ):
+            self.permission_denied(request, message=CanManageUsers.message)
+        serializer = TenantUserCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        user_model = get_user_model()
+        if user_model.objects.filter(username__iexact=data["username"]).exists():
+            raise PublicApiError("username_unavailable", status_code=409)
+        try:
+            with transaction.atomic():
+                user = user_model.objects.create_user(
+                    username=data["username"],
+                    password=data["initial_password"],
+                    first_name=data.get("first_name", ""),
+                    last_name=data.get("last_name", ""),
+                    email=data.get("email", ""),
+                )
+                membership = TenantMembership.objects.create(
+                    tenant=request.tenant,
+                    user=user,
+                    role=data["role"],
+                    expires_at=data.get("expires_at"),
+                )
+                _audit_user_change(
+                    request,
+                    action="identity.user.create",
+                    membership=membership,
+                    outcome=AuditEvent.Outcome.SUCCEEDED,
+                    details={"role": membership.role},
+                )
+        except IntegrityError as exc:
+            raise PublicApiError("username_unavailable", status_code=409) from exc
+        membership = _membership_queryset(request).get(id=membership.id)
+        return Response(tenant_user_payload(membership), status=status.HTTP_201_CREATED)
+
+
+class TenantUserDetailView(APIView):
+    permission_classes = (
+        IsAuthenticated,
+        HasSelectedTenantAccess,
+        CanManageUsers,
+    )
+
+    def patch(self, request, pk):
+        try:
+            membership = _membership_queryset(request).get(id=pk)
+        except TenantMembership.DoesNotExist as exc:
+            raise PublicApiError("user_not_found", status_code=404) from exc
+        if membership.user.is_staff:
+            raise PublicApiError("platform_user_protected", status_code=403)
+
+        serializer = TenantMembershipUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        changes = serializer.validated_data
+        resulting_role = changes.get("role", membership.role)
+        resulting_active = changes.get("is_active", membership.is_active)
+        resulting_expiry = changes.get("expires_at", membership.expires_at)
+        removes_tenant_admin = membership.role == TenantMembership.Role.TENANT_ADMIN and (
+            resulting_role != TenantMembership.Role.TENANT_ADMIN
+            or not resulting_active
+            or resulting_expiry is not None
+        )
+        if removes_tenant_admin and not is_platform_administrator(request.user):
+            other_admin_exists = effective_memberships(
+                TenantMembership.objects.filter(
+                    tenant=request.tenant,
+                    role=TenantMembership.Role.TENANT_ADMIN,
+                ).exclude(id=membership.id)
+            ).exists()
+            if not other_admin_exists:
+                raise PublicApiError("last_tenant_admin", status_code=409)
+            if membership.user_id == request.user.id:
+                raise PublicApiError("self_role_change_denied", status_code=409)
+
+        previous = {
+            "role": membership.role,
+            "is_active": membership.is_active,
+            "expires_at": membership.expires_at.isoformat()
+            if membership.expires_at
+            else None,
+        }
+        for field, value in changes.items():
+            setattr(membership, field, value)
+        with transaction.atomic():
+            membership.save(update_fields=(*changes.keys(), "updated_at"))
+            _audit_user_change(
+                request,
+                action="identity.membership.update",
+                membership=membership,
+                outcome=AuditEvent.Outcome.SUCCEEDED,
+                details={
+                    "previous": previous,
+                    "current": {
+                        "role": membership.role,
+                        "is_active": membership.is_active,
+                        "expires_at": membership.expires_at.isoformat()
+                        if membership.expires_at
+                        else None,
+                    },
+                },
+            )
+        membership = _membership_queryset(request).get(id=membership.id)
+        return Response(tenant_user_payload(membership))

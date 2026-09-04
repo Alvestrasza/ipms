@@ -9,8 +9,9 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-IPMS application build `0.2.12` adds controlled Hyper-V workload actions to
-the inventory foundation. A
+IPMS application build `0.2.13` adds tenant-scoped user administration and a
+central role-permission model to the inventory and controlled workload-action
+foundation. A
 standalone development
 Appliance currently runs the tenant-aware Django Control Plane, PostgreSQL,
 the multilingual Next.js Web Console, and the isolated connector worker.
@@ -33,6 +34,12 @@ Gateway. The first Sophos Firewall, Loadbalancer.org ADC, and HPE Comware 7.1
 connector foundations provide fixed read-only discovery operations; live
 compatibility acceptance remains device- and firmware-specific.
 
+Local users can be assigned tenant administrator, operator, approver, auditor,
+or reader roles with optional access expiry. The Control Plane derives stable
+permission codes and reserves immutable OIDC issuer/subject bindings for a
+future Keycloak integration; tokens and provider secrets are not stored in the
+identity mapping.
+
 The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 
 ## Operations Documentation
@@ -52,6 +59,7 @@ The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 - [Windows Agent 0.1.17 enrollment and inventory](docs/operations/WINDOWS-AGENT-0.1.17-ENROLLMENT.md)
 - [Portal Windows Agent deployment](docs/operations/PORTAL-WINDOWS-AGENT-DEPLOYMENT.md)
 - [Development versioning](docs/operations/VERSIONING.md)
+- [User administration](docs/operations/USER-ADMINISTRATION.md)
 
 ## Architecture Decisions
 
@@ -65,6 +73,7 @@ The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 - [Agent contract](docs/architecture/AGENT-CONTRACT.md)
 - [Cross-platform software inventory](docs/architecture/CROSS-PLATFORM-SOFTWARE-INVENTORY.md)
 - [Network connector security boundary](docs/architecture/NETWORK-CONNECTOR-BOUNDARY.md)
+- [ADR-0009: Identity, tenant RBAC, and OIDC boundary](docs/architecture/ADR-0009-IDENTITY-RBAC-AND-OIDC.md)
 
 ## Source Layout
 

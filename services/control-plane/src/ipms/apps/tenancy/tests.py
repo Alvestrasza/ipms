@@ -1,4 +1,5 @@
 import json
+from datetime import timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -7,10 +8,12 @@ from django.db import IntegrityError, transaction
 from django.core.management import call_command
 from django.test import Client, TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from ipms.apps.audit.models import AuditEvent
 
-from .models import Tenant, TenantMembership
+from .models import ExternalIdentity, Tenant, TenantMembership
+from .rbac import Permission, effective_tenant_permissions
 
 
 class TenantModelTests(TestCase):
@@ -41,6 +44,39 @@ class TenantModelTests(TestCase):
                 user=user,
                 role=TenantMembership.Role.OPERATOR,
             )
+
+    def test_external_identity_is_unique_by_issuer_and_subject(self) -> None:
+        users = get_user_model()
+        first = users.objects.create_user(username="first")
+        second = users.objects.create_user(username="second")
+        ExternalIdentity.objects.create(
+            user=first,
+            issuer="https://identity.example.invalid/realms/ipms",
+            subject="stable-subject",
+        )
+
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            ExternalIdentity.objects.create(
+                user=second,
+                issuer="https://identity.example.invalid/realms/ipms",
+                subject="stable-subject",
+            )
+
+    def test_operator_permissions_do_not_include_user_administration(self) -> None:
+        user = get_user_model().objects.create_user(username="operator")
+        tenant = Tenant.objects.create(slug="operator-scope", display_name="Operator")
+        TenantMembership.objects.create(
+            tenant=tenant,
+            user=user,
+            role=TenantMembership.Role.OPERATOR,
+        )
+
+        permissions = effective_tenant_permissions(user, tenant)
+        self.assertIn(Permission.AGENTS_MANAGE, permissions)
+        self.assertIn(Permission.CONNECTORS_MANAGE, permissions)
+        self.assertIn(Permission.VIRTUAL_MACHINES_OPERATE, permissions)
+        self.assertNotIn(Permission.USERS_VIEW, permissions)
+        self.assertNotIn(Permission.USERS_MANAGE, permissions)
 
 
 class AuthenticationApiTests(TestCase):
@@ -93,6 +129,10 @@ class AuthenticationApiTests(TestCase):
         self.assertEqual(body["user"]["username"], "tenant-admin")
         self.assertEqual(body["tenants"][0]["id"], str(self.tenant.id))
         self.assertEqual(body["tenants"][0]["role"], "tenant_admin")
+        self.assertIn(
+            Permission.USERS_MANAGE,
+            body["tenants"][0]["permissions"],
+        )
         self.assertNotIn("password", str(body).lower())
         event = AuditEvent.objects.get(action="auth.login")
         self.assertEqual(event.outcome, AuditEvent.Outcome.SUCCEEDED)
@@ -122,6 +162,20 @@ class AuthenticationApiTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["error"]["code"], "csrf_failed")
         self.assertEqual(AuditEvent.objects.count(), 0)
+
+    def test_expired_membership_is_not_returned_or_selectable(self) -> None:
+        membership = TenantMembership.objects.get(user=self.user, tenant=self.tenant)
+        membership.expires_at = timezone.now() - timedelta(minutes=1)
+        membership.save(update_fields=("expires_at", "updated_at"))
+        self.client.force_login(self.user)
+
+        session = self.client.get(self.session_url)
+        self.assertEqual(session.json()["tenants"], [])
+        denied = self.client.get(
+            reverse("core:physical-list"),
+            HTTP_X_IPMS_TENANT_ID=str(self.tenant.id),
+        )
+        self.assertEqual(denied.status_code, 404)
 
     def test_logout_invalidates_authenticated_session(self) -> None:
         self.client.force_login(self.user)
@@ -173,3 +227,129 @@ class InstanceBootstrapCommandTests(TestCase):
         membership = TenantMembership.objects.get(user=user, tenant=tenant)
         self.assertEqual(membership.role, TenantMembership.Role.TENANT_ADMIN)
         self.assertEqual(TenantMembership.objects.count(), 1)
+
+
+class TenantUserAdministrationApiTests(TestCase):
+    def setUp(self) -> None:
+        users = get_user_model()
+        self.admin = users.objects.create_user(
+            username="tenant-admin",
+            password="test-only-password",
+        )
+        self.reader = users.objects.create_user(
+            username="reader",
+            password="test-only-password",
+        )
+        self.tenant = Tenant.objects.create(
+            slug="user-management",
+            display_name="User Management",
+        )
+        self.other_tenant = Tenant.objects.create(
+            slug="other-user-management",
+            display_name="Other User Management",
+        )
+        self.admin_membership = TenantMembership.objects.create(
+            tenant=self.tenant,
+            user=self.admin,
+            role=TenantMembership.Role.TENANT_ADMIN,
+        )
+        TenantMembership.objects.create(
+            tenant=self.tenant,
+            user=self.reader,
+            role=TenantMembership.Role.READER,
+        )
+
+    def headers(self, tenant=None):
+        return {"HTTP_X_IPMS_TENANT_ID": str((tenant or self.tenant).id)}
+
+    def test_tenant_admin_creates_local_user_without_password_disclosure(self) -> None:
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse("core:tenancy:user-list"),
+            {
+                "username": "operator-one",
+                "first_name": "Operations",
+                "last_name": "User",
+                "email": "operator@example.invalid",
+                "role": TenantMembership.Role.OPERATOR,
+                "initial_password": "A-strong-test-only-password-729!",
+            },
+            content_type="application/json",
+            **self.headers(),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual(body["role"], TenantMembership.Role.OPERATOR)
+        self.assertEqual(body["authentication_source"], "local")
+        self.assertNotIn("password", str(body).lower())
+        created = get_user_model().objects.get(username="operator-one")
+        self.assertTrue(created.check_password("A-strong-test-only-password-729!"))
+        event = AuditEvent.objects.get(action="identity.user.create")
+        self.assertEqual(event.tenant, self.tenant)
+
+    def test_reader_cannot_list_users(self) -> None:
+        self.client.force_login(self.reader)
+        response = self.client.get(
+            reverse("core:tenancy:user-list"),
+            **self.headers(),
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_updates_role_and_deactivates_membership(self) -> None:
+        self.client.force_login(self.admin)
+        membership = TenantMembership.objects.get(user=self.reader, tenant=self.tenant)
+        response = self.client.patch(
+            reverse("core:tenancy:user-detail", args=(membership.id,)),
+            {"role": TenantMembership.Role.AUDITOR, "is_active": False},
+            content_type="application/json",
+            **self.headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["role"], TenantMembership.Role.AUDITOR)
+        self.assertFalse(response.json()["is_active"])
+        membership.refresh_from_db()
+        self.assertFalse(membership.is_active)
+        self.assertTrue(
+            AuditEvent.objects.filter(action="identity.membership.update").exists()
+        )
+
+    def test_tenant_admin_cannot_remove_last_admin_or_cross_tenant_user(self) -> None:
+        self.client.force_login(self.admin)
+        denied = self.client.patch(
+            reverse("core:tenancy:user-detail", args=(self.admin_membership.id,)),
+            {"role": TenantMembership.Role.READER},
+            content_type="application/json",
+            **self.headers(),
+        )
+        self.assertEqual(denied.status_code, 409)
+
+        hidden = self.client.patch(
+            reverse("core:tenancy:user-detail", args=(self.admin_membership.id,)),
+            {"role": TenantMembership.Role.READER},
+            content_type="application/json",
+            **self.headers(self.other_tenant),
+        )
+        self.assertIn(hidden.status_code, (403, 404))
+
+    def test_platform_user_is_visible_but_protected(self) -> None:
+        platform = get_user_model().objects.create_user(
+            username="platform-admin",
+            password="test-only-password",
+            is_staff=True,
+        )
+        membership = TenantMembership.objects.create(
+            tenant=self.tenant,
+            user=platform,
+            role=TenantMembership.Role.TENANT_ADMIN,
+        )
+        self.client.force_login(self.admin)
+
+        response = self.client.patch(
+            reverse("core:tenancy:user-detail", args=(membership.id,)),
+            {"is_active": False},
+            content_type="application/json",
+            **self.headers(),
+        )
+        self.assertEqual(response.status_code, 403)

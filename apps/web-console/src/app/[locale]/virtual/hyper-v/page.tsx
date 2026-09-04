@@ -6,6 +6,7 @@ import { ConsoleShell } from "@/components/console-shell";
 import { HyperVVirtualMachineInventory } from "@/components/hyperv-virtual-machine-inventory";
 import { getDictionary } from "@/i18n/dictionaries";
 import { resolveLocale } from "@/i18n/server";
+import { hasPermission } from "@/lib/auth-types";
 import { getServerSession } from "@/lib/server-auth";
 import { getHyperVVirtualMachines } from "@/lib/server-hyperv";
 import { selectedTenant } from "@/lib/tenant-selection";
@@ -53,9 +54,7 @@ export default async function HyperVVirtualMachinesPage() {
         virtualMachines={inventory.virtualMachines}
         csrfToken={session.csrf_token}
         tenantId={tenant.id}
-        canManage={
-          session.user.is_platform_admin || tenant.role === "tenant_admin"
-        }
+        canManage={hasPermission(tenant, "virtual_machines.operate")}
       />
     </ConsoleShell>
   );

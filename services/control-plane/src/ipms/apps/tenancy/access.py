@@ -4,6 +4,7 @@ from django.http import HttpRequest
 from rest_framework.exceptions import NotFound, ParseError
 
 from .models import Tenant, TenantMembership
+from .rbac import effective_memberships, is_platform_administrator
 
 
 TENANT_HEADER = "X-IPMS-Tenant-ID"
@@ -13,12 +14,13 @@ def tenants_for_user(user) -> list[Tenant]:
     if not user.is_authenticated:
         return []
     queryset = Tenant.objects.filter(status=Tenant.Status.ACTIVE)
-    if user.is_staff:
+    if is_platform_administrator(user):
         return list(queryset)
     return list(
         queryset.filter(
-            memberships__user=user,
-            memberships__is_active=True,
+            memberships__in=effective_memberships(
+                TenantMembership.objects.filter(user=user)
+            ),
         ).distinct()
     )
 
@@ -37,10 +39,11 @@ def selected_tenant_for_request(request: HttpRequest) -> Tenant:
         id=tenant_id,
         status=Tenant.Status.ACTIVE,
     )
-    if not request.user.is_staff:
+    if not is_platform_administrator(request.user):
         accessible_tenants = accessible_tenants.filter(
-            memberships__user=request.user,
-            memberships__is_active=True,
+            memberships__in=effective_memberships(
+                TenantMembership.objects.filter(user=request.user)
+            ),
         )
 
     try:

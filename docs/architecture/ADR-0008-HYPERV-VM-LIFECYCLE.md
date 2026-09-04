@@ -16,9 +16,10 @@ loss and must not be an accidental one-click operation.
 ## Decision
 
 The Control Plane owns authorization, tenant isolation, transition validation,
-durable job state, and append-only audit evidence. Only a platform
-administrator or the selected tenant's tenant administrator can queue an
-action. A VM permits one active action at a time.
+durable job state, and append-only audit evidence. Only an actor with the
+selected tenant's `virtual_machines.operate` permission can queue an action.
+The initial role matrix grants it to platform administrators, tenant
+administrators, and operators. A VM permits one active action at a time.
 
 The enrolled Windows Agent retrieves the assignment through its existing
 Agent-initiated TCP 9419 mTLS connection. The assignment contains only:

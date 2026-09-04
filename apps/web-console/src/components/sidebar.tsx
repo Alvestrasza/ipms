@@ -11,6 +11,7 @@ import {
   ScrollText,
   ServerCog,
   Settings,
+  UsersRound,
 } from "lucide-react";
 import type { Route } from "next";
 import Link from "next/link";
@@ -40,20 +41,23 @@ export type ActiveSection =
   | "virtual-linux"
   | "hyper-v-vms"
   | "network"
+  | "admin-users"
   | "admin-agents";
 
 export async function Sidebar({
   activeSection,
   activeWindowsRole,
   activeWindowsClientFamily,
-  canAdmin,
+  canManageAgents,
+  canViewUsers,
   windowsRoles,
   windowsClientFamilies,
 }: {
   activeSection: ActiveSection;
   activeWindowsRole?: string;
   activeWindowsClientFamily?: string;
-  canAdmin: boolean;
+  canManageAgents: boolean;
+  canViewUsers: boolean;
   windowsRoles: WindowsServerRoleSummary[];
   windowsClientFamilies: WindowsClientFamilySummary[];
 }) {
@@ -80,7 +84,13 @@ export async function Sidebar({
         role.name.toLowerCase(),
       ) && role.physical_count + role.virtual_count > 0,
   );
-  const administrationExpanded = activeSection === "admin-agents";
+  const administrationExpanded = ["admin-users", "admin-agents"].includes(
+    activeSection,
+  );
+  const canAdmin = canManageAgents || canViewUsers;
+  const administrationHref = canViewUsers
+    ? `/${locale}/administration/users`
+    : `/${locale}/administration/infrastructure/agents`;
   const navigation = [
     {
       label: dictionary.navigation.overview,
@@ -318,7 +328,7 @@ export async function Sidebar({
         {canAdmin ? (
           <Link
             className={`nav-item ${administrationExpanded ? "nav-item--active" : ""}`}
-            href={`/${locale}/administration/infrastructure/agents` as Route}
+            href={administrationHref as Route}
             aria-current={administrationExpanded ? "page" : undefined}
           >
             <Settings aria-hidden="true" size={18} />
@@ -332,26 +342,44 @@ export async function Sidebar({
         )}
         {canAdmin && administrationExpanded ? (
           <ul className="nav-tree">
-            <li>
-              <span className="nav-subitem nav-subitem--branch">
-                <ServerCog aria-hidden="true" size={15} />
-                <span>{dictionary.navigation.infrastructure}</span>
-              </span>
-              <ul className="nav-tree nav-tree--nested">
-                <li>
-                  <Link
-                    className="nav-subitem nav-subitem--active"
-                    href={
-                      `/${locale}/administration/infrastructure/agents` as Route
-                    }
-                    aria-current="page"
-                  >
-                    <MonitorCog aria-hidden="true" size={14} />
-                    <span>{dictionary.navigation.agents}</span>
-                  </Link>
-                </li>
-              </ul>
-            </li>
+            {canViewUsers ? (
+              <li>
+                <Link
+                  className={`nav-subitem ${activeSection === "admin-users" ? "nav-subitem--active" : ""}`}
+                  href={`/${locale}/administration/users` as Route}
+                  aria-current={
+                    activeSection === "admin-users" ? "page" : undefined
+                  }
+                >
+                  <UsersRound aria-hidden="true" size={15} />
+                  <span>{dictionary.navigation.users}</span>
+                </Link>
+              </li>
+            ) : null}
+            {canManageAgents ? (
+              <li>
+                <span className="nav-subitem nav-subitem--branch">
+                  <ServerCog aria-hidden="true" size={15} />
+                  <span>{dictionary.navigation.infrastructure}</span>
+                </span>
+                <ul className="nav-tree nav-tree--nested">
+                  <li>
+                    <Link
+                      className={`nav-subitem ${activeSection === "admin-agents" ? "nav-subitem--active" : ""}`}
+                      href={
+                        `/${locale}/administration/infrastructure/agents` as Route
+                      }
+                      aria-current={
+                        activeSection === "admin-agents" ? "page" : undefined
+                      }
+                    >
+                      <MonitorCog aria-hidden="true" size={14} />
+                      <span>{dictionary.navigation.agents}</span>
+                    </Link>
+                  </li>
+                </ul>
+              </li>
+            ) : null}
           </ul>
         ) : null}
         <div className="sidebar__version">

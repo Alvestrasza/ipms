@@ -2,7 +2,11 @@ import { Bell, CircleUserRound, Search } from "lucide-react";
 
 import { getDictionary } from "@/i18n/dictionaries";
 import { resolveLocale } from "@/i18n/server";
-import type { AuthenticatedSession, TenantSummary } from "@/lib/auth-types";
+import {
+  type AuthenticatedSession,
+  hasPermission,
+  type TenantSummary,
+} from "@/lib/auth-types";
 import {
   getWindowsClientFamilies,
   getWindowsServerRoles,
@@ -39,6 +43,8 @@ export async function ConsoleShell({
     platform_admin: dictionary.shell.platformAdmin,
     tenant_admin: dictionary.shell.tenantAdmin,
     operator: dictionary.shell.operator,
+    approver: dictionary.shell.approver,
+    auditor: dictionary.shell.auditor,
     reader: dictionary.shell.reader,
   };
   return (
@@ -47,9 +53,8 @@ export async function ConsoleShell({
         activeSection={activeSection}
         activeWindowsRole={activeWindowsRole}
         activeWindowsClientFamily={activeWindowsClientFamily}
-        canAdmin={
-          session.user.is_platform_admin || tenant.role === "tenant_admin"
-        }
+        canManageAgents={hasPermission(tenant, "agents.manage")}
+        canViewUsers={hasPermission(tenant, "users.view")}
         windowsRoles={windowsRoles}
         windowsClientFamilies={windowsClientFamilies}
       />
@@ -66,8 +71,8 @@ export async function ConsoleShell({
               tenantId={tenant.id}
               locale={locale}
               canManage={
-                tenant.role === "platform_admin" ||
-                tenant.role === "tenant_admin"
+                hasPermission(tenant, "agents.manage") ||
+                hasPermission(tenant, "connectors.manage")
               }
               copy={dictionary.addSystem}
               bmcCopy={dictionary.bmc}

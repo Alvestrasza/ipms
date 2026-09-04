@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Tenant, TenantMembership
+from .models import ExternalIdentity, Tenant, TenantMembership
 
 
 @admin.register(Tenant)
@@ -13,7 +13,15 @@ class TenantAdmin(admin.ModelAdmin):
 
 @admin.register(TenantMembership)
 class TenantMembershipAdmin(admin.ModelAdmin):
-    list_display = ("user", "tenant", "role", "is_active", "created_at")
+    list_display = ("user", "tenant", "role", "is_active", "expires_at", "created_at")
     list_filter = ("role", "is_active")
     search_fields = ("user__username", "tenant__slug", "tenant__display_name")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(ExternalIdentity)
+class ExternalIdentityAdmin(admin.ModelAdmin):
+    list_display = ("user", "issuer", "is_active", "created_at")
+    list_filter = ("is_active", "issuer")
+    search_fields = ("user__username", "issuer", "subject")
     readonly_fields = ("id", "created_at", "updated_at")
