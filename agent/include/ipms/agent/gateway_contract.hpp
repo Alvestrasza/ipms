@@ -18,6 +18,7 @@ enum class ServerMessageType {
   agent_update_manifest,
   certificate_rotation,
   hyperv_virtual_machine_action,
+  hyperv_console_session,
 };
 
 struct AgentGatewayConfig {

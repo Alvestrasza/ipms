@@ -189,7 +189,7 @@ export const en = {
     infrastructure: "Infrastructure",
     agents: "Agents",
     soon: "Soon",
-    version: "IPMS v0.2.17 development",
+    version: "IPMS v0.2.18 development",
   },
   linuxSystems: {
     liveData: "Live tenant-scoped Linux inventory from enrolled Agents.",
@@ -608,6 +608,26 @@ export const en = {
     confirm: "Run action",
     queued: "The action is queued and waiting for the Hyper-V host Agent.",
     actionFailed: "The virtual machine action could not be completed ({code}).",
+    console: {
+      open: "Open console",
+      title: "Virtual machine console",
+      close: "Close console",
+      secureAttention: "Ctrl+Alt+Delete",
+      secureAttentionHint:
+        "Send the secure attention sequence to the virtual machine",
+      connecting: "Connecting to the virtual machine console",
+      waitingForFrame:
+        "Waiting for the Hyper-V host Agent to provide the first frame.",
+      directInput:
+        "Interactive virtual machine console. Keyboard and mouse input is sent directly to the virtual machine.",
+      sessionInUse: "The virtual machine console is already in use",
+      sessionInUseDetail:
+        "{user} opened the existing session at {time}. Close that session before trying again.",
+      unavailable: "The virtual machine console is unavailable.",
+      failed: "The host Agent could not maintain the console session",
+      expired:
+        "The console session expired because the browser lease was not renewed.",
+    },
     states: {
       running: "Running",
       stopped: "Stopped",

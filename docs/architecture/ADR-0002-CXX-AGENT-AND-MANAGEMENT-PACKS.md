@@ -19,7 +19,10 @@ Management Packs are signed, versioned policy declarations. A pack may only acti
 `hyper-v-host` depends on `windows-server-core`. Its inventory capabilities are
 read-only. Version 0.2.12 adds the separately governed, compiled start, graceful
 shutdown, stop, pause, and resume actions defined by ADR-0008 without accepting
-arbitrary commands or provider expressions.
+arbitrary commands or provider expressions. Version 0.2.13 adds the typed,
+single-session virtual machine console capability defined by ADR-0010. It may
+activate only compiled frame-capture, keyboard, mouse, and secure-attention
+operations.
 
 ## Consequences
 
@@ -29,4 +32,5 @@ arbitrary commands or provider expressions.
 - Agent binary updates require a separately signed, versioned installer and rollback path. A pack assignment cannot add new executable functionality.
 - v0.1.0 remains read-only. Every state-changing pack requires a separate ADR,
   authorization model, audit events, acceptance tests, and license policy;
-  Hyper-V VM lifecycle is the first such post-v0.1 capability.
+  Hyper-V VM lifecycle is the first such post-v0.1 capability. Its console is
+  governed separately by ADR-0010.

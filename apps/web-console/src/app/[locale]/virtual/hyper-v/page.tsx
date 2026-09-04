@@ -55,6 +55,7 @@ export default async function HyperVVirtualMachinesPage() {
         csrfToken={session.csrf_token}
         tenantId={tenant.id}
         canManage={hasPermission(tenant, "virtual_machines.operate")}
+        canConsole={hasPermission(tenant, "virtual_machines.console.control")}
       />
     </ConsoleShell>
   );

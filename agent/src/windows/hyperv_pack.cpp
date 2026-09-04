@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <winsvc.h>
 #include <wbemidl.h>
+#include <wincodec.h>
 #include <wrl/client.h>
 
 #include <algorithm>
@@ -462,6 +463,355 @@ std::string virtual_machines_json(const std::map<std::string, virtual_machine>& 
   return json.str();
 }
 
+struct hyperv_services {
+  ComPtr<IWbemServices> value;
+  std::string error;
+};
+
+hyperv_services connect_hyperv_services() {
+  const HRESULT security = CoInitializeSecurity(
+      nullptr, -1, nullptr, nullptr, RPC_C_AUTHN_LEVEL_DEFAULT,
+      RPC_C_IMP_LEVEL_IMPERSONATE, nullptr, EOAC_NONE, nullptr);
+  if (FAILED(security) && security != RPC_E_TOO_LATE) return {{}, "com_security_failed"};
+  ComPtr<IWbemLocator> locator;
+  if (FAILED(CoCreateInstance(CLSID_WbemLocator, nullptr, CLSCTX_INPROC_SERVER,
+                              IID_PPV_ARGS(&locator)))) {
+    return {{}, "wmi_locator_failed"};
+  }
+  BSTR namespace_path = SysAllocString(L"ROOT\\Virtualization\\V2");
+  if (!namespace_path) return {{}, "allocation_failed"};
+  ComPtr<IWbemServices> services;
+  const HRESULT connection = locator->ConnectServer(
+      namespace_path, nullptr, nullptr, nullptr, 0, nullptr, nullptr, &services);
+  SysFreeString(namespace_path);
+  if (FAILED(connection) || !services) return {{}, "hyperv_provider_unavailable"};
+  if (FAILED(CoSetProxyBlanket(
+          services.Get(), RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE, nullptr,
+          RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE, nullptr, EOAC_NONE))) {
+    return {{}, "wmi_proxy_failed"};
+  }
+  return {services, ""};
+}
+
+ComPtr<IWbemClassObject> find_related_device(
+    IWbemServices* services,
+    const wchar_t* class_name,
+    const std::string& source_id) {
+  std::wstring query = L"SELECT * FROM ";
+  query += class_name;
+  auto rows = execute_query(services, query.c_str());
+  if (!rows) return {};
+  ComPtr<IWbemClassObject> match;
+  consume_rows(
+      rows.Get(), k_max_related_rows,
+      std::chrono::steady_clock::now() + std::chrono::seconds(10),
+      [&match, &source_id](IWbemClassObject* row) {
+        if (!match && normalized_guid(wmi_string(row, L"SystemName")) == source_id) {
+          match = row;
+        }
+      });
+  return match;
+}
+
+ComPtr<IWbemClassObject> find_realized_settings(
+    IWbemServices* services,
+    const std::string& source_id) {
+  auto rows = execute_query(
+      services,
+      L"SELECT __PATH, VirtualSystemIdentifier, VirtualSystemType "
+      L"FROM Msvm_VirtualSystemSettingData");
+  if (!rows) return {};
+  ComPtr<IWbemClassObject> match;
+  consume_rows(
+      rows.Get(), k_max_related_rows,
+      std::chrono::steady_clock::now() + std::chrono::seconds(10),
+      [&match, &source_id](IWbemClassObject* row) {
+        if (match || normalized_guid(wmi_string(row, L"VirtualSystemIdentifier")) != source_id) {
+          return;
+        }
+        if (_wcsicmp(
+                wmi_string(row, L"VirtualSystemType").c_str(),
+                L"Microsoft:Hyper-V:System:Realized") == 0) {
+          match = row;
+        }
+      });
+  return match;
+}
+
+bool invoke_input_method(
+    IWbemServices* services,
+    IWbemClassObject* device,
+    const wchar_t* class_name,
+    const wchar_t* method,
+    const std::vector<std::pair<const wchar_t*, VARIANT>>& parameters) {
+  const auto path = wmi_string(device, L"__PATH");
+  if (path.empty()) return false;
+  ComPtr<IWbemClassObject> device_class;
+  BSTR allocated_class = SysAllocString(class_name);
+  if (!allocated_class) return false;
+  const HRESULT class_result = services->GetObject(
+      allocated_class, 0, nullptr, &device_class, nullptr);
+  SysFreeString(allocated_class);
+  if (FAILED(class_result) || !device_class) return false;
+  ComPtr<IWbemClassObject> signature;
+  BSTR allocated_method = SysAllocString(method);
+  if (!allocated_method) return false;
+  const HRESULT method_result = device_class->GetMethod(
+      allocated_method, 0, &signature, nullptr);
+  if (FAILED(method_result)) {
+    SysFreeString(allocated_method);
+    return false;
+  }
+  ComPtr<IWbemClassObject> input;
+  if (signature && (FAILED(signature->SpawnInstance(0, &input)) || !input)) {
+    SysFreeString(allocated_method);
+    return false;
+  }
+  for (const auto& [name, value] : parameters) {
+    if (!input || FAILED(input->Put(name, 0, const_cast<VARIANT*>(&value), 0))) {
+      SysFreeString(allocated_method);
+      return false;
+    }
+  }
+  BSTR allocated_path = SysAllocString(path.c_str());
+  if (!allocated_path) {
+    SysFreeString(allocated_method);
+    return false;
+  }
+  ComPtr<IWbemClassObject> output;
+  const HRESULT result = services->ExecMethod(
+      allocated_path, allocated_method, 0, nullptr, input.Get(), &output, nullptr);
+  SysFreeString(allocated_path);
+  SysFreeString(allocated_method);
+  return SUCCEEDED(result) && output &&
+         wmi_uint64(output.Get(), L"ReturnValue").value_or(1) == 0;
+}
+
+bool apply_console_input(
+    IWbemServices* services,
+    const std::string& source_id,
+    const ipms::agent::windows::hyperv_console_input& input) {
+  if (input.type == "key" || input.type == "secure_attention") {
+    auto keyboard = find_related_device(services, L"Msvm_Keyboard", source_id);
+    if (!keyboard) return false;
+    if (input.type == "secure_attention") {
+      return invoke_input_method(
+          services, keyboard.Get(), L"Msvm_Keyboard", L"TypeCtrlAltDel", {});
+    }
+    VARIANT key{};
+    VariantInit(&key);
+    key.vt = VT_UI4;
+    key.ulVal = input.key_code;
+    return invoke_input_method(
+        services,
+        keyboard.Get(),
+        L"Msvm_Keyboard",
+        input.is_down ? L"PressKey" : L"ReleaseKey",
+        {{L"keyCode", key}});
+  }
+  auto mouse = find_related_device(services, L"Msvm_SyntheticMouse", source_id);
+  const wchar_t* mouse_class = L"Msvm_SyntheticMouse";
+  if (!mouse) {
+    mouse = find_related_device(services, L"Msvm_Ps2Mouse", source_id);
+    mouse_class = L"Msvm_Ps2Mouse";
+  }
+  if (!mouse) return false;
+  if (input.type == "mouse_move") {
+    VARIANT horizontal{};
+    VARIANT vertical{};
+    VariantInit(&horizontal);
+    VariantInit(&vertical);
+    horizontal.vt = VT_I4;
+    horizontal.lVal = input.x;
+    vertical.vt = VT_I4;
+    vertical.lVal = input.y;
+    return invoke_input_method(
+        services, mouse.Get(), mouse_class, L"SetAbsolutePosition",
+        {{L"horizontalPosition", horizontal}, {L"verticalPosition", vertical}});
+  }
+  if (input.type == "mouse_button") {
+    VARIANT button{};
+    VARIANT down{};
+    VariantInit(&button);
+    VariantInit(&down);
+    button.vt = VT_UI4;
+    button.ulVal = input.button;
+    down.vt = VT_BOOL;
+    down.boolVal = input.is_down ? VARIANT_TRUE : VARIANT_FALSE;
+    return invoke_input_method(
+        services, mouse.Get(), mouse_class, L"SetButtonState",
+        {{L"buttonIndex", button}, {L"isDown", down}});
+  }
+  if (input.type == "mouse_wheel") {
+    VARIANT scroll{};
+    VariantInit(&scroll);
+    scroll.vt = VT_I4;
+    scroll.lVal = input.delta;
+    return invoke_input_method(
+        services, mouse.Get(), mouse_class, L"SetScrollPosition",
+        {{L"scrollPositionDelta", scroll}});
+  }
+  return false;
+}
+
+std::vector<std::uint8_t> encode_rgb565_png(
+    const std::vector<std::uint8_t>& rgb565,
+    std::uint16_t width,
+    std::uint16_t height) {
+  const std::size_t pixels = static_cast<std::size_t>(width) * height;
+  if (rgb565.size() != pixels * 2) return {};
+  std::vector<std::uint8_t> bgra(pixels * 4);
+  for (std::size_t index = 0; index < pixels; ++index) {
+    const std::uint16_t pixel = static_cast<std::uint16_t>(rgb565[index * 2]) |
+                                (static_cast<std::uint16_t>(rgb565[index * 2 + 1]) << 8);
+    bgra[index * 4] = static_cast<std::uint8_t>((pixel & 0x1f) * 255 / 31);
+    bgra[index * 4 + 1] = static_cast<std::uint8_t>(((pixel >> 5) & 0x3f) * 255 / 63);
+    bgra[index * 4 + 2] = static_cast<std::uint8_t>(((pixel >> 11) & 0x1f) * 255 / 31);
+    bgra[index * 4 + 3] = 255;
+  }
+  ComPtr<IWICImagingFactory> factory;
+  if (FAILED(CoCreateInstance(
+          CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+          IID_PPV_ARGS(&factory)))) {
+    return {};
+  }
+  ComPtr<IStream> stream;
+  if (FAILED(CreateStreamOnHGlobal(nullptr, TRUE, &stream))) return {};
+  ComPtr<IWICBitmapEncoder> encoder;
+  if (FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder)) ||
+      FAILED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache))) {
+    return {};
+  }
+  ComPtr<IWICBitmapFrameEncode> frame;
+  ComPtr<IPropertyBag2> properties;
+  if (FAILED(encoder->CreateNewFrame(&frame, &properties)) ||
+      FAILED(frame->Initialize(properties.Get())) ||
+      FAILED(frame->SetSize(width, height))) {
+    return {};
+  }
+  WICPixelFormatGUID format = GUID_WICPixelFormat32bppBGRA;
+  if (FAILED(frame->SetPixelFormat(&format)) || format != GUID_WICPixelFormat32bppBGRA ||
+      FAILED(frame->WritePixels(
+          height,
+          static_cast<UINT>(width) * 4,
+          static_cast<UINT>(bgra.size()),
+          bgra.data())) ||
+      FAILED(frame->Commit()) || FAILED(encoder->Commit())) {
+    return {};
+  }
+  HGLOBAL global = nullptr;
+  if (FAILED(GetHGlobalFromStream(stream.Get(), &global)) || !global) return {};
+  const auto size = GlobalSize(global);
+  const auto* data = static_cast<const std::uint8_t*>(GlobalLock(global));
+  if (!data || size == 0 || size > 1'500'000) {
+    if (data) GlobalUnlock(global);
+    return {};
+  }
+  std::vector<std::uint8_t> png(data, data + size);
+  GlobalUnlock(global);
+  return png;
+}
+
+std::vector<std::uint8_t> capture_console_frame(
+    IWbemServices* services,
+    IWbemClassObject* settings,
+    std::uint16_t width,
+    std::uint16_t height) {
+  const auto settings_path = wmi_string(settings, L"__PATH");
+  if (settings_path.empty()) return {};
+  ComPtr<IWbemClassObject> service_class;
+  BSTR class_name = SysAllocString(L"Msvm_VirtualSystemManagementService");
+  if (!class_name) return {};
+  const HRESULT class_result = services->GetObject(
+      class_name, 0, nullptr, &service_class, nullptr);
+  SysFreeString(class_name);
+  if (FAILED(class_result) || !service_class) return {};
+  ComPtr<IWbemClassObject> signature;
+  BSTR method = SysAllocString(L"GetVirtualSystemThumbnailImage");
+  if (!method) return {};
+  const HRESULT method_result = service_class->GetMethod(method, 0, &signature, nullptr);
+  if (FAILED(method_result) || !signature) {
+    SysFreeString(method);
+    return {};
+  }
+  ComPtr<IWbemClassObject> input;
+  if (FAILED(signature->SpawnInstance(0, &input)) || !input) {
+    SysFreeString(method);
+    return {};
+  }
+  VARIANT target{};
+  VARIANT width_value{};
+  VARIANT height_value{};
+  VariantInit(&target);
+  VariantInit(&width_value);
+  VariantInit(&height_value);
+  target.vt = VT_BSTR;
+  target.bstrVal = SysAllocString(settings_path.c_str());
+  width_value.vt = VT_I4;
+  width_value.lVal = width;
+  height_value.vt = VT_I4;
+  height_value.lVal = height;
+  const bool put = target.bstrVal &&
+                   SUCCEEDED(input->Put(L"TargetSystem", 0, &target, 0)) &&
+                   SUCCEEDED(input->Put(L"WidthPixels", 0, &width_value, 0)) &&
+                   SUCCEEDED(input->Put(L"HeightPixels", 0, &height_value, 0));
+  VariantClear(&target);
+  if (!put) {
+    SysFreeString(method);
+    return {};
+  }
+  auto services_rows = execute_query(
+      services, L"SELECT __PATH FROM Msvm_VirtualSystemManagementService");
+  ComPtr<IWbemClassObject> service;
+  if (services_rows) {
+    consume_rows(
+        services_rows.Get(), 2,
+        std::chrono::steady_clock::now() + std::chrono::seconds(5),
+        [&service](IWbemClassObject* row) { if (!service) service = row; });
+  }
+  const auto service_path = service ? wmi_string(service.Get(), L"__PATH") : L"";
+  if (service_path.empty()) {
+    SysFreeString(method);
+    return {};
+  }
+  BSTR allocated_path = SysAllocString(service_path.c_str());
+  if (!allocated_path) {
+    SysFreeString(method);
+    return {};
+  }
+  ComPtr<IWbemClassObject> output;
+  const HRESULT execution = services->ExecMethod(
+      allocated_path, method, 0, nullptr, input.Get(), &output, nullptr);
+  SysFreeString(allocated_path);
+  SysFreeString(method);
+  if (FAILED(execution) || !output ||
+      wmi_uint64(output.Get(), L"ReturnValue").value_or(1) != 0) {
+    return {};
+  }
+  VARIANT image{};
+  VariantInit(&image);
+  if (FAILED(output->Get(L"ImageData", 0, &image, nullptr, nullptr)) ||
+      image.vt != (VT_ARRAY | VT_UI1) || !image.parray) {
+    VariantClear(&image);
+    return {};
+  }
+  LONG lower = 0;
+  LONG upper = -1;
+  std::vector<std::uint8_t> rgb565;
+  if (SUCCEEDED(SafeArrayGetLBound(image.parray, 1, &lower)) &&
+      SUCCEEDED(SafeArrayGetUBound(image.parray, 1, &upper)) && upper >= lower) {
+    const auto size = static_cast<std::size_t>(upper - lower + 1);
+    if (size == static_cast<std::size_t>(width) * height * 2) {
+      rgb565.resize(size);
+      for (LONG index = lower; index <= upper; ++index) {
+        SafeArrayGetElement(image.parray, &index, &rgb565[static_cast<std::size_t>(index - lower)]);
+      }
+    }
+  }
+  VariantClear(&image);
+  return encode_rgb565_png(rgb565, width, height);
+}
+
 }  // namespace
 
 namespace ipms::agent::windows {
@@ -861,6 +1211,50 @@ hyperv_action_result execute_hyperv_virtual_machine_action(
              services.Get(), normalized_source_id, expected_name, expected_state, 30)
              ? hyperv_action_result{true, "state_confirmed"}
              : hyperv_action_result{false, "state_confirmation_timeout"};
+}
+
+hyperv_console_result execute_hyperv_console_cycle(
+    const std::string& source_id,
+    const std::string& expected_name,
+    std::uint16_t width,
+    std::uint16_t height,
+    const std::vector<hyperv_console_input>& inputs) {
+  if (!is_guid(source_id) || expected_name.empty() || expected_name.size() > 255) {
+    return {false, "invalid_vm_identity", {}, 0, 0, {}};
+  }
+  if (width < 160 || width > 1920 || height < 120 || height > 1200 ||
+      inputs.size() > 64) {
+    return {false, "invalid_console_contract", {}, 0, 0, {}};
+  }
+  auto normalized_source_id = source_id;
+  std::transform(
+      normalized_source_id.begin(), normalized_source_id.end(), normalized_source_id.begin(),
+      [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+  com_scope com;
+  if (!com.initialized) return {false, "com_initialization_failed", {}, 0, 0, {}};
+  const auto connection = connect_hyperv_services();
+  if (!connection.value) return {false, connection.error, {}, 0, 0, {}};
+  const auto lookup = find_virtual_machine(
+      connection.value.Get(), normalized_source_id, expected_name);
+  if (!lookup.query_succeeded) return {false, "vm_lookup_failed", {}, 0, 0, {}};
+  if (lookup.identity_conflict) return {false, "vm_identity_conflict", {}, 0, 0, {}};
+  if (!lookup.system) return {false, "vm_not_found", {}, 0, 0, {}};
+  if (normalized_state(wmi_uint64(lookup.system.Get(), L"EnabledState").value_or(0)) !=
+      "running") {
+    return {false, "invalid_vm_state", {}, 0, 0, {}};
+  }
+  std::vector<std::string> acknowledged;
+  for (const auto& input : inputs) {
+    if (!apply_console_input(connection.value.Get(), normalized_source_id, input)) {
+      return {false, "console_input_failed", {}, 0, 0, acknowledged};
+    }
+    acknowledged.push_back(input.id);
+  }
+  auto settings = find_realized_settings(connection.value.Get(), normalized_source_id);
+  if (!settings) return {false, "console_settings_unavailable", {}, 0, 0, acknowledged};
+  auto png = capture_console_frame(connection.value.Get(), settings.Get(), width, height);
+  if (png.empty()) return {false, "console_frame_unavailable", {}, 0, 0, acknowledged};
+  return {true, "frame_captured", std::move(png), width, height, std::move(acknowledged)};
 }
 
 }  // namespace ipms::agent::windows

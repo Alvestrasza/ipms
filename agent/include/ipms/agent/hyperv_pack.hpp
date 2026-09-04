@@ -1,6 +1,8 @@
 #pragma once
 
 #include <string>
+#include <cstdint>
+#include <vector>
 
 namespace ipms::agent::windows {
 
@@ -27,5 +29,35 @@ hyperv_action_result execute_hyperv_virtual_machine_action(
     const std::string& source_id,
     const std::string& expected_name,
     const std::string& action);
+
+struct hyperv_console_input {
+  std::string id;
+  std::string type;
+  std::uint32_t key_code{};
+  bool is_down{false};
+  std::int32_t x{};
+  std::int32_t y{};
+  std::uint32_t button{};
+  std::int32_t delta{};
+};
+
+struct hyperv_console_result {
+  bool succeeded{false};
+  std::string result_code;
+  std::vector<std::uint8_t> png;
+  std::uint16_t width{};
+  std::uint16_t height{};
+  std::vector<std::string> acknowledged_input_ids;
+};
+
+// Captures one bounded local VM console frame and applies only typed keyboard
+// and mouse events to that exact VM. No guest network connection or command
+// execution is involved.
+hyperv_console_result execute_hyperv_console_cycle(
+    const std::string& source_id,
+    const std::string& expected_name,
+    std::uint16_t width,
+    std::uint16_t height,
+    const std::vector<hyperv_console_input>& inputs);
 
 }  // namespace ipms::agent::windows

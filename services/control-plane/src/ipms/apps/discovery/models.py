@@ -528,6 +528,102 @@ class HyperVVirtualMachineActionJob(models.Model):
         ]
 
 
+class HyperVConsoleSession(models.Model):
+    class Status(models.TextChoices):
+        REQUESTED = "requested", "Requested"
+        ACTIVE = "active", "Active"
+        CLOSED = "closed", "Closed"
+        FAILED = "failed", "Failed"
+        EXPIRED = "expired", "Expired"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.PROTECT,
+        related_name="hyperv_console_sessions",
+    )
+    enrollment = models.ForeignKey(
+        "agent_pki.AgentEnrollment",
+        on_delete=models.PROTECT,
+        related_name="hyperv_console_sessions",
+    )
+    virtual_machine = models.ForeignKey(
+        HyperVVirtualMachine,
+        on_delete=models.SET_NULL,
+        related_name="console_sessions",
+        blank=True,
+        null=True,
+    )
+    vm_source_id = models.CharField(max_length=64)
+    vm_name = models.CharField(max_length=255)
+    requested_by = models.CharField(max_length=255)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.REQUESTED,
+    )
+    lease_expires_at = models.DateTimeField()
+    frame_sequence = models.PositiveBigIntegerField(default=0)
+    frame_width = models.PositiveSmallIntegerField(default=0)
+    frame_height = models.PositiveSmallIntegerField(default=0)
+    frame_png = models.BinaryField(blank=True, default=bytes)
+    failure_code = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    connected_at = models.DateTimeField(blank=True, null=True)
+    last_activity_at = models.DateTimeField()
+    last_agent_contact_at = models.DateTimeField(blank=True, null=True)
+    closed_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(
+                fields=("tenant", "-created_at"),
+                name="hyperv_console_tenant_time",
+            ),
+            models.Index(
+                fields=("enrollment", "status"),
+                name="hyperv_console_agent_state",
+            ),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant", "vm_source_id"),
+                condition=models.Q(status__in=("requested", "active")),
+                name="unique_active_hyperv_console",
+            )
+        ]
+
+
+class HyperVConsoleInputEvent(models.Model):
+    class EventType(models.TextChoices):
+        KEY = "key", "Key"
+        MOUSE_MOVE = "mouse_move", "Mouse move"
+        MOUSE_BUTTON = "mouse_button", "Mouse button"
+        MOUSE_WHEEL = "mouse_wheel", "Mouse wheel"
+        SECURE_ATTENTION = "secure_attention", "Secure attention"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    session = models.ForeignKey(
+        HyperVConsoleSession,
+        on_delete=models.CASCADE,
+        related_name="input_events",
+    )
+    event_type = models.CharField(max_length=24, choices=EventType.choices)
+    payload = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    delivered_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ("created_at", "id")
+        indexes = [
+            models.Index(
+                fields=("session", "delivered_at", "created_at"),
+                name="hyperv_console_input_queue",
+            )
+        ]
+
+
 class LinuxSystem(models.Model):
     class SystemType(models.TextChoices):
         PHYSICAL = "physical", "Physical"

@@ -13,6 +13,7 @@ from django.db import close_old_connections
 
 
 MAX_MESSAGE_BYTES = 65_536
+MAX_CONSOLE_MESSAGE_BYTES = 2_100_000
 MAX_HTTP_HEADER_BYTES = 16_384
 ALLOWED_AGENT_MESSAGES = {
     "hello",
@@ -50,8 +51,8 @@ def _connection_protocol(selected_alpn: str | None) -> str:
     raise ValidationError("The Agent Gateway ALPN is invalid.")
 
 
-def _bounded_json(line: bytes) -> dict:
-    if not line or len(line) > MAX_MESSAGE_BYTES:
+def _bounded_json(line: bytes, maximum_bytes: int = MAX_MESSAGE_BYTES) -> dict:
+    if not line or len(line) > maximum_bytes:
         raise ValidationError("The Gateway message size is invalid.")
     try:
         document = json.loads(line)
@@ -103,6 +104,7 @@ def _parse_http_request(header: bytes) -> tuple[str, dict[str, str], int]:
         "/v1/lifecycle-result",
         "/v1/lifecycle-artifact",
         "/v1/hyperv-action-result",
+        "/v1/hyperv-console",
     }:
         raise ValidationError("The Agent Gateway HTTP route is invalid.")
     headers: dict[str, str] = {}
@@ -123,7 +125,12 @@ def _parse_http_request(header: bytes) -> tuple[str, dict[str, str], int]:
         content_length = int(headers["content-length"])
     except (KeyError, ValueError) as exc:
         raise ValidationError("The Agent Gateway HTTP content length is invalid.") from exc
-    if not 1 <= content_length <= MAX_MESSAGE_BYTES:
+    maximum_bytes = (
+        MAX_CONSOLE_MESSAGE_BYTES
+        if path == "/v1/hyperv-console"
+        else MAX_MESSAGE_BYTES
+    )
+    if not 1 <= content_length <= maximum_bytes:
         raise ValidationError("The Agent Gateway HTTP body size is invalid.")
     return path, headers, content_length
 
@@ -179,11 +186,17 @@ async def _handle_http_connection(
         offer_hyperv_action_job,
         record_hyperv_action_result,
     )
+    from ipms.apps.agent_pki.hyperv_console import process_console_cycle
 
     header = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=15)
     path, _, content_length = _parse_http_request(header)
     body = await asyncio.wait_for(reader.readexactly(content_length), timeout=30)
-    document = _bounded_json(body)
+    document = _bounded_json(
+        body,
+        MAX_CONSOLE_MESSAGE_BYTES
+        if path == "/v1/hyperv-console"
+        else MAX_MESSAGE_BYTES,
+    )
     if path == "/v1/enroll":
         if peer_certificate:
             raise ValidationError("Enrollment does not accept an existing client certificate.")
@@ -213,6 +226,27 @@ async def _handle_http_connection(
     )
     if document.get("device_uri") != enrollment.device_uri:
         raise ValidationError("The Agent message identity is invalid.")
+    if path == "/v1/hyperv-console":
+        if document.get("type") != "hyperv_console_cycle":
+            raise ValidationError("The Hyper-V console cycle is invalid.")
+        assignment = await _database_call_async(
+            process_console_cycle,
+            enrollment,
+            session_id=str(document.get("session_id", "")),
+            frame_png_base64=document.get("frame_png_base64", ""),
+            frame_width=document.get("frame_width", 0),
+            frame_height=document.get("frame_height", 0),
+            acknowledged_input_ids=document.get("acknowledged_input_ids", []),
+            failure_code=str(document.get("failure_code", "")),
+        )
+        response = {
+            "type": "accepted",
+            "correlation_id": document.get("correlation_id"),
+        }
+        if assignment:
+            response["hyperv_console"] = assignment
+        await _http_reply(writer, 200, response)
+        return
     if path == "/v1/lifecycle-artifact":
         if document.get("type") != "lifecycle_artifact":
             raise ValidationError("The Agent lifecycle artifact request is invalid.")
@@ -292,6 +326,19 @@ async def _handle_http_connection(
         hyperv_action = await _database_call_async(offer_hyperv_action_job, enrollment)
         if hyperv_action:
             response["hyperv_action"] = hyperv_action
+        else:
+            hyperv_console = await _database_call_async(
+                process_console_cycle,
+                enrollment,
+                session_id="",
+                frame_png_base64="",
+                frame_width=0,
+                frame_height=0,
+                acknowledged_input_ids=[],
+                failure_code="",
+            )
+            if hyperv_console:
+                response["hyperv_console"] = hyperv_console
     await _http_reply(writer, 200, response)
 
 

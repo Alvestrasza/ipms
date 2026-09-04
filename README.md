@@ -9,10 +9,9 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-IPMS application build `0.2.17` adds tenant-scoped user administration and a
-central role-permission model to the inventory and controlled workload-action
-foundation. A
-standalone development
+IPMS application build `0.2.18` adds a tenant-scoped interactive Hyper-V VM
+console to the inventory, controlled workload-action, and user-administration
+foundation. A standalone development
 Appliance currently runs the tenant-aware Django Control Plane, PostgreSQL,
 the multilingual Next.js Web Console, and the isolated connector worker.
 
@@ -28,7 +27,10 @@ family, starting with Windows 11 LTSC. Hyper-V hosts report a bounded VM
 inventory with state, vCPU, memory, uptime, configuration version, and guest IP
 addresses. Tenant administrators can start, pause, resume, gracefully shut
 down, and stop a VM through an audited durable job and the enrolled host
-Agent. Windows and Linux Agents report hardware, network, installed
+Agent. Windows Agent `0.2.13` also provides one lease-bound console session per
+running VM with direct keyboard and mouse input and a dedicated secure-attention
+operation; no guest network or guest credentials are required. Windows and
+Linux Agents report hardware, network, installed
 software, and operating-system update posture through the outbound mTLS
 Gateway. The first Sophos Firewall, Loadbalancer.org ADC, and HPE Comware 7.1
 connector foundations provide fixed read-only discovery operations; live
@@ -74,6 +76,7 @@ The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 - [Cross-platform software inventory](docs/architecture/CROSS-PLATFORM-SOFTWARE-INVENTORY.md)
 - [Network connector security boundary](docs/architecture/NETWORK-CONNECTOR-BOUNDARY.md)
 - [ADR-0009: Identity, tenant RBAC, and OIDC boundary](docs/architecture/ADR-0009-IDENTITY-RBAC-AND-OIDC.md)
+- [ADR-0010: Hyper-V virtual machine console](docs/architecture/ADR-0010-HYPERV-VM-CONSOLE.md)
 
 ## Source Layout
 

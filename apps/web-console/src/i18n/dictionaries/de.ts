@@ -203,7 +203,7 @@ export const de = {
     infrastructure: "Infrastruktur",
     agents: "Agenten",
     soon: "Bald",
-    version: "IPMS v0.2.17 Entwicklung",
+    version: "IPMS v0.2.18 Entwicklung",
   },
   linuxSystems: {
     liveData:
@@ -629,6 +629,26 @@ export const de = {
     confirm: "Aktion ausführen",
     queued: "Die Aktion wartet auf die Übernahme durch den Hyper-V-Host-Agent.",
     actionFailed: "Die VM-Aktion konnte nicht abgeschlossen werden ({code}).",
+    console: {
+      open: "Konsole öffnen",
+      title: "Konsole der virtuellen Maschine",
+      close: "Konsole schließen",
+      secureAttention: "Strg+Alt+Entfernen",
+      secureAttentionHint:
+        "Sichere Tastenkombination an die virtuelle Maschine senden",
+      connecting: "Verbindung mit der VM-Konsole wird hergestellt",
+      waitingForFrame: "Der Hyper-V-Host-Agent liefert das erste Bild.",
+      directInput:
+        "Interaktive VM-Konsole. Tastatur- und Mauseingaben werden direkt an die virtuelle Maschine gesendet.",
+      sessionInUse: "Die VM-Konsole wird bereits verwendet",
+      sessionInUseDetail:
+        "{user} hat die bestehende Sitzung um {time} geöffnet. Schließe diese Sitzung, bevor du es erneut versuchst.",
+      unavailable: "Die VM-Konsole ist nicht verfügbar.",
+      failed:
+        "Der Host-Agent konnte die Konsolensitzung nicht aufrechterhalten",
+      expired:
+        "Die Konsolensitzung ist abgelaufen, weil der Browser sie nicht verlängert hat.",
+    },
     states: {
       running: "Gestartet",
       stopped: "Beendet",

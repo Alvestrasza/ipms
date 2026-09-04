@@ -10,3 +10,8 @@ class CanManageConnectors(HasTenantPermission):
 class CanManageInfrastructure(HasTenantPermission):
     message = "Virtual machine operation permission is required."
     required_permission = Permission.VIRTUAL_MACHINES_OPERATE
+
+
+class CanControlVirtualMachineConsole(HasTenantPermission):
+    message = "Virtual machine console control permission is required."
+    required_permission = Permission.VIRTUAL_MACHINES_CONSOLE_CONTROL

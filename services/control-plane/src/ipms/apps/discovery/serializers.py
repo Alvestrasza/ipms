@@ -11,6 +11,8 @@ from .models import (
     PhysicalSystem,
     HyperVVirtualMachine,
     HyperVVirtualMachineActionJob,
+    HyperVConsoleInputEvent,
+    HyperVConsoleSession,
     LinuxSystem,
     ManagedInfrastructureDevice,
     SoftwareInventorySnapshot,
@@ -402,6 +404,38 @@ class HyperVVirtualMachineActionJobSerializer(serializers.ModelSerializer):
             "completed_at",
         )
         read_only_fields = fields
+
+
+class HyperVConsoleSessionSerializer(serializers.ModelSerializer):
+    tenant_id = serializers.UUIDField(read_only=True)
+    enrollment_id = serializers.UUIDField(read_only=True)
+    virtual_machine_id = serializers.UUIDField(read_only=True, allow_null=True)
+
+    class Meta:
+        model = HyperVConsoleSession
+        fields = (
+            "id",
+            "tenant_id",
+            "enrollment_id",
+            "virtual_machine_id",
+            "vm_name",
+            "requested_by",
+            "status",
+            "frame_sequence",
+            "frame_width",
+            "frame_height",
+            "failure_code",
+            "created_at",
+            "connected_at",
+            "last_agent_contact_at",
+            "closed_at",
+        )
+        read_only_fields = fields
+
+
+class HyperVConsoleInputSerializer(serializers.Serializer):
+    type = serializers.ChoiceField(choices=HyperVConsoleInputEvent.EventType.choices)
+    payload = serializers.JSONField()
 
 
 class LinuxSystemSerializer(serializers.ModelSerializer):

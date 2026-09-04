@@ -25,6 +25,10 @@ from ipms.apps.discovery.views import (
     HyperVVirtualMachineListView,
     HyperVVirtualMachineActionJobView,
     HyperVVirtualMachineActionView,
+    HyperVConsoleFrameView,
+    HyperVConsoleInputView,
+    HyperVConsoleSessionCreateView,
+    HyperVConsoleSessionView,
     LinuxSystemDetailView,
     LinuxSystemListView,
     ManagedDeviceCertificateProbeView,
@@ -135,6 +139,26 @@ urlpatterns = [
         "hyper-v/actions/<uuid:pk>/",
         HyperVVirtualMachineActionJobView.as_view(),
         name="hyperv-virtual-machine-action-job",
+    ),
+    path(
+        "hyper-v/virtual-machines/<uuid:pk>/console-sessions/",
+        HyperVConsoleSessionCreateView.as_view(),
+        name="hyperv-console-session-create",
+    ),
+    path(
+        "hyper-v/console-sessions/<uuid:pk>/",
+        HyperVConsoleSessionView.as_view(),
+        name="hyperv-console-session",
+    ),
+    path(
+        "hyper-v/console-sessions/<uuid:pk>/frame/",
+        HyperVConsoleFrameView.as_view(),
+        name="hyperv-console-frame",
+    ),
+    path(
+        "hyper-v/console-sessions/<uuid:pk>/input/",
+        HyperVConsoleInputView.as_view(),
+        name="hyperv-console-input",
     ),
     path("linux-systems/", LinuxSystemListView.as_view(), name="linux-system-list"),
     path(

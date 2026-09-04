@@ -103,6 +103,10 @@ deployment database.
 - `POST /api/v1/hyper-v/virtual-machines/{id}/actions/` queues one authorized,
   tenant-bound start, stop, pause, or resume job; its job endpoint exposes only
   bounded status and result metadata.
+- `POST /api/v1/hyper-v/virtual-machines/{id}/console-sessions/` opens one
+  owner-bound, lease-limited console session. Its status, latest no-store PNG
+  frame, typed input, and close endpoints require the dedicated console-control
+  permission and the requesting user identity.
 
 `IPMS_BMC_CONNECT_TIMEOUT_SECONDS` sets the bounded timeout for certificate and
 Redfish HTTPS exchanges. It defaults to `20` and accepts values from `5` to

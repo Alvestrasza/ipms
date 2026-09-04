@@ -12,6 +12,7 @@ export type PermissionCode =
   | "agents.view"
   | "agents.manage"
   | "virtual_machines.operate"
+  | "virtual_machines.console.control"
   | "operations.approve"
   | "audit.view"
   | "users.view"

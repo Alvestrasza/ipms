@@ -75,6 +75,7 @@ class TenantModelTests(TestCase):
         self.assertIn(Permission.AGENTS_MANAGE, permissions)
         self.assertIn(Permission.CONNECTORS_MANAGE, permissions)
         self.assertIn(Permission.VIRTUAL_MACHINES_OPERATE, permissions)
+        self.assertIn(Permission.VIRTUAL_MACHINES_CONSOLE_CONTROL, permissions)
         self.assertNotIn(Permission.USERS_VIEW, permissions)
         self.assertNotIn(Permission.USERS_MANAGE, permissions)
 

@@ -37,6 +37,7 @@ from .models import (
     PhysicalSystem,
     HyperVVirtualMachine,
     HyperVVirtualMachineActionJob,
+    HyperVConsoleSession,
     LinuxSystem,
     ManagedInfrastructureDevice,
     SoftwareInventorySnapshot,
@@ -45,7 +46,11 @@ from .models import (
     WindowsServerRole,
     WindowsServerTelemetry,
 )
-from .permissions import CanManageConnectors, CanManageInfrastructure
+from .permissions import (
+    CanControlVirtualMachineConsole,
+    CanManageConnectors,
+    CanManageInfrastructure,
+)
 from .secrets import store_connector_secret
 from .serializers import (
     BmcCertificateProbeSerializer,
@@ -62,6 +67,8 @@ from .serializers import (
     HyperVVirtualMachineSerializer,
     HyperVVirtualMachineActionJobSerializer,
     HyperVVirtualMachineActionRequestSerializer,
+    HyperVConsoleInputSerializer,
+    HyperVConsoleSessionSerializer,
     LinuxSystemSerializer,
     ManagedDeviceCertificateProbeSerializer,
     ManagedDeviceEnrollmentSerializer,
@@ -710,6 +717,137 @@ class HyperVVirtualMachineActionJobView(APIView):
             tenant=request.tenant,
         )
         return Response(HyperVVirtualMachineActionJobSerializer(job).data)
+
+
+class HyperVConsoleSessionCreateView(APIView):
+    permission_classes = (
+        IsAuthenticated,
+        HasSelectedTenantAccess,
+        CanControlVirtualMachineConsole,
+    )
+
+    def post(self, request, pk):
+        from ipms.apps.agent_pki.hyperv_console import create_console_session
+
+        virtual_machine = get_object_or_404(
+            HyperVVirtualMachine.objects.select_related("host"),
+            id=pk,
+            tenant=request.tenant,
+            host__tenant=request.tenant,
+        )
+        try:
+            session, occupied = create_console_session(
+                virtual_machine=virtual_machine,
+                actor=request.user.get_username(),
+            )
+        except DjangoValidationError as exc:
+            raise ValidationError({"console": exc.messages}) from exc
+        if occupied:
+            return Response(
+                {
+                    "code": "console_session_in_use",
+                    "session": HyperVConsoleSessionSerializer(occupied).data,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(
+            HyperVConsoleSessionSerializer(session).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class HyperVConsoleSessionView(APIView):
+    permission_classes = (
+        IsAuthenticated,
+        HasSelectedTenantAccess,
+        CanControlVirtualMachineConsole,
+    )
+
+    def _session(self, request, pk):
+        return get_object_or_404(
+            HyperVConsoleSession,
+            id=pk,
+            tenant=request.tenant,
+            requested_by=request.user.get_username(),
+        )
+
+    def get(self, request, pk):
+        from ipms.apps.agent_pki.hyperv_console import renew_console_session
+
+        try:
+            session = renew_console_session(
+                session=self._session(request, pk),
+                actor=request.user.get_username(),
+            )
+        except DjangoValidationError as exc:
+            raise ValidationError({"console": exc.messages}) from exc
+        return Response(HyperVConsoleSessionSerializer(session).data)
+
+    def delete(self, request, pk):
+        from ipms.apps.agent_pki.hyperv_console import close_console_session
+
+        try:
+            close_console_session(
+                session=self._session(request, pk),
+                actor=request.user.get_username(),
+            )
+        except DjangoValidationError as exc:
+            raise ValidationError({"console": exc.messages}) from exc
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class HyperVConsoleFrameView(APIView):
+    permission_classes = (
+        IsAuthenticated,
+        HasSelectedTenantAccess,
+        CanControlVirtualMachineConsole,
+    )
+
+    def get(self, request, pk):
+        session = get_object_or_404(
+            HyperVConsoleSession,
+            id=pk,
+            tenant=request.tenant,
+            requested_by=request.user.get_username(),
+        )
+        if not session.frame_png:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        response = HttpResponse(bytes(session.frame_png), content_type="image/png")
+        response["Cache-Control"] = "private, no-store"
+        response["X-IPMS-Frame-Sequence"] = str(session.frame_sequence)
+        response["X-IPMS-Frame-Width"] = str(session.frame_width)
+        response["X-IPMS-Frame-Height"] = str(session.frame_height)
+        return response
+
+
+class HyperVConsoleInputView(APIView):
+    permission_classes = (
+        IsAuthenticated,
+        HasSelectedTenantAccess,
+        CanControlVirtualMachineConsole,
+    )
+
+    def post(self, request, pk):
+        from ipms.apps.agent_pki.hyperv_console import queue_console_input
+
+        session = get_object_or_404(
+            HyperVConsoleSession,
+            id=pk,
+            tenant=request.tenant,
+            requested_by=request.user.get_username(),
+        )
+        serializer = HyperVConsoleInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            event = queue_console_input(
+                session=session,
+                actor=request.user.get_username(),
+                event_type=serializer.validated_data["type"],
+                payload=serializer.validated_data["payload"],
+            )
+        except DjangoValidationError as exc:
+            raise ValidationError({"input": exc.messages}) from exc
+        return Response({"id": str(event.id)}, status=status.HTTP_202_ACCEPTED)
 
 
 class LinuxSystemListView(ListAPIView):

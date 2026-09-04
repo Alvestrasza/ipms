@@ -17,6 +17,7 @@ int main() {
   if (!ipms::agent::is_allowed_server_message(ipms::agent::ServerMessageType::agent_update_manifest)) return 8;
   if (!ipms::agent::is_allowed_server_message(ipms::agent::ServerMessageType::certificate_rotation)) return 9;
   if (!ipms::agent::is_allowed_server_message(ipms::agent::ServerMessageType::hyperv_virtual_machine_action)) return 17;
+  if (!ipms::agent::is_allowed_server_message(ipms::agent::ServerMessageType::hyperv_console_session)) return 20;
   const auto& packs = ipms::agent::builtin_management_packs();
   if (packs.size() != 4) return 10;
   const auto hyperv = std::find_if(
@@ -31,6 +32,7 @@ int main() {
   if (hyperv->dependencies.size() != 1 || hyperv->dependencies[0] != "windows-server-core") return 12;
   if (hyperv->access_mode != ipms::agent::AccessMode::management) return 18;
   if (std::find(hyperv->capabilities.begin(), hyperv->capabilities.end(), "hyperv.vm.lifecycle") == hyperv->capabilities.end()) return 19;
+  if (std::find(hyperv->capabilities.begin(), hyperv->capabilities.end(), "hyperv.vm.console") == hyperv->capabilities.end()) return 21;
   if (windows->access_mode != ipms::agent::AccessMode::read_inventory || software->access_mode != ipms::agent::AccessMode::read_inventory || linux->access_mode != ipms::agent::AccessMode::read_inventory) return 20;
   if (software->dependencies.size() != 1 || software->dependencies[0] != "windows-server-core") return 13;
   for (const auto& pack : packs) if (!ipms::agent::is_valid_pack_assignment(pack)) return 15;

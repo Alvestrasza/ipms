@@ -48,11 +48,13 @@ anti-rollback policy, and MSI delivery remain mandatory before customer release.
 | Pack | Capabilities | Access |
 | --- | --- | --- |
 | `windows-server-core` | OS, hardware, storage, network, and installed role/feature inventory | Read-only |
-| `hyper-v-host` | Hyper-V host, VM, virtual-network inventory, and fixed VM lifecycle actions | Management |
+| `hyper-v-host` | Hyper-V host, VM, virtual-network inventory, fixed VM lifecycle actions, and typed VM console input | Management |
 
-`hyper-v-host` requires `windows-server-core`. Its four fixed state-changing
+`hyper-v-host` requires `windows-server-core`. Its five fixed lifecycle
 operations are governed by
-[ADR-0008](ADR-0008-HYPERV-VM-LIFECYCLE.md); the dependency remains read-only.
+[ADR-0008](ADR-0008-HYPERV-VM-LIFECYCLE.md). Its bounded frame and typed input
+channel is governed by
+[ADR-0010](ADR-0010-HYPERV-VM-CONSOLE.md); the dependency remains read-only.
 
 The Windows core pack separates five-minute configuration inventory from a
 ten-second current utilization sample. Live telemetry is limited to native,
@@ -75,7 +77,9 @@ fallback, and the Windows 11 LTSC compatibility product name is normalized when
 WMI is unavailable. The `hyper-v-host` capability uses fixed local WMI v2 reads
 and reports a bounded VM collection. The Control Plane cannot supply WMI text,
 commands, scripts, method names, or free-form arguments. Agent 0.2.12 adds only
-the five compiled lifecycle actions defined by ADR-0008.
+the five compiled lifecycle actions defined by ADR-0008. Agent 0.2.13 adds only
+the frame, keyboard, mouse, and secure-attention operations defined by
+ADR-0010.
 
 ## Control-plane requirements
 

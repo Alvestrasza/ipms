@@ -6,6 +6,7 @@ import {
   CirclePlay,
   Cpu,
   MemoryStick,
+  MonitorUp,
   Play,
   Power,
   PowerOff,
@@ -16,6 +17,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { DialogPortal } from "@/components/dialog-portal";
+import {
+  type ConsoleDialogState,
+  HyperVConsoleDialog,
+} from "@/components/hyperv-console-dialog";
 import { StatusPill } from "@/components/status-pill";
 import type {
   HyperVAction,
@@ -52,6 +57,21 @@ type Copy = {
   queued: string;
   actionFailed: string;
   states: Record<string, string>;
+  console: {
+    open: string;
+    title: string;
+    close: string;
+    secureAttention: string;
+    secureAttentionHint: string;
+    connecting: string;
+    waitingForFrame: string;
+    directInput: string;
+    sessionInUse: string;
+    sessionInUseDetail: string;
+    unavailable: string;
+    failed: string;
+    expired: string;
+  };
 };
 
 type Menu = { vm: HyperVVirtualMachine; x: number; y: number };
@@ -101,12 +121,14 @@ export function HyperVVirtualMachineInventory({
   csrfToken,
   tenantId,
   canManage,
+  canConsole,
 }: {
   copy: Copy;
   virtualMachines: HyperVVirtualMachine[];
   csrfToken: string;
   tenantId: string;
   canManage: boolean;
+  canConsole: boolean;
 }) {
   const router = useRouter();
   const [menu, setMenu] = useState<Menu | null>(null);
@@ -114,6 +136,9 @@ export function HyperVVirtualMachineInventory({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [consoleDialog, setConsoleDialog] = useState<ConsoleDialogState | null>(
+    null,
+  );
 
   useEffect(() => {
     const close = () => setMenu(null);
@@ -138,12 +163,86 @@ export function HyperVVirtualMachineInventory({
   );
 
   function openMenu(vm: HyperVVirtualMachine, x: number, y: number) {
-    if (busy || !canManage || availableActions(vm).length === 0) return;
+    const consoleAvailable = canConsole && vm.state === "running";
+    if (
+      busy ||
+      (!consoleAvailable && (!canManage || availableActions(vm).length === 0))
+    )
+      return;
     setMenu({
       vm,
       x: Math.max(8, Math.min(x, window.innerWidth - 220)),
       y: Math.max(8, Math.min(y, window.innerHeight - 190)),
     });
+  }
+
+  async function openConsole(vm: HyperVVirtualMachine) {
+    setMenu(null);
+    setConsoleDialog({
+      vm,
+      session: null,
+      occupied: null,
+      loading: true,
+      error: "",
+    });
+    try {
+      const response = await fetch(
+        `/api/v1/hyper-v/virtual-machines/${vm.id}/console-sessions/`,
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": csrfToken,
+            "X-IPMS-Tenant-ID": tenantId,
+          },
+          body: "{}",
+        },
+      );
+      const document = await response.json();
+      if (response.status === 409) {
+        setConsoleDialog({
+          vm,
+          session: null,
+          occupied: document.session,
+          loading: false,
+          error: "",
+        });
+        return;
+      }
+      if (!response.ok) throw new Error("console_open_failed");
+      setConsoleDialog({
+        vm,
+        session: document,
+        occupied: null,
+        loading: false,
+        error: "",
+      });
+    } catch {
+      setConsoleDialog({
+        vm,
+        session: null,
+        occupied: null,
+        loading: false,
+        error: copy.console.unavailable,
+      });
+    }
+  }
+
+  function closeConsole() {
+    const sessionId = consoleDialog?.session?.id;
+    setConsoleDialog(null);
+    if (sessionId) {
+      void fetch(`/api/v1/hyper-v/console-sessions/${sessionId}/`, {
+        method: "DELETE",
+        credentials: "same-origin",
+        keepalive: true,
+        headers: {
+          "X-CSRFToken": csrfToken,
+          "X-IPMS-Tenant-ID": tenantId,
+        },
+      });
+    }
   }
 
   async function runAction(request: ActionRequest) {
@@ -262,7 +361,7 @@ export function HyperVVirtualMachineInventory({
             <strong>{virtualMachines.length}</strong>
           </span>
         </div>
-        {canManage && virtualMachines.length > 0 ? (
+        {(canManage || canConsole) && virtualMachines.length > 0 ? (
           <p className="hyperv-context-hint">{copy.contextHint}</p>
         ) : null}
         {error && !pending ? (
@@ -295,15 +394,22 @@ export function HyperVVirtualMachineInventory({
                   <tr
                     key={vm.id}
                     className={
-                      canManage && availableActions(vm).length
+                      (canManage && availableActions(vm).length) ||
+                      (canConsole && vm.state === "running")
                         ? "hyperv-vm-row--actionable"
                         : undefined
                     }
                     tabIndex={
-                      canManage && availableActions(vm).length ? 0 : undefined
+                      (canManage && availableActions(vm).length) ||
+                      (canConsole && vm.state === "running")
+                        ? 0
+                        : undefined
                     }
                     onContextMenu={(event) => {
-                      if (canManage && availableActions(vm).length) {
+                      if (
+                        (canManage && availableActions(vm).length) ||
+                        (canConsole && vm.state === "running")
+                      ) {
                         event.preventDefault();
                         openMenu(vm, event.clientX, event.clientY);
                       }
@@ -317,6 +423,11 @@ export function HyperVVirtualMachineInventory({
                         const bounds =
                           event.currentTarget.getBoundingClientRect();
                         openMenu(vm, bounds.left + 48, bounds.top + 32);
+                      }
+                    }}
+                    onDoubleClick={() => {
+                      if (canConsole && vm.state === "running") {
+                        void openConsole(vm);
                       }
                     }}
                   >
@@ -360,21 +471,36 @@ export function HyperVVirtualMachineInventory({
           style={{ left: menu.x, top: menu.y }}
         >
           <strong>{menu.vm.name}</strong>
-          {availableActions(menu.vm).map((action) => (
+          {canConsole && menu.vm.state === "running" ? (
             <button
-              key={action}
               type="button"
               role="menuitem"
-              className={
-                action === "stop" ? "hyperv-context-menu__danger" : undefined
-              }
               disabled={busy}
-              onClick={() => requestAction(menu.vm, action)}
+              onClick={() => void openConsole(menu.vm)}
             >
-              {actionIcon(action)}
-              <span>{copy.actions[action]}</span>
+              <MonitorUp aria-hidden="true" size={16} />
+              <span>{copy.console.open}</span>
             </button>
-          ))}
+          ) : null}
+          {canManage
+            ? availableActions(menu.vm).map((action) => (
+                <button
+                  key={action}
+                  type="button"
+                  role="menuitem"
+                  className={
+                    action === "stop"
+                      ? "hyperv-context-menu__danger"
+                      : undefined
+                  }
+                  disabled={busy}
+                  onClick={() => requestAction(menu.vm, action)}
+                >
+                  {actionIcon(action)}
+                  <span>{copy.actions[action]}</span>
+                </button>
+              ))
+            : null}
         </div>
       ) : null}
       {pending ? (
@@ -435,6 +561,20 @@ export function HyperVVirtualMachineInventory({
             </section>
           </div>
         </DialogPortal>
+      ) : null}
+      {consoleDialog ? (
+        <HyperVConsoleDialog
+          key={`${consoleDialog.vm.id}:${
+            consoleDialog.session?.id ??
+            consoleDialog.occupied?.id ??
+            (consoleDialog.error ? "error" : "loading")
+          }`}
+          state={consoleDialog}
+          copy={copy.console}
+          csrfToken={csrfToken}
+          tenantId={tenantId}
+          onClose={closeConsole}
+        />
       ) : null}
     </>
   );

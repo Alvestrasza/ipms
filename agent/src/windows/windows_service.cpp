@@ -34,15 +34,32 @@ void WINAPI service_main(DWORD, LPWSTR*) {
   stop_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
   if (stop_event == nullptr) { report(SERVICE_STOPPED, GetLastError()); return; }
   report(SERVICE_RUNNING);
-  unsigned telemetry_cycles = 30;
+  ULONGLONG next_inventory = 0;
+  ULONGLONG next_telemetry = 0;
+  bool console_active = false;
   do {
-    if (telemetry_cycles >= 30) {
+    const ULONGLONG now = GetTickCount64();
+    if (!console_active && now >= next_inventory) {
       const auto inventory = ipms::agent::windows::run_inventory_cycle();
-      telemetry_cycles = inventory.succeeded ? 0 : 30;
+      next_inventory = now + (inventory.succeeded ? 300'000 : 10'000);
+      if (inventory.succeeded) {
+        console_active = inventory.console_active;
+      }
     }
-    (void)ipms::agent::windows::run_telemetry_cycle();
-    ++telemetry_cycles;
-  } while (WaitForSingleObject(stop_event, 10'000) == WAIT_TIMEOUT);
+    if (!console_active && now >= next_telemetry) {
+      const auto telemetry = ipms::agent::windows::run_telemetry_cycle();
+      next_telemetry = now + 10'000;
+      if (telemetry.succeeded) {
+        console_active = telemetry.console_active;
+      }
+    }
+    if (console_active) {
+      const auto console = ipms::agent::windows::run_console_cycle();
+      console_active = console.succeeded && console.console_active;
+    }
+    const DWORD interval = console_active ? 750 : 1'000;
+    if (WaitForSingleObject(stop_event, interval) != WAIT_TIMEOUT) break;
+  } while (true);
   CloseHandle(stop_event);
   report(SERVICE_STOPPED);
 }

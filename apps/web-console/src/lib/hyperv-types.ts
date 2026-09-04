@@ -41,3 +41,19 @@ export type HyperVActionJob = {
     | "cancelled";
   result_code: string;
 };
+
+export type HyperVConsoleSession = {
+  id: string;
+  virtual_machine_id: string | null;
+  vm_name: string;
+  requested_by: string;
+  status: "requested" | "active" | "closed" | "failed" | "expired";
+  frame_sequence: number;
+  frame_width: number;
+  frame_height: number;
+  failure_code: string;
+  created_at: string;
+  connected_at: string | null;
+  last_agent_contact_at: string | null;
+  closed_at: string | null;
+};

@@ -31,7 +31,7 @@
 namespace {
 using Microsoft::WRL::ComPtr;
 constexpr std::size_t k_max_document_bytes = 65'536;
-constexpr wchar_t k_agent_version[] = L"0.2.12";
+constexpr wchar_t k_agent_version[] = L"0.2.13";
 constexpr std::size_t k_max_artifact_bytes = 64 * 1024 * 1024;
 
 struct internet_closer { void operator()(void* handle) const { if (handle) WinHttpCloseHandle(handle); } };
@@ -153,6 +153,101 @@ std::optional<std::string> json_object(const std::string& document, const std::s
     else if (character == '{') ++depth;
     else if (character == '}' && --depth == 0) return document.substr(start, position - start + 1);
   }
+  return std::nullopt;
+}
+
+std::optional<std::string> json_array(const std::string& document, const std::string& key) {
+  const std::string marker = "\"" + key + "\"";
+  auto position = document.find(marker);
+  if (position == std::string::npos) return std::nullopt;
+  position = document.find(':', position + marker.size());
+  if (position == std::string::npos) return std::nullopt;
+  position = document.find_first_not_of(" \t\r\n", position + 1);
+  if (position == std::string::npos || document[position] != '[') return std::nullopt;
+  const auto start = position;
+  unsigned depth = 0;
+  bool in_string = false;
+  bool escaped = false;
+  for (; position < document.size(); ++position) {
+    const char character = document[position];
+    if (in_string) {
+      if (escaped) escaped = false;
+      else if (character == '\\') escaped = true;
+      else if (character == '"') in_string = false;
+      continue;
+    }
+    if (character == '"') in_string = true;
+    else if (character == '[') ++depth;
+    else if (character == ']' && --depth == 0) return document.substr(start, position - start + 1);
+  }
+  return std::nullopt;
+}
+
+std::vector<std::string> json_array_objects(const std::string& value) {
+  std::vector<std::string> result;
+  if (value.size() < 2 || value.front() != '[' || value.back() != ']') return result;
+  std::size_t start = std::string::npos;
+  unsigned depth = 0;
+  bool in_string = false;
+  bool escaped = false;
+  for (std::size_t index = 1; index + 1 < value.size(); ++index) {
+    const char character = value[index];
+    if (in_string) {
+      if (escaped) escaped = false;
+      else if (character == '\\') escaped = true;
+      else if (character == '"') in_string = false;
+      continue;
+    }
+    if (character == '"') in_string = true;
+    else if (character == '{') {
+      if (depth++ == 0) start = index;
+    } else if (character == '}' && depth > 0 && --depth == 0) {
+      if (start == std::string::npos || result.size() >= 64) return {};
+      result.push_back(value.substr(start, index - start + 1));
+      start = std::string::npos;
+    } else if (depth == 0 && character != ',' &&
+               !std::isspace(static_cast<unsigned char>(character))) {
+      return {};
+    }
+  }
+  return depth == 0 ? result : std::vector<std::string>{};
+}
+
+std::optional<std::int32_t> json_integer(const std::string& document, const std::string& key) {
+  const std::string marker = "\"" + key + "\"";
+  auto position = document.find(marker);
+  if (position == std::string::npos) return std::nullopt;
+  position = document.find(':', position + marker.size());
+  if (position == std::string::npos) return std::nullopt;
+  position = document.find_first_not_of(" \t\r\n", position + 1);
+  if (position == std::string::npos) return std::nullopt;
+  bool negative = false;
+  if (document[position] == '-') {
+    negative = true;
+    ++position;
+  }
+  if (position >= document.size() || !std::isdigit(static_cast<unsigned char>(document[position]))) {
+    return std::nullopt;
+  }
+  std::int64_t value = 0;
+  while (position < document.size() &&
+         std::isdigit(static_cast<unsigned char>(document[position]))) {
+    value = value * 10 + (document[position++] - '0');
+    if (value > INT32_MAX) return std::nullopt;
+  }
+  return static_cast<std::int32_t>(negative ? -value : value);
+}
+
+std::optional<bool> json_boolean(const std::string& document, const std::string& key) {
+  const std::string marker = "\"" + key + "\"";
+  auto position = document.find(marker);
+  if (position == std::string::npos) return std::nullopt;
+  position = document.find(':', position + marker.size());
+  if (position == std::string::npos) return std::nullopt;
+  position = document.find_first_not_of(" \t\r\n", position + 1);
+  if (position == std::string::npos) return std::nullopt;
+  if (document.compare(position, 4, "true") == 0) return true;
+  if (document.compare(position, 5, "false") == 0) return false;
   return std::nullopt;
 }
 
@@ -335,7 +430,7 @@ struct http_response { DWORD status{}; std::string body; };
 
 http_response post_json(const std::wstring& hostname, std::uint16_t port, const std::wstring& path,
                         const std::string& body, const std::string* pin, PCCERT_CONTEXT client_certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.12", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.13", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent HTTP session could not be created.");
   WinHttpSetTimeouts(session.get(), 10'000, 10'000, 30'000, 30'000);
@@ -397,7 +492,7 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
 }
 
 http_response post_binary(const state& identity, const std::string& body, PCCERT_CONTEXT certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.12", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.13", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent artifact session could not be created.");
   WinHttpSetTimeouts(session.get(), 10'000, 10'000, 60'000, 60'000);
@@ -673,6 +768,153 @@ void report_pending_hyperv_action_result(const state& identity, PCCERT_CONTEXT c
   std::filesystem::remove(path, ignored);
 }
 
+std::string base64(const std::vector<std::uint8_t>& value) {
+  if (value.empty() || value.size() > 1'500'000) {
+    throw std::runtime_error("The Hyper-V console frame size is invalid.");
+  }
+  DWORD size = 0;
+  if (!CryptBinaryToStringA(
+          value.data(), static_cast<DWORD>(value.size()),
+          CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, nullptr, &size) || size == 0) {
+    throw std::runtime_error("The Hyper-V console frame could not be encoded.");
+  }
+  std::string result(size, '\0');
+  if (!CryptBinaryToStringA(
+          value.data(), static_cast<DWORD>(value.size()),
+          CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, result.data(), &size)) {
+    throw std::runtime_error("The Hyper-V console frame could not be encoded.");
+  }
+  if (!result.empty() && result.back() == '\0') result.pop_back();
+  return result;
+}
+
+struct console_assignment {
+  std::string session_id;
+  std::string vm_source_id;
+  std::string vm_name;
+  std::uint16_t width{};
+  std::uint16_t height{};
+  std::vector<ipms::agent::windows::hyperv_console_input> inputs;
+};
+
+std::optional<console_assignment> parse_console_assignment(const std::string& document) {
+  const auto raw = json_object(document, "hyperv_console");
+  if (!raw) return std::nullopt;
+  console_assignment assignment;
+  const auto session_id = json_string(*raw, "session_id");
+  const auto vm_source_id = json_string(*raw, "vm_source_id");
+  const auto vm_name = json_string(*raw, "vm_name");
+  const auto width = json_integer(*raw, "width");
+  const auto height = json_integer(*raw, "height");
+  const auto inputs = json_array(*raw, "inputs");
+  if (!session_id || !vm_source_id || !vm_name || !width || !height || !inputs ||
+      !safe_lifecycle_value(*session_id) || !safe_lifecycle_value(*vm_source_id) ||
+      !safe_vm_name(*vm_name) || *width < 160 || *width > 1920 ||
+      *height < 120 || *height > 1200) {
+    throw std::runtime_error("The Hyper-V console assignment is invalid.");
+  }
+  assignment.session_id = *session_id;
+  assignment.vm_source_id = *vm_source_id;
+  assignment.vm_name = *vm_name;
+  assignment.width = static_cast<std::uint16_t>(*width);
+  assignment.height = static_cast<std::uint16_t>(*height);
+  const auto objects = json_array_objects(*inputs);
+  if (*inputs != "[]" && objects.empty()) {
+    throw std::runtime_error("The Hyper-V console input batch is invalid.");
+  }
+  for (const auto& object : objects) {
+    ipms::agent::windows::hyperv_console_input input;
+    const auto id = json_string(object, "id");
+    const auto type = json_string(object, "type");
+    if (!id || !type || !safe_lifecycle_value(*id) ||
+        (*type != "key" && *type != "mouse_move" && *type != "mouse_button" &&
+         *type != "mouse_wheel" && *type != "secure_attention")) {
+      throw std::runtime_error("The Hyper-V console input is invalid.");
+    }
+    input.id = *id;
+    input.type = *type;
+    if (*type == "key") {
+      const auto key_code = json_integer(object, "key_code");
+      const auto is_down = json_boolean(object, "is_down");
+      if (!key_code || !is_down || *key_code < 8 || *key_code > 255) {
+        throw std::runtime_error("The Hyper-V console key input is invalid.");
+      }
+      input.key_code = static_cast<std::uint32_t>(*key_code);
+      input.is_down = *is_down;
+    } else if (*type == "mouse_move") {
+      const auto x = json_integer(object, "x");
+      const auto y = json_integer(object, "y");
+      if (!x || !y || *x < 0 || *x > 4095 || *y < 0 || *y > 4095) {
+        throw std::runtime_error("The Hyper-V console mouse position is invalid.");
+      }
+      input.x = *x;
+      input.y = *y;
+    } else if (*type == "mouse_button") {
+      const auto button = json_integer(object, "button");
+      const auto is_down = json_boolean(object, "is_down");
+      if (!button || !is_down || *button < 1 || *button > 3) {
+        throw std::runtime_error("The Hyper-V console mouse button is invalid.");
+      }
+      input.button = static_cast<std::uint32_t>(*button);
+      input.is_down = *is_down;
+    } else if (*type == "mouse_wheel") {
+      const auto delta = json_integer(object, "delta");
+      if (!delta || *delta < -1200 || *delta > 1200) {
+        throw std::runtime_error("The Hyper-V console mouse wheel is invalid.");
+      }
+      input.delta = *delta;
+    }
+    assignment.inputs.push_back(std::move(input));
+  }
+  return assignment;
+}
+
+bool process_hyperv_console_assignment(
+    const std::string& response_document,
+    const state& identity,
+    PCCERT_CONTEXT certificate) {
+  const auto assignment = parse_console_assignment(response_document);
+  if (!assignment) return false;
+  const auto result = ipms::agent::windows::execute_hyperv_console_cycle(
+      assignment->vm_source_id,
+      assignment->vm_name,
+      assignment->width,
+      assignment->height,
+      assignment->inputs);
+  std::ostringstream body;
+  body << "{\"type\":\"hyperv_console_cycle\",\"device_uri\":\""
+       << json_escape(identity.device_uri)
+       << "\",\"correlation_id\":\"hyperv-console-"
+       << json_escape(assignment->session_id)
+       << "\",\"session_id\":\"" << json_escape(assignment->session_id)
+       << "\",\"frame_width\":" << result.width
+       << ",\"frame_height\":" << result.height
+       << ",\"acknowledged_input_ids\":[";
+  for (std::size_t index = 0; index < result.acknowledged_input_ids.size(); ++index) {
+    if (index != 0) body << ',';
+    body << '"' << json_escape(result.acknowledged_input_ids[index]) << '"';
+  }
+  body << ']';
+  if (result.succeeded) {
+    body << ",\"frame_png_base64\":\"" << base64(result.png)
+         << "\",\"failure_code\":\"\"}";
+  } else {
+    if (!safe_lifecycle_value(result.result_code)) {
+      throw std::runtime_error("The Hyper-V console result is invalid.");
+    }
+    body << ",\"frame_png_base64\":\"\",\"failure_code\":\""
+         << json_escape(result.result_code) << "\"}";
+  }
+  const auto response = post_json(
+      identity.gateway, identity.port, L"/v1/hyperv-console", body.str(), nullptr,
+      certificate);
+  if (response.status != 200 ||
+      json_string(response.body, "type") != std::optional<std::string>("accepted")) {
+    throw std::runtime_error("The Hyper-V console result was rejected.");
+  }
+  return true;
+}
+
 void report_pending_result(const state& identity, PCCERT_CONTEXT certificate) {
   const auto path = data_directory() / L"lifecycle-result.json";
   if (!std::filesystem::is_regular_file(path)) return;
@@ -778,7 +1020,9 @@ TransportResult run_inventory_cycle() {
     }
     process_lifecycle_assignment(response.body, identity, certificate.get());
     process_hyperv_action_assignment(response.body, identity, certificate.get());
-    return {true, L"Enrollment and inventory delivery succeeded."};
+    const bool console_active = process_hyperv_console_assignment(
+        response.body, identity, certificate.get());
+    return {true, L"Enrollment and inventory delivery succeeded.", console_active};
   } catch (const std::exception& error) {
     try { return {false, wide(error.what())}; }
     catch (...) { return {false, L"The Agent connection cycle failed."}; }
@@ -807,10 +1051,39 @@ TransportResult run_telemetry_cycle() {
       throw std::runtime_error("The Agent telemetry was rejected.");
     process_lifecycle_assignment(response.body, identity, certificate.get());
     process_hyperv_action_assignment(response.body, identity, certificate.get());
-    return {true, L"Telemetry delivery succeeded."};
+    const bool console_active = process_hyperv_console_assignment(
+        response.body, identity, certificate.get());
+    return {true, L"Telemetry delivery succeeded.", console_active};
   } catch (const std::exception& error) {
     try { return {false, wide(error.what())}; }
     catch (...) { return {false, L"The Agent telemetry cycle failed."}; }
+  }
+}
+
+TransportResult run_console_cycle() {
+  try {
+    const state identity = load_state(data_directory() / L"agent-state.json");
+    cert_context certificate(find_agent_certificate(identity.certificate_sha256));
+    if (!certificate) throw std::runtime_error("The enrolled Agent certificate is unavailable.");
+    const std::string body =
+        "{\"type\":\"hyperv_console_cycle\",\"device_uri\":\"" +
+        json_escape(identity.device_uri) +
+        "\",\"correlation_id\":\"hyperv-console-poll\",\"session_id\":\"\","
+        "\"frame_png_base64\":\"\",\"frame_width\":0,\"frame_height\":0,"
+        "\"acknowledged_input_ids\":[],\"failure_code\":\"\"}";
+    const auto response = post_json(
+        identity.gateway, identity.port, L"/v1/hyperv-console", body, nullptr,
+        certificate.get());
+    if (response.status != 200 ||
+        json_string(response.body, "type") != std::optional<std::string>("accepted")) {
+      throw std::runtime_error("The Hyper-V console poll was rejected.");
+    }
+    const bool active = process_hyperv_console_assignment(
+        response.body, identity, certificate.get());
+    return {true, active ? L"Hyper-V console cycle succeeded." : L"No Hyper-V console is active.", active};
+  } catch (const std::exception& error) {
+    try { return {false, wide(error.what()), false}; }
+    catch (...) { return {false, L"The Hyper-V console cycle failed.", false}; }
   }
 }
 
