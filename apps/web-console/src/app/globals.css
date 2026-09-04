@@ -8,6 +8,7 @@
   --color-text-secondary: #c5cdd0;
   --color-text-muted: #87969e;
   --color-accent-crimson: #d4483e;
+  --color-accent-crimson-text: #ef786f;
   --color-accent-blue: #58a6d6;
   --color-success: #55b98b;
   --color-warning: #e3a94b;
@@ -30,6 +31,7 @@
   --color-text-primary: #14212a;
   --color-text-secondary: #45545d;
   --color-text-muted: #677781;
+  --color-accent-crimson-text: #9f2f28;
   --surface-navigation: #edf1f3;
   --surface-page: #f4f6f7;
   --surface-panel: #ffffff;
@@ -508,7 +510,7 @@ a {
 }
 .eyebrow {
   margin: 0 0 7px;
-  color: var(--color-accent-crimson);
+  color: var(--color-accent-crimson-text);
   font-size: 0.67rem;
   font-weight: 800;
   letter-spacing: 0.17em;
