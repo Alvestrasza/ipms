@@ -9,6 +9,7 @@ from .models import (
     ConnectorEndpoint,
     DiscoveryJob,
     PhysicalSystem,
+    HyperVVirtualMachine,
     WindowsServer,
     WindowsServerTelemetry,
 )
@@ -206,6 +207,8 @@ class WindowsServerSerializer(serializers.ModelSerializer):
             "operating_system",
             "os_version",
             "os_build",
+            "operating_system_role",
+            "operating_system_family",
             "architecture",
             "manufacturer",
             "model",
@@ -251,8 +254,37 @@ class WindowsServerDetailSerializer(WindowsServerSerializer):
             "installed_roles_features_status",
             "installed_roles_features_error",
             "installed_roles_features",
+            "hyperv_inventory_status",
+            "hyperv_inventory_error",
             "network_interfaces",
             "latest_telemetry",
+        )
+        read_only_fields = fields
+
+
+class HyperVVirtualMachineSerializer(serializers.ModelSerializer):
+    tenant_id = serializers.UUIDField(read_only=True)
+    host_id = serializers.UUIDField(read_only=True)
+    host_fqdn = serializers.CharField(source="host.fqdn", read_only=True)
+    host_hostname = serializers.CharField(source="host.hostname", read_only=True)
+
+    class Meta:
+        model = HyperVVirtualMachine
+        fields = (
+            "id",
+            "tenant_id",
+            "host_id",
+            "host_fqdn",
+            "host_hostname",
+            "source_id",
+            "name",
+            "state",
+            "vcpu_count",
+            "memory_bytes",
+            "uptime_seconds",
+            "configuration_version",
+            "ip_addresses",
+            "observed_at",
         )
         read_only_fields = fields
 

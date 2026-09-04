@@ -1,4 +1,5 @@
 #include "ipms/agent/gateway_contract.hpp"
+#include "ipms/agent/hyperv_pack.hpp"
 #include "ipms/agent/windows_core_pack.hpp"
 
 #include <winsock2.h>
@@ -11,6 +12,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <cwchar>
 #include <cwctype>
 #include <iomanip>
 #include <optional>
@@ -112,6 +114,36 @@ std::wstring registry_string(const wchar_t* name) {
       name);
 }
 
+std::uint32_t registry_product_type() {
+  const auto value = registry_string_at(
+      L"SYSTEM\\CurrentControlSet\\Control\\ProductOptions",
+      L"ProductType");
+  if (_wcsicmp(value.c_str(), L"WinNT") == 0) return 1;
+  if (_wcsicmp(value.c_str(), L"LanmanNT") == 0) return 2;
+  if (_wcsicmp(value.c_str(), L"ServerNT") == 0) return 3;
+  return 0;
+}
+
+std::wstring normalized_operating_system_name(
+    const std::wstring& reported_name,
+    const std::wstring& registry_name,
+    std::uint32_t product_type) {
+  if (!reported_name.empty()) return reported_name;
+  auto result = registry_name;
+  if (product_type != 1) return result;
+  const auto build_text = registry_string(L"CurrentBuildNumber");
+  wchar_t* end = nullptr;
+  const auto build = std::wcstoul(build_text.c_str(), &end, 10);
+  if (end == build_text.c_str() || *end != L'\0' || build < 22'000) {
+    return result;
+  }
+  constexpr std::wstring_view legacy_prefix = L"Windows 10";
+  if (result.rfind(legacy_prefix, 0) == 0) {
+    result.replace(0, legacy_prefix.size(), L"Windows 11");
+  }
+  return result;
+}
+
 struct com_scope {
   bool initialized{false};
   com_scope() {
@@ -195,6 +227,7 @@ Microsoft::WRL::ComPtr<IWbemClassObject> query_first(
 struct windows_identity {
   std::wstring os_name;
   std::wstring os_version;
+  std::uint32_t product_type{0};
   std::wstring manufacturer;
   std::wstring model;
   std::wstring domain;
@@ -204,6 +237,7 @@ struct windows_identity {
 windows_identity read_windows_identity() {
   windows_identity identity;
   identity.os_version = native_os_version();
+  identity.product_type = registry_product_type();
   identity.domain = computer_name_ex(ComputerNameDnsDomain);
   identity.part_of_domain = !identity.domain.empty();
   com_scope com;
@@ -256,10 +290,12 @@ windows_identity read_windows_identity() {
 
   if (auto operating_system = query_first(
           services.Get(),
-          L"SELECT Caption, Version FROM Win32_OperatingSystem")) {
+          L"SELECT Caption, Version, ProductType FROM Win32_OperatingSystem")) {
     identity.os_name = wmi_string(operating_system.Get(), L"Caption");
     const auto version = wmi_string(operating_system.Get(), L"Version");
     if (!version.empty()) identity.os_version = version;
+    identity.product_type = wmi_uint32(
+        operating_system.Get(), L"ProductType").value_or(identity.product_type);
   }
   if (auto computer_system = query_first(
           services.Get(),
@@ -892,6 +928,30 @@ std::string machine_type(
   }
   return "physical";
 }
+
+std::string operating_system_role(std::uint32_t product_type) {
+  switch (product_type) {
+    case 1: return "client";
+    case 2: return "domain-controller";
+    case 3: return "server";
+    default: return "unknown";
+  }
+}
+
+std::string operating_system_family(const windows_identity& identity) {
+  if (identity.product_type != 1) return "";
+  if (contains_case_insensitive(identity.os_name, L"windows 11")) {
+    return contains_case_insensitive(identity.os_name, L"ltsc")
+               ? "windows-11-ltsc"
+               : "windows-11";
+  }
+  if (contains_case_insensitive(identity.os_name, L"windows 10")) {
+    return contains_case_insensitive(identity.os_name, L"ltsc")
+               ? "windows-10-ltsc"
+               : "windows-10";
+  }
+  return "windows-client";
+}
 }  // namespace
 
 namespace ipms::agent::windows {
@@ -900,18 +960,26 @@ std::string collect_windows_server_core_inventory_json() {
   GetNativeSystemInfo(&system_info);
   MEMORYSTATUSEX memory{sizeof(MEMORYSTATUSEX)};
   GlobalMemoryStatusEx(&memory);
-  const auto identity = read_windows_identity();
+  auto identity = read_windows_identity();
   const auto product_name = registry_string(L"ProductName");
-  const auto operating_system = identity.os_name.empty() ? product_name : identity.os_name;
+  const auto operating_system = normalized_operating_system_name(
+      identity.os_name,
+      product_name,
+      identity.product_type);
+  identity.os_name = operating_system;
   const auto hostname = computer_name();
   const auto physical_host = registry_string_at(
       L"SOFTWARE\\Microsoft\\Virtual Machine\\Guest\\Parameters",
       L"PhysicalHostNameFullyQualified");
+  const bool is_client = identity.product_type == 1;
   bool roles_features_collected = false;
   std::string roles_features_error;
-  const auto roles_features = installed_server_features_json(
-      roles_features_collected,
-      roles_features_error);
+  const auto roles_features = is_client
+      ? std::string("[]")
+      : installed_server_features_json(
+            roles_features_collected,
+            roles_features_error);
+  const auto hyperv = collect_hyperv_inventory();
   std::ostringstream json;
   json << "{\"schema_version\":\"1\",\"pack\":\"windows-server-core\","
        << "\"agent_gateway_port\":" << ipms::agent::k_default_agent_gateway_port << ","
@@ -922,6 +990,8 @@ std::string collect_windows_server_core_inventory_json() {
        << "\"os_name\":\"" << json_escape(utf8(operating_system)) << "\","
        << "\"os_version\":\"" << json_escape(utf8(identity.os_version)) << "\","
        << "\"os_build\":\"" << json_escape(utf8(registry_string(L"CurrentBuildNumber"))) << "\","
+       << "\"operating_system_role\":\"" << operating_system_role(identity.product_type) << "\","
+       << "\"operating_system_family\":\"" << operating_system_family(identity) << "\","
        << "\"architecture\":\"" << (system_info.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64 ? "x64" : "other") << "\","
        << "\"manufacturer\":\"" << json_escape(utf8(identity.manufacturer)) << "\","
        << "\"model\":\"" << json_escape(utf8(identity.model)) << "\","
@@ -930,10 +1000,14 @@ std::string collect_windows_server_core_inventory_json() {
        << "\"logical_processors\":" << system_info.dwNumberOfProcessors << ","
        << "\"memory_total_bytes\":" << memory.ullTotalPhys << ","
        << "\"installed_roles_features_status\":\""
-       << (roles_features_collected ? "collected" : "unavailable") << "\","
+       << (is_client ? "not-applicable" :
+           (roles_features_collected ? "collected" : "unavailable")) << "\","
        << "\"installed_roles_features_error\":\""
        << json_escape(roles_features_error) << "\","
        << "\"installed_roles_features\":" << roles_features << ","
+       << "\"hyperv_inventory_status\":\"" << hyperv.status << "\","
+       << "\"hyperv_inventory_error\":\"" << json_escape(hyperv.error) << "\","
+       << "\"hyperv_virtual_machines\":" << hyperv.virtual_machines_json << ","
        << "\"network_interfaces\":" << network_interfaces_json() << "}";
   return json.str();
 }

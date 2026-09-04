@@ -2,7 +2,7 @@
 
 ## Scope
 
-IPMS `0.1.51` provides tenant-scoped read-only portal inventory and detail
+IPMS `0.1.52` provides tenant-scoped read-only portal inventory and detail
 views for physical and virtual Windows systems. Native Agent enrollment and
 bounded inventory ingestion are available; Hyper-V provider discovery and all
 state-changing Windows or virtualization operations remain outside this
@@ -12,8 +12,11 @@ The Web Console routes are:
 
 - `/{locale}/physical/servers` for physical Windows systems;
 - `/{locale}/physical/servers/{id}` for one physical system;
+- `/{locale}/physical/clients` for physical Windows clients;
 - `/{locale}/virtual` for virtual Windows systems and their future Hyper-V
   placement; and
+- `/{locale}/virtual/clients` for virtual Windows clients;
+- `/{locale}/virtual/hyper-v` for normalized Hyper-V virtual machines; and
 - `/{locale}/virtual/{id}` for one virtual system.
 
 Both routes are server-rendered, require an authenticated tenant selection,
@@ -22,8 +25,10 @@ and use the same Control Plane inventory contract.
 ## Normalized inventory
 
 `GET /api/v1/windows-servers/` returns only the selected tenant's records. The
-optional `server_type=physical|virtual|unknown` and exact `role=<technical-name>`
-query parameters support the separate portal and installed-role views.
+optional `server_type=physical|virtual|unknown`,
+`operating_system_role=client|server|domain-controller|unknown`,
+`operating_system_family=<normalized-family>`, and exact
+`role=<technical-name>` query parameters support the separate portal views.
 `GET /api/v1/windows-server-roles/` returns bounded physical and virtual server
 counts for every installed top-level role in the selected tenant.
 `GET /api/v1/windows-servers/{id}/` returns one selected tenant record for the
@@ -34,6 +39,8 @@ The normalized record prepares these fields:
 
 - stable source identity and source type (`agent` or `hyper-v`);
 - physical, virtual, or not-yet-classified server type;
+- Windows client, server, or domain-controller role and normalized client
+  family, independently from physical or virtual placement;
 - hostname, FQDN, domain, operating-system version, build, and architecture;
 - manufacturer, model, serial number, and system UUID;
 - logical processor count and total memory;
@@ -72,7 +79,7 @@ tenant record, and projects top-level roles into an indexed read model. Role
 services and features remain available on the tenant-scoped detail API but do
 not create navigation entries.
 
-Agent 0.1.36 allows the Server Manager provider up to one bounded minute to
+Agent 0.1.37 allows the Server Manager provider up to one bounded minute to
 complete a cold initialization. Five-second polling slices keep the operation
 responsive without turning a slow provider into a false empty inventory. A
 provider that still fails or exceeds the overall deadline remains explicitly
@@ -80,17 +87,17 @@ provider that still fails or exceeds the overall deadline remains explicitly
 
 ## Current acceptance boundary
 
-If collection is unavailable, Agent 0.1.36 also reports one bounded reason code.
+If collection is unavailable, Agent 0.1.37 also reports one bounded reason code.
 The portal translates this code into an operator-facing explanation without
 publishing raw provider errors, host data, commands, or stack traces.
 
-When that provider is absent, Agent 0.1.36 reads the installed server-feature
+When that provider is absent, Agent 0.1.37 reads the installed server-feature
 inventory from the local Windows system. Documented top-level server-role IDs
 are classified as roles, their descendants as role services, and all remaining
 entries as features. Generated technical identifiers remain stable across UI
 languages while Windows supplies the localized display names.
 
-The following are accepted through `0.1.51`:
+The following are accepted through `0.1.52`:
 
 - localized physical and virtual Windows Server navigation;
 - live empty states that distinguish unavailable data from an empty inventory;
@@ -102,11 +109,15 @@ The following are accepted through `0.1.51`:
   empty collection, unavailable collection, and older Agent inventory;
 - tenant-scoped, collapsible physical and virtual Windows role navigation with
   per-role server counts and exact server filtering;
+- separate physical and virtual Windows client navigation, including a
+  normalized Windows 11 LTSC category;
+- a tenant-scoped Hyper-V VM table for name, state, host, vCPU, RAM, uptime,
+  configuration version, and reported IP addresses;
 - a current-sample-only telemetry surface for CPU, memory, and fixed-volume
   utilization, refreshed by the portal every ten seconds;
 - a tenant-filtered read-only list and detail API and database migration; and
 - negative API coverage for cross-tenant access and browser writes.
 
-Native provider acceptance on a representative Windows Server 2025 system,
-Hyper-V collection, search, lifecycle operations, and production support remain
-future work.
+Native Hyper-V provider acceptance on representative Windows Server 2025 hosts,
+search, state-changing lifecycle operations, and production support remain
+separate acceptance work.

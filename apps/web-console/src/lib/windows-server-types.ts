@@ -48,6 +48,12 @@ export type WindowsServerRoleSummary = {
   virtual_count: number;
 };
 
+export type WindowsClientFamilySummary = {
+  name: string;
+  physical_count: number;
+  virtual_count: number;
+};
+
 export type WindowsServerTelemetry = {
   server_id: string;
   cpu_used_percent: number;
@@ -72,6 +78,8 @@ export type WindowsServer = {
   operating_system: string;
   os_version: string;
   os_build: string;
+  operating_system_role: "client" | "server" | "domain-controller" | "unknown";
+  operating_system_family: string;
   architecture: string;
   manufacturer: string;
   model: string;

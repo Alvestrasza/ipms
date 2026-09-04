@@ -334,6 +334,8 @@ class ManagedAgentPkiTests(TestCase):
                 "os_name": "Microsoft Windows 11 Enterprise LTSC",
                 "os_version": "10.0.26100",
                 "os_build": "26100",
+                "operating_system_role": "client",
+                "operating_system_family": "windows-11-ltsc",
                 "architecture": "x64",
                 "manufacturer": "Microsoft Corporation",
                 "model": "Virtual Machine",
@@ -341,21 +343,8 @@ class ManagedAgentPkiTests(TestCase):
                 "hypervisor_host": "hypervisor.example.invalid",
                 "logical_processors": 4,
                 "memory_total_bytes": 8 * 1024**3,
-                "installed_roles_features_status": "collected",
-                "installed_roles_features": [
-                    {
-                        "name": "Web-Server",
-                        "display_name": "Web Server (IIS)",
-                        "parent_name": "",
-                        "type": "role",
-                    },
-                    {
-                        "name": "Web-Common-Http",
-                        "display_name": "Common HTTP Features",
-                        "parent_name": "Web-Server",
-                        "type": "role-service",
-                    },
-                ],
+                "installed_roles_features_status": "not-applicable",
+                "installed_roles_features": [],
                 "network_interfaces": [
                     {
                         "interface_id": "fixture-interface",
@@ -383,21 +372,20 @@ class ManagedAgentPkiTests(TestCase):
         self.assertEqual(server.domain_name, "example.invalid")
         self.assertEqual(server.operating_system, "Microsoft Windows 11 Enterprise LTSC")
         self.assertEqual(server.os_version, "10.0.26100")
+        self.assertEqual(
+            server.operating_system_role,
+            WindowsServer.OperatingSystemRole.CLIENT,
+        )
+        self.assertEqual(server.operating_system_family, "windows-11-ltsc")
         self.assertEqual(server.server_type, WindowsServer.ServerType.VIRTUAL)
         self.assertEqual(server.manufacturer, "Microsoft Corporation")
         self.assertEqual(server.model, "Virtual Machine")
         self.assertEqual(server.hypervisor_host, "hypervisor.example.invalid")
         self.assertEqual(server.network_interfaces[0]["name"], "Ethernet")
-        self.assertEqual(server.installed_roles_features_status, "collected")
+        self.assertEqual(server.installed_roles_features_status, "not-applicable")
         self.assertEqual(server.installed_roles_features_error, "")
-        self.assertEqual(
-            [item["name"] for item in server.installed_roles_features],
-            ["Web-Common-Http", "Web-Server"],
-        )
-        self.assertEqual(
-            list(server.installed_roles.values_list("name", flat=True)),
-            ["Web-Server"],
-        )
+        self.assertEqual(server.installed_roles_features, [])
+        self.assertFalse(server.installed_roles.exists())
         self.assertEqual(server.agent_state, WindowsServer.AgentState.ONLINE)
         self.assertEqual(server.management_packs, ["windows-server-core"])
 
@@ -502,6 +490,75 @@ class ManagedAgentPkiTests(TestCase):
                 enrollment,
                 agent_version="0.1.27",
                 inventory=invalid_inventory,
+            )
+
+    def test_inventory_normalizes_hyperv_virtual_machines(self) -> None:
+        from ipms.apps.discovery.models import HyperVVirtualMachine
+
+        enrollment, raw_token, _ = create_enrollment_token(
+            tenant=self.tenant,
+            display_name="Hyper-V Agent",
+            actor="test-operator",
+        )
+        enrollment, _, _ = enroll_agent(raw_token=raw_token, csr_pem=create_csr()[1])
+        inventory = {
+            "schema_version": "1",
+            "pack": "windows-server-core",
+            "agent_gateway_port": 9419,
+            "hostname": "hyperv-fixture",
+            "os_name": "Microsoft Windows Server 2025 Standard",
+            "operating_system_role": "server",
+            "machine_type": "physical",
+            "logical_processors": 16,
+            "memory_total_bytes": 64 * 1024**3,
+            "installed_roles_features_status": "collected",
+            "installed_roles_features": [],
+            "hyperv_inventory_status": "collected",
+            "hyperv_inventory_error": "",
+            "hyperv_virtual_machines": [
+                {
+                    "source_id": "11111111-2222-3333-4444-555555555555",
+                    "name": "Synthetic VM",
+                    "state": "running",
+                    "vcpu_count": 4,
+                    "memory_bytes": 8 * 1024**3,
+                    "uptime_seconds": 3661,
+                    "configuration_version": "12.0",
+                    "ip_addresses": ["2001:0db8::25", "192.0.2.25"],
+                }
+            ],
+            "network_interfaces": [],
+        }
+        confirm_inventory(enrollment, agent_version="0.1.37", inventory=inventory)
+
+        server = WindowsServer.objects.get(source_id=enrollment.device_uri)
+        self.assertEqual(server.hyperv_inventory_status, "collected")
+        self.assertEqual(
+            server.management_packs,
+            ["windows-server-core", "hyper-v-host"],
+        )
+        virtual_machine = HyperVVirtualMachine.objects.get(host=server)
+        self.assertEqual(virtual_machine.name, "Synthetic VM")
+        self.assertEqual(virtual_machine.vcpu_count, 4)
+        self.assertEqual(
+            virtual_machine.ip_addresses,
+            ["192.0.2.25", "2001:db8::25"],
+        )
+
+        inventory["hyperv_virtual_machines"] = []
+        confirm_inventory(enrollment, agent_version="0.1.37", inventory=inventory)
+        self.assertFalse(HyperVVirtualMachine.objects.filter(host=server).exists())
+
+        inventory["hyperv_inventory_status"] = "unavailable"
+        inventory["hyperv_inventory_error"] = "raw-provider-error"
+        with self.assertRaisesMessage(
+            ValidationError,
+            "Hyper-V inventory error is invalid",
+        ):
+            confirm_inventory(
+                enrollment,
+                agent_version="0.1.37",
+                inventory=inventory,
             )
 
     def test_telemetry_replaces_only_the_current_certificate_tenant_sample(self) -> None:

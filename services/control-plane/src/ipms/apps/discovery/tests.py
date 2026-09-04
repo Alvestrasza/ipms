@@ -24,6 +24,7 @@ from .models import (
     ConnectorSecret,
     DiscoveryJob,
     PhysicalSystem,
+    HyperVVirtualMachine,
     WindowsServer,
     WindowsServerRole,
     WindowsServerTelemetry,
@@ -172,6 +173,69 @@ class WindowsServerInventoryApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual([item["id"] for item in response.json()], [str(self.physical.id)])
 
+    def test_client_filter_and_family_summary_are_tenant_scoped(self) -> None:
+        client = WindowsServer.objects.create(
+            tenant=self.tenant,
+            source_id="windows-client-fixture",
+            inventory_source=WindowsServer.InventorySource.AGENT,
+            server_type=WindowsServer.ServerType.VIRTUAL,
+            operating_system_role=WindowsServer.OperatingSystemRole.CLIENT,
+            operating_system_family="windows-11-ltsc",
+            hostname="client-fixture",
+            operating_system="Microsoft Windows 11 Enterprise LTSC",
+            agent_state=WindowsServer.AgentState.ONLINE,
+            health=WindowsServer.Health.HEALTHY,
+            discovered_at=timezone.now(),
+        )
+        WindowsServerRole.objects.create(
+            server=client,
+            name="synthetic-client-role",
+            display_name="Synthetic client role",
+        )
+
+        clients = self.client.get(
+            self.url,
+            {
+                "server_type": WindowsServer.ServerType.VIRTUAL,
+                "operating_system_role": WindowsServer.OperatingSystemRole.CLIENT,
+                "operating_system_family": "windows-11-ltsc",
+            },
+            **self.headers(),
+        )
+        self.assertEqual(clients.status_code, 200)
+        self.assertEqual([item["id"] for item in clients.json()], [str(client.id)])
+
+        servers = self.client.get(
+            self.url,
+            {
+                "server_type": WindowsServer.ServerType.VIRTUAL,
+                "operating_system_role": WindowsServer.OperatingSystemRole.SERVER,
+            },
+            **self.headers(),
+        )
+        self.assertEqual([item["id"] for item in servers.json()], [str(self.virtual.id)])
+
+        families = self.client.get(
+            reverse("core:windows-client-family-list"),
+            **self.headers(),
+        )
+        self.assertEqual(
+            families.json(),
+            [
+                {
+                    "name": "windows-11-ltsc",
+                    "physical_count": 0,
+                    "virtual_count": 1,
+                }
+            ],
+        )
+
+        roles = self.client.get(
+            reverse("core:windows-server-role-list"),
+            **self.headers(),
+        )
+        self.assertNotIn("synthetic-client-role", str(roles.json()))
+
     def test_role_filter_returns_only_matching_selected_tenant_servers(self) -> None:
         response = self.client.get(
             self.url,
@@ -303,6 +367,42 @@ class WindowsServerInventoryApiTests(TestCase):
             **self.headers(),
         )
         self.assertEqual(mutation.status_code, 405)
+
+    def test_hyperv_virtual_machine_api_is_tenant_scoped_and_read_only(self) -> None:
+        virtual_machine = HyperVVirtualMachine.objects.create(
+            tenant=self.tenant,
+            host=self.physical,
+            source_id="11111111-2222-3333-4444-555555555555",
+            name="Synthetic VM",
+            state=HyperVVirtualMachine.State.RUNNING,
+            vcpu_count=4,
+            memory_bytes=8 * 1024**3,
+            uptime_seconds=3661,
+            configuration_version="12.0",
+            ip_addresses=["192.0.2.25", "2001:db8::25"],
+            observed_at=timezone.now(),
+        )
+        url = reverse("core:hyperv-virtual-machine-list")
+        response = self.client.get(url, **self.headers())
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()[0]["id"], str(virtual_machine.id))
+        self.assertEqual(response.json()[0]["host_id"], str(self.physical.id))
+        self.assertEqual(response.json()[0]["vcpu_count"], 4)
+        self.assertEqual(response.json()[0]["configuration_version"], "12.0")
+        self.assertEqual(response.json()[0]["ip_addresses"], ["192.0.2.25", "2001:db8::25"])
+        self.assertEqual(
+            self.client.get(url, {"state": "invalid"}, **self.headers()).status_code,
+            400,
+        )
+        self.assertEqual(
+            self.client.post(
+                url,
+                data={"name": "browser-created"},
+                content_type="application/json",
+                **self.headers(),
+            ).status_code,
+            405,
+        )
         self.telemetry.refresh_from_db()
         self.assertEqual(self.telemetry.cpu_used_percent, 25)
 

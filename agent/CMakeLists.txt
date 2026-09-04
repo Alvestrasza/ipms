@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(ipms_agent VERSION 0.1.36 LANGUAGES CXX)
+project(ipms_agent VERSION 0.1.37 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,7 +22,7 @@ add_executable(ipms-agent src/main.cpp)
 target_link_libraries(ipms-agent PRIVATE ipms_agent_core)
 
 if(WIN32)
-  target_sources(ipms-agent PRIVATE src/windows/updater.cpp src/windows/windows_core_pack.cpp src/windows/windows_service.cpp src/windows/windows_telemetry.cpp src/windows/windows_transport.cpp)
+  target_sources(ipms-agent PRIVATE src/windows/hyperv_pack.cpp src/windows/updater.cpp src/windows/windows_core_pack.cpp src/windows/windows_service.cpp src/windows/windows_telemetry.cpp src/windows/windows_transport.cpp)
   target_link_libraries(ipms-agent PRIVATE advapi32 bcrypt crypt32 iphlpapi ncrypt ole32 oleaut32 shell32 wbemuuid winhttp ws2_32)
   target_compile_definitions(ipms-agent PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
   target_compile_options(ipms-agent PRIVATE /W4 /permissive-)

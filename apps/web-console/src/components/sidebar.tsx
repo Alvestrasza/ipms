@@ -17,42 +17,64 @@ import Link from "next/link";
 
 import { getDictionary } from "@/i18n/dictionaries";
 import { resolveLocale } from "@/i18n/server";
-import type { WindowsServerRoleSummary } from "@/lib/windows-server-types";
+import type {
+  WindowsClientFamilySummary,
+  WindowsServerRoleSummary,
+} from "@/lib/windows-server-types";
 
 import { Brand } from "./brand";
+import { WindowsClientNavigation } from "./windows-client-navigation";
 import { WindowsRoleNavigation } from "./windows-role-navigation";
 
 export type ActiveSection =
   | "overview"
   | "physical"
   | "physical-servers"
+  | "physical-clients"
   | "bmc"
   | "bmc-logs"
   | "bmc-events"
   | "virtual"
+  | "virtual-clients"
+  | "hyper-v-vms"
   | "admin-agents";
 
 export async function Sidebar({
   activeSection,
   activeWindowsRole,
+  activeWindowsClientFamily,
   canAdmin,
   windowsRoles,
+  windowsClientFamilies,
 }: {
   activeSection: ActiveSection;
   activeWindowsRole?: string;
+  activeWindowsClientFamily?: string;
   canAdmin: boolean;
   windowsRoles: WindowsServerRoleSummary[];
+  windowsClientFamilies: WindowsClientFamilySummary[];
 }) {
   const locale = await resolveLocale();
   const dictionary = getDictionary(locale);
   const physicalExpanded = [
     "physical",
     "physical-servers",
+    "physical-clients",
     "bmc",
     "bmc-logs",
     "bmc-events",
   ].includes(activeSection);
-  const virtualExpanded = activeSection === "virtual";
+  const virtualExpanded = [
+    "virtual",
+    "virtual-clients",
+    "hyper-v-vms",
+  ].includes(activeSection);
+  const hasHyperVHosts = windowsRoles.some(
+    (role) =>
+      ["hyper-v", "win32-server-feature-20"].includes(
+        role.name.toLowerCase(),
+      ) && role.physical_count + role.virtual_count > 0,
+  );
   const administrationExpanded = activeSection === "admin-agents";
   const navigation = [
     {
@@ -112,7 +134,7 @@ export async function Sidebar({
             <li key={label}>
               {item.enabled ? (
                 <Link
-                  className={`nav-item ${item.section === activeSection || (item.section === "physical" && physicalExpanded) ? "nav-item--active" : ""}`}
+                  className={`nav-item ${item.section === activeSection || (item.section === "physical" && physicalExpanded) || (item.section === "virtual" && virtualExpanded) ? "nav-item--active" : ""}`}
                   href={item.href as Route}
                   aria-current={
                     item.section === activeSection ? "page" : undefined
@@ -144,6 +166,19 @@ export async function Sidebar({
                       href={`/${locale}/physical/servers` as Route}
                       label={dictionary.navigation.physicalServers}
                       roles={windowsRoles}
+                      serverType="physical"
+                    />
+                  </li>
+                  <li>
+                    <WindowsClientNavigation
+                      active={activeSection === "physical-clients"}
+                      activeFamily={activeWindowsClientFamily}
+                      collapseLabel={dictionary.navigation.collapse}
+                      expandLabel={dictionary.navigation.expand}
+                      familyLabels={dictionary.windowsClientFamilies}
+                      families={windowsClientFamilies}
+                      href={`/${locale}/physical/clients` as Route}
+                      label={dictionary.navigation.physicalClients}
                       serverType="physical"
                     />
                   </li>
@@ -197,13 +232,42 @@ export async function Sidebar({
                 <ul className="nav-tree">
                   <li>
                     <WindowsRoleNavigation
-                      active
+                      active={activeSection === "virtual"}
                       activeRole={activeWindowsRole}
                       collapseLabel={dictionary.navigation.collapse}
                       expandLabel={dictionary.navigation.expand}
                       href={`/${locale}/virtual` as Route}
                       label={dictionary.navigation.virtualServers}
                       roles={windowsRoles}
+                      serverType="virtual"
+                    />
+                  </li>
+                  {hasHyperVHosts ? (
+                    <li>
+                      <Link
+                        className={`nav-subitem ${activeSection === "hyper-v-vms" ? "nav-subitem--active" : ""}`}
+                        href={`/${locale}/virtual/hyper-v` as Route}
+                        aria-current={
+                          activeSection === "hyper-v-vms" ? "page" : undefined
+                        }
+                      >
+                        <Boxes aria-hidden="true" size={15} />
+                        <span>
+                          {dictionary.navigation.hyperVVirtualMachines}
+                        </span>
+                      </Link>
+                    </li>
+                  ) : null}
+                  <li>
+                    <WindowsClientNavigation
+                      active={activeSection === "virtual-clients"}
+                      activeFamily={activeWindowsClientFamily}
+                      collapseLabel={dictionary.navigation.collapse}
+                      expandLabel={dictionary.navigation.expand}
+                      familyLabels={dictionary.windowsClientFamilies}
+                      families={windowsClientFamilies}
+                      href={`/${locale}/virtual/clients` as Route}
+                      label={dictionary.navigation.virtualClients}
                       serverType="virtual"
                     />
                   </li>

@@ -145,6 +145,12 @@ class PhysicalSystem(models.Model):
 
 
 class WindowsServer(models.Model):
+    class OperatingSystemRole(models.TextChoices):
+        CLIENT = "client", "Client"
+        SERVER = "server", "Server"
+        DOMAIN_CONTROLLER = "domain-controller", "Domain controller"
+        UNKNOWN = "unknown", "Unknown"
+
     class ServerType(models.TextChoices):
         PHYSICAL = "physical", "Physical"
         VIRTUAL = "virtual", "Virtual"
@@ -171,6 +177,7 @@ class WindowsServer(models.Model):
         NOT_REPORTED = "not-reported", "Not reported"
         COLLECTED = "collected", "Collected"
         UNAVAILABLE = "unavailable", "Unavailable"
+        NOT_APPLICABLE = "not-applicable", "Not applicable"
 
     class RolesFeaturesError(models.TextChoices):
         COM_INITIALIZATION_FAILED = (
@@ -217,6 +224,12 @@ class WindowsServer(models.Model):
         VALUE_LIMIT_EXCEEDED = "value_limit_exceeded", "Value limit exceeded"
         PAYLOAD_LIMIT_EXCEEDED = "payload_limit_exceeded", "Payload limit exceeded"
 
+    class HyperVInventoryStatus(models.TextChoices):
+        NOT_REPORTED = "not-reported", "Not reported"
+        NOT_APPLICABLE = "not-applicable", "Not applicable"
+        COLLECTED = "collected", "Collected"
+        UNAVAILABLE = "unavailable", "Unavailable"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
         Tenant,
@@ -246,6 +259,12 @@ class WindowsServer(models.Model):
     operating_system = models.CharField(max_length=255, blank=True)
     os_version = models.CharField(max_length=128, blank=True)
     os_build = models.CharField(max_length=64, blank=True)
+    operating_system_role = models.CharField(
+        max_length=24,
+        choices=OperatingSystemRole.choices,
+        default=OperatingSystemRole.SERVER,
+    )
+    operating_system_family = models.CharField(max_length=64, blank=True)
     architecture = models.CharField(max_length=32, blank=True)
     manufacturer = models.CharField(max_length=255, blank=True)
     model = models.CharField(max_length=255, blank=True)
@@ -274,6 +293,12 @@ class WindowsServer(models.Model):
     )
     installed_roles_features_error = models.CharField(max_length=64, blank=True)
     installed_roles_features = models.JSONField(default=list, blank=True)
+    hyperv_inventory_status = models.CharField(
+        max_length=16,
+        choices=HyperVInventoryStatus.choices,
+        default=HyperVInventoryStatus.NOT_REPORTED,
+    )
+    hyperv_inventory_error = models.CharField(max_length=64, blank=True)
     network_interfaces = models.JSONField(default=list, blank=True)
     detail_snapshot = models.JSONField(default=dict, blank=True)
     last_seen_at = models.DateTimeField(blank=True, null=True)
@@ -297,6 +322,10 @@ class WindowsServer(models.Model):
             models.Index(
                 fields=("tenant", "agent_state"),
                 name="windows_tenant_agent_idx",
+            ),
+            models.Index(
+                fields=("tenant", "operating_system_role", "server_type"),
+                name="windows_tenant_role_idx",
             ),
         ]
 
@@ -328,6 +357,67 @@ class WindowsServerRole(models.Model):
 
     def __str__(self) -> str:
         return f"{self.server}: {self.name}"
+
+
+class HyperVVirtualMachine(models.Model):
+    class State(models.TextChoices):
+        RUNNING = "running", "Running"
+        STOPPED = "stopped", "Stopped"
+        STARTING = "starting", "Starting"
+        STOPPING = "stopping", "Stopping"
+        PAUSED = "paused", "Paused"
+        PAUSING = "pausing", "Pausing"
+        SUSPENDED = "suspended", "Suspended"
+        SAVING = "saving", "Saving"
+        RESUMING = "resuming", "Resuming"
+        QUIESCED = "quiesced", "Quiesced"
+        OFFLINE = "offline", "Offline"
+        UNKNOWN = "unknown", "Unknown"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.PROTECT,
+        related_name="hyperv_virtual_machines",
+    )
+    host = models.ForeignKey(
+        WindowsServer,
+        on_delete=models.CASCADE,
+        related_name="hyperv_virtual_machines",
+    )
+    source_id = models.CharField(max_length=64)
+    name = models.CharField(max_length=255)
+    state = models.CharField(
+        max_length=16,
+        choices=State.choices,
+        default=State.UNKNOWN,
+    )
+    vcpu_count = models.PositiveIntegerField(blank=True, null=True)
+    memory_bytes = models.PositiveBigIntegerField(blank=True, null=True)
+    uptime_seconds = models.PositiveBigIntegerField(blank=True, null=True)
+    configuration_version = models.CharField(max_length=64, blank=True)
+    ip_addresses = models.JSONField(default=list, blank=True)
+    observed_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("name", "source_id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("host", "source_id"),
+                name="unique_hyperv_host_virtual_machine",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant", "state"),
+                name="hyperv_vm_tenant_state_idx",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.host}: {self.name}"
 
 
 class WindowsServerTelemetry(models.Model):

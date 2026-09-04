@@ -37,7 +37,7 @@ An assignment is configuration, never executable content. It cannot contain shel
 
 An update message is a signed manifest, not an executable payload. The Agent verifies the signer, target platform, version, artifact digest, compatibility, and rollback availability before downloading an update through the authenticated channel and applying it atomically.
 
-The 0.1.51 development foundation implements the narrower precursor defined in
+The 0.1.52 development foundation implements the narrower precursor defined in
 [ADR-0006](ADR-0006-AGENT-LIFECYCLE-CHANNEL.md): a tenant- and device-bound
 mTLS assignment, a job-bound download, independent SHA-256 verification by the
 Agent and updater, and rollback. A separately signed manifest, Authenticode,
@@ -63,8 +63,16 @@ inventory. The Agent queries the native Server Manager management provider and
 reports only entries whose provider state is installed. Each entry is bounded
 to a stable name, localized display name, parent name, and the normalized type
 `role`, `role-service`, or `feature`. A separate collection status distinguishes
-a successfully collected empty list from an unavailable provider and from an
-older Agent that did not report this capability.
+a successfully collected empty list from an unavailable provider, a Windows
+client for which server roles do not apply, and an older Agent that did not
+report this capability.
+
+Agent 0.1.37 reports operating-system role independently from physical or
+virtual placement. Windows `ProductType` is read natively with a fixed registry
+fallback, and the Windows 11 LTSC compatibility product name is normalized when
+WMI is unavailable. The `hyper-v-host` capability uses fixed local WMI v2 reads
+and reports a bounded VM collection. The Control Plane cannot supply WMI text,
+commands, scripts, or mutation requests.
 
 ## Control-plane requirements
 

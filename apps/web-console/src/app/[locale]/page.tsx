@@ -74,18 +74,28 @@ export default async function OverviewPage() {
   const tenant = selectedTenant(session, await cookies());
   if (!tenant) redirect(`/${locale}/login?reason=no-tenant`);
 
-  const [dashboard, infrastructure, physicalWindows, virtualWindows] =
-    await Promise.all([
-      getDashboardData(tenant.id),
-      getPhysicalInfrastructure(tenant.id),
-      getWindowsServers(tenant.id, "physical"),
-      getWindowsServers(tenant.id, "virtual"),
-    ]);
+  const [
+    dashboard,
+    infrastructure,
+    physicalWindows,
+    virtualWindows,
+    physicalWindowsClients,
+    virtualWindowsClients,
+  ] = await Promise.all([
+    getDashboardData(tenant.id),
+    getPhysicalInfrastructure(tenant.id),
+    getWindowsServers(tenant.id, "physical"),
+    getWindowsServers(tenant.id, "virtual"),
+    getWindowsServers(tenant.id, "physical", undefined, "client"),
+    getWindowsServers(tenant.id, "virtual", undefined, "client"),
+  ]);
   if (
     !dashboard.sessionValid ||
     !infrastructure.sessionValid ||
     !physicalWindows.sessionValid ||
-    !virtualWindows.sessionValid
+    !virtualWindows.sessionValid ||
+    !physicalWindowsClients.sessionValid ||
+    !virtualWindowsClients.sessionValid
   )
     redirect(`/${locale}/login`);
   const systems = infrastructure.systems;
@@ -124,6 +134,24 @@ export default async function OverviewPage() {
       health: server.health,
       href: `/${locale}/virtual/${server.id}` as Route,
     })),
+    ...physicalWindowsClients.servers.map((client) => ({
+      id: `windows-client-${client.id}`,
+      name: client.fqdn || client.hostname,
+      model: client.model,
+      type: dictionary.overview.physicalWindowsClient,
+      state: agentStateLabels[client.agent_state],
+      health: client.health,
+      href: `/${locale}/physical/servers/${client.id}` as Route,
+    })),
+    ...virtualWindowsClients.servers.map((client) => ({
+      id: `windows-client-${client.id}`,
+      name: client.fqdn || client.hostname,
+      model: client.model,
+      type: dictionary.overview.virtualWindowsClient,
+      state: agentStateLabels[client.agent_state],
+      health: client.health,
+      href: `/${locale}/virtual/${client.id}` as Route,
+    })),
   ];
   const health = {
     healthy: managedSystems.filter((system) => system.health === "healthy")
@@ -149,7 +177,11 @@ export default async function OverviewPage() {
   const summaryCards = [
     {
       label: dictionary.overview.physicalSystems,
-      value: String(systems.length + physicalWindows.servers.length),
+      value: String(
+        systems.length +
+          physicalWindows.servers.length +
+          physicalWindowsClients.servers.length,
+      ),
       detail:
         infrastructure.available && physicalWindows.available
           ? dictionary.overview.inventoryCurrent
@@ -157,7 +189,9 @@ export default async function OverviewPage() {
     },
     {
       label: dictionary.overview.virtualMachines,
-      value: String(virtualWindows.servers.length),
+      value: String(
+        virtualWindows.servers.length + virtualWindowsClients.servers.length,
+      ),
       detail: virtualWindows.available
         ? dictionary.overview.inventoryCurrent
         : dictionary.overview.awaitingDiscovery,

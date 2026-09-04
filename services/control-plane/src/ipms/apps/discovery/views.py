@@ -34,6 +34,7 @@ from .models import (
     ConnectorSecret,
     DiscoveryJob,
     PhysicalSystem,
+    HyperVVirtualMachine,
     WindowsServer,
     WindowsServerRole,
     WindowsServerTelemetry,
@@ -52,6 +53,7 @@ from .serializers import (
     WindowsServerDetailSerializer,
     WindowsServerSerializer,
     WindowsServerTelemetrySerializer,
+    HyperVVirtualMachineSerializer,
     neutralize_public_protocol_text,
     public_bmc_family,
 )
@@ -372,6 +374,34 @@ class WindowsServerListView(ListAPIView):
         server_type = self.request.query_params.get("server_type", "")
         if server_type in WindowsServer.ServerType.values:
             queryset = queryset.filter(server_type=server_type)
+        operating_system_role = self.request.query_params.get(
+            "operating_system_role", ""
+        )
+        if operating_system_role == WindowsServer.OperatingSystemRole.SERVER:
+            queryset = queryset.filter(
+                operating_system_role__in=(
+                    WindowsServer.OperatingSystemRole.SERVER,
+                    WindowsServer.OperatingSystemRole.DOMAIN_CONTROLLER,
+                )
+            )
+        elif operating_system_role in WindowsServer.OperatingSystemRole.values:
+            queryset = queryset.filter(operating_system_role=operating_system_role)
+        elif operating_system_role:
+            raise ValidationError({"operating_system_role": ["invalid_role"]})
+        operating_system_family = self.request.query_params.get(
+            "operating_system_family", ""
+        )
+        if operating_system_family:
+            if (
+                operating_system_family != operating_system_family.strip()
+                or len(operating_system_family) > 64
+            ):
+                raise ValidationError(
+                    {"operating_system_family": ["invalid_family"]}
+                )
+            queryset = queryset.filter(
+                operating_system_family=operating_system_family
+            )
         role = self.request.query_params.get("role", "")
         if role:
             if role != role.strip() or len(role) > 255:
@@ -385,7 +415,13 @@ class WindowsServerRoleListView(APIView):
 
     def get(self, request):
         rows = (
-            WindowsServerRole.objects.filter(server__tenant=request.tenant)
+            WindowsServerRole.objects.filter(
+                server__tenant=request.tenant,
+                server__operating_system_role__in=(
+                    WindowsServer.OperatingSystemRole.SERVER,
+                    WindowsServer.OperatingSystemRole.DOMAIN_CONTROLLER,
+                ),
+            )
             .values("name", "display_name", "server__server_type")
             .annotate(server_count=Count("server_id", distinct=True))
             .order_by()
@@ -427,6 +463,62 @@ class WindowsServerRoleListView(APIView):
             )
         )
         return Response(response)
+
+
+class WindowsClientFamilyListView(APIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess)
+
+    def get(self, request):
+        rows = (
+            WindowsServer.objects.filter(
+                tenant=request.tenant,
+                operating_system_role=WindowsServer.OperatingSystemRole.CLIENT,
+            )
+            .exclude(operating_system_family="")
+            .values("operating_system_family", "server_type")
+            .annotate(system_count=Count("id"))
+            .order_by("operating_system_family", "server_type")
+        )
+        families: dict[str, dict] = {}
+        for row in rows:
+            family_name = row["operating_system_family"]
+            family = families.setdefault(
+                family_name,
+                {
+                    "name": family_name,
+                    "physical_count": 0,
+                    "virtual_count": 0,
+                },
+            )
+            if row["server_type"] == WindowsServer.ServerType.PHYSICAL:
+                family["physical_count"] += row["system_count"]
+            elif row["server_type"] == WindowsServer.ServerType.VIRTUAL:
+                family["virtual_count"] += row["system_count"]
+        return Response(list(families.values()))
+
+
+class HyperVVirtualMachineListView(ListAPIView):
+    permission_classes = (IsAuthenticated, HasSelectedTenantAccess)
+    serializer_class = HyperVVirtualMachineSerializer
+
+    def get_queryset(self):
+        queryset = HyperVVirtualMachine.objects.filter(
+            tenant=self.request.tenant,
+            host__tenant=self.request.tenant,
+        )
+        host = self.request.query_params.get("host", "")
+        if host:
+            try:
+                host_id = uuid.UUID(host)
+            except ValueError as exc:
+                raise ValidationError({"host": ["invalid_host"]}) from exc
+            queryset = queryset.filter(host_id=host_id)
+        state = self.request.query_params.get("state", "")
+        if state:
+            if state not in HyperVVirtualMachine.State.values:
+                raise ValidationError({"state": ["invalid_state"]})
+            queryset = queryset.filter(state=state)
+        return queryset.select_related("host")
 
 
 class WindowsServerDetailView(RetrieveAPIView):

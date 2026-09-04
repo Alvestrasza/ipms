@@ -877,6 +877,85 @@ def _bounded_installed_roles_features(value: object) -> list[dict]:
     return sorted(result, key=lambda item: item["name"])
 
 
+def _bounded_hyperv_virtual_machines(value: object) -> list[dict]:
+    from ipms.apps.discovery.models import HyperVVirtualMachine
+
+    if not isinstance(value, list) or len(value) > 128:
+        raise ValidationError("The Agent Hyper-V virtual machine list is invalid.")
+    result = []
+    source_ids = set()
+    for virtual_machine in value:
+        if not isinstance(virtual_machine, dict) or set(virtual_machine) != {
+            "source_id",
+            "name",
+            "state",
+            "vcpu_count",
+            "memory_bytes",
+            "uptime_seconds",
+            "configuration_version",
+            "ip_addresses",
+        }:
+            raise ValidationError("The Agent Hyper-V virtual machine is invalid.")
+        source_id = _bounded_object_string(virtual_machine, "source_id", 64)
+        name = _bounded_object_string(virtual_machine, "name", 255)
+        state = _bounded_object_string(virtual_machine, "state", 16)
+        configuration_version = _bounded_object_string(
+            virtual_machine, "configuration_version", 64
+        )
+        if (
+            not source_id
+            or source_id in source_ids
+            or not name
+            or state not in HyperVVirtualMachine.State.values
+        ):
+            raise ValidationError("The Agent Hyper-V virtual machine is invalid.")
+        source_ids.add(source_id)
+        vcpu_count = virtual_machine.get("vcpu_count")
+        memory_bytes = virtual_machine.get("memory_bytes")
+        uptime_seconds = virtual_machine.get("uptime_seconds")
+        if vcpu_count is not None and (
+            type(vcpu_count) is not int or not 1 <= vcpu_count <= 65_535
+        ):
+            raise ValidationError("The Agent Hyper-V vCPU count is invalid.")
+        if memory_bytes is not None and (
+            type(memory_bytes) is not int or not 1 <= memory_bytes <= 2**63 - 1
+        ):
+            raise ValidationError("The Agent Hyper-V memory value is invalid.")
+        if uptime_seconds is not None and (
+            type(uptime_seconds) is not int
+            or not 0 <= uptime_seconds <= 2**63 - 1
+        ):
+            raise ValidationError("The Agent Hyper-V uptime value is invalid.")
+        raw_addresses = virtual_machine.get("ip_addresses")
+        if not isinstance(raw_addresses, list) or len(raw_addresses) > 64:
+            raise ValidationError("The Agent Hyper-V IP address list is invalid.")
+        addresses = []
+        for raw_address in raw_addresses:
+            if not isinstance(raw_address, str) or not 1 <= len(raw_address) <= 64:
+                raise ValidationError("The Agent Hyper-V IP address is invalid.")
+            try:
+                address = str(ipaddress.ip_address(raw_address))
+            except ValueError as exc:
+                raise ValidationError(
+                    "The Agent Hyper-V IP address is invalid."
+                ) from exc
+            if address not in addresses:
+                addresses.append(address)
+        result.append(
+            {
+                "source_id": source_id,
+                "name": name,
+                "state": state,
+                "vcpu_count": vcpu_count,
+                "memory_bytes": memory_bytes,
+                "uptime_seconds": uptime_seconds,
+                "configuration_version": configuration_version,
+                "ip_addresses": sorted(addresses),
+            }
+        )
+    return sorted(result, key=lambda item: item["source_id"])
+
+
 @transaction.atomic
 def confirm_inventory(
     enrollment: AgentEnrollment,
@@ -884,7 +963,11 @@ def confirm_inventory(
     inventory: object,
     agent_version: str,
 ) -> None:
-    from ipms.apps.discovery.models import WindowsServer, WindowsServerRole
+    from ipms.apps.discovery.models import (
+        HyperVVirtualMachine,
+        WindowsServer,
+        WindowsServerRole,
+    )
 
     if not isinstance(inventory, dict) or len(inventory) > 32:
         raise ValidationError("The Agent inventory document is invalid.")
@@ -902,6 +985,12 @@ def confirm_inventory(
     os_name = _bounded_inventory_string(inventory, "os_name", 255)
     os_version = _bounded_inventory_string(inventory, "os_version", 128)
     os_build = _bounded_inventory_string(inventory, "os_build", 64)
+    operating_system_role = _bounded_inventory_string(
+        inventory, "operating_system_role", 24
+    )
+    operating_system_family = _bounded_inventory_string(
+        inventory, "operating_system_family", 64
+    )
     architecture = _bounded_inventory_string(inventory, "architecture", 32)
     manufacturer = _bounded_inventory_string(inventory, "manufacturer", 255)
     model = _bounded_inventory_string(inventory, "model", 255)
@@ -929,6 +1018,45 @@ def confirm_inventory(
     installed_roles_features = _bounded_installed_roles_features(
         inventory.get("installed_roles_features", [])
     )
+    hyperv_inventory_status = inventory.get(
+        "hyperv_inventory_status",
+        WindowsServer.HyperVInventoryStatus.NOT_REPORTED,
+    )
+    if hyperv_inventory_status not in WindowsServer.HyperVInventoryStatus.values:
+        raise ValidationError("The Agent Hyper-V inventory status is invalid.")
+    hyperv_inventory_error = _bounded_inventory_string(
+        inventory, "hyperv_inventory_error", 64
+    )
+    allowed_hyperv_errors = {
+        "com_initialization_failed",
+        "com_security_failed",
+        "wmi_locator_failed",
+        "allocation_failed",
+        "hyperv_provider_unavailable",
+        "wmi_proxy_failed",
+        "hyperv_system_query_failed",
+        "hyperv_settings_query_failed",
+        "hyperv_processor_query_failed",
+        "hyperv_memory_query_failed",
+        "hyperv_network_query_failed",
+        "payload_limit_exceeded",
+    }
+    if hyperv_inventory_error and hyperv_inventory_error not in allowed_hyperv_errors:
+        raise ValidationError("The Agent Hyper-V inventory error is invalid.")
+    hyperv_virtual_machines = _bounded_hyperv_virtual_machines(
+        inventory.get("hyperv_virtual_machines", [])
+    )
+    if (
+        hyperv_inventory_status != WindowsServer.HyperVInventoryStatus.COLLECTED
+        and hyperv_virtual_machines
+    ):
+        raise ValidationError(
+            "The Agent must not report Hyper-V virtual machines without a collected status."
+        )
+    if hyperv_inventory_status == WindowsServer.HyperVInventoryStatus.COLLECTED:
+        hyperv_inventory_error = ""
+    elif hyperv_inventory_status != WindowsServer.HyperVInventoryStatus.UNAVAILABLE:
+        hyperv_inventory_error = ""
     if (
         roles_features_status != WindowsServer.RolesFeaturesStatus.COLLECTED
         and installed_roles_features
@@ -940,6 +1068,37 @@ def confirm_inventory(
         roles_features_error = ""
     if machine_type not in {"", *WindowsServer.ServerType.values}:
         raise ValidationError("The Agent machine type is invalid.")
+    if operating_system_role not in {"", *WindowsServer.OperatingSystemRole.values}:
+        raise ValidationError("The Agent operating system role is invalid.")
+    if not operating_system_role:
+        normalized_os_name = (os_name or os_product).casefold()
+        if "windows" in normalized_os_name and "server" not in normalized_os_name:
+            operating_system_role = WindowsServer.OperatingSystemRole.CLIENT
+        elif "windows" in normalized_os_name:
+            operating_system_role = WindowsServer.OperatingSystemRole.SERVER
+        else:
+            operating_system_role = WindowsServer.OperatingSystemRole.UNKNOWN
+    if operating_system_role != WindowsServer.OperatingSystemRole.CLIENT:
+        operating_system_family = ""
+    if (
+        operating_system_role == WindowsServer.OperatingSystemRole.CLIENT
+        and not operating_system_family
+    ):
+        normalized_os_name = (os_name or os_product).casefold()
+        if "windows 11" in normalized_os_name:
+            operating_system_family = (
+                "windows-11-ltsc"
+                if "ltsc" in normalized_os_name
+                else "windows-11"
+            )
+        elif "windows 10" in normalized_os_name:
+            operating_system_family = (
+                "windows-10-ltsc"
+                if "ltsc" in normalized_os_name
+                else "windows-10"
+            )
+        else:
+            operating_system_family = "windows-client"
     logical_processors = inventory.get("logical_processors")
     memory_bytes = inventory.get("memory_total_bytes")
     gateway_port = inventory.get("agent_gateway_port")
@@ -966,6 +1125,10 @@ def confirm_inventory(
             "operating_system": os_name or os_product,
             "os_version": os_version,
             "os_build": os_build,
+            "operating_system_role": (
+                operating_system_role or WindowsServer.OperatingSystemRole.UNKNOWN
+            ),
+            "operating_system_family": operating_system_family,
             "architecture": architecture,
             "manufacturer": manufacturer,
             "model": model,
@@ -975,10 +1138,23 @@ def confirm_inventory(
             "agent_version": agent_version,
             "agent_state": WindowsServer.AgentState.ONLINE,
             "health": WindowsServer.Health.HEALTHY,
-            "management_packs": ["windows-server-core"],
+            "management_packs": [
+                "windows-server-core",
+                *(
+                    ["hyper-v-host"]
+                    if hyperv_inventory_status
+                    in {
+                        WindowsServer.HyperVInventoryStatus.COLLECTED,
+                        WindowsServer.HyperVInventoryStatus.UNAVAILABLE,
+                    }
+                    else []
+                ),
+            ],
             "installed_roles_features_status": roles_features_status,
             "installed_roles_features_error": roles_features_error,
             "installed_roles_features": installed_roles_features,
+            "hyperv_inventory_status": hyperv_inventory_status,
+            "hyperv_inventory_error": hyperv_inventory_error,
             "network_interfaces": network_interfaces,
             "detail_snapshot": {
                 "schema_version": "1",
@@ -1003,6 +1179,22 @@ def confirm_inventory(
             if item["type"] == "role"
         ]
     )
+    if hyperv_inventory_status == WindowsServer.HyperVInventoryStatus.COLLECTED:
+        observed_source_ids = []
+        for virtual_machine in hyperv_virtual_machines:
+            observed_source_ids.append(virtual_machine["source_id"])
+            HyperVVirtualMachine.objects.update_or_create(
+                tenant=enrollment.tenant,
+                host=server,
+                source_id=virtual_machine["source_id"],
+                defaults={
+                    **virtual_machine,
+                    "observed_at": now,
+                },
+            )
+        server.hyperv_virtual_machines.exclude(
+            source_id__in=observed_source_ids
+        ).delete()
 
 
 def _bounded_fixed_volumes(value: object) -> list[dict]:

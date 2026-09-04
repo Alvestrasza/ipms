@@ -7,6 +7,7 @@ import {
   controlPlaneHeaders,
 } from "./control-plane-request";
 import type {
+  WindowsClientFamilySummary,
   WindowsServer,
   WindowsServerRoleSummary,
 } from "./windows-server-types";
@@ -17,11 +18,17 @@ export async function getWindowsServers(
   tenantId: string,
   serverType: "physical" | "virtual",
   role?: string,
+  operatingSystemRole: "client" | "server" | "domain-controller" = "server",
+  operatingSystemFamily?: string,
 ) {
   const cookie = (await cookies()).toString();
   const headers = controlPlaneHeaders({ cookie, "X-IPMS-Tenant-ID": tenantId });
   const query = new URLSearchParams({ server_type: serverType });
   if (role) query.set("role", role);
+  query.set("operating_system_role", operatingSystemRole);
+  if (operatingSystemFamily) {
+    query.set("operating_system_family", operatingSystemFamily);
+  }
   try {
     const response = await fetch(
       `${CONTROL_PLANE_URL}/api/v1/windows-servers/?${query}`,
@@ -34,6 +41,22 @@ export async function getWindowsServers(
     };
   } catch {
     return { sessionValid: true, available: false, servers: [] };
+  }
+}
+
+export async function getWindowsClientFamilies(tenantId: string) {
+  const cookie = (await cookies()).toString();
+  const headers = controlPlaneHeaders({ cookie, "X-IPMS-Tenant-ID": tenantId });
+  try {
+    const response = await fetch(
+      `${CONTROL_PLANE_URL}/api/v1/windows-client-families/`,
+      { cache: "no-store", headers },
+    );
+    return response.ok
+      ? ((await response.json()) as WindowsClientFamilySummary[])
+      : [];
+  } catch {
+    return [];
   }
 }
 

@@ -21,7 +21,9 @@ from ipms.apps.discovery.views import (
     ConnectorDiscoveryView,
     ConnectorEndpointListView,
     PhysicalSystemListView,
+    HyperVVirtualMachineListView,
     WindowsServerDetailView,
+    WindowsClientFamilyListView,
     WindowsServerListView,
     WindowsServerRoleListView,
     WindowsServerTelemetryView,
@@ -95,6 +97,16 @@ urlpatterns = [
         "windows-server-roles/",
         WindowsServerRoleListView.as_view(),
         name="windows-server-role-list",
+    ),
+    path(
+        "windows-client-families/",
+        WindowsClientFamilyListView.as_view(),
+        name="windows-client-family-list",
+    ),
+    path(
+        "hyper-v/virtual-machines/",
+        HyperVVirtualMachineListView.as_view(),
+        name="hyperv-virtual-machine-list",
     ),
     path(
         "windows-servers/<uuid:pk>/",

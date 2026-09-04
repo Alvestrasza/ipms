@@ -150,6 +150,10 @@ restore point.
 - Establish tenant-scoped read-only inventory views for physical and virtual
   Windows servers, backed by one normalized API contract for Agent and Hyper-V
   sources. Browser clients cannot create or modify inventory records.
+- Separate Windows clients from Windows servers through native operating-system
+  role classification while retaining physical or virtual placement as an
+  independent dimension. Provide normalized client-family navigation, starting
+  with Windows 11 LTSC.
 - Establish the dedicated tenant-scoped Agent PKI and isolated TCP 9419 mTLS
   Gateway with one-time pinned enrollment, short-lived device certificates,
   immediate revocation, encrypted runtime issuer keys, offline Root recovery,
@@ -173,6 +177,8 @@ restore point.
 - Implement a read-only Hyper-V connector for host, cluster, VM, and basic
   resource discovery through the C++20 Windows Agent and its signed,
   built-in `hyper-v-host` Management Pack.
+- Present Hyper-V virtual machines with name, state, host, vCPU, RAM, uptime,
+  configuration version, and integration-service-reported IP addresses.
 - Present discovered inventory and connector health in the A-Corp Dark Web
   Console, with the A-Corp Light token set available from the beginning.
 - Provide server-rendered English and German console localization, detect the
@@ -220,6 +226,44 @@ restore point.
 - Scale-Out migration, customer Cloud tenancy, or a production Edge Gateway
   rollout.
 - Full monitoring, backup, network, or storage management.
+
+## v0.2.0: Cross-Platform Inventory and Infrastructure Connectors
+
+Version 0.2.0 extends the tenant-safe read-only foundation without widening the
+Agent into a remote administration channel.
+
+### v0.2.0 Goals
+
+- Deliver a native C++20 Linux Agent with the same Agent-initiated TCP 9419
+  enrollment, TLS 1.3 mutual authentication, fixed capabilities, inventory,
+  telemetry, lifecycle, and tenant-binding rules as the Windows Agent.
+- Inventory installed Windows software from machine-wide uninstall
+  registration without using `Win32_Product`, and inventory Linux packages
+  from the native package database.
+- Report bounded Windows and Linux operating-system update posture, including
+  collection state, pending updates, pending security updates, last scan, and
+  reboot requirement. Update installation is a separate state-changing scope.
+- Add a read-only Sophos Firewall connector for appliance, interface, zone,
+  route, HA, firmware, health, and supported operational inventory.
+- Add a read-only Loadbalancer.org connector for appliance, HA, virtual
+  service, real-server, health, version, and supported operational inventory.
+- Add SNMPv3-first read-only HPE 5130 and HPE 5900AF Comware 7.1 discovery for
+  chassis, firmware, IRF, ports, VLANs, LACP, LLDP, and health counters.
+- Reuse encrypted write-only connector secrets, explicit TLS certificate trust,
+  tenant-scoped logs, bounded collection, credential rotation, and removal.
+
+### v0.2.0 Security and Acceptance Boundaries
+
+- Agents and connectors expose no arbitrary command, PowerShell, SSH, shell,
+  script, WMI-query, API-proxy, configuration-push, or OID-browser capability.
+- SNMP switch discovery requires SNMPv3 authentication and privacy; SNMPv1 and
+  SNMPv2c are not accepted.
+- HTTPS connectors fail closed until the exact certificate is trusted and fail
+  again when it changes.
+- Fixture, negative, tenant-isolation, payload-bound, timeout, and native build
+  tests are required before deployment.
+- Live connector acceptance remains pending until a supported endpoint and a
+  dedicated read-only credential are provided for each product family.
 
 ## Licensing and Editions
 
