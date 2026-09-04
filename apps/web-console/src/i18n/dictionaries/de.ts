@@ -203,7 +203,7 @@ export const de = {
     infrastructure: "Infrastruktur",
     agents: "Agenten",
     soon: "Bald",
-    version: "IPMS v0.2.14 Entwicklung",
+    version: "IPMS v0.2.15 Entwicklung",
   },
   linuxSystems: {
     liveData:

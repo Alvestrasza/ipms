@@ -30,8 +30,10 @@
 :root[data-theme="light"] {
   --color-text-primary: #14212a;
   --color-text-secondary: #45545d;
-  --color-text-muted: #677781;
+  --color-text-muted: #5d6d77;
   --color-accent-crimson-text: #9f2f28;
+  --color-accent-blue: #176187;
+  --color-success: #247250;
   --surface-navigation: #edf1f3;
   --surface-page: #f4f6f7;
   --surface-panel: #ffffff;
