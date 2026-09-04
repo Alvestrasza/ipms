@@ -2,8 +2,8 @@
 
 - Status: Accepted for the development foundation
 - Decision date: 2026-09-04
-- Application version: 0.2.4
-- First capable Windows Agent: 0.2.4
+- Application version: 0.2.5
+- First capable Windows Agent: 0.2.5
 
 ## Context
 
@@ -70,6 +70,8 @@ immediately; the next inventory observation remains authoritative.
   name, and job are bound before delivery.
 - Requests, deliveries, running acknowledgements, and terminal outcomes are
   audited without recording secrets or raw provider payloads.
+- Failed identity lookup codes may include only bounded aggregate row counts;
+  they never include VM names, identifiers, provider paths, or raw payloads.
 - A terminal result that cannot be returned immediately is stored locally and
   retried through the next authenticated Agent cycle.
 - Graceful shutdown never sets `Force=true`. A missing or unavailable guest

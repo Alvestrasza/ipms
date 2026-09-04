@@ -308,6 +308,9 @@ struct virtual_machine_lookup {
   ComPtr<IWbemClassObject> system;
   bool query_succeeded{false};
   bool identity_conflict{false};
+  std::size_t rows_seen{0};
+  std::size_t identifier_rows{0};
+  std::size_t name_matches{0};
 };
 
 virtual_machine_lookup find_virtual_machine(
@@ -320,16 +323,25 @@ virtual_machine_lookup find_virtual_machine(
   if (!rows) return {};
   ComPtr<IWbemClassObject> identity_match;
   bool identity_conflict = false;
+  std::size_t rows_seen = 0;
+  std::size_t identifier_rows = 0;
+  std::size_t name_matches = 0;
   const bool completed = consume_rows(
       rows.Get(),
       k_max_virtual_machines + 1,
       std::chrono::steady_clock::now() + std::chrono::seconds(10),
       [&identity_match,
        &identity_conflict,
+       &rows_seen,
+       &identifier_rows,
+       &name_matches,
        &normalized_source_id,
        &expected_name](IWbemClassObject* row) {
+        ++rows_seen;
         const auto name_id = normalized_guid(wmi_string(row, L"Name"));
         const auto path_id = guid_from_instance_id(wmi_string(row, L"__PATH"));
+        if (!name_id.empty() || !path_id.empty()) ++identifier_rows;
+        if (utf8(wmi_string(row, L"ElementName")) == expected_name) ++name_matches;
         if (!identity_match &&
             (name_id == normalized_source_id || path_id == normalized_source_id)) {
           if (utf8(wmi_string(row, L"ElementName")) != expected_name) {
@@ -339,7 +351,14 @@ virtual_machine_lookup find_virtual_machine(
           }
         }
       });
-  return {identity_match, completed, identity_conflict};
+  return {
+      identity_match,
+      completed,
+      identity_conflict,
+      rows_seen,
+      identifier_rows,
+      name_matches,
+  };
 }
 
 struct shutdown_component_lookup {
@@ -652,7 +671,14 @@ hyperv_action_result execute_hyperv_virtual_machine_action(
       find_virtual_machine(services.Get(), normalized_source_id, expected_name);
   if (!lookup.query_succeeded) return {false, "vm_lookup_failed"};
   if (lookup.identity_conflict) return {false, "vm_identity_conflict"};
-  if (!lookup.system) return {false, "vm_not_found"};
+  if (!lookup.system) {
+    return {
+        false,
+        "vm_not_found_r" + std::to_string(lookup.rows_seen) +
+            "_i" + std::to_string(lookup.identifier_rows) +
+            "_n" + std::to_string(lookup.name_matches),
+    };
+  }
   auto system = lookup.system;
   const auto current_state = normalized_state(
       wmi_uint64(system.Get(), L"EnabledState").value_or(0));
