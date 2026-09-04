@@ -894,7 +894,9 @@ std::vector<std::uint8_t> capture_console_frame(
       width = decoded_width;
       height = decoded_height;
     } else {
-      failure_code = "console_frame_image_size_mismatch";
+      failure_code = "console_frame_size_" + std::to_string(size) +
+                     "_expected_" +
+                     std::to_string(static_cast<std::size_t>(width) * height * 2);
     }
   } else {
     failure_code = "console_frame_image_bounds_invalid";

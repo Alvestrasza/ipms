@@ -9,7 +9,7 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-IPMS application build `0.2.23` adds a tenant-scoped interactive Hyper-V VM
+IPMS application build `0.2.24` adds a tenant-scoped interactive Hyper-V VM
 console to the inventory, controlled workload-action, and user-administration
 foundation. A standalone development
 Appliance currently runs the tenant-aware Django Control Plane, PostgreSQL,
@@ -27,7 +27,7 @@ family, starting with Windows 11 LTSC. Hyper-V hosts report a bounded VM
 inventory with state, vCPU, memory, uptime, configuration version, and guest IP
 addresses. Tenant administrators can start, pause, resume, gracefully shut
 down, and stop a VM through an audited durable job and the enrolled host
-Agent. Windows Agent `0.2.18` also provides one lease-bound console session per
+Agent. Windows Agent `0.2.19` also provides one lease-bound console session per
 running VM with direct keyboard and mouse input and a dedicated secure-attention
 operation. It resolves the active VM settings through the provider's
 `Msvm_SettingsDefineState` association so hosts with extensive setting or
