@@ -716,31 +716,64 @@ std::vector<std::uint8_t> encode_rgb565_png(
   return png;
 }
 
+std::string thumbnail_failure_code(std::uint64_t return_value) {
+  switch (return_value) {
+    case 4096: return "console_frame_job_started";
+    case 32768: return "console_frame_provider_failed";
+    case 32769: return "console_frame_access_denied";
+    case 32770: return "console_frame_not_supported";
+    case 32771: return "console_frame_status_unknown";
+    case 32772: return "console_frame_timeout";
+    case 32773: return "console_frame_invalid_parameter";
+    case 32774: return "console_frame_system_in_use";
+    case 32775: return "console_frame_invalid_state";
+    case 32776: return "console_frame_incorrect_data_type";
+    case 32777: return "console_frame_system_unavailable";
+    case 32778: return "console_frame_out_of_memory";
+    default: return "console_frame_provider_error";
+  }
+}
+
 std::vector<std::uint8_t> capture_console_frame(
     IWbemServices* services,
     IWbemClassObject* settings,
     std::uint16_t width,
-    std::uint16_t height) {
+    std::uint16_t height,
+    std::string& failure_code) {
   const auto settings_path = wmi_string(settings, L"__PATH");
-  if (settings_path.empty()) return {};
+  if (settings_path.empty()) {
+    failure_code = "console_frame_setting_path_missing";
+    return {};
+  }
   ComPtr<IWbemClassObject> service_class;
   BSTR class_name = SysAllocString(L"Msvm_VirtualSystemManagementService");
-  if (!class_name) return {};
+  if (!class_name) {
+    failure_code = "console_frame_allocation_failed";
+    return {};
+  }
   const HRESULT class_result = services->GetObject(
       class_name, 0, nullptr, &service_class, nullptr);
   SysFreeString(class_name);
-  if (FAILED(class_result) || !service_class) return {};
+  if (FAILED(class_result) || !service_class) {
+    failure_code = "console_frame_service_class_missing";
+    return {};
+  }
   ComPtr<IWbemClassObject> signature;
   BSTR method = SysAllocString(L"GetVirtualSystemThumbnailImage");
-  if (!method) return {};
+  if (!method) {
+    failure_code = "console_frame_allocation_failed";
+    return {};
+  }
   const HRESULT method_result = service_class->GetMethod(method, 0, &signature, nullptr);
   if (FAILED(method_result) || !signature) {
     SysFreeString(method);
+    failure_code = "console_frame_method_missing";
     return {};
   }
   ComPtr<IWbemClassObject> input;
   if (FAILED(signature->SpawnInstance(0, &input)) || !input) {
     SysFreeString(method);
+    failure_code = "console_frame_input_spawn_failed";
     return {};
   }
   VARIANT target{};
@@ -762,6 +795,7 @@ std::vector<std::uint8_t> capture_console_frame(
   VariantClear(&target);
   if (!put) {
     SysFreeString(method);
+    failure_code = "console_frame_argument_failed";
     return {};
   }
   auto services_rows = execute_query(
@@ -776,11 +810,13 @@ std::vector<std::uint8_t> capture_console_frame(
   const auto service_path = service ? wmi_string(service.Get(), L"__PATH") : L"";
   if (service_path.empty()) {
     SysFreeString(method);
+    failure_code = "console_frame_service_instance_missing";
     return {};
   }
   BSTR allocated_path = SysAllocString(service_path.c_str());
   if (!allocated_path) {
     SysFreeString(method);
+    failure_code = "console_frame_allocation_failed";
     return {};
   }
   ComPtr<IWbemClassObject> output;
@@ -788,8 +824,13 @@ std::vector<std::uint8_t> capture_console_frame(
       allocated_path, method, 0, nullptr, input.Get(), &output, nullptr);
   SysFreeString(allocated_path);
   SysFreeString(method);
-  if (FAILED(execution) || !output ||
-      wmi_uint64(output.Get(), L"ReturnValue").value_or(1) != 0) {
+  if (FAILED(execution) || !output) {
+    failure_code = "console_frame_execution_failed";
+    return {};
+  }
+  const auto return_value = wmi_uint64(output.Get(), L"ReturnValue").value_or(1);
+  if (return_value != 0) {
+    failure_code = thumbnail_failure_code(return_value);
     return {};
   }
   VARIANT image{};
@@ -797,6 +838,7 @@ std::vector<std::uint8_t> capture_console_frame(
   if (FAILED(output->Get(L"ImageData", 0, &image, nullptr, nullptr)) ||
       image.vt != (VT_ARRAY | VT_UI1) || !image.parray) {
     VariantClear(&image);
+    failure_code = "console_frame_image_missing";
     return {};
   }
   LONG lower = 0;
@@ -808,12 +850,26 @@ std::vector<std::uint8_t> capture_console_frame(
     if (size == static_cast<std::size_t>(width) * height * 2) {
       rgb565.resize(size);
       for (LONG index = lower; index <= upper; ++index) {
-        SafeArrayGetElement(image.parray, &index, &rgb565[static_cast<std::size_t>(index - lower)]);
+        if (FAILED(SafeArrayGetElement(
+                image.parray,
+                &index,
+                &rgb565[static_cast<std::size_t>(index - lower)]))) {
+          rgb565.clear();
+          failure_code = "console_frame_image_read_failed";
+          break;
+        }
       }
+    } else {
+      failure_code = "console_frame_image_size_mismatch";
     }
+  } else {
+    failure_code = "console_frame_image_bounds_invalid";
   }
   VariantClear(&image);
-  return encode_rgb565_png(rgb565, width, height);
+  if (rgb565.empty()) return {};
+  auto png = encode_rgb565_png(rgb565, width, height);
+  if (png.empty()) failure_code = "console_frame_png_encode_failed";
+  return png;
 }
 
 }  // namespace
@@ -1256,8 +1312,13 @@ hyperv_console_result execute_hyperv_console_cycle(
   }
   auto settings = find_realized_settings(connection.value.Get(), normalized_source_id);
   if (!settings) return {false, "console_settings_unavailable", {}, 0, 0, acknowledged};
-  auto png = capture_console_frame(connection.value.Get(), settings.Get(), width, height);
-  if (png.empty()) return {false, "console_frame_unavailable", {}, 0, 0, acknowledged};
+  std::string frame_failure_code;
+  auto png = capture_console_frame(
+      connection.value.Get(), settings.Get(), width, height, frame_failure_code);
+  if (png.empty()) {
+    if (frame_failure_code.empty()) frame_failure_code = "console_frame_unavailable";
+    return {false, frame_failure_code, {}, 0, 0, acknowledged};
+  }
   return {true, "frame_captured", std::move(png), width, height, std::move(acknowledged)};
 }
 

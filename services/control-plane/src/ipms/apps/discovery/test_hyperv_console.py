@@ -50,7 +50,7 @@ class HyperVConsoleTests(TestCase):
             fqdn="hyperv-host.example.invalid",
             operating_system="Microsoft Windows Server",
             hyperv_inventory_status=WindowsServer.HyperVInventoryStatus.COLLECTED,
-            agent_version="0.2.14",
+            agent_version="0.2.15",
             agent_state=WindowsServer.AgentState.ONLINE,
             health=WindowsServer.Health.HEALTHY,
             discovered_at=timezone.now(),
@@ -269,7 +269,7 @@ class HyperVConsoleTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.vm.state = HyperVVirtualMachine.State.RUNNING
         self.vm.save(update_fields=("state",))
-        self.host.agent_version = "0.2.13"
+        self.host.agent_version = "0.2.14"
         self.host.save(update_fields=("agent_version",))
         response = self.create_session()
         self.assertEqual(response.status_code, 400)

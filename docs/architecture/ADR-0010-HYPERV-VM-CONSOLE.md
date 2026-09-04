@@ -2,8 +2,8 @@
 
 - Status: Accepted for the development foundation
 - Decision date: 2026-09-05
-- Application version: 0.2.19
-- First compatible Windows Agent: 0.2.14
+- Application version: 0.2.20
+- First compatible Windows Agent: 0.2.15
 
 ## Context
 
@@ -69,6 +69,10 @@ redelivery. The Control Plane keeps only the latest PNG frame, marks it
 `private, no-store` at the HTTP boundary, and clears it when the session closes,
 expires, or fails.
 
+The Agent maps provider return values and local image-processing stages to a
+bounded allowlist of failure codes. It never returns raw WMI objects, paths,
+host data, or exception text to the portal.
+
 ## Explicit exclusions
 
 The initial console does not provide:
@@ -99,4 +103,4 @@ surface compile as a production Next.js application.
 Live acceptance has verified session exclusivity on a supported Hyper-V host.
 Frame color, keyboard layout, mouse coordinate mapping, secure attention, host
 failover behavior, and provider timeouts still require acceptance with the
-0.2.14 Agent package.
+0.2.15 Agent package.
