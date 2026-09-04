@@ -236,8 +236,8 @@ std::string normalized_state(std::uint64_t enabled_state) {
 std::optional<std::uint16_t> requested_state_for_action(const std::string& action) {
   if (action == "start") return static_cast<std::uint16_t>(2);
   if (action == "stop") return static_cast<std::uint16_t>(3);
-  if (action == "pause") return static_cast<std::uint16_t>(32776);
-  if (action == "resume") return static_cast<std::uint16_t>(32777);
+  if (action == "pause") return static_cast<std::uint16_t>(32768);
+  if (action == "resume") return static_cast<std::uint16_t>(2);
   return std::nullopt;
 }
 
@@ -843,7 +843,9 @@ hyperv_action_result execute_hyperv_virtual_machine_action(
   SysFreeString(method_name);
   if (FAILED(execute_result) || !output) return {false, "action_execution_failed"};
   const auto return_value = wmi_uint64(output.Get(), L"ReturnValue").value_or(1);
-  if (return_value != 0 && return_value != 4096) return {false, "action_rejected"};
+  if (return_value != 0 && return_value != 4096) {
+    return {false, "action_rejected_" + std::to_string(return_value)};
+  }
 
   return wait_for_virtual_machine_state(
              services.Get(), normalized_source_id, expected_name, expected_state, 30)

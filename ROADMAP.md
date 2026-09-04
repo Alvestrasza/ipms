@@ -283,7 +283,7 @@ normalization. Windows software inventory deliberately reports update state as
 unknown until a bounded, non-triggering Windows Update source is implemented;
 it does not start an update scan merely to populate inventory.
 
-Build 0.2.8 provides controlled Hyper-V workload mutations: tenant
+Build 0.2.9 provides controlled Hyper-V workload mutations: tenant
 administrators can start, pause, resume, gracefully shut down, or stop a
 virtual machine from its context menu. The Control Plane creates a tenant-bound
 durable job, the enrolled host Agent accepts only the five compiled-in actions
