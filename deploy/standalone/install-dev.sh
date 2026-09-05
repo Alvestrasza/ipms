@@ -270,6 +270,7 @@ install -o root -g ipms-web -m 0640 /dev/null "$web_console_env"
     echo "HOSTNAME=127.0.0.1"
     echo "PORT=3000"
     echo "IPMS_CONTROL_PLANE_URL=http://127.0.0.1:8000"
+    echo "IPMS_PUBLIC_ORIGIN=https://${PUBLIC_HOST,,}"
 } > "$web_console_env"
 
 agent_gateway_env=/srv/ipms/shared/agent-gateway.env

@@ -1,13 +1,9 @@
 "use client";
 
 import { Monitor, X } from "lucide-react";
-import {
-  type FormEvent,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import type { Route } from "next";
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type ConsoleCopy,
   type ConsoleDialogState,
@@ -27,11 +23,13 @@ export function HyperVConsoleWindow({
   copy,
   csrfToken,
   tenantId,
+  serviceAccountsHref,
 }: {
   vm: HyperVVirtualMachine;
   copy: ConsoleCopy;
   csrfToken: string;
   tenantId: string;
+  serviceAccountsHref: string;
 }) {
   const [state, setState] = useState<ConsoleDialogState>({
     vm,
@@ -47,9 +45,8 @@ export function HyperVConsoleWindow({
     "vmconnect",
   );
   const [acknowledged, setAcknowledged] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
+  const [checkingConfiguration, setCheckingConfiguration] = useState(false);
+  const checking = useRef(false);
   const mounted = useRef(false);
   const creating = useRef(false);
   const sessionId = useRef<string | null>(null);
@@ -108,6 +105,41 @@ export function HyperVConsoleWindow({
       close();
     };
   }, [vm.id, vm.name, copy.title, copy.unavailable, tenantId, closeSession]);
+
+  async function checkConfiguration() {
+    if (checking.current || creating.current || sessionId.current) return;
+    checking.current = true;
+    setCheckingConfiguration(true);
+    try {
+      const response = await fetch(
+        `/api/v1/hyper-v/virtual-machines/${vm.id}/console-configuration/`,
+        {
+          cache: "no-store",
+          credentials: "same-origin",
+          signal: AbortSignal.timeout(15_000),
+          headers: { "X-IPMS-Tenant-ID": tenantId },
+        },
+      );
+      if (!response.ok) throw new Error();
+      const result = (await response.json()) as Configuration;
+      if (
+        [result.configured, result.can_manage, result.native_supported].some(
+          (value) => typeof value !== "boolean",
+        )
+      )
+        throw new Error();
+      if (mounted.current && !creating.current && !sessionId.current) {
+        setConfiguration(result);
+        setState((current) => ({ ...current, error: "" }));
+      }
+    } catch {
+      if (mounted.current && !creating.current && !sessionId.current)
+        setState((current) => ({ ...current, error: copy.unavailable }));
+    } finally {
+      checking.current = false;
+      if (mounted.current) setCheckingConfiguration(false);
+    }
+  }
 
   const close = () => {
     mounted.current = false;
@@ -181,47 +213,6 @@ export function HyperVConsoleWindow({
         }));
     } finally {
       creating.current = false;
-    }
-  };
-
-  const saveAccount = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!configuration?.can_manage || saving) return;
-    const form = event.currentTarget;
-    const fields = new FormData(form);
-    setSaving(true);
-    setSaveError("");
-    try {
-      const response = await fetch(
-        `/api/v1/hyper-v/virtual-machines/${vm.id}/console-configuration/`,
-        {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": csrfToken,
-            "X-IPMS-Tenant-ID": tenantId,
-          },
-          body: JSON.stringify({
-            username: fields.get("username"),
-            password: fields.get("password"),
-            domain: fields.get("domain"),
-          }),
-        },
-      );
-      if (!response.ok) throw new Error();
-      const result = (await response.json()) as Configuration;
-      if (!result.configured) throw new Error();
-      if (mounted.current) {
-        setConfiguration(result);
-        setEditing(false);
-      }
-    } catch {
-      if (mounted.current) setSaveError(copy.native.saveFailed);
-    } finally {
-      form.reset();
-      fields.delete("password");
-      if (mounted.current) setSaving(false);
     }
   };
 
@@ -308,77 +299,30 @@ export function HyperVConsoleWindow({
                     />
                     {copy.native.externalAcknowledgement}
                   </label>
-                  {configuration.configured && !editing ? (
-                    <div>
-                      <p role="status">{copy.native.saved}</p>
-                      {configuration.can_manage && (
-                        <button
-                          type="button"
-                          className="outline-button"
-                          onClick={() => setEditing(true)}
-                        >
-                          {copy.native.rotate}
-                        </button>
-                      )}
-                    </div>
-                  ) : configuration.can_manage ? (
-                    <form
-                      onSubmit={saveAccount}
-                      autoComplete="off"
-                      className="native-account-form"
-                    >
-                      <h2>{copy.native.configurationTitle}</h2>
-                      <p>{copy.native.configurationDescription}</p>
-                      <label>
-                        {copy.native.username}
-                        <input
-                          name="username"
-                          required
-                          maxLength={256}
-                          autoComplete="off"
-                        />
-                      </label>
-                      <label>
-                        {copy.native.domain}
-                        <input
-                          name="domain"
-                          maxLength={256}
-                          autoComplete="off"
-                        />
-                      </label>
-                      <label>
-                        {copy.native.password}
-                        <input
-                          name="password"
-                          type="password"
-                          required
-                          maxLength={1024}
-                          autoComplete="new-password"
-                        />
-                      </label>
-                      {saveError && <p role="alert">{saveError}</p>}
-                      <div className="native-console-buttons">
-                        <button
-                          type="submit"
-                          className="primary-button"
-                          disabled={saving}
-                        >
-                          {copy.native.configure}
-                        </button>
-                        {configuration.configured && (
-                          <button
-                            type="button"
-                            className="outline-button"
-                            disabled={saving}
-                            onClick={() => setEditing(false)}
-                          >
-                            {copy.native.cancel}
-                          </button>
-                        )}
-                      </div>
-                    </form>
+                  {configuration.configured ? (
+                    <p role="status">{copy.native.saved}</p>
                   ) : (
-                    <p role="status">{copy.native.configurationRequired}</p>
+                    <div>
+                      <p role="status">{copy.native.configurationRequired}</p>
+                      <button
+                        className="outline-button"
+                        type="button"
+                        disabled={checkingConfiguration}
+                        onClick={() => void checkConfiguration()}
+                      >
+                        {copy.native.checkConfiguration}
+                      </button>
+                      {configuration.can_manage ? (
+                        <Link
+                          className="outline-button"
+                          href={serviceAccountsHref as Route}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {copy.native.manageServiceAccounts}
+                        </Link>
+                      ) : null}
+                    </div>
                   )}
                 </>
               ) : (
@@ -396,10 +340,8 @@ export function HyperVConsoleWindow({
                   type="button"
                   className="primary-button"
                   disabled={
-                    saving ||
-                    editing ||
-                    (transport === "vmconnect" &&
-                      (!acknowledged || !configuration.configured))
+                    transport === "vmconnect" &&
+                    (!acknowledged || !configuration.configured)
                   }
                   onClick={() => void connect()}
                 >

@@ -1,6 +1,7 @@
 "use client";
 
 import { Building2, ChevronDown } from "lucide-react";
+import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useLocale } from "@/i18n/locale-provider";
@@ -29,7 +30,15 @@ export function TenantSwitcher({
         setTenantId(selectedTenantId);
         return;
       }
-      router.refresh();
+      const destination = new URL(window.location.href);
+      if (destination.searchParams.has("tenant")) {
+        destination.searchParams.set("tenant", value);
+        router.replace(
+          `${destination.pathname}${destination.search}${destination.hash}` as Route,
+        );
+      } else {
+        router.refresh();
+      }
     } catch {
       setTenantId(selectedTenantId);
     }

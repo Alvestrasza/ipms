@@ -11,6 +11,7 @@ export type PermissionCode =
   | "connectors.manage"
   | "agents.view"
   | "agents.manage"
+  | "service_accounts.manage"
   | "virtual_machines.operate"
   | "virtual_machines.console.control"
   | "operations.approve"

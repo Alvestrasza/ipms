@@ -18,6 +18,7 @@ export const nativeFailureCodes = [
   "native_session_expired",
   "native_permission_denied",
   "native_configuration_required",
+  "native_configuration_changed",
   "native_console_unavailable",
   "native_connection_failed",
 ] as const;

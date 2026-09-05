@@ -200,10 +200,11 @@ export const de = {
     tenants: "Mandanten",
     administration: "Administration",
     users: "Benutzer",
+    serviceAccounts: "Service Accounts",
     infrastructure: "Infrastruktur",
     agents: "Agenten",
     soon: "Bald",
-    version: "IPMS v0.2.31 Entwicklung",
+    version: "IPMS v0.2.32 Entwicklung",
   },
   linuxSystems: {
     liveData:
@@ -289,6 +290,66 @@ export const de = {
     interfaceState: "Betriebszustand",
     interfaceAddress: "Adresse / Geschwindigkeit",
     interfaceDescription: "Beschreibung / Zone",
+  },
+  serviceAccounts: {
+    title: "Service Accounts",
+    eyebrow: "Administration",
+    description:
+      "Verwalte vorhandene Zugangsdaten und ordne sie eingebundenen Hosts ausdrücklich zu. IPMS erstellt keine Konten auf den Zielsystemen.",
+    accounts: "Gespeicherte Konten",
+    name: "Kontoname",
+    kind: "Verwendungszweck",
+    username: "Benutzername",
+    domain: "Domäne (optional)",
+    password: "Passwort",
+    hypervConsole: "Hyper-V-Konsole",
+    hostCount: "Zugeordnete Hosts",
+    updated: "Aktualisiert",
+    actions: "Aktionen",
+    add: "Dienstkonto hinzufügen",
+    edit: "Dienstkonto bearbeiten",
+    delete: "Dienstkonto löschen",
+    save: "Konto speichern",
+    cancel: "Abbrechen",
+    refresh: "Aktualisieren",
+    noAccounts: "Keine Dienstkonten eingerichtet.",
+    accountHint:
+      "Gib ein vorhandenes dediziertes Hostkonto ein. Nur das Passwort ist ausschließlich schreibbar; die Kontodaten sind für berechtigte Administratoren sichtbar.",
+    passwordHint:
+      "Das Passwort wird verschlüsselt gespeichert und von der API niemals zurückgegeben.",
+    keepPassword:
+      "Leer lassen, um das aktuelle Passwort beizubehalten. Ein neuer Wert ersetzt das Passwort.",
+    deleteConfirm:
+      "Dieses gespeicherte Konto löschen? Das Windows-Konto wird dadurch nicht gelöscht.",
+    inUse:
+      "Dieses Konto ist einem Host zugeordnet. Entferne vor dem Löschen die Zuordnungen.",
+    bound: "Vor dem Löschen die Host-Zuordnungen entfernen.",
+    hosts: "Host-Zuordnungen",
+    sessionWarning:
+      "Geänderte Zugangsdaten oder Host-Zuordnungen beenden betroffene aktive native Konsolensitzungen. Nach dem Speichern neu verbinden.",
+    hostDescription:
+      "Ordne jedem eingebundenen Hyper-V-Host ein Konsolenkonto zu.",
+    fqdn: "Host-FQDN",
+    agentVersion: "Agent-Version",
+    assignment: "Dienstkonto",
+    unassigned: "Kein zentrales Konto zugeordnet",
+    saveAssignment: "Zuordnung speichern",
+    unassign: "Zuordnung entfernen",
+    unassignConfirm:
+      "Die Konsolenkonto-Zuordnung dieses Hosts entfernen? Aktive native Sitzungen werden geschlossen; neue Verbindungen benötigen eine neue Zuordnung.",
+    legacy:
+      "Die bisherigen Host-Zugangsdaten bleiben aktiv. Eine zentrale Zuordnung ersetzt sie.",
+    ineligible:
+      "Host nicht mehr geeignet; eine bestehende Zuordnung kann weiterhin entfernt werden.",
+    noHosts:
+      "Keine geeigneten oder bereits zugeordneten Hyper-V-Hosts gefunden.",
+    saved: "Die Änderung wurde gespeichert.",
+    unavailable: "Die Dienstkonten sind derzeit nicht verfügbar.",
+    refreshFailed:
+      "Die Änderung wurde durchgeführt, aber die Liste konnte nicht aktualisiert werden. Aktualisiere sie vor der nächsten Aktion.",
+    actionFailed:
+      "Die Anfrage konnte nicht abgeschlossen werden. Prüfe ihr Ergebnis durch Aktualisieren, bevor du sie wiederholst.",
+    invalid: "Prüfe die Kontodaten und Passwortanforderungen.",
   },
   userAdministration: {
     title: "Benutzerverwaltung",
@@ -659,19 +720,11 @@ export const de = {
           "IPMS kann außerhalb von IPMS geöffnete Konsolen nicht erkennen. Beim Verbinden kann eine bestehende externe Konsolensitzung übernommen werden.",
         externalAcknowledgement:
           "Ich verstehe, dass eine externe Konsolensitzung unterbrochen werden kann.",
-        configurationTitle: "Konsolenkonto des Hosts",
-        configurationDescription:
-          "Verwende ein vorhandenes dediziertes Konto mit Konsolenberechtigung auf diesem Hyper-V-Host. IPMS speichert die Zugangsdaten verschlüsselt für diesen Mandanten und Host. Es wird kein Windows-Konto erstellt.",
         configurationRequired:
-          "Ein Administrator muss das dedizierte Konsolenkonto des Hosts konfigurieren, bevor nativer Zugriff möglich ist.",
-        configure: "Konsolenkonto speichern",
-        rotate: "Gespeichertes Konto ersetzen",
-        saved: "Das verschlüsselte Konsolenkonto ist konfiguriert.",
-        saveFailed:
-          "Das Konsolenkonto konnte nicht gespeichert werden. Prüfe deine Berechtigungen und die eingegebenen Werte.",
-        username: "Konsolen-Benutzername",
-        password: "Konsolen-Passwort",
-        domain: "Domäne (optional)",
+          "Ein Administrator muss unter Administration → Service Accounts ein Hostkonto zuordnen. Öffne diese Konsole nach der Zuordnung erneut.",
+        manageServiceAccounts: "Service Accounts öffnen",
+        checkConfiguration: "Zuordnung prüfen",
+        saved: "Für diesen Host ist ein gespeichertes Konsolenkonto verfügbar.",
         certificateTitle: "Host-Zertifikat prüfen",
         certificateDescription:
           "Prüfe vor dem Verbinden, ob dieses Zertifikat zum vorgesehenen Hyper-V-Host gehört. Ein geändertes Zertifikat muss erneut bestätigt werden.",
@@ -706,6 +759,8 @@ export const de = {
             "Der Konsolenzugriff ist nicht mehr erlaubt.",
           native_configuration_required:
             "Ein Administrator muss das Konsolenkonto des Hosts konfigurieren.",
+          native_configuration_changed:
+            "Die Zugangsdaten oder Host-Zuordnung wurden geändert. Öffne die Konsole erneut.",
           native_console_unavailable:
             "Der native Konsolendienst ist nicht verfügbar.",
           native_connection_failed:

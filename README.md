@@ -9,9 +9,10 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-IPMS application build `0.2.31` prepares an additional native Hyper-V console
-transport with encrypted, host-scoped credentials for an existing dedicated
-account. Native activation requires the isolated adapter, Windows Agent
+IPMS application build `0.2.32` adds central **Administration → Service Accounts**
+for existing Hyper-V console accounts and explicit host assignments. Console
+windows use the assigned account without a credential-entry form. Native
+activation requires the isolated adapter, Windows Agent
 `0.2.26`, explicit certificate approval and live host acceptance; implementation
 and runtime acceptance are separate. It retains the independent heartbeat and
 legacy console input delivery introduced in `0.2.30` and `0.2.29`. A standalone development

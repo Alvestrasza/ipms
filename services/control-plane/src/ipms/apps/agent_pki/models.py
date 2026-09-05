@@ -305,12 +305,36 @@ class WindowsAgentDeploymentSecret(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
+class ServiceAccount(models.Model):
+    class Kind(models.TextChoices):
+        HYPERV_CONSOLE = "hyperv_console", "Hyper-V console"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.PROTECT)
+    name = models.CharField(max_length=128)
+    kind = models.CharField(max_length=32, choices=Kind.choices, default=Kind.HYPERV_CONSOLE)
+    nonce = models.BinaryField()
+    ciphertext = models.BinaryField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("name", "id")
+
+
 class NativeConsoleCredential(models.Model):
     tenant = models.ForeignKey("tenancy.Tenant", on_delete=models.PROTECT)
     enrollment = models.OneToOneField(AgentEnrollment, on_delete=models.CASCADE, related_name="native_console_credential")
+    service_account = models.ForeignKey(ServiceAccount, null=True, blank=True, on_delete=models.PROTECT, related_name="bindings")
     nonce = models.BinaryField()
     ciphertext = models.BinaryField()
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.CheckConstraint(
+            condition=models.Q(service_account__isnull=True) | models.Q(nonce=b"", ciphertext=b""),
+            name="native_central_binding_no_legacy_secret",
+        )]
 
 
 class AgentRevocation(models.Model):

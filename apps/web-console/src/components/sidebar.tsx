@@ -4,6 +4,7 @@ import {
   Boxes,
   Building2,
   Database,
+  KeyRound,
   LayoutDashboard,
   ListTree,
   MonitorCog,
@@ -42,6 +43,7 @@ export type ActiveSection =
   | "hyper-v-vms"
   | "network"
   | "admin-users"
+  | "admin-service-accounts"
   | "admin-agents";
 
 export async function Sidebar({
@@ -50,6 +52,7 @@ export async function Sidebar({
   activeWindowsClientFamily,
   canManageAgents,
   canViewUsers,
+  canManageServiceAccounts,
   windowsRoles,
   windowsClientFamilies,
 }: {
@@ -58,6 +61,7 @@ export async function Sidebar({
   activeWindowsClientFamily?: string;
   canManageAgents: boolean;
   canViewUsers: boolean;
+  canManageServiceAccounts: boolean;
   windowsRoles: WindowsServerRoleSummary[];
   windowsClientFamilies: WindowsClientFamilySummary[];
 }) {
@@ -84,13 +88,17 @@ export async function Sidebar({
         role.name.toLowerCase(),
       ) && role.physical_count + role.virtual_count > 0,
   );
-  const administrationExpanded = ["admin-users", "admin-agents"].includes(
-    activeSection,
-  );
-  const canAdmin = canManageAgents || canViewUsers;
+  const administrationExpanded = [
+    "admin-users",
+    "admin-agents",
+    "admin-service-accounts",
+  ].includes(activeSection);
+  const canAdmin = canManageAgents || canViewUsers || canManageServiceAccounts;
   const administrationHref = canViewUsers
     ? `/${locale}/administration/users`
-    : `/${locale}/administration/infrastructure/agents`;
+    : canManageAgents
+      ? `/${locale}/administration/infrastructure/agents`
+      : `/${locale}/administration/service-accounts`;
   const navigation = [
     {
       label: dictionary.navigation.overview,
@@ -353,6 +361,22 @@ export async function Sidebar({
                 >
                   <UsersRound aria-hidden="true" size={15} />
                   <span>{dictionary.navigation.users}</span>
+                </Link>
+              </li>
+            ) : null}
+            {canManageServiceAccounts ? (
+              <li>
+                <Link
+                  className={`nav-subitem ${activeSection === "admin-service-accounts" ? "nav-subitem--active" : ""}`}
+                  href={`/${locale}/administration/service-accounts` as Route}
+                  aria-current={
+                    activeSection === "admin-service-accounts"
+                      ? "page"
+                      : undefined
+                  }
+                >
+                  <KeyRound aria-hidden="true" size={15} />
+                  <span>{dictionary.navigation.serviceAccounts}</span>
                 </Link>
               </li>
             ) : null}

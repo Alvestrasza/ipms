@@ -16,7 +16,6 @@ for (const mode of [
   }) => {
     const messages: string[] = [];
     const creates: unknown[] = [];
-    const configuredAccounts: unknown[] = [];
     const errors: string[] = [];
     let socketClosed = false;
     let configured = mode !== "configure" && mode !== "operator";
@@ -26,10 +25,7 @@ for (const mode of [
     // Real local fixture login and SSR inventory. Only native transport/config
     // collaborators are synthetic; no Agent, host or secret store is contacted.
     await context.route("**/console-configuration/", async (route) => {
-      if (route.request().method() === "POST") {
-        configuredAccounts.push(route.request().postDataJSON());
-        configured = true;
-      }
+      expect(route.request().method()).toBe("GET");
       await route.fulfill({
         json: {
           configured,
@@ -116,44 +112,45 @@ for (const mode of [
     ).toBeChecked();
     const connect = popup.getByRole("button", { name: "Connect", exact: true });
     await expect(connect).toBeDisabled();
-    if (mode === "operator") {
+    if (mode === "operator" || mode === "configure") {
       await expect(
         popup.getByText(
-          "An administrator must configure the dedicated host console account before native access is available.",
+          "An administrator must assign a host account under Administration → Service Accounts. Reopen this console after the assignment.",
         ),
       ).toBeVisible();
       await expect(
-        popup.getByLabel("Console password", { exact: true }),
+        popup.locator('input[type="password"], input[name="username"]'),
       ).toHaveCount(0);
+      const adminLink = popup.getByRole("link", {
+        name: "Open Service Accounts",
+        exact: true,
+      });
+      if (mode === "configure") {
+        await expect(adminLink).toHaveAttribute(
+          "href",
+          /\/en\/administration\/service-accounts\?tenant=[a-f0-9-]+$/,
+        );
+        await expect(adminLink).toHaveAttribute("target", "_blank");
+        configured = true;
+        await popup
+          .getByRole("button", { name: "Check assignment", exact: true })
+          .click();
+        await expect(
+          popup.getByText(
+            "A stored console account is available for this host.",
+            { exact: true },
+          ),
+        ).toBeVisible();
+        await expect(connect).toBeDisabled();
+        expect(creates).toEqual([]);
+      } else {
+        await expect(adminLink).toHaveCount(0);
+      }
       await popup
         .getByRole("button", { name: "Close console", exact: true })
         .click();
       expect(creates).toEqual([]);
       return;
-    }
-    if (mode === "configure") {
-      await popup
-        .getByLabel("Console username", { exact: true })
-        .fill("fixture-console");
-      await popup
-        .getByLabel("Console password", { exact: true })
-        .fill("fixture-only-console-password");
-      await popup
-        .getByLabel("Domain (optional)", { exact: true })
-        .fill("FIXTURE");
-      await popup
-        .getByRole("button", { name: "Save console account", exact: true })
-        .click();
-      await expect(
-        popup.getByText("The encrypted console account is configured."),
-      ).toBeVisible();
-      expect(configuredAccounts).toEqual([
-        {
-          username: "fixture-console",
-          password: "fixture-only-console-password",
-          domain: "FIXTURE",
-        },
-      ]);
     }
     await popup
       .getByLabel(

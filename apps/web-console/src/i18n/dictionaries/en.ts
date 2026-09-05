@@ -186,10 +186,11 @@ export const en = {
     tenants: "Tenants",
     administration: "Administration",
     users: "Users",
+    serviceAccounts: "Service Accounts",
     infrastructure: "Infrastructure",
     agents: "Agents",
     soon: "Soon",
-    version: "IPMS v0.2.31 development",
+    version: "IPMS v0.2.32 development",
   },
   linuxSystems: {
     liveData: "Live tenant-scoped Linux inventory from enrolled Agents.",
@@ -273,6 +274,64 @@ export const en = {
     interfaceState: "Operational state",
     interfaceAddress: "Address / speed",
     interfaceDescription: "Description / zone",
+  },
+  serviceAccounts: {
+    title: "Service Accounts",
+    eyebrow: "Administration",
+    description:
+      "Manage existing service credentials and explicitly assign them to enrolled hosts. IPMS does not create accounts on the target systems.",
+    accounts: "Stored accounts",
+    name: "Account name",
+    kind: "Purpose",
+    username: "Username",
+    domain: "Domain (optional)",
+    password: "Password",
+    hypervConsole: "Hyper-V console",
+    hostCount: "Assigned hosts",
+    updated: "Updated",
+    actions: "Actions",
+    add: "Add service account",
+    edit: "Edit service account",
+    delete: "Delete service account",
+    save: "Save account",
+    cancel: "Cancel",
+    refresh: "Refresh",
+    noAccounts: "No service accounts configured.",
+    accountHint:
+      "Enter an existing dedicated host account. Only its password is write-only; account metadata is visible to authorized administrators.",
+    passwordHint:
+      "The password is stored encrypted and is never returned by the API.",
+    keepPassword:
+      "Leave empty to keep the current password. Enter a new value to rotate it.",
+    deleteConfirm:
+      "Delete this stored account? This does not delete the account on Windows.",
+    inUse:
+      "This account is assigned to a host. Remove its assignments before deleting it.",
+    bound: "Unassign hosts before deletion.",
+    hosts: "Host assignments",
+    sessionWarning:
+      "Changing credentials or host assignments closes affected active native console sessions. Reconnect after saving.",
+    hostDescription: "Assign one console account per enrolled Hyper-V host.",
+    fqdn: "Host FQDN",
+    agentVersion: "Agent version",
+    assignment: "Service account",
+    unassigned: "No central account assigned",
+    saveAssignment: "Save assignment",
+    unassign: "Remove assignment",
+    unassignConfirm:
+      "Remove this host's console account assignment? Active native sessions will close and new connections require a new assignment.",
+    legacy:
+      "Legacy host credential remains active. Saving a central assignment replaces it.",
+    ineligible:
+      "Host no longer eligible; an existing assignment can still be removed.",
+    noHosts: "No eligible or previously assigned Hyper-V hosts found.",
+    saved: "The change was saved.",
+    unavailable: "Service accounts are currently unavailable.",
+    refreshFailed:
+      "The change completed, but the current list could not be refreshed. Refresh before taking another action.",
+    actionFailed:
+      "The request could not be completed. Refresh to check its outcome before retrying.",
+    invalid: "Check the account values and password requirements.",
   },
   userAdministration: {
     title: "User administration",
@@ -638,19 +697,11 @@ export const en = {
           "IPMS cannot detect consoles opened outside IPMS. Connecting may take over an existing external console session.",
         externalAcknowledgement:
           "I understand that an external console session may be interrupted.",
-        configurationTitle: "Host console account",
-        configurationDescription:
-          "Use an existing dedicated account authorized for this Hyper-V host. IPMS stores the credentials encrypted for this tenant and host. No Windows account is created.",
         configurationRequired:
-          "An administrator must configure the dedicated host console account before native access is available.",
-        configure: "Save console account",
-        rotate: "Replace stored account",
-        saved: "The encrypted console account is configured.",
-        saveFailed:
-          "The console account could not be saved. Check your permissions and the entered values.",
-        username: "Console username",
-        password: "Console password",
-        domain: "Domain (optional)",
+          "An administrator must assign a host account under Administration → Service Accounts. Reopen this console after the assignment.",
+        manageServiceAccounts: "Open Service Accounts",
+        checkConfiguration: "Check assignment",
+        saved: "A stored console account is available for this host.",
         certificateTitle: "Review the host certificate",
         certificateDescription:
           "Verify this certificate belongs to the intended Hyper-V host before allowing this connection. A changed certificate requires a new approval.",
@@ -684,6 +735,8 @@ export const en = {
           native_permission_denied: "Console access is no longer authorized.",
           native_configuration_required:
             "An administrator must configure the host console account.",
+          native_configuration_changed:
+            "The credentials or host assignment changed. Reopen the console to reconnect.",
           native_console_unavailable:
             "The native console service is unavailable.",
           native_connection_failed:

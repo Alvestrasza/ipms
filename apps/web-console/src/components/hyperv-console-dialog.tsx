@@ -34,16 +34,10 @@ export type ConsoleCopy = {
     cancel: string;
     externalWarning: string;
     externalAcknowledgement: string;
-    configurationTitle: string;
-    configurationDescription: string;
     configurationRequired: string;
-    configure: string;
-    rotate: string;
+    manageServiceAccounts: string;
+    checkConfiguration: string;
     saved: string;
-    saveFailed: string;
-    username: string;
-    password: string;
-    domain: string;
     certificateTitle: string;
     certificateDescription: string;
     trust: string;

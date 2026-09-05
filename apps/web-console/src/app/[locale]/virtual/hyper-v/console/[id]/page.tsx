@@ -35,6 +35,7 @@ export default async function ConsolePage({
       vm={vm}
       tenantId={tenant.id}
       csrfToken={session.csrf_token}
+      serviceAccountsHref={`/${locale}/administration/service-accounts?tenant=${encodeURIComponent(tenant.id)}`}
       copy={getDictionary(locale).hyperVInventory.console}
     />
   );

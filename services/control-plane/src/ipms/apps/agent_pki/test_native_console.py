@@ -99,7 +99,8 @@ class NativeConsoleTests(NativeFixture, TestCase):
     def test_reader_and_foreign_tenant_cannot_configure(self):
         endpoint = reverse("core:native-console-configuration", args=(self.vm.id,))
         self.client.force_login(self.reader)
-        self.assertEqual(self.client.post(endpoint, self.credential, content_type="application/json", **self.headers).status_code, 403)
+        self.assertEqual(self.client.get(endpoint, **self.headers).status_code, 403)
+        self.assertEqual(self.client.post(endpoint, self.credential, content_type="application/json", **self.headers).status_code, 405)
         self.client.force_login(self.other)
         foreign = Tenant.objects.create(slug="native-foreign", display_name="Foreign")
         self.assertEqual(self.client.get(endpoint, HTTP_X_IPMS_TENANT_ID=str(foreign.id)).status_code, 404)

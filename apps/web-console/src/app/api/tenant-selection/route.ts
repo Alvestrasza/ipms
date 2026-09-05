@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
-
+import { isTrustedPortalOrigin } from "@/lib/portal-origin";
 import { TENANT_COOKIE } from "@/lib/tenant-selection";
 
 const UUID_PATTERN =
@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
   }
 
   const origin = request.headers.get("origin");
-  if (origin && origin !== request.nextUrl.origin) {
+  if (!isTrustedPortalOrigin(origin, process.env.IPMS_PUBLIC_ORIGIN)) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
 

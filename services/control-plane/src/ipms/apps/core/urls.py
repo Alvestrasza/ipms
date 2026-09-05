@@ -1,5 +1,9 @@
 from django.urls import include, path
 from ipms.apps.agent_pki.native_views import NativeConsoleConfigurationView
+from ipms.apps.agent_pki.service_account_views import (
+    ServiceAccountListView, ServiceAccountDetailView,
+    ServiceAccountHostListView, ServiceAccountHostDetailView,
+)
 
 from ipms.apps.agent_pki.views import (
     AgentAdministrationDetailView,
@@ -50,6 +54,10 @@ from . import views
 app_name = "core"
 
 urlpatterns = [
+    path("service-accounts/", ServiceAccountListView.as_view(), name="service-account-list"),
+    path("service-accounts/hosts/", ServiceAccountHostListView.as_view(), name="service-account-host-list"),
+    path("service-accounts/hosts/<uuid:pk>/", ServiceAccountHostDetailView.as_view(), name="service-account-host-detail"),
+    path("service-accounts/<uuid:pk>/", ServiceAccountDetailView.as_view(), name="service-account-detail"),
     path("hyper-v/virtual-machines/<uuid:pk>/console-configuration/", NativeConsoleConfigurationView.as_view(), name="native-console-configuration"),
     path("", views.api_information, name="api-information"),
     path("health/live/", views.liveness, name="liveness"),

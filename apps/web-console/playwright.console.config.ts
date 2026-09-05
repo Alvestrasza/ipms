@@ -2,7 +2,11 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests",
-  testMatch: ["hyperv-console.spec.ts", "hyperv-native-console.spec.ts"],
+  testMatch: [
+    "hyperv-console.spec.ts",
+    "hyperv-native-console.spec.ts",
+    "service-accounts.spec.ts",
+  ],
   timeout: 60_000,
   workers: 1,
   reporter: "list",

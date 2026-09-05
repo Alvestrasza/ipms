@@ -12,7 +12,9 @@ from django.conf import settings
 from django.contrib.auth import get_user
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
+from django.views.decorators.debug import sensitive_variables
 
 from ipms.apps.audit.models import AuditEvent
 from ipms.apps.discovery.models import HyperVConsoleSession, HyperVVirtualMachine
@@ -43,8 +45,10 @@ def _aad(tenant_id, enrollment_id):
     return f"ipms:native-console:v1:{tenant_id}:{enrollment_id}".encode("ascii")
 
 
+@sensitive_variables()
 def store_credential(enrollment, *, user, document):
-    if not has_tenant_permission(user, enrollment.tenant, Permission.AGENTS_MANAGE):
+    """Legacy import/test helper; deliberately not exposed by a portal route."""
+    if not has_tenant_permission(user, enrollment.tenant, Permission.SERVICE_ACCOUNTS_MANAGE):
         raise ValidationError("native_configuration_forbidden")
     if not isinstance(document, dict) or set(document) != {"username", "password", "domain"}:
         raise ValidationError("native_configuration_invalid")
@@ -67,26 +71,42 @@ def store_credential(enrollment, *, user, document):
         )
 
 
+@sensitive_variables()
+@transaction.atomic
 def load_credential(session):
-    secret = NativeConsoleCredential.objects.get(enrollment=session.enrollment, tenant=session.tenant)
-    document = json.loads(AESGCM(_key()).decrypt(
-        bytes(secret.nonce), bytes(secret.ciphertext), _aad(session.tenant_id, session.enrollment_id),
-    ))
-    if set(document) != {"username", "password", "domain"} or any(not isinstance(v, str) for v in document.values()):
+    # Share the session lock with transactional credential-change closure.
+    # Never let a cached pre-rotation session authorize a fresh handshake.
+    session = _session_queryset().select_for_update(of=("self",)).get(pk=session.pk)
+    secret = NativeConsoleCredential.objects.select_related("service_account").get(enrollment=session.enrollment, tenant=session.tenant)
+    _validate_session(session)
+    if secret.service_account_id is not None:
+        from .service_accounts import decrypt_service_account
+        # A corrupt/foreign central binding must never fall back to legacy.
+        return decrypt_service_account(secret.service_account, tenant_id=session.tenant_id)
+    document = json.loads(AESGCM(_key()).decrypt(bytes(secret.nonce), bytes(secret.ciphertext), _aad(session.tenant_id, session.enrollment_id)))
+    if not isinstance(document, dict) or set(document) != {"username", "password", "domain"} or any(not isinstance(v, str) for v in document.values()):
         raise ValidationError("native_configuration_invalid")
     return document
+
+
+def usable_credential_bindings(tenant, enrollment):
+    return NativeConsoleCredential.objects.filter(tenant=tenant, enrollment=enrollment).filter(
+        (Q(service_account__isnull=True) & ~Q(nonce=b"") & ~Q(ciphertext=b""))
+        | Q(service_account__tenant=tenant, service_account__kind="hyperv_console"),
+    )
 
 
 def configuration_state(vm, user):
     enrollment = AgentEnrollment.objects.filter(
         tenant=vm.tenant, device_uri=vm.host.source_id, status=AgentEnrollment.Status.ACTIVE,
         platform=AgentEnrollment.Platform.WINDOWS,
+        revocation__isnull=True,
     ).first()
     from .hyperv_console import _version_tuple
     version = _version_tuple(vm.host.agent_version)
     return {
-        "configured": bool(enrollment and NativeConsoleCredential.objects.filter(enrollment=enrollment, tenant=vm.tenant).exists()),
-        "can_manage": has_tenant_permission(user, vm.tenant, Permission.AGENTS_MANAGE),
+        "configured": bool(enrollment and usable_credential_bindings(vm.tenant, enrollment).exists()),
+        "can_manage": has_tenant_permission(user, vm.tenant, Permission.SERVICE_ACCOUNTS_MANAGE),
         "native_supported": bool(enrollment and version and version >= NATIVE_MIN_VERSION),
     }
 
@@ -104,6 +124,8 @@ def _validate_session(session):
             or not has_tenant_permission(session.owner, session.tenant, Permission.VIRTUAL_MACHINES_CONSOLE_CONTROL)):
         raise ValidationError("native_session_unavailable")
     canonical_uuid(session.vm_source_id)
+    if not usable_credential_bindings(session.tenant, enrollment).exists():
+        raise ValidationError("native_configuration_changed")
     if not HyperVVirtualMachine.objects.filter(
         id=session.virtual_machine_id, tenant=session.tenant, source_id=session.vm_source_id,
         host__tenant=session.tenant, host__source_id=enrollment.device_uri, state="running",

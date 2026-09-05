@@ -94,11 +94,10 @@ def create_console_session(*, virtual_machine, actor: str, transport="thumbnail"
             "The Hyper-V host Agent must be updated before it can provide a console."
         )
     if transport == "vmconnect":
-        from .native_console import NATIVE_MIN_VERSION
-        from .models import NativeConsoleCredential
+        from .native_console import NATIVE_MIN_VERSION, usable_credential_bindings
         if agent_version < NATIVE_MIN_VERSION:
             raise ValidationError("Update the Agent before opening a native console.")
-        if not NativeConsoleCredential.objects.filter(tenant=enrollment.tenant, enrollment=enrollment).exists():
+        if not usable_credential_bindings(enrollment.tenant, enrollment).exists():
             raise ValidationError("Configure a dedicated console account first.")
     now = timezone.now()
     _expire_stale_sessions(now, virtual_machine=virtual_machine)

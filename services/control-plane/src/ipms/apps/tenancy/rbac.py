@@ -11,6 +11,7 @@ class Permission:
     CONNECTORS_MANAGE = "connectors.manage"
     AGENTS_VIEW = "agents.view"
     AGENTS_MANAGE = "agents.manage"
+    SERVICE_ACCOUNTS_MANAGE = "service_accounts.manage"
     VIRTUAL_MACHINES_OPERATE = "virtual_machines.operate"
     VIRTUAL_MACHINES_CONSOLE_CONTROL = "virtual_machines.console.control"
     OPERATIONS_APPROVE = "operations.approve"

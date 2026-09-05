@@ -412,6 +412,13 @@ Migration from IPMS Appliance to IPMS Scale-Out must remain supported.
   Preserve the detached interactive window and explicit legacy fallback.
   Isolated verification and real-host acceptance are tracked separately in
   [native console operations](docs/operations/NATIVE-HYPERV-CONSOLE.md).
+- Application 0.2.32 centralizes existing console credentials under
+  **Administration → Service Accounts**, with admin-only account management,
+  reusable tenant-scoped host assignments, credential rotation, explicit
+  unassignment and active-session withdrawal. The console window no longer
+  accepts credentials. Legacy host configuration is preserved until explicitly
+  replaced. Other connector account types remain future work. See
+  [Service Accounts](docs/operations/SERVICE-ACCOUNTS.md).
 - Evaluate an optional separately deployed console Gateway for scale-out and
   differentiated firewall/QoS policy. A new port alone is not a latency or
   security fix. Keep the default Agent-initiated TCP 9419 and existing firewall

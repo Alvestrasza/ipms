@@ -1,28 +1,28 @@
 # Native Hyper-V Console
 
-Application target: **0.2.31**. Windows Agent minimum: **0.2.26**.
+Application target: **0.2.32**. Windows Agent minimum: **0.2.26**.
 Linux Agent remains **0.2.13**. This document distinguishes implementation,
 isolated verification, DEV deployment and real-host acceptance.
 
 ## Existing account configuration
 
-Use **Virtual infrastructure → Hyper-V virtual
-machines** (`/en/virtual/hyper-v`), then double-click a running VM. In its
-detached window select **Native console → Host console account**, enter the
-existing account and choose **Save console account**. **Replace stored account**
-rotates a configuration that already exists. This form is in the console
-setup window, not in the general user-administration page.
+Starting with 0.2.32, open **Administration → Service Accounts**, create the
+existing console account and explicitly assign it to the enrolled Hyper-V
+hosts. The detached console window uses that assignment and no longer asks
+for username or password. See [Service Accounts](SERVICE-ACCOUNTS.md) for
+rotation, assignment cleanup, legacy compatibility and the admin-only
+`service_accounts.manage` permission.
 
-An administrator with `agents.manage` can store or replace the
-existing host console account in the portal. The form accepts username,
-password and optional domain. It does not create a Windows account, change
+The account form accepts username, password and optional domain. It does not
+create a Windows account, change
 group membership or alter host security policy. Grant the account only the
 VMConnect access appropriate for the intended VMs and validate that access on
 the customer's host. Do not use a Domain Administrator account by default.
 
-Configuration belongs to the selected tenant and enrolled Hyper-V host, not
-the guest VM. Credentials are encrypted with AES-256-GCM and associated with
-both identities. The portal reports only whether configuration exists; it
+An account belongs to the selected tenant and is explicitly assigned to an
+enrolled Hyper-V host, not the guest VM. Credentials are encrypted with
+AES-256-GCM and authenticated to the tenant/account identity. The console
+reports only whether configuration exists; it
 never returns the password or encrypted value. Re-enrollment under a new Agent
 identity deliberately does not inherit old credentials. Back up the protected
 credential key separately from the database, using the appliance backup policy.
@@ -154,7 +154,7 @@ TLS client mode on the actual stream direction. The browser's 200-pixel minimum
 viewport matches the broker contract. Local fixture browsers and services were
 stopped after verification.
 
-The scoped DEV deployment now runs application 0.2.31 at commit
+The preceding 0.2.31 DEV deployment was verified at commit
 `80667317d526795b3070246a8a48ddd73e70435e`. The Control Plane, web console, Agent
 Gateway, broker and renderer are active. The broker and renderer bind only to
 loopback, and the existing all-networks TCP 9419 policy is unchanged. The

@@ -66,6 +66,7 @@ BEGIN
             (has_table_privilege(broker, c.oid, 'SELECT') AND c.relname NOT IN (
                 'auth_user', 'django_session', 'tenancy_tenant', 'tenancy_tenantmembership',
                 'agent_pki_agentenrollment', 'agent_pki_agentrevocation', 'agent_pki_nativeconsolecredential',
+                'agent_pki_serviceaccount',
                 'discovery_windowsserver', 'discovery_hypervvirtualmachine', 'discovery_hypervconsolesession'))
             OR (has_table_privilege(broker, c.oid, 'UPDATE') AND c.relname <> 'discovery_hypervconsolesession')
             OR (has_table_privilege(broker, c.oid, 'INSERT') AND c.relname <> 'audit_auditevent')
@@ -83,6 +84,7 @@ GRANT CONNECT ON DATABASE ipms TO ipms_console_broker;
 GRANT USAGE ON SCHEMA public TO ipms_console_broker;
 GRANT SELECT ON auth_user, django_session, tenancy_tenant, tenancy_tenantmembership,
     agent_pki_agentenrollment, agent_pki_agentrevocation, agent_pki_nativeconsolecredential,
+    agent_pki_serviceaccount,
     discovery_windowsserver, discovery_hypervvirtualmachine, discovery_hypervconsolesession
     TO ipms_console_broker;
 GRANT UPDATE ON discovery_hypervconsolesession TO ipms_console_broker;
