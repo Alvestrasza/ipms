@@ -165,6 +165,44 @@ async def _http_binary_reply(
     await writer.drain()
 
 
+async def _console_input_exchange(enrollment, document, peer_certificate):
+    from ipms.apps.agent_pki.hyperv_console import process_console_input_cycle
+    from ipms.apps.agent_pki.services import validate_peer_certificate
+
+    if (
+        document.get("frame_png_base64", "") != ""
+        or type(document.get("frame_width", 0)) is not int
+        or document.get("frame_width", 0) != 0
+        or type(document.get("frame_height", 0)) is not int
+        or document.get("frame_height", 0) != 0
+    ):
+        raise ValidationError("The console input channel cannot carry an image.")
+    session_id = document.get("session_id", "")
+    if not isinstance(session_id, str):
+        raise ValidationError("The console session identity is invalid.")
+    deadline = asyncio.get_running_loop().time() + 1.0
+    waited = False
+    while True:
+        active, assignment = await _database_call_async(
+            process_console_input_cycle,
+            enrollment,
+            session_id=session_id,
+            acknowledged_input_ids=document.get("acknowledged_input_ids", []),
+            failure_code=str(document.get("failure_code", "")),
+            expire_stale=not waited,
+        )
+        if session_id or assignment or not active or asyncio.get_running_loop().time() >= deadline:
+            # A certificate can be revoked while an otherwise empty poll waits.
+            # Revalidate before releasing any assignment, not merely at connect.
+            if waited:
+                current = await _database_call_async(validate_peer_certificate, peer_certificate)
+                if current.device_uri != enrollment.device_uri:
+                    raise ValidationError("The Agent message identity is invalid.")
+            return active, assignment
+        await asyncio.sleep(0.025)
+        waited = True
+
+
 async def _handle_http_connection(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
@@ -234,20 +272,30 @@ async def _handle_http_connection(
     if path == "/v1/hyperv-console":
         if document.get("type") != "hyperv_console_cycle":
             raise ValidationError("The Hyper-V console cycle is invalid.")
-        assignment = await _database_call_async(
-            process_console_cycle,
-            enrollment,
-            session_id=str(document.get("session_id", "")),
-            frame_png_base64=document.get("frame_png_base64", ""),
-            frame_width=document.get("frame_width", 0),
-            frame_height=document.get("frame_height", 0),
-            acknowledged_input_ids=document.get("acknowledged_input_ids", []),
-            failure_code=str(document.get("failure_code", "")),
-        )
+        channel = document.get("channel", "combined")
+        if channel not in ("combined", "frame", "input"):
+            raise ValidationError("The Hyper-V console channel is invalid.")
         response = {
             "type": "accepted",
             "correlation_id": document.get("correlation_id"),
         }
+        if channel == "input":
+            if len(body) > MAX_MESSAGE_BYTES:
+                raise ValidationError("The console input message is too large.")
+            active, assignment = await _console_input_exchange(enrollment, document, peer_certificate)
+            response["console_active"] = active
+        else:
+            assignment = await _database_call_async(
+                process_console_cycle,
+                enrollment,
+                session_id=str(document.get("session_id", "")),
+                frame_png_base64=document.get("frame_png_base64", ""),
+                frame_width=document.get("frame_width", 0),
+                frame_height=document.get("frame_height", 0),
+                acknowledged_input_ids=document.get("acknowledged_input_ids", []),
+                failure_code=str(document.get("failure_code", "")),
+                include_inputs=channel != "frame",
+            )
         if assignment:
             response["hyperv_console"] = assignment
         keep_alive = allow_keepalive and headers.get("connection", "").lower() == "keep-alive"
@@ -342,6 +390,7 @@ async def _handle_http_connection(
                 frame_height=0,
                 acknowledged_input_ids=[],
                 failure_code="",
+                include_inputs=document.get("console_channels") is not True,
             )
             if hyperv_console:
                 response["hyperv_console"] = hyperv_console

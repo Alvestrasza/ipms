@@ -657,6 +657,10 @@ def enroll_agent(*, raw_token: str, csr_pem: str):
 
 def validate_peer_certificate(certificate_der: bytes):
     certificate = x509.load_der_x509_certificate(certificate_der)
+    # Persistent console connections can survive beyond their TLS handshake.
+    # Recheck the certificate validity window for every authenticated message.
+    if not certificate.not_valid_before_utc <= timezone.now() <= certificate.not_valid_after_utc:
+        raise ValidationError("The Agent certificate validity window is not active.")
     try:
         eku = certificate.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
         san = certificate.extensions.get_extension_for_class(x509.SubjectAlternativeName).value

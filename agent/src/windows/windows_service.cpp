@@ -1,6 +1,7 @@
 #include <windows.h>
 
 #include "ipms/agent/windows_core_pack.hpp"
+#include "ipms/agent/console_input_worker.hpp"
 #include "ipms/agent/windows_transport.hpp"
 
 namespace {
@@ -37,6 +38,12 @@ void WINAPI service_main(DWORD, LPWSTR*) {
   ULONGLONG next_inventory = 0;
   ULONGLONG next_telemetry = 0;
   bool console_active = false;
+  ipms::agent::console_input_worker console_inputs(
+      [](const auto& cancelled) {
+        return ipms::agent::windows::run_console_input_cycle([&] {
+          return cancelled() || WaitForSingleObject(stop_event, 0) == WAIT_OBJECT_0;
+        });
+      });
   do {
     const ULONGLONG now = GetTickCount64();
     if (!console_active && now >= next_inventory) {
@@ -54,9 +61,11 @@ void WINAPI service_main(DWORD, LPWSTR*) {
       }
     }
     if (console_active) {
+      console_inputs.set_active(true);
       const auto console = ipms::agent::windows::run_console_cycle();
       console_active = console.succeeded && console.console_active;
     }
+    console_inputs.set_active(console_active);
     // A bounded 150 ms cadence includes work time; avoid adding a full sleep
     // after every capture and mTLS exchange. Keep a yield on busy hosts.
     const ULONGLONG elapsed = GetTickCount64() - now;
@@ -65,6 +74,7 @@ void WINAPI service_main(DWORD, LPWSTR*) {
         : 1'000;
     if (WaitForSingleObject(stop_event, interval) != WAIT_TIMEOUT) break;
   } while (true);
+  console_inputs.stop();
   CloseHandle(stop_event);
   report(SERVICE_STOPPED);
 }

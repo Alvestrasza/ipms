@@ -293,14 +293,16 @@ bool consume_rows(
     IEnumWbemClassObject* rows,
     std::size_t limit,
     const std::chrono::steady_clock::time_point deadline,
-    Consumer consumer) {
+    Consumer consumer,
+    const std::function<bool()>& cancelled = {}) {
   std::size_t count = 0;
   for (;;) {
-    if (std::chrono::steady_clock::now() >= deadline || count > limit) return false;
+    if ((cancelled && cancelled()) ||
+        std::chrono::steady_clock::now() >= deadline || count > limit) return false;
     ComPtr<IWbemClassObject> row;
     ULONG returned = 0;
     const HRESULT next = rows->Next(
-        2'000,
+        cancelled ? 50 : 2'000,
         1,
         row.ReleaseAndGetAddressOf(),
         &returned);
@@ -324,10 +326,13 @@ struct virtual_machine_lookup {
 virtual_machine_lookup find_virtual_machine(
     IWbemServices* services,
     const std::string& normalized_source_id,
-    const std::string& expected_name) {
-  auto rows = execute_query(
-      services,
-      L"SELECT Name, ElementName, EnabledState FROM Msvm_ComputerSystem");
+    const std::string& expected_name,
+    const std::function<bool()>& cancelled = {}) {
+  if (normalized_guid(std::wstring(normalized_source_id.begin(),
+                                   normalized_source_id.end())) != normalized_source_id) return {};
+  const auto query = L"SELECT Name, ElementName, EnabledState FROM Msvm_ComputerSystem WHERE Name = '" +
+      std::wstring(normalized_source_id.begin(), normalized_source_id.end()) + L"'";
+  auto rows = execute_query(services, query.c_str());
   if (!rows) return {};
   ComPtr<IWbemClassObject> identity_match;
   bool identity_conflict = false;
@@ -358,7 +363,7 @@ virtual_machine_lookup find_virtual_machine(
             identity_match = row;
           }
         }
-      });
+      }, cancelled);
   return {
       identity_match,
       completed,
@@ -503,7 +508,8 @@ hyperv_services connect_hyperv_services() {
 ComPtr<IWbemClassObject> find_related_device(
     IWbemServices* services,
     const wchar_t* class_name,
-    const std::string& source_id) {
+    const std::string& source_id,
+    const std::function<bool()>& cancelled = {}) {
   if (normalized_guid(std::wstring(source_id.begin(), source_id.end())) != source_id) return {};
   std::wstring query = L"SELECT * FROM ";
   query += class_name;
@@ -518,7 +524,7 @@ ComPtr<IWbemClassObject> find_related_device(
         if (!match && normalized_guid(wmi_string(row, L"SystemName")) == source_id) {
           match = row;
         }
-      });
+      }, cancelled);
   return match;
 }
 
@@ -556,7 +562,9 @@ bool invoke_input_method(
     IWbemClassObject* device,
     const wchar_t* class_name,
     const wchar_t* method,
-    const std::vector<std::pair<const wchar_t*, VARIANT>>& parameters) {
+    const std::vector<std::pair<const wchar_t*, VARIANT>>& parameters,
+    const std::function<bool()>& cancelled = {}) {
+  if (cancelled && cancelled()) return false;
   const auto path = wmi_object_path(device);
   if (path.empty()) return false;
   ComPtr<IWbemClassObject> device_class;
@@ -592,24 +600,38 @@ bool invoke_input_method(
     return false;
   }
   ComPtr<IWbemClassObject> output;
-  const HRESULT result = services->ExecMethod(
-      allocated_path, allocated_method, 0, nullptr, input.Get(), &output, nullptr);
+  ComPtr<IWbemCallResult> pending;
+  const HRESULT result = (cancelled && cancelled()) ? E_ABORT : services->ExecMethod(
+      allocated_path, allocated_method, WBEM_FLAG_RETURN_IMMEDIATELY, nullptr,
+      input.Get(), nullptr, &pending);
   SysFreeString(allocated_path);
   SysFreeString(allocated_method);
-  return SUCCEEDED(result) && output &&
+  if (FAILED(result) || !pending) return false;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+  for (;;) {
+    if ((cancelled && cancelled()) || std::chrono::steady_clock::now() >= deadline) return false;
+    LONG status = WBEM_S_TIMEDOUT;
+    const HRESULT completed = pending->GetCallStatus(50, &status);
+    if (completed == WBEM_S_TIMEDOUT) continue;
+    if (FAILED(completed) || FAILED(status)) return false;
+    if (FAILED(pending->GetResultObject(0, &output))) return false;
+    break;
+  }
+  return output &&
          wmi_uint64(output.Get(), L"ReturnValue").value_or(1) == 0;
 }
 
 bool apply_console_input(
     IWbemServices* services,
     const std::string& source_id,
-    const ipms::agent::windows::hyperv_console_input& input) {
+    const ipms::agent::windows::hyperv_console_input& input,
+    const std::function<bool()>& cancelled = {}) {
   if (input.type == "key" || input.type == "secure_attention") {
-    auto keyboard = find_related_device(services, L"Msvm_Keyboard", source_id);
+    auto keyboard = find_related_device(services, L"Msvm_Keyboard", source_id, cancelled);
     if (!keyboard) return false;
     if (input.type == "secure_attention") {
       return invoke_input_method(
-          services, keyboard.Get(), L"Msvm_Keyboard", L"TypeCtrlAltDel", {});
+          services, keyboard.Get(), L"Msvm_Keyboard", L"TypeCtrlAltDel", {}, cancelled);
     }
     VARIANT key{};
     VariantInit(&key);
@@ -620,12 +642,12 @@ bool apply_console_input(
         keyboard.Get(),
         L"Msvm_Keyboard",
         input.is_down ? L"PressKey" : L"ReleaseKey",
-        {{L"keyCode", key}});
+        {{L"keyCode", key}}, cancelled);
   }
-  auto mouse = find_related_device(services, L"Msvm_SyntheticMouse", source_id);
+  auto mouse = find_related_device(services, L"Msvm_SyntheticMouse", source_id, cancelled);
   const wchar_t* mouse_class = L"Msvm_SyntheticMouse";
   if (!mouse) {
-    mouse = find_related_device(services, L"Msvm_Ps2Mouse", source_id);
+    mouse = find_related_device(services, L"Msvm_Ps2Mouse", source_id, cancelled);
     mouse_class = L"Msvm_Ps2Mouse";
   }
   if (!mouse) return false;
@@ -640,7 +662,7 @@ bool apply_console_input(
     vertical.lVal = input.y;
     return invoke_input_method(
         services, mouse.Get(), mouse_class, L"SetAbsolutePosition",
-        {{L"horizontalPosition", horizontal}, {L"verticalPosition", vertical}});
+        {{L"horizontalPosition", horizontal}, {L"verticalPosition", vertical}}, cancelled);
   }
   if (input.type == "mouse_button") {
     VARIANT button{};
@@ -653,7 +675,7 @@ bool apply_console_input(
     down.boolVal = input.is_down ? VARIANT_TRUE : VARIANT_FALSE;
     return invoke_input_method(
         services, mouse.Get(), mouse_class, L"SetButtonState",
-        {{L"buttonIndex", button}, {L"isDown", down}});
+        {{L"buttonIndex", button}, {L"isDown", down}}, cancelled);
   }
   if (input.type == "mouse_wheel") {
     VARIANT scroll{};
@@ -662,7 +684,7 @@ bool apply_console_input(
     scroll.lVal = input.delta;
     return invoke_input_method(
         services, mouse.Get(), mouse_class, L"SetScrollPosition",
-        {{L"scrollPositionDelta", scroll}});
+        {{L"scrollPositionDelta", scroll}}, cancelled);
   }
   return false;
 }
@@ -1372,6 +1394,41 @@ hyperv_console_result execute_hyperv_console_cycle(
     return {false, frame_failure_code, {}, 0, 0, acknowledged};
   }
   return {true, "frame_captured", std::move(png), width, height, std::move(acknowledged)};
+}
+
+hyperv_console_result execute_hyperv_console_inputs(
+    const std::string& source_id,
+    const std::string& expected_name,
+    const std::vector<hyperv_console_input>& inputs,
+    const std::function<bool()>& cancelled) {
+  if (!is_guid(source_id) || expected_name.empty() || expected_name.size() > 255 ||
+      inputs.empty() || inputs.size() > 64 || cancelled()) {
+    return {false, "console_input_failed", {}, 0, 0, {}};
+  }
+  auto normalized_source_id = source_id;
+  std::transform(normalized_source_id.begin(), normalized_source_id.end(),
+                 normalized_source_id.begin(), [](unsigned char value) {
+                   return static_cast<char>(std::tolower(value));
+                 });
+  com_scope com;
+  if (!com.initialized) return {false, "console_input_failed", {}, 0, 0, {}};
+  const auto connection = connect_hyperv_services();
+  if (!connection.value || cancelled()) return {false, "console_input_failed", {}, 0, 0, {}};
+  const auto lookup = find_virtual_machine(
+      connection.value.Get(), normalized_source_id, expected_name, cancelled);
+  if (!lookup.query_succeeded || lookup.identity_conflict || !lookup.system ||
+      normalized_state(wmi_uint64(lookup.system.Get(), L"EnabledState").value_or(0)) != "running") {
+    return {false, "console_input_failed", {}, 0, 0, {}};
+  }
+  std::vector<std::string> acknowledged;
+  for (const auto& input : inputs) {
+    if (cancelled() || !apply_console_input(connection.value.Get(), normalized_source_id,
+                                          input, cancelled)) {
+      return {false, "console_input_failed", {}, 0, 0, std::move(acknowledged)};
+    }
+    acknowledged.push_back(input.id);
+  }
+  return {true, "input_applied", {}, 0, 0, std::move(acknowledged)};
 }
 
 }  // namespace ipms::agent::windows

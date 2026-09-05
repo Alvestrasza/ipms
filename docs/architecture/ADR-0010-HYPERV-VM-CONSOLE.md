@@ -2,7 +2,7 @@
 
 - Status: Accepted for the development foundation
 - Decision date: 2026-09-05
-- Application version: 0.2.28
+- Application version: 0.2.29
 - First compatible Windows Agent: 0.2.21
 
 ## Context
@@ -100,6 +100,27 @@ redelivery. The Control Plane keeps only the latest PNG frame, marks it
 `private, no-store` at the HTTP boundary, and clears it when the session closes,
 expires, or fails.
 
+Application 0.2.29 and Agent 0.2.24 split the console exchange into explicit
+`frame` and `input` channels on the same fixed Gateway route and TCP 9419.
+Legacy clients without a channel retain the combined contract. The frame
+channel cannot acknowledge or claim inputs. A separate native input worker
+owns its COM and HTTP handles and processes one ordered input batch at a time,
+without waiting for image capture, encoding or upload. Each batch still
+revalidates the inventoried VM GUID, display name and running state locally.
+
+Input result posts acknowledge applied events immediately and never offer a
+next batch. An uncertain result acknowledgement retains the receipt for retry,
+without replaying the already-applied events. This in-process protection is
+not a claim of exactly-once guest effects across a service or host crash.
+Empty input polls wait asynchronously for at most one second, checking the
+session queue every 25 ms without holding a transaction during the wait. The
+Gateway revalidates certificates again before releasing a waited response.
+Certificate validity dates are checked on every authenticated message, so an
+already established connection cannot outlive the enrolled certificate.
+Input queries defer image blobs and do not advance frame scheduling metadata.
+Discrete browser inputs send immediately; only adjacent pointer motion uses
+an eight-millisecond coalescing window.
+
 The Agent maps provider return values and local image-processing stages to a
 bounded allowlist of failure codes. It never returns raw WMI objects, paths,
 host data, or exception text to the portal.
@@ -156,3 +177,4 @@ Implementation references:
 - [Microsoft SafeArrayAccessData](https://learn.microsoft.com/en-us/windows/win32/api/oleauto/nf-oleauto-safearrayaccessdata)
 - [MDN Window.open](https://developer.mozilla.org/en-US/docs/Web/API/Window/open)
 - [Microsoft WinHTTP sessions](https://learn.microsoft.com/en-us/windows/win32/winhttp/winhttp-sessions-overview)
+- [Microsoft semisynchronous WMI methods](https://learn.microsoft.com/en-us/windows/win32/api/wbemcli/nf-wbemcli-iwbemservices-execmethod)

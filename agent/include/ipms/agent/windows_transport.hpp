@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <functional>
 
 namespace ipms::agent::windows {
 
@@ -13,6 +14,7 @@ struct TransportResult {
 TransportResult run_inventory_cycle();
 TransportResult run_telemetry_cycle();
 TransportResult run_console_cycle();
+bool run_console_input_cycle(const std::function<bool()>& cancelled);
 TransportResult report_lifecycle_result(
     const std::string& job_id,
     const std::string& result,

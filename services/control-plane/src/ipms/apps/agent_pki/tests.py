@@ -4,6 +4,7 @@ import os
 import ssl
 import tempfile
 import uuid
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -209,6 +210,20 @@ class ManagedAgentPkiTests(TestCase):
         revoke_agent(enrollment=enrollment, actor="test-operator", reason="compromised")
         with self.assertRaisesMessage(ValidationError, "not active"):
             validate_peer_certificate(certificate_der)
+
+    def test_existing_connection_cannot_outlive_certificate_validity(self) -> None:
+        _, token, _ = create_enrollment_token(tenant=self.tenant, display_name="Validity test", actor="test-operator")
+        _, certificate_pem, _ = enroll_agent(raw_token=token, csr_pem=create_csr()[1])
+        certificate = x509.load_pem_x509_certificate(certificate_pem.encode())
+        der = certificate.public_bytes(serialization.Encoding.DER)
+        self.assertIsNotNone(validate_peer_certificate(der))
+        for observed in (
+            certificate.not_valid_before_utc - timedelta(seconds=1),
+            certificate.not_valid_after_utc + timedelta(seconds=1),
+        ):
+            with patch("ipms.apps.agent_pki.services.timezone.now", return_value=observed):
+                with self.assertRaisesMessage(ValidationError, "validity"):
+                    validate_peer_certificate(der)
 
     def test_revocation_command_requires_the_enrollment_tenant(self) -> None:
         enrollment, raw_token, _ = create_enrollment_token(

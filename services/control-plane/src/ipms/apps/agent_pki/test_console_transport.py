@@ -35,8 +35,8 @@ class ConsoleWriter:
         pass
 
 
-def request(*, path="/v1/hyperv-console", keep_alive=True, device="test-device"):
-    body = json.dumps({"type": "hyperv_console_cycle", "device_uri": device}).encode()
+def request(*, path="/v1/hyperv-console", keep_alive=True, device="test-device", **document):
+    body = json.dumps({"type": "hyperv_console_cycle", "device_uri": device, **document}).encode()
     return (
         f"POST {path} HTTP/1.1\r\nHost: gateway.example.invalid\r\n"
         "Content-Type: application/json\r\n"
@@ -46,7 +46,7 @@ def request(*, path="/v1/hyperv-console", keep_alive=True, device="test-device")
 
 
 class ConsoleTransportTests(SimpleTestCase):
-    async def exchange(self, data, *, revoke_on=None):
+    async def exchange(self, data, *, revoke_on=None, input_results=None):
         reader = asyncio.StreamReader()
         reader.feed_data(data)
         reader.feed_eof()
@@ -64,6 +64,11 @@ class ConsoleTransportTests(SimpleTestCase):
             if function.__name__ == "process_console_cycle":
                 cycles += 1
                 return None
+            if function.__name__ == "process_console_input_cycle":
+                cycles += 1
+                if input_results:
+                    return input_results.pop(0)
+                return False, None
             self.fail("A console connection called an unrelated capability.")
 
         with patch("ipms.apps.agent_pki.gateway._database_call_async", database_call):
@@ -102,3 +107,43 @@ class ConsoleTransportTests(SimpleTestCase):
         output, validations, cycles = await self.exchange(request(keep_alive=False) + request())
         self.assertEqual((validations, cycles), (1, 1))
         self.assertNotIn(b"Connection: keep-alive", output)
+
+    async def test_input_channel_returns_without_a_frame_call(self):
+        output, validations, cycles = await self.exchange(request(channel="input"))
+        self.assertEqual((validations, cycles), (1, 1))
+        self.assertIn(b'"console_active":false', output)
+        self.assertIn(b"HTTP/1.1 200", output)
+
+    async def test_waiting_input_poll_rechecks_revocation_before_delivery(self):
+        output, validations, cycles = await self.exchange(
+            request(channel="input"), revoke_on=2,
+            input_results=[(True, None), (True, {"inputs": [{"id": "test-event"}]})],
+        )
+        self.assertEqual((validations, cycles), (2, 2))
+        self.assertIn(b"HTTP/1.1 400", output)
+        self.assertNotIn(b"test-event", output)
+
+    async def test_input_result_is_not_delayed_by_long_poll(self):
+        with patch("ipms.apps.agent_pki.gateway.asyncio.sleep") as sleep:
+            output, _, cycles = await self.exchange(
+                request(channel="input", session_id="test-session"),
+                input_results=[(True, None)],
+            )
+        sleep.assert_not_called()
+        self.assertEqual(cycles, 1)
+        self.assertIn(b'"console_active":true', output)
+
+    async def test_input_channel_rejects_image_and_unknown_channel(self):
+        for document in ({"channel": "input", "frame_png_base64": "image"}, {"channel": "unknown"}):
+            output, _, cycles = await self.exchange(request(**document))
+            self.assertEqual(cycles, 0)
+            self.assertIn(b"HTTP/1.1 400", output)
+
+    async def test_empty_input_wait_has_a_bounded_deadline(self):
+        results = [(True, None)] * 100
+        async with asyncio.timeout(1.5):
+            output, validations, cycles = await self.exchange(request(channel="input"), input_results=results)
+        self.assertEqual(validations, 2)
+        self.assertGreater(cycles, 1)
+        self.assertLess(cycles, 50)
+        self.assertIn(b'"console_active":true', output)

@@ -390,6 +390,11 @@ Migration from IPMS Appliance to IPMS Scale-Out must remain supported.
   [Performance acceptance](docs/operations/HYPERV-CONSOLE-PERFORMANCE.md)
   distinguishes backend timings, isolated browser regression and remaining
   real-guest manual acceptance.
+- Application 0.2.29 and Windows Agent 0.2.24 separate typed input delivery from
+  frame capture and upload. An independent ordered input worker acknowledges
+  applied events immediately; bounded empty polls are asynchronous, retain
+  tenant/session/certificate checks, and never carry image data. Browser clicks
+  and keys no longer wait for the motion-coalescing timer.
 - Enforce validation, approval policy, maintenance awareness, idempotency, and
   rollback information for write operations.
 

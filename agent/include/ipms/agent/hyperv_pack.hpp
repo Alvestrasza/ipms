@@ -2,6 +2,7 @@
 
 #include <string>
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 namespace ipms::agent::windows {
@@ -59,5 +60,13 @@ hyperv_console_result execute_hyperv_console_cycle(
     std::uint16_t width,
     std::uint16_t height,
     const std::vector<hyperv_console_input>& inputs);
+
+// Applies one ordered typed batch without capturing/encoding an image. The
+// cancellation check is repeated before each VM input method invocation.
+hyperv_console_result execute_hyperv_console_inputs(
+    const std::string& source_id,
+    const std::string& expected_name,
+    const std::vector<hyperv_console_input>& inputs,
+    const std::function<bool()>& cancelled);
 
 }  // namespace ipms::agent::windows

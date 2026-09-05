@@ -3,21 +3,31 @@ export type ConsoleInput = {
   payload: Record<string, number | boolean>;
 };
 
+type ScheduleInput = (callback: () => void, delayMs: number) => () => void;
+
+const scheduleInput: ScheduleInput = (callback, delayMs) => {
+  const timer = setTimeout(callback, delayMs);
+  return () => clearTimeout(timer);
+};
+
 /** Bounded, ordered delivery; only adjacent mouse moves may be replaced. */
 export class ConsoleInputQueue {
   private pending: ConsoleInput[] = [];
   private sending: Promise<void> | null = null;
-  private timer: ReturnType<typeof setTimeout> | null = null;
+  private cancelTimer: (() => void) | null = null;
   private stopped = false;
   private deliver: (events: ConsoleInput[]) => Promise<void>;
   private failed: () => void;
+  private schedule: ScheduleInput;
 
   constructor(
     deliver: (events: ConsoleInput[]) => Promise<void>,
     failed: () => void,
+    schedule: ScheduleInput = scheduleInput,
   ) {
     this.deliver = deliver;
     this.failed = failed;
+    this.schedule = schedule;
   }
 
   push(event: ConsoleInput) {
@@ -32,18 +42,23 @@ export class ConsoleInputQueue {
       this.failed();
       return;
     }
-    if (!this.timer && !this.sending) {
-      this.timer = setTimeout(() => {
-        this.timer = null;
+    if (this.sending) return;
+    // Clicks and keys must not wait behind the motion-coalescing timer. The
+    // ordered batch includes the latest pointer position preceding a click.
+    if (event.type !== "mouse_move") {
+      void this.flush();
+    } else if (!this.cancelTimer) {
+      this.cancelTimer = this.schedule(() => {
+        this.cancelTimer = null;
         void this.flush();
-      }, 25);
+      }, 8);
     }
   }
 
   async flush(): Promise<void> {
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
+    if (this.cancelTimer) {
+      this.cancelTimer();
+      this.cancelTimer = null;
     }
     if (this.sending) {
       await this.sending;
@@ -64,7 +79,7 @@ export class ConsoleInputQueue {
   dispose() {
     this.stopped = true;
     this.pending = [];
-    if (this.timer) clearTimeout(this.timer);
-    this.timer = null;
+    this.cancelTimer?.();
+    this.cancelTimer = null;
   }
 }

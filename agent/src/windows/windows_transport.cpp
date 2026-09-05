@@ -1,6 +1,7 @@
 #include "ipms/agent/windows_transport.hpp"
 
 #include "ipms/agent/configuration.hpp"
+#include "ipms/agent/console_input_dispatcher.hpp"
 #include "ipms/agent/hyperv_pack.hpp"
 #include "ipms/agent/windows_core_pack.hpp"
 #include "ipms/agent/windows_telemetry.hpp"
@@ -31,7 +32,7 @@
 namespace {
 using Microsoft::WRL::ComPtr;
 constexpr std::size_t k_max_document_bytes = 65'536;
-constexpr wchar_t k_agent_version[] = L"0.2.23";
+constexpr wchar_t k_agent_version[] = L"0.2.24";
 constexpr std::size_t k_max_artifact_bytes = 64 * 1024 * 1024;
 
 struct internet_closer { void operator()(void* handle) const { if (handle) WinHttpCloseHandle(handle); } };
@@ -438,7 +439,8 @@ struct http_transport {
 };
 
 http_response post_json(const std::wstring& hostname, std::uint16_t port, const std::wstring& path,
-                        const std::string& body, const std::string* pin, PCCERT_CONTEXT client_certificate) {
+                        const std::string& body, const std::string* pin, PCCERT_CONTEXT client_certificate,
+                        bool input_channel = false) {
   const bool reusable = path == L"/v1/hyperv-console" && client_certificate && !pin;
   static thread_local std::unique_ptr<http_transport> console_transport;
   const auto certificate_identity = reusable ? certificate_sha256(client_certificate) : "";
@@ -457,10 +459,16 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
     ~failure_reset() { if (cache && !succeeded) cache->reset(); }
   } guard{reusable ? &console_transport : nullptr};
   if (!transport->session) {
-    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.23", WINHTTP_ACCESS_TYPE_NO_PROXY,
+    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.24", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
     if (!transport->session) throw std::runtime_error("The Agent HTTP session could not be created.");
-    WinHttpSetTimeouts(transport->session.get(), 10'000, 10'000, 30'000, 30'000);
+    if (input_channel) {
+      // The long-poll is bounded to one second on the Gateway. A stopped input
+      // worker must not remain behind the image lane's 30-second I/O timeout.
+      WinHttpSetTimeouts(transport->session.get(), 2'000, 2'000, 2'000, 2'000);
+    } else {
+      WinHttpSetTimeouts(transport->session.get(), 10'000, 10'000, 30'000, 30'000);
+    }
     DWORD protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
     if (!WinHttpSetOption(transport->session.get(), WINHTTP_OPTION_SECURE_PROTOCOLS, &protocols, sizeof(protocols)))
       throw std::runtime_error("TLS 1.3 could not be required.");
@@ -531,7 +539,7 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
 }
 
 http_response post_binary(const state& identity, const std::string& body, PCCERT_CONTEXT certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.23", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.24", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent artifact session could not be created.");
   WinHttpSetTimeouts(session.get(), 10'000, 10'000, 60'000, 60'000);
@@ -858,7 +866,7 @@ std::optional<console_assignment> parse_console_assignment(const std::string& do
   assignment.width = static_cast<std::uint16_t>(*width);
   assignment.height = static_cast<std::uint16_t>(*height);
   const auto objects = json_array_objects(*inputs);
-  if (*inputs != "[]" && objects.empty()) {
+  if ((*inputs != "[]" && objects.empty()) || objects.size() > 64) {
     throw std::runtime_error("The Hyper-V console input batch is invalid.");
   }
   for (const auto& object : objects) {
@@ -914,6 +922,9 @@ bool process_hyperv_console_assignment(
     PCCERT_CONTEXT certificate) {
   const auto assignment = parse_console_assignment(response_document);
   if (!assignment) return false;
+  if (!assignment->inputs.empty()) {
+    throw std::runtime_error("The frame channel cannot execute console input.");
+  }
   const auto result = ipms::agent::windows::execute_hyperv_console_cycle(
       assignment->vm_source_id,
       assignment->vm_name,
@@ -921,7 +932,7 @@ bool process_hyperv_console_assignment(
       assignment->height,
       assignment->inputs);
   std::ostringstream body;
-  body << "{\"type\":\"hyperv_console_cycle\",\"device_uri\":\""
+  body << "{\"type\":\"hyperv_console_cycle\",\"channel\":\"frame\",\"device_uri\":\""
        << json_escape(identity.device_uri)
        << "\",\"correlation_id\":\"hyperv-console-"
        << json_escape(assignment->session_id)
@@ -1032,7 +1043,7 @@ TransportResult run_inventory_cycle() {
     const auto inventory = collect_windows_server_core_inventory_json();
     const std::string body = "{\"type\":\"inventory\",\"device_uri\":\"" + json_escape(identity.device_uri) +
                              "\",\"correlation_id\":\"windows-agent-cycle\",\"agent_version\":\"" +
-                             utf8(k_agent_version) + "\",\"inventory\":" + inventory + "}";
+                             utf8(k_agent_version) + "\",\"console_channels\":true,\"inventory\":" + inventory + "}";
     const auto response = post_json(identity.gateway, identity.port, L"/v1/inventory", body, nullptr, certificate.get());
     if (response.status != 200 || json_string(response.body, "type") != std::optional<std::string>("accepted"))
       throw std::runtime_error("The Agent inventory was rejected.");
@@ -1059,8 +1070,7 @@ TransportResult run_inventory_cycle() {
     }
     process_lifecycle_assignment(response.body, identity, certificate.get());
     process_hyperv_action_assignment(response.body, identity, certificate.get());
-    const bool console_active = process_hyperv_console_assignment(
-        response.body, identity, certificate.get());
+    const bool console_active = parse_console_assignment(response.body).has_value();
     return {true, L"Enrollment and inventory delivery succeeded.", console_active};
   } catch (const std::exception& error) {
     try { return {false, wide(error.what())}; }
@@ -1084,14 +1094,13 @@ TransportResult run_telemetry_cycle() {
     if (telemetry.empty()) throw std::runtime_error("The Agent telemetry snapshot is unavailable.");
     const std::string body = "{\"type\":\"telemetry\",\"device_uri\":\"" + json_escape(identity.device_uri) +
                              "\",\"correlation_id\":\"windows-agent-telemetry\",\"agent_version\":\"" +
-                             utf8(k_agent_version) + "\",\"telemetry\":" + telemetry + "}";
+                             utf8(k_agent_version) + "\",\"console_channels\":true,\"telemetry\":" + telemetry + "}";
     const auto response = post_json(identity.gateway, identity.port, L"/v1/telemetry", body, nullptr, certificate.get());
     if (response.status != 200 || json_string(response.body, "type") != std::optional<std::string>("accepted"))
       throw std::runtime_error("The Agent telemetry was rejected.");
     process_lifecycle_assignment(response.body, identity, certificate.get());
     process_hyperv_action_assignment(response.body, identity, certificate.get());
-    const bool console_active = process_hyperv_console_assignment(
-        response.body, identity, certificate.get());
+    const bool console_active = parse_console_assignment(response.body).has_value();
     return {true, L"Telemetry delivery succeeded.", console_active};
   } catch (const std::exception& error) {
     try { return {false, wide(error.what())}; }
@@ -1105,7 +1114,7 @@ TransportResult run_console_cycle() {
     cert_context certificate(find_agent_certificate(identity.certificate_sha256));
     if (!certificate) throw std::runtime_error("The enrolled Agent certificate is unavailable.");
     const std::string body =
-        "{\"type\":\"hyperv_console_cycle\",\"device_uri\":\"" +
+        "{\"type\":\"hyperv_console_cycle\",\"channel\":\"frame\",\"device_uri\":\"" +
         json_escape(identity.device_uri) +
         "\",\"correlation_id\":\"hyperv-console-poll\",\"session_id\":\"\","
         "\"frame_png_base64\":\"\",\"frame_width\":0,\"frame_height\":0,"
@@ -1124,6 +1133,76 @@ TransportResult run_console_cycle() {
     try { return {false, wide(error.what()), false}; }
     catch (...) { return {false, L"The Hyper-V console cycle failed.", false}; }
   }
+}
+
+bool run_console_input_cycle(const std::function<bool()>& cancelled) {
+  // Deliberately not thread_local: stopping and recreating the single worker
+  // must not forget an already-applied input batch whose ACK was lost.
+  static ipms::agent::console_input_dispatcher dispatcher;
+  if (cancelled()) return false;
+  const auto state_path = data_directory() / L"agent-state.json";
+  const state identity = load_state(state_path);
+  cert_context certificate(find_agent_certificate(identity.certificate_sha256));
+  if (!certificate) throw std::runtime_error("The enrolled Agent certificate is unavailable.");
+  const auto binding = identity.device_uri + "|" + utf8(identity.gateway) + "|" +
+      std::to_string(identity.port);
+  const auto request = [&](const std::string& session_id,
+                           const std::vector<std::string>& acknowledged,
+                           const std::string& failure) {
+    std::ostringstream body;
+    body << "{\"type\":\"hyperv_console_cycle\",\"channel\":\"input\",\"device_uri\":\""
+         << json_escape(identity.device_uri)
+         << "\",\"correlation_id\":\"hyperv-console-input\",\"session_id\":\""
+         << json_escape(session_id)
+         << "\",\"frame_png_base64\":\"\",\"frame_width\":0,\"frame_height\":0,"
+            "\"failure_code\":\"" << json_escape(failure) << "\",\"acknowledged_input_ids\":[";
+    for (std::size_t index = 0; index < acknowledged.size(); ++index) {
+      if (index) body << ',';
+      body << '"' << json_escape(acknowledged[index]) << '"';
+    }
+    body << "]}";
+    const auto response = post_json(identity.gateway, identity.port, L"/v1/hyperv-console",
+                                    body.str(), nullptr, certificate.get(), true);
+    if (response.status != 200 ||
+        json_string(response.body, "type") != std::optional<std::string>("accepted") ||
+        !json_boolean(response.body, "console_active").has_value()) {
+      throw std::runtime_error("The Hyper-V console input exchange was rejected.");
+    }
+    return response.body;
+  };
+  return dispatcher.cycle(binding, cancelled,
+      [&]() {
+        const auto response = request("", {}, "");
+        ipms::agent::console_input_poll_result polled;
+        polled.active = json_boolean(response, "console_active").value_or(false);
+        if (const auto assignment = parse_console_assignment(response)) {
+          if (!polled.active || assignment->inputs.empty()) {
+            throw std::runtime_error("The Hyper-V console input assignment is invalid.");
+          }
+          polled.assignment = ipms::agent::console_input_assignment{
+              assignment->session_id, assignment->vm_source_id, assignment->vm_name,
+              assignment->inputs};
+        }
+        return polled;
+      },
+      [](const ipms::agent::console_input_assignment& assignment, const auto& stop) {
+        return execute_hyperv_console_inputs(assignment.vm_source_id, assignment.vm_name,
+                                             assignment.inputs, stop);
+      },
+      [&](const ipms::agent::console_input_receipt& receipt) {
+        const auto response = request(receipt.session_id, receipt.acknowledged_ids,
+                                      receipt.failure_code);
+        if (parse_console_assignment(response)) {
+          throw std::runtime_error("An input receipt cannot dispatch another batch.");
+        }
+        return json_boolean(response, "console_active").value_or(false);
+      },
+      [&]() {
+        const auto current = load_state(state_path);
+        return current.device_uri == identity.device_uri && current.gateway == identity.gateway &&
+            current.port == identity.port &&
+            current.certificate_sha256 == identity.certificate_sha256;
+      });
 }
 
 TransportResult report_lifecycle_result(

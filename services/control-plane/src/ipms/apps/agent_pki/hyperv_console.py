@@ -1,6 +1,7 @@
 import base64
 import binascii
 import re
+import uuid
 from datetime import timedelta
 
 from django.core.exceptions import ValidationError
@@ -38,12 +39,15 @@ def _version_tuple(value: str) -> tuple[int, int, int] | None:
     return tuple(int(part) for part in parts)
 
 
-def _expire_stale_sessions(now=None) -> int:
+def _expire_stale_sessions(now=None, *, enrollment=None) -> int:
     observed_at = now or timezone.now()
-    return HyperVConsoleSession.objects.filter(
+    sessions = HyperVConsoleSession.objects.filter(
         status__in=ACTIVE_STATUSES,
         lease_expires_at__lt=observed_at,
-    ).update(
+    )
+    if enrollment is not None:
+        sessions = sessions.filter(enrollment=enrollment, tenant=enrollment.tenant)
+    return sessions.update(
         status=HyperVConsoleSession.Status.EXPIRED,
         failure_code="browser_lease_expired",
         closed_at=observed_at,
@@ -276,7 +280,10 @@ def process_console_cycle(
     frame_height: object,
     acknowledged_input_ids: object,
     failure_code: str,
+    include_inputs: bool = True,
 ):
+    if not include_inputs and acknowledged_input_ids != []:
+        raise ValidationError("The frame channel cannot acknowledge console inputs.")
     now = timezone.now()
     _expire_stale_sessions(now)
     reported_session = None
@@ -336,7 +343,14 @@ def process_console_cycle(
     )
     if session is None:
         return None
-    events = list(session.input_events.order_by("created_at")[:MAX_INPUT_BATCH])
+    return _console_assignment(session, now, include_inputs=include_inputs)
+
+
+def _console_assignment(session, now, *, include_inputs=True):
+    events = (
+        list(session.input_events.order_by("created_at", "id")[:MAX_INPUT_BATCH])
+        if include_inputs else []
+    )
     session.input_events.filter(id__in=[event.id for event in events]).update(
         delivered_at=now
     )
@@ -355,3 +369,59 @@ def process_console_cycle(
             for event in events
         ],
     }
+
+
+@transaction.atomic
+def process_console_input_cycle(
+    enrollment, *, session_id: str, acknowledged_input_ids: object, failure_code: str,
+    expire_stale: bool = True,
+):
+    """Small input-only exchange; never reads or advances the image frame.
+
+    Result posts are idempotent acknowledgements and never offer the next batch.
+    Polls select the oldest pending event across this Agent's active sessions.
+    """
+    if not isinstance(acknowledged_input_ids, list) or len(acknowledged_input_ids) > MAX_INPUT_BATCH:
+        raise ValidationError("The console input acknowledgement is invalid.")
+    try:
+        ids = [str(uuid.UUID(value)) for value in acknowledged_input_ids if isinstance(value, str)]
+        if len(ids) != len(acknowledged_input_ids):
+            raise ValueError()
+        if session_id:
+            session_id = str(uuid.UUID(session_id))
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise ValidationError("The console input identity is invalid.") from exc
+    if failure_code and not FAILURE_CODE_PATTERN.fullmatch(failure_code):
+        raise ValidationError("The console failure code is invalid.")
+    if not session_id and (ids or failure_code):
+        raise ValidationError("A console input result requires its session identity.")
+
+    now = timezone.now()
+    if expire_stale:
+        _expire_stale_sessions(now, enrollment=enrollment)
+    sessions = HyperVConsoleSession.objects.filter(
+        enrollment=enrollment, tenant=enrollment.tenant,
+    ).defer("frame_png")
+    active_sessions = sessions.filter(status__in=ACTIVE_STATUSES, lease_expires_at__gte=now)
+    if session_id:
+        session = sessions.select_for_update().filter(id=session_id).first()
+        if session is None:
+            raise ValidationError("The console session identity is invalid.")
+        session.input_events.filter(id__in=ids).delete()
+        if failure_code and session.status in ACTIVE_STATUSES:
+            session.status = HyperVConsoleSession.Status.FAILED
+            session.failure_code = failure_code
+            session.closed_at = now
+            session.frame_png = b""
+            session.save(update_fields=("status", "failure_code", "closed_at", "frame_png"))
+        return active_sessions.exists(), None
+
+    pending_session_id = HyperVConsoleInputEvent.objects.filter(
+        session__in=active_sessions,
+    ).order_by("created_at", "id").values_list("session_id", flat=True).first()
+    if pending_session_id is None:
+        return active_sessions.exists(), None
+    session = active_sessions.select_for_update().filter(id=pending_session_id).first()
+    if session is None:
+        return active_sessions.exists(), None
+    return True, _console_assignment(session, now)
