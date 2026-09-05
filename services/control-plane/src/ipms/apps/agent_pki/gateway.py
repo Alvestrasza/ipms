@@ -135,14 +135,14 @@ def _parse_http_request(header: bytes) -> tuple[str, dict[str, str], int]:
     return path, headers, content_length
 
 
-async def _http_reply(writer: asyncio.StreamWriter, status: int, document: dict) -> None:
+async def _http_reply(writer: asyncio.StreamWriter, status: int, document: dict, *, keep_alive: bool = False) -> None:
     body = json.dumps(document, separators=(",", ":")).encode()
     reason = "OK" if status == 200 else "Bad Request"
     writer.write(
         f"HTTP/1.1 {status} {reason}\r\n"
         "Content-Type: application/json\r\n"
         f"Content-Length: {len(body)}\r\n"
-        "Connection: close\r\n\r\n".encode()
+        f"Connection: {'keep-alive' if keep_alive else 'close'}\r\n\r\n".encode()
         + body
     )
     await writer.drain()
@@ -169,7 +169,10 @@ async def _handle_http_connection(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
     peer_certificate: bytes | None,
-) -> None:
+    *,
+    console_only: bool = False,
+    allow_keepalive: bool = False,
+) -> bool | None:
     from ipms.apps.agent_pki.services import (
         confirm_inventory,
         confirm_software_inventory,
@@ -189,7 +192,9 @@ async def _handle_http_connection(
     from ipms.apps.agent_pki.hyperv_console import process_console_cycle
 
     header = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=15)
-    path, _, content_length = _parse_http_request(header)
+    path, headers, content_length = _parse_http_request(header)
+    if console_only and path != "/v1/hyperv-console":
+        raise ValidationError("A persistent console connection cannot change routes.")
     body = await asyncio.wait_for(reader.readexactly(content_length), timeout=30)
     document = _bounded_json(
         body,
@@ -245,8 +250,9 @@ async def _handle_http_connection(
         }
         if assignment:
             response["hyperv_console"] = assignment
-        await _http_reply(writer, 200, response)
-        return
+        keep_alive = allow_keepalive and headers.get("connection", "").lower() == "keep-alive"
+        await _http_reply(writer, 200, response, keep_alive=keep_alive)
+        return keep_alive
     if path == "/v1/lifecycle-artifact":
         if document.get("type") != "lifecycle_artifact":
             raise ValidationError("The Agent lifecycle artifact request is invalid.")
@@ -361,7 +367,17 @@ async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.Stream
         protocol = _connection_protocol(ssl_object.selected_alpn_protocol())
         peer_certificate = ssl_object.getpeercert(binary_form=True)
         if protocol == "http":
-            await _handle_http_connection(reader, writer, peer_certificate)
+            # Persistence is opt-in and limited to authenticated console traffic.
+            # Every request still revalidates certificate revocation and identity.
+            # Bound the connection lifetime even for a continuously active VM.
+            for request_index in range(256):
+                keep_alive = await _handle_http_connection(
+                    reader, writer, peer_certificate,
+                    console_only=request_index > 0,
+                    allow_keepalive=request_index < 255,
+                )
+                if not keep_alive:
+                    break
             return
         line = await asyncio.wait_for(reader.readline(), timeout=15)
         document = _bounded_json(line)
@@ -454,6 +470,9 @@ async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.Stream
             )
         else:
             await _reply(writer, {"type": "rejected", "code": "identity_or_policy_rejected"})
+    except (asyncio.IncompleteReadError, ConnectionResetError, BrokenPipeError):
+        # A console client may close its idle pooled connection at any time.
+        pass
     except Exception:
         logger.exception("Agent Gateway connection failed", extra={"peer": str(peer)})
     finally:

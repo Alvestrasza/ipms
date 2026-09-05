@@ -2,7 +2,7 @@
 
 - Status: Accepted for the development foundation
 - Decision date: 2026-09-05
-- Application version: 0.2.27
+- Application version: 0.2.28
 - First compatible Windows Agent: 0.2.21
 
 ## Context
@@ -83,6 +83,16 @@ Agent 0.2.22 replaces per-byte Automation array calls with one validated bulk
 copy, filters input-device queries to the validated VM GUID, and targets a
 150-ms cycle including capture/exchange time, with a minimum 25-ms yield.
 The achieved frame rate remains dependent on the provider and host workload.
+
+Application 0.2.28 and Agent 0.2.23 additionally support opt-in HTTP keep-alive
+only for authenticated console traffic. The Gateway revalidates the peer
+certificate and device identity on every request, rejects route changes, and
+closes the connection after at most 256 requests. Existing header/body timeouts
+remain in force. One-shot clients remain compatible. The Agent binds its
+connection pool to the Gateway hostname/port and client certificate, discards
+failed or idle entries, and sends console headers/body together. Bootstrap
+never uses this pool and still checks its explicit certificate pin before
+sending the enrollment body.
 
 The Agent acknowledges input identifiers only after applying them. Until the
 Control Plane receives an acknowledgement, the event remains eligible for

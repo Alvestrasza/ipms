@@ -31,7 +31,7 @@
 namespace {
 using Microsoft::WRL::ComPtr;
 constexpr std::size_t k_max_document_bytes = 65'536;
-constexpr wchar_t k_agent_version[] = L"0.2.22";
+constexpr wchar_t k_agent_version[] = L"0.2.23";
 constexpr std::size_t k_max_artifact_bytes = 64 * 1024 * 1024;
 
 struct internet_closer { void operator()(void* handle) const { if (handle) WinHttpCloseHandle(handle); } };
@@ -428,18 +428,49 @@ enrollment_request create_enrollment_request(const std::wstring& hostname) {
 struct state { std::string device_uri; std::string certificate_sha256; std::wstring gateway; std::uint16_t port{}; };
 struct http_response { DWORD status{}; std::string body; };
 
+struct http_transport {
+  internet_handle session;
+  internet_handle connection;
+  std::wstring hostname;
+  std::uint16_t port{0};
+  std::string certificate_identity;
+  ULONGLONG last_used{0};
+};
+
 http_response post_json(const std::wstring& hostname, std::uint16_t port, const std::wstring& path,
                         const std::string& body, const std::string* pin, PCCERT_CONTEXT client_certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.22", WINHTTP_ACCESS_TYPE_NO_PROXY,
-                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
-  if (!session) throw std::runtime_error("The Agent HTTP session could not be created.");
-  WinHttpSetTimeouts(session.get(), 10'000, 10'000, 30'000, 30'000);
-  DWORD protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
-  if (!WinHttpSetOption(session.get(), WINHTTP_OPTION_SECURE_PROTOCOLS, &protocols, sizeof(protocols)))
-    throw std::runtime_error("TLS 1.3 could not be required.");
-  internet_handle connection(WinHttpConnect(session.get(), hostname.c_str(), port, 0));
-  if (!connection) throw std::runtime_error("The Agent Gateway connection could not be created.");
-  internet_handle request(WinHttpOpenRequest(connection.get(), L"POST", path.c_str(), nullptr,
+  const bool reusable = path == L"/v1/hyperv-console" && client_certificate && !pin;
+  static thread_local std::unique_ptr<http_transport> console_transport;
+  const auto certificate_identity = reusable ? certificate_sha256(client_certificate) : "";
+  if (reusable && console_transport &&
+      (console_transport->hostname != hostname || console_transport->port != port ||
+       console_transport->certificate_identity != certificate_identity ||
+       GetTickCount64() - console_transport->last_used > 5'000)) {
+    console_transport.reset();
+  }
+  if (reusable && !console_transport) console_transport = std::make_unique<http_transport>();
+  http_transport one_shot;
+  auto* transport = reusable ? console_transport.get() : &one_shot;
+  struct failure_reset {
+    std::unique_ptr<http_transport>* cache;
+    bool succeeded{false};
+    ~failure_reset() { if (cache && !succeeded) cache->reset(); }
+  } guard{reusable ? &console_transport : nullptr};
+  if (!transport->session) {
+    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.23", WINHTTP_ACCESS_TYPE_NO_PROXY,
+                                        WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
+    if (!transport->session) throw std::runtime_error("The Agent HTTP session could not be created.");
+    WinHttpSetTimeouts(transport->session.get(), 10'000, 10'000, 30'000, 30'000);
+    DWORD protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
+    if (!WinHttpSetOption(transport->session.get(), WINHTTP_OPTION_SECURE_PROTOCOLS, &protocols, sizeof(protocols)))
+      throw std::runtime_error("TLS 1.3 could not be required.");
+    transport->connection.reset(WinHttpConnect(transport->session.get(), hostname.c_str(), port, 0));
+    if (!transport->connection) throw std::runtime_error("The Agent Gateway connection could not be created.");
+    transport->hostname = hostname;
+    transport->port = port;
+    transport->certificate_identity = certificate_identity;
+  }
+  internet_handle request(WinHttpOpenRequest(transport->connection.get(), L"POST", path.c_str(), nullptr,
                                              WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE));
   if (!request) throw std::runtime_error("The Agent Gateway request could not be created.");
   DWORD redirect = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
@@ -456,8 +487,14 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
     if (!WinHttpSetOption(request.get(), WINHTTP_OPTION_SECURITY_FLAGS, &security, sizeof(security)))
       throw std::runtime_error("The one-time bootstrap trust policy could not be applied.");
   }
-  const wchar_t headers[] = L"Content-Type: application/json\r\n";
-  if (!WinHttpSendRequest(request.get(), headers, static_cast<DWORD>(-1), WINHTTP_NO_REQUEST_DATA, 0,
+  const wchar_t* headers = reusable
+      ? L"Content-Type: application/json\r\nConnection: keep-alive\r\n"
+      : L"Content-Type: application/json\r\n";
+  // Send the authenticated console envelope with its headers to avoid a second
+  // tiny TLS record. Bootstrap still verifies the pin before sending its body.
+  if (!WinHttpSendRequest(request.get(), headers, static_cast<DWORD>(-1),
+                          reusable ? const_cast<char*>(body.data()) : WINHTTP_NO_REQUEST_DATA,
+                          reusable ? static_cast<DWORD>(body.size()) : 0,
                           static_cast<DWORD>(body.size()), 0))
     throw std::runtime_error("The Agent Gateway TLS request failed.");
   if (pin) {
@@ -470,7 +507,7 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
       throw std::runtime_error("The Agent Gateway certificate pin does not match.");
   }
   DWORD written = 0;
-  if (!WinHttpWriteData(request.get(), body.data(), static_cast<DWORD>(body.size()), &written) || written != body.size())
+  if (!reusable && (!WinHttpWriteData(request.get(), body.data(), static_cast<DWORD>(body.size()), &written) || written != body.size()))
     throw std::runtime_error("The Agent Gateway request body could not be sent.");
   if (!WinHttpReceiveResponse(request.get(), nullptr)) throw std::runtime_error("The Agent Gateway response could not be received.");
   DWORD status = 0; DWORD status_size = sizeof(status);
@@ -488,11 +525,13 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
     if (!WinHttpReadData(request.get(), response.data() + offset, available, &read)) throw std::runtime_error("The Agent Gateway response is invalid.");
     response.resize(offset + read);
   }
+  transport->last_used = GetTickCount64();
+  guard.succeeded = true;
   return {status, response};
 }
 
 http_response post_binary(const state& identity, const std::string& body, PCCERT_CONTEXT certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.22", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.23", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent artifact session could not be created.");
   WinHttpSetTimeouts(session.get(), 10'000, 10'000, 60'000, 60'000);

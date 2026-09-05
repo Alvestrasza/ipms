@@ -381,6 +381,10 @@ Migration from IPMS Appliance to IPMS Scale-Out must remain supported.
   Frame polling carries status and lease renewal in one response and skips
   unchanged images. Closing the browser window releases the session; abrupt
   disconnects retain the bounded lease-expiry fallback.
+- Application 0.2.28 and Windows Agent 0.2.23 reuse authenticated console
+  connections to remove repeated TLS setup from the frame loop. Each message
+  revalidates certificate status and device identity; persistent connections
+  cannot switch routes and are bounded to 256 requests.
 - Enforce validation, approval policy, maintenance awareness, idempotency, and
   rollback information for write operations.
 
