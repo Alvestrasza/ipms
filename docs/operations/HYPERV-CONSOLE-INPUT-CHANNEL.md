@@ -52,6 +52,13 @@ ACK retry without execution replay, partial failure, stale identity, stop,
 worker restart and idle/reactivation. The isolated browser queue suite passes
 15 tests. Web lint, TypeScript and production build pass.
 
+The complete detached-window browser regression remains unverified for this
+increment: the local development run stopped at a login HTTP 403, and a
+production-style local smoke check did not complete the browser session fetch.
+Direct API checks succeeded. No login-code change or assumption of a confirmed
+root cause was made; all temporary test servers were stopped. This is separate
+from the passing deterministic browser input-queue tests.
+
 These checks do not establish live input-to-screen latency. The authorized DEV
 test VM was still occupied during preparation; its session was not joined,
 renewed, controlled or closed by this work. Deployment and host Agent update
