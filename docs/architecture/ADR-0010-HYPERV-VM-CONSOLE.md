@@ -2,7 +2,7 @@
 
 - Status: Accepted for the development foundation
 - Decision date: 2026-09-05
-- Application version: 0.2.29
+- Application version: 0.2.30
 - First compatible Windows Agent: 0.2.21
 
 ## Context
@@ -171,6 +171,15 @@ remained stable at a 305-ms median. These measurements describe Control Plane
 frame arrival, not browser glass-to-glass latency. See the
 [performance acceptance record](../operations/HYPERV-CONSOLE-PERFORMANCE.md)
 for methodology, input acknowledgement samples and remaining manual checks.
+
+## Heartbeat and collection isolation
+
+Application 0.2.30 and Windows Agent 0.2.25 additionally separate the frame
+worker from normal collection and introduce an independent ten-second
+heartbeat. Presence does not imply metric freshness. A valid active console
+lease blocks Agent removal; new and legacy contact evidence inform presence.
+The existing port and trust boundary remain unchanged. See the
+[heartbeat contract and pending live acceptance](../operations/AGENT-HEARTBEAT-ISOLATION.md).
 
 Implementation references:
 

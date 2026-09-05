@@ -4,12 +4,13 @@ import json
 import logging
 import os
 import ssl
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import django
 from asgiref.sync import sync_to_async
 from django.core.exceptions import ValidationError
-from django.db import close_old_connections
+from django.db import close_old_connections, connection, transaction
 
 
 MAX_MESSAGE_BYTES = 65_536
@@ -25,6 +26,10 @@ ALLOWED_AGENT_MESSAGES = {
     "certificate_renewal",
 }
 logger = logging.getLogger("ipms.agent_gateway")
+# One additional bounded DB connection lane: bulk inventory or console work
+# must not queue ahead of the small liveness write. The database and process
+# remain shared resources; this is not full deployment/resource isolation.
+_heartbeat_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agent-heartbeat")
 
 
 def _database_call(function, *args, **kwargs):
@@ -41,6 +46,25 @@ async def _database_call_async(function, *args, **kwargs):
         *args,
         **kwargs,
     )
+
+
+async def _heartbeat_database_call_async(function, *args, **kwargs):
+    return await sync_to_async(
+        _database_call, thread_sensitive=False, executor=_heartbeat_executor
+    )(_bounded_heartbeat_database_call, function, *args, **kwargs)
+
+
+def _bounded_heartbeat_database_call(function, *args, **kwargs):
+    if connection.vendor != "postgresql":
+        return function(*args, **kwargs)
+    # A row locked by lifecycle/removal must not stall every Agent's liveness
+    # lane indefinitely. LOCAL settings expire on commit/rollback and never
+    # weaken the connection policy for normal inventory/console operations.
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL lock_timeout = '1s'")
+            cursor.execute("SET LOCAL statement_timeout = '2s'")
+        return function(*args, **kwargs)
 
 
 def _connection_protocol(selected_alpn: str | None) -> str:
@@ -101,6 +125,7 @@ def _parse_http_request(header: bytes) -> tuple[str, dict[str, str], int]:
         "/v1/inventory",
         "/v1/software-inventory",
         "/v1/telemetry",
+        "/v1/heartbeat",
         "/v1/lifecycle-result",
         "/v1/lifecycle-artifact",
         "/v1/hyperv-action-result",
@@ -212,6 +237,7 @@ async def _handle_http_connection(
     allow_keepalive: bool = False,
 ) -> bool | None:
     from ipms.apps.agent_pki.services import (
+        confirm_heartbeat,
         confirm_inventory,
         confirm_software_inventory,
         confirm_telemetry,
@@ -263,12 +289,26 @@ async def _handle_http_connection(
         return
     if not peer_certificate:
         raise ValidationError("A client certificate is required.")
-    enrollment = await _database_call_async(
+    database_call = _heartbeat_database_call_async if path == "/v1/heartbeat" else _database_call_async
+    enrollment = await database_call(
         validate_peer_certificate,
         peer_certificate,
     )
     if document.get("device_uri") != enrollment.device_uri:
         raise ValidationError("The Agent message identity is invalid.")
+    if path == "/v1/heartbeat":
+        if (
+            document.get("type") != "heartbeat"
+            or set(document) - {"type", "device_uri", "correlation_id"}
+            or not isinstance(document.get("correlation_id", ""), str)
+            or len(document.get("correlation_id", "")) > 128
+        ):
+            raise ValidationError("The Agent heartbeat envelope is invalid.")
+        await database_call(confirm_heartbeat, enrollment)
+        await _http_reply(writer, 200, {
+            "type": "accepted", "correlation_id": document.get("correlation_id"),
+        })
+        return
     if path == "/v1/hyperv-console":
         if document.get("type") != "hyperv_console_cycle":
             raise ValidationError("The Hyper-V console cycle is invalid.")

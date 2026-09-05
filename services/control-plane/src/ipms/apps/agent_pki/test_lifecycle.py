@@ -127,6 +127,7 @@ class AgentLifecycleTests(TestCase):
 
     def test_offline_active_agent_is_revoked_removed_and_jobs_cancelled(self) -> None:
         old = timezone.now() - timedelta(minutes=10)
+        AgentEnrollment.objects.filter(pk=self.enrollment.pk).update(last_seen_at=old)
         WindowsServer.objects.filter(source_id=self.enrollment.device_uri).update(
             last_seen_at=old,
         )
@@ -184,6 +185,9 @@ class AgentLifecycleTests(TestCase):
         self.assertFalse(AuditEvent.objects.filter(action="agent.remove").exists())
 
     def test_agent_with_active_windows_deployment_cannot_be_removed(self) -> None:
+        AgentEnrollment.objects.filter(pk=self.enrollment.pk).update(
+            last_seen_at=timezone.now() - timedelta(minutes=10),
+        )
         WindowsServer.objects.filter(source_id=self.enrollment.device_uri).update(
             last_seen_at=timezone.now() - timedelta(minutes=10),
         )

@@ -9,9 +9,9 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-IPMS application build `0.2.29` adds independent input delivery to the Hyper-V VM
-console to the inventory, controlled workload-action, and user-administration
-foundation. A standalone development
+IPMS application build `0.2.30` separates Agent heartbeat from inventory,
+telemetry and the Hyper-V VM console. It retains the independent console input
+delivery introduced in `0.2.29`. A standalone development
 Appliance currently runs the tenant-aware Django Control Plane, PostgreSQL,
 the multilingual Next.js Web Console, and the isolated connector worker.
 
@@ -27,7 +27,7 @@ family, starting with Windows 11 LTSC. Hyper-V hosts report a bounded VM
 inventory with state, vCPU, memory, uptime, configuration version, and guest IP
 addresses. Tenant administrators can start, pause, resume, gracefully shut
 down, and stop a VM through an audited durable job and the enrolled host
-Agent. Windows Agent `0.2.24` also provides one lease-bound console session per
+Agent. Windows Agent `0.2.25` also provides one lease-bound console session per
 running VM with direct keyboard and mouse input and a dedicated secure-attention
 operation. The console opens in its own resizable browser window, independent
 of the main portal. Bounded 150-ms polling, ordered input batches, and bulk
@@ -35,6 +35,11 @@ image-buffer access reduce latency without changing session ownership or mTLS
 authorization. Console requests reuse a bounded mTLS connection while every
 message still revalidates certificate status and device identity.
 Actual frame rate depends on the host and provider.
+Windows Agent `0.2.25` and Linux Agent `0.2.13` send an independent ten-second
+heartbeat. Presence and removal guards use contact evidence without making old
+inventory or metrics look fresh. Windows console capture no longer suspends
+normal collection. See [heartbeat isolation](docs/operations/AGENT-HEARTBEAT-ISOLATION.md)
+for verification, rollout order and remaining live acceptance.
 Keyboard and mouse delivery now run on a separate ordered outbound mTLS
 connection, independent of image capture and upload. Applied-input receipts
 are retried without reapplying events if their acknowledgement is uncertain.

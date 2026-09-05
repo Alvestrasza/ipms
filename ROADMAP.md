@@ -398,6 +398,17 @@ Migration from IPMS Appliance to IPMS Scale-Out must remain supported.
 - Enforce validation, approval policy, maintenance awareness, idempotency, and
   rollback information for write operations.
 
+- Application 0.2.30, Windows Agent 0.2.25 and Linux Agent 0.2.13 separate an
+  independent ten-second heartbeat from normal collection. Windows console
+  frames and typed inputs use separate workers; an open console no longer
+  suspends telemetry/inventory. Presence and removal guards preserve independent
+  heartbeat, inventory and telemetry timestamps. Live acceptance is tracked in
+  [heartbeat isolation](docs/operations/AGENT-HEARTBEAT-ISOLATION.md).
+- Evaluate an optional separately deployed console Gateway for scale-out and
+  differentiated firewall/QoS policy. A new port alone is not a latency or
+  security fix. Keep the default Agent-initiated TCP 9419 and existing firewall
+  policy unchanged until a separate deployment design is approved.
+
 ### Phase 4: Monitoring
 
 - Collect metrics, health signals, events, and operational logs.

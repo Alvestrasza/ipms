@@ -19,6 +19,7 @@
 #include <fstream>
 #include <iomanip>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -27,8 +28,25 @@
 #include <unistd.h>
 
 namespace {
-constexpr std::string_view k_agent_version = "0.2.12";
+constexpr std::string_view k_agent_version = "0.2.13";
 constexpr std::size_t k_max_document_bytes = 65'536;
+
+// Global libcurl/OpenSSL state outlives every worker and request. Initialize it
+// before starting service workers; one-shot inventory uses the same runtime.
+struct curl_runtime {
+  curl_runtime() {
+    if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK)
+      throw std::runtime_error("The Agent TLS runtime could not be initialized.");
+  }
+  ~curl_runtime() { curl_global_cleanup(); }
+};
+
+void ensure_transport_initialized() {
+  static const curl_runtime runtime;
+  (void)runtime;
+}
+
+std::mutex identity_publication_mutex;
 
 struct curl_cleanup { void operator()(CURL* value) const { if (value) curl_easy_cleanup(value); } };
 struct bio_cleanup { void operator()(BIO* value) const { if (value) BIO_free(value); } };
@@ -194,8 +212,19 @@ std::size_t receive_body(char* data, std::size_t size, std::size_t count, void* 
   return bytes;
 }
 
+int transfer_progress(void* context, curl_off_t, curl_off_t, curl_off_t, curl_off_t) {
+  const auto* cancelled = static_cast<const std::function<bool()>*>(context);
+  try {
+    return cancelled && *cancelled && (*cancelled)() ? 1 : 0;
+  } catch (...) {
+    // Exceptions must never cross libcurl's C callback boundary.
+    return 1;
+  }
+}
+
 http_response post_json(const state& identity, std::string_view path, std::string_view body,
-                        certificate_pin* pin = nullptr) {
+                        certificate_pin* pin = nullptr,
+                        const std::function<bool()>& cancelled = {}) {
   curl_handle curl(curl_easy_init());
   if (!curl) throw std::runtime_error("The Agent HTTP session could not be created.");
   std::string response;
@@ -208,8 +237,14 @@ http_response post_json(const state& identity, std::string_view path, std::strin
   curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
   curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, receive_body);
   curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
-  curl_easy_setopt(curl.get(), CURLOPT_CONNECTTIMEOUT, 10L);
-  curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT, 45L);
+  const bool heartbeat = path == "/v1/heartbeat";
+  curl_easy_setopt(curl.get(), CURLOPT_CONNECTTIMEOUT_MS, heartbeat ? 2000L : 10000L);
+  curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT_MS, heartbeat ? 3000L : 45000L);
+  if (cancelled) {
+    curl_easy_setopt(curl.get(), CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl.get(), CURLOPT_XFERINFOFUNCTION, transfer_progress);
+    curl_easy_setopt(curl.get(), CURLOPT_XFERINFODATA, &cancelled);
+  }
   curl_easy_setopt(curl.get(), CURLOPT_FOLLOWLOCATION, 0L);
   curl_easy_setopt(curl.get(), CURLOPT_NOSIGNAL, 1L);
   curl_easy_setopt(curl.get(), CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_3);
@@ -319,12 +354,17 @@ state enroll(const std::filesystem::path& bootstrap_path, const std::filesystem:
   if (!certificate || X509_check_private_key(certificate.get(), key.get()) != 1)
     throw std::runtime_error("The Agent certificate does not match its private key.");
   const auto directory = state_path.parent_path();
-  persist_private_key(directory / "agent-key.pem", key.get());
-  write_private_file(directory / "agent-certificate.pem", *certificate_pem);
-  write_private_file(directory / "ca-chain.pem", *chain_pem);
-  write_private_file(state_path, "{\"device_uri\":\"" + json_escape(*device_uri) +
-      "\",\"gateway_dns_name\":\"" + json_escape(*gateway) + "\",\"gateway_port\":" +
-      std::to_string(*port) + "}");
+  {
+    // Publish state last as the readiness marker. No network operation holds
+    // this lock, and the heartbeat never reads enrollment or writes identity.
+    std::lock_guard lock(identity_publication_mutex);
+    persist_private_key(directory / "agent-key.pem", key.get());
+    write_private_file(directory / "agent-certificate.pem", *certificate_pem);
+    write_private_file(directory / "ca-chain.pem", *chain_pem);
+    write_private_file(state_path, "{\"device_uri\":\"" + json_escape(*device_uri) +
+        "\",\"gateway_dns_name\":\"" + json_escape(*gateway) + "\",\"gateway_port\":" +
+        std::to_string(*port) + "}");
+  }
   std::fill(bootstrap.begin(), bootstrap.end(), '\0');
   std::error_code ignored;
   std::filesystem::remove(bootstrap_path, ignored);
@@ -334,9 +374,45 @@ state enroll(const std::filesystem::path& bootstrap_path, const std::filesystem:
 
 namespace ipms::agent::linux {
 
+TransportResult initialize_transport() {
+  try {
+    ensure_transport_initialized();
+    return {true, "The Agent TLS runtime is ready."};
+  } catch (const std::exception& error) {
+    return {false, error.what()};
+  }
+}
+
+TransportResult run_heartbeat_cycle(const std::function<bool()>& cancelled) {
+  try {
+    if (cancelled()) return {true, "The Agent heartbeat is stopping."};
+    ensure_transport_initialized();
+    const auto directory = data_directory();
+    state identity;
+    {
+      std::lock_guard lock(identity_publication_mutex);
+      for (const auto* filename : {"agent-state.json", "agent-key.pem", "agent-certificate.pem", "ca-chain.pem"}) {
+        if (!std::filesystem::is_regular_file(directory / filename))
+          return {true, "The Agent heartbeat is waiting for its enrolled identity."};
+      }
+      identity = load_state(directory / "agent-state.json");
+    }
+    if (cancelled()) return {true, "The Agent heartbeat is stopping."};
+    const std::string body = "{\"type\":\"heartbeat\",\"device_uri\":\"" +
+        json_escape(identity.device_uri) + "\",\"correlation_id\":\"linux-agent-heartbeat\"}";
+    const auto response = post_json(identity, "/v1/heartbeat", body, nullptr, cancelled);
+    if (response.status != 200 || json_string(response.body, "type") != std::optional<std::string>("accepted"))
+      throw std::runtime_error("The Agent heartbeat was rejected.");
+    // This lane reports liveness only. It never processes assignments.
+    return {true, "The Agent heartbeat was accepted."};
+  } catch (const std::exception& error) {
+    return {false, error.what()};
+  }
+}
+
 TransportResult run_inventory_cycle() {
   try {
-    if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) throw std::runtime_error("The Agent TLS runtime could not be initialized.");
+    ensure_transport_initialized();
     const auto directory = data_directory();
     const auto state_path = directory / "agent-state.json";
     const auto bootstrap_path = directory / "enrollment.json";
@@ -356,10 +432,8 @@ TransportResult run_inventory_cycle() {
       if (response.status != 200 || json_string(response.body, "type") != std::optional<std::string>("accepted"))
         throw std::runtime_error("The Agent software inventory was rejected.");
     }
-    curl_global_cleanup();
     return {true, "Enrollment and inventory delivery succeeded."};
   } catch (const std::exception& error) {
-    curl_global_cleanup();
     return {false, error.what()};
   }
 }

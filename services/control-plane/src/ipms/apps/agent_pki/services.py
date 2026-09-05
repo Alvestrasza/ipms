@@ -1314,6 +1314,31 @@ def confirm_inventory(
         ).delete()
 
 
+def confirm_heartbeat(enrollment: AgentEnrollment) -> None:
+    """Record authenticated liveness, never inventory or metric freshness.
+
+    The Gateway authenticates the certificate first. Repeat its mutable binding
+    conditions in the update so an in-flight request cannot revive an identity
+    revoked, removed, rotated, or expired since authentication.
+    """
+    now = timezone.now()
+    updated = AgentEnrollment.objects.filter(
+        id=enrollment.id,
+        tenant_id=enrollment.tenant_id,
+        device_uri=enrollment.device_uri,
+        status=AgentEnrollment.Status.ACTIVE,
+        certificate_fingerprint_sha256=enrollment.certificate_fingerprint_sha256,
+        certificate_not_before__lte=now,
+        certificate_not_after__gte=now,
+        issuer__tenant_id=enrollment.tenant_id,
+        issuer__status__in=(AgentIssuer.Status.ACTIVE, AgentIssuer.Status.OVERLAP),
+    ).exclude(
+        id__in=AgentRevocation.objects.values("enrollment_id")
+    ).update(last_heartbeat_at=now)
+    if updated != 1:
+        raise ValidationError("The Agent heartbeat identity is no longer active.")
+
+
 def _bounded_fixed_volumes(value: object) -> list[dict]:
     if not isinstance(value, list) or len(value) > 64:
         raise ValidationError("The Agent fixed-volume list is invalid.")

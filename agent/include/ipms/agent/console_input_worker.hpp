@@ -1,8 +1,10 @@
 #pragma once
 
 #include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <functional>
 #include <mutex>
 #include <stop_token>
@@ -18,19 +20,28 @@ class console_input_worker {
   using cancellation = std::function<bool()>;
   using cycle = std::function<bool(const cancellation&)>;
 
-  explicit console_input_worker(cycle operation)
-      : worker_([this, operation = std::move(operation)](std::stop_token stop) {
+  explicit console_input_worker(
+      cycle operation, std::chrono::milliseconds cadence = std::chrono::milliseconds(10),
+      std::chrono::milliseconds minimum_yield = std::chrono::milliseconds(10))
+      : worker_([this, operation = std::move(operation), cadence, minimum_yield](std::stop_token stop) {
           const cancellation cancelled = [this, stop] {
             return stop.stop_requested() || !enabled_.load();
           };
           while (!stop.stop_requested()) {
+            std::uint64_t activation = 0;
             {
               std::unique_lock lock(mutex_);
               condition_.wait(lock, stop, [this] { return enabled_.load(); });
+              activation = activation_;
             }
             if (stop.stop_requested()) break;
+            const auto started = std::chrono::steady_clock::now();
             try {
-              if (!operation(cancelled)) set_active(false);
+              if (!operation(cancelled)) {
+                std::lock_guard lock(mutex_);
+                // A late inactive response must not erase a newer wake-up.
+                if (activation_ == activation) enabled_.store(false);
+              }
             } catch (...) {
               // The dispatcher retains its pending receipt on failure. Back off
               // briefly without hiding service-stop or session-close requests.
@@ -39,8 +50,10 @@ class console_input_worker {
                                   [this] { return !enabled_.load(); });
             }
             std::unique_lock lock(mutex_);
-            condition_.wait_for(lock, stop, std::chrono::milliseconds(10),
-                                [this] { return !enabled_.load(); });
+            const auto deadline = (std::max)(started + cadence,
+                std::chrono::steady_clock::now() + minimum_yield);
+            condition_.wait_until(lock, stop, deadline,
+                                  [this] { return !enabled_.load(); });
           }
         }) {}
 
@@ -52,6 +65,7 @@ class console_input_worker {
     {
       std::lock_guard lock(mutex_);
       enabled_.store(value);
+      ++activation_;
     }
     condition_.notify_all();
   }
@@ -64,6 +78,7 @@ class console_input_worker {
 
  private:
   std::atomic<bool> enabled_{false};
+  std::uint64_t activation_{0};
   std::mutex mutex_;
   std::condition_variable_any condition_;
   std::jthread worker_;

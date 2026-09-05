@@ -39,7 +39,7 @@ def _version_tuple(value: str) -> tuple[int, int, int] | None:
     return tuple(int(part) for part in parts)
 
 
-def _expire_stale_sessions(now=None, *, enrollment=None) -> int:
+def _expire_stale_sessions(now=None, *, enrollment=None, virtual_machine=None) -> int:
     observed_at = now or timezone.now()
     sessions = HyperVConsoleSession.objects.filter(
         status__in=ACTIVE_STATUSES,
@@ -47,6 +47,10 @@ def _expire_stale_sessions(now=None, *, enrollment=None) -> int:
     )
     if enrollment is not None:
         sessions = sessions.filter(enrollment=enrollment, tenant=enrollment.tenant)
+    if virtual_machine is not None:
+        sessions = sessions.filter(
+            tenant=virtual_machine.tenant, vm_source_id=virtual_machine.source_id,
+        )
     return sessions.update(
         status=HyperVConsoleSession.Status.EXPIRED,
         failure_code="browser_lease_expired",
@@ -57,13 +61,27 @@ def _expire_stale_sessions(now=None, *, enrollment=None) -> int:
 
 @transaction.atomic
 def create_console_session(*, virtual_machine, actor: str):
-    now = timezone.now()
-    _expire_stale_sessions(now)
+    # Read the routing identity without locks, then use the same lock order as
+    # Agent removal: enrollment -> VM/host -> console session. Recheck the host
+    # binding after locking, since inventory may move a VM in the meantime.
+    snapshot = HyperVVirtualMachine.objects.select_related("host").get(
+        id=virtual_machine.id, tenant=virtual_machine.tenant,
+    )
+    enrollment = AgentEnrollment.objects.select_for_update().filter(
+        tenant=snapshot.tenant,
+        device_uri=snapshot.host.source_id,
+        platform=AgentEnrollment.Platform.WINDOWS,
+        status=AgentEnrollment.Status.ACTIVE,
+    ).first()
+    if enrollment is None:
+        raise ValidationError("The Hyper-V host Agent is unavailable.")
     virtual_machine = (
         HyperVVirtualMachine.objects.select_for_update()
         .select_related("host")
         .get(id=virtual_machine.id, tenant=virtual_machine.tenant)
     )
+    if virtual_machine.host.source_id != enrollment.device_uri:
+        raise ValidationError("The Hyper-V host changed. Retry opening the console.")
     if virtual_machine.state != HyperVVirtualMachine.State.RUNNING:
         raise ValidationError("The virtual machine must be running to open its console.")
     agent_version = _version_tuple(virtual_machine.host.agent_version)
@@ -71,14 +89,8 @@ def create_console_session(*, virtual_machine, actor: str):
         raise ValidationError(
             "The Hyper-V host Agent must be updated before it can provide a console."
         )
-    enrollment = AgentEnrollment.objects.filter(
-        tenant=virtual_machine.tenant,
-        device_uri=virtual_machine.host.source_id,
-        platform=AgentEnrollment.Platform.WINDOWS,
-        status=AgentEnrollment.Status.ACTIVE,
-    ).first()
-    if enrollment is None:
-        raise ValidationError("The Hyper-V host Agent is unavailable.")
+    now = timezone.now()
+    _expire_stale_sessions(now, virtual_machine=virtual_machine)
     occupied = HyperVConsoleSession.objects.filter(
         tenant=virtual_machine.tenant,
         vm_source_id=virtual_machine.source_id,

@@ -3,7 +3,7 @@
 The IPMS Agent is a native C++20 service for customer-managed Windows and Linux systems. It will establish an outbound, mutually authenticated connection to the IPMS Control Plane and collect only capabilities explicitly assigned to the enrolled device.
 
 The implementation contains the pack registry and fixed read-only Windows and
-Linux inventory capabilities. Windows build 0.2.24 and Linux build 0.2.12
+Linux inventory capabilities. Windows build 0.2.25 and Linux build 0.2.13
 include native services and bounded, paged installed-software and
 update-posture inventory. Both platforms
 use the same Agent-initiated TCP 9419 enrollment and mTLS trust boundary. The
@@ -11,6 +11,29 @@ Windows executable also reports roles/features and local Hyper-V VMs. Its
 Hyper-V pack accepts only fixed start, graceful shutdown, stop, pause, and
 resume assignments for an exact VM GUID; it never invokes `Win32_Product`,
 PowerShell, or a server-supplied query or method.
+
+## Heartbeat and scheduling isolation
+
+Windows and Linux send a dedicated, fixed `heartbeat` message every ten seconds
+over a fresh outbound mTLS request to `/v1/heartbeat`. The heartbeat worker never
+collects inventory or metrics, creates enrollment credentials, performs renewal,
+or consumes assignments. It reads only a committed enrolled identity and skips
+the cycle while credentials are unavailable. HTTP operations have short bounded
+timeouts: Windows uses two-second per-phase limits, not a two-second end-to-end
+deadline; Linux uses a three-second request deadline with a two-second connect
+limit. Slow work elsewhere cannot occupy this worker. Missed periods are
+skipped rather than queued into a burst. A heartbeat confirms Agent contact,
+not the freshness of CPU, memory, disk, or other inventory observations.
+
+On Windows, frame capture/upload and ordered console input each have their own
+worker. The main service loop continues its normal telemetry and inventory
+cadence while a console is open. Late main-loop responses only wake a fresh
+console poll; they never apply an old assignment or close a newer session.
+Heartbeat, frame and input workers each own their transport objects. Enrollment
+and lifecycle dispatch remain on the main thread. Service stop cancels each
+worker and joins it before service-owned resources are released. Local WMI
+connection/metadata calls still depend on provider health; the isolation is not
+a guarantee that a wedged provider can be forcibly terminated inside the process.
 
 ## Installed roles and features
 
@@ -49,7 +72,7 @@ polls the resulting state before reporting success. The assignment contains no
 WMI expression, method name, script, command, path, URL, or free-form argument.
 Stop remains an immediate power-off operation.
 
-Agent 0.2.24 provides the compiled-in `hyperv.vm.console` capability. For one
+Agent 0.2.25 provides the compiled-in `hyperv.vm.console` capability. For one
 Control Plane lease-bound session, the Agent validates the VM identity and
 running state, captures a bounded console image through the local Hyper-V V2
 provider, and applies only typed keyboard, mouse, or secure-attention input.

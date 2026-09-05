@@ -22,6 +22,7 @@
 #include <fstream>
 #include <iomanip>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -32,8 +33,9 @@
 namespace {
 using Microsoft::WRL::ComPtr;
 constexpr std::size_t k_max_document_bytes = 65'536;
-constexpr wchar_t k_agent_version[] = L"0.2.24";
+constexpr wchar_t k_agent_version[] = L"0.2.25";
 constexpr std::size_t k_max_artifact_bytes = 64 * 1024 * 1024;
+std::mutex identity_mutex;
 
 struct internet_closer { void operator()(void* handle) const { if (handle) WinHttpCloseHandle(handle); } };
 using internet_handle = std::unique_ptr<void, internet_closer>;
@@ -459,12 +461,12 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
     ~failure_reset() { if (cache && !succeeded) cache->reset(); }
   } guard{reusable ? &console_transport : nullptr};
   if (!transport->session) {
-    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.24", WINHTTP_ACCESS_TYPE_NO_PROXY,
+    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.25", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
     if (!transport->session) throw std::runtime_error("The Agent HTTP session could not be created.");
-    if (input_channel) {
-      // The long-poll is bounded to one second on the Gateway. A stopped input
-      // worker must not remain behind the image lane's 30-second I/O timeout.
+    if (input_channel || path == L"/v1/heartbeat") {
+      // These are per-phase limits, not a two-second end-to-end deadline.
+      // Small liveness/input messages do not inherit image-transfer timeouts.
       WinHttpSetTimeouts(transport->session.get(), 2'000, 2'000, 2'000, 2'000);
     } else {
       WinHttpSetTimeouts(transport->session.get(), 10'000, 10'000, 30'000, 30'000);
@@ -539,7 +541,7 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
 }
 
 http_response post_binary(const state& identity, const std::string& body, PCCERT_CONTEXT certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.24", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.25", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent artifact session could not be created.");
   WinHttpSetTimeouts(session.get(), 10'000, 10'000, 60'000, 60'000);
@@ -602,6 +604,7 @@ std::wstring computer_name() {
 }
 
 state load_state(const std::filesystem::path& path) {
+  std::lock_guard lock(identity_mutex);
   const auto document = read_bounded_file(path);
   const auto device_uri = json_string(document, "device_uri");
   const auto fingerprint = json_string(document, "certificate_sha256");
@@ -919,7 +922,9 @@ std::optional<console_assignment> parse_console_assignment(const std::string& do
 bool process_hyperv_console_assignment(
     const std::string& response_document,
     const state& identity,
-    PCCERT_CONTEXT certificate) {
+    PCCERT_CONTEXT certificate,
+    const std::function<bool()>& cancelled = {}) {
+  if (cancelled && cancelled()) return false;
   const auto assignment = parse_console_assignment(response_document);
   if (!assignment) return false;
   if (!assignment->inputs.empty()) {
@@ -931,6 +936,7 @@ bool process_hyperv_console_assignment(
       assignment->width,
       assignment->height,
       assignment->inputs);
+  if (cancelled && cancelled()) return false;
   std::ostringstream body;
   body << "{\"type\":\"hyperv_console_cycle\",\"channel\":\"frame\",\"device_uri\":\""
        << json_escape(identity.device_uri)
@@ -1020,7 +1026,12 @@ state enroll(const std::filesystem::path& bootstrap_path, const std::filesystem:
                                 "\",\"certificate_sha256\":\"" + fingerprint +
                                 "\",\"gateway_dns_name\":\"" + json_escape(*gateway) +
                                 "\",\"gateway_port\":" + std::to_string(*port) + "}";
-  write_atomically(state_path, persisted);
+  {
+    // Publish the complete identity only after its certificate has been
+    // installed. Readers never wait on enrollment/network/inventory work.
+    std::lock_guard lock(identity_mutex);
+    write_atomically(state_path, persisted);
+  }
   write_local_configuration(state_path.parent_path(), *gateway, *port);
   std::fill(bootstrap.begin(), bootstrap.end(), '\0');
   std::error_code ignored; std::filesystem::remove(bootstrap_path, ignored);
@@ -1108,8 +1119,9 @@ TransportResult run_telemetry_cycle() {
   }
 }
 
-TransportResult run_console_cycle() {
+TransportResult run_console_cycle(const std::function<bool()>& cancelled) {
   try {
+    if (cancelled && cancelled()) return {true, L"Console worker stopped.", false};
     const state identity = load_state(data_directory() / L"agent-state.json");
     cert_context certificate(find_agent_certificate(identity.certificate_sha256));
     if (!certificate) throw std::runtime_error("The enrolled Agent certificate is unavailable.");
@@ -1127,11 +1139,44 @@ TransportResult run_console_cycle() {
       throw std::runtime_error("The Hyper-V console poll was rejected.");
     }
     const bool active = process_hyperv_console_assignment(
-        response.body, identity, certificate.get());
+        response.body, identity, certificate.get(), cancelled);
     return {true, active ? L"Hyper-V console cycle succeeded." : L"No Hyper-V console is active.", active};
   } catch (const std::exception& error) {
     try { return {false, wide(error.what()), false}; }
     catch (...) { return {false, L"The Hyper-V console cycle failed.", false}; }
+  }
+}
+
+TransportResult run_heartbeat_cycle(const std::function<bool()>& cancelled) {
+  try {
+    if (cancelled()) return {true, L"Heartbeat worker stopped."};
+    const auto path = data_directory() / L"agent-state.json";
+    if (!std::filesystem::is_regular_file(path)) {
+      return {true, L"Heartbeat skipped until enrollment completes."};
+    }
+    const state identity = load_state(path);
+    cert_context certificate(find_agent_certificate(identity.certificate_sha256));
+    if (!certificate) return {true, L"Heartbeat skipped until credentials are available."};
+    if (cancelled()) return {true, L"Heartbeat worker stopped."};
+    const auto current = load_state(path);
+    if (current.device_uri != identity.device_uri || current.gateway != identity.gateway ||
+        current.port != identity.port || current.certificate_sha256 != identity.certificate_sha256) {
+      return {true, L"Heartbeat skipped while the enrolled identity changes."};
+    }
+    const auto body = "{\"type\":\"heartbeat\",\"device_uri\":\"" +
+        json_escape(identity.device_uri) + "\",\"correlation_id\":\"windows-agent-heartbeat\"}";
+    // This path is deliberately outside the console-only keep-alive cache:
+    // each heartbeat uses a fresh authenticated request and consumes no work.
+    const auto response = post_json(identity.gateway, identity.port, L"/v1/heartbeat",
+                                    body, nullptr, certificate.get());
+    if (response.status != 200 ||
+        json_string(response.body, "type") != std::optional<std::string>("accepted")) {
+      throw std::runtime_error("The Agent heartbeat was rejected.");
+    }
+    return {true, L"Heartbeat delivery succeeded."};
+  } catch (const std::exception& error) {
+    try { return {false, wide(error.what())}; }
+    catch (...) { return {false, L"The Agent heartbeat failed."}; }
   }
 }
 

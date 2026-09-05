@@ -22,7 +22,7 @@ os.environ.setdefault(
     "IPMS_AGENT_WINDOWS_PACKAGE_SHA256",
     "0" * 64,
 )
-os.environ.setdefault("IPMS_AGENT_WINDOWS_VERSION", "0.2.24")
+os.environ.setdefault("IPMS_AGENT_WINDOWS_VERSION", "0.2.25")
 os.environ.setdefault("IPMS_ALLOWED_HOSTS", "testserver")
 os.environ.setdefault("IPMS_CERTIFICATE_PROBE_TOKEN", "test-only-probe-token")
 os.environ.setdefault("IPMS_DATABASE_NAME", "unused-in-test-settings")

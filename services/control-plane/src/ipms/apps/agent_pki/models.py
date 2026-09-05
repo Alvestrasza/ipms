@@ -163,6 +163,7 @@ class AgentEnrollment(models.Model):
     key_algorithm = models.CharField(max_length=32, blank=True)
     first_inventory_at = models.DateTimeField(blank=True, null=True)
     last_seen_at = models.DateTimeField(blank=True, null=True)
+    last_heartbeat_at = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

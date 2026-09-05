@@ -340,8 +340,45 @@ def _version_tuple(value: str) -> tuple[int, int, int] | None:
     return tuple(int(part) for part in parts)
 
 
-def _agent_contact_state(enrollment, server, *, now) -> str:
-    last_seen = server.last_seen_at if server else enrollment.last_seen_at
+def _agent_console_session_candidates(*, tenant):
+    from ipms.apps.discovery.models import HyperVConsoleSession
+    from .hyperv_console import ACTIVE_STATUSES as CONSOLE_ACTIVE_STATUSES
+
+    # Fetch or lock candidates before deciding their lease against current time.
+    # A request timestamp captured before a lock wait can reject a newer lease.
+    return HyperVConsoleSession.objects.filter(
+        tenant=tenant,
+        status__in=CONSOLE_ACTIVE_STATUSES,
+        closed_at__isnull=True,
+    ).only("id", "enrollment_id", "last_agent_contact_at", "last_activity_at", "lease_expires_at")
+
+
+def _valid_agent_console_leases(sessions, *, now):
+    from .hyperv_console import LEASE_SECONDS
+
+    # A valid browser lease prevents removal, but is not Agent contact itself.
+    return [
+        session for session in sessions
+        if session.last_activity_at <= now <= session.lease_expires_at
+        <= session.last_activity_at + timedelta(seconds=LEASE_SECONDS)
+    ]
+
+
+def _agent_contact_at(enrollment, server, *, now, console_sessions=()):
+    contacts = [enrollment.last_heartbeat_at, enrollment.last_seen_at]
+    if server is not None:
+        contacts.append(server.last_seen_at)
+    contacts.extend(
+        session.last_agent_contact_at
+        for session in console_sessions
+        if session.last_agent_contact_at is not None
+        and now - timedelta(seconds=45) <= session.last_agent_contact_at <= now
+    )
+    return max((contact for contact in contacts if contact is not None), default=None)
+
+
+def _agent_contact_state(enrollment, server, *, now, console_sessions=()) -> str:
+    last_seen = _agent_contact_at(enrollment, server, now=now, console_sessions=console_sessions)
     if enrollment.status == AgentEnrollment.Status.REVOKED:
         return "revoked"
     if last_seen is None:
@@ -364,7 +401,7 @@ class AgentAdministrationListView(APIView):
             for server in WindowsServer.objects.filter(
                 tenant=request.tenant,
                 inventory_source=WindowsServer.InventorySource.AGENT,
-            )
+            ).select_related("latest_telemetry")
         }
         linux_systems = {
             system.source_id: system
@@ -375,7 +412,6 @@ class AgentAdministrationListView(APIView):
         }
         target_version = settings.AGENT_WINDOWS_VERSION
         target_tuple = _version_tuple(target_version)
-        now = timezone.now()
         enrollments = AgentEnrollment.objects.filter(
             tenant=request.tenant,
         ).exclude(
@@ -385,8 +421,15 @@ class AgentAdministrationListView(APIView):
                 "lifecycle_jobs",
                 queryset=AgentLifecycleJob.objects.filter(status__in=ACTIVE_STATUSES),
                 to_attr="active_lifecycle_jobs",
-            )
+            ),
+            Prefetch(
+                "hyperv_console_sessions",
+                queryset=_agent_console_session_candidates(tenant=request.tenant),
+                to_attr="console_session_candidates",
+            ),
         )
+        enrollments = list(enrollments)
+        now = timezone.now()
         documents = []
         for enrollment in enrollments:
             server = (
@@ -394,8 +437,14 @@ class AgentAdministrationListView(APIView):
                 if enrollment.platform == AgentEnrollment.Platform.LINUX
                 else servers.get(enrollment.device_uri)
             )
-            last_seen = server.last_seen_at if server else enrollment.last_seen_at
-            state = _agent_contact_state(enrollment, server, now=now)
+            console_sessions = _valid_agent_console_leases(enrollment.console_session_candidates, now=now)
+            last_seen = _agent_contact_at(enrollment, server, now=now, console_sessions=console_sessions)
+            state = _agent_contact_state(enrollment, server, now=now, console_sessions=console_sessions)
+            telemetry = getattr(server, "latest_telemetry", None)
+            inventory_at = (
+                (server.last_seen_at if enrollment.platform == AgentEnrollment.Platform.LINUX else server.discovered_at)
+                if server is not None else None
+            )
             current_version = server.agent_version if server else ""
             current_tuple = _version_tuple(current_version)
             lifecycle_capable = (
@@ -433,8 +482,11 @@ class AgentAdministrationListView(APIView):
                     "status": state,
                     "compliance": compliance,
                     "lifecycle_capable": lifecycle_capable,
-                    "can_remove": state in {"offline", "not-seen", "revoked"},
+                    "can_remove": state in {"offline", "not-seen", "revoked"} and not console_sessions,
                     "last_seen_at": last_seen,
+                    "last_heartbeat_at": enrollment.last_heartbeat_at,
+                    "last_inventory_at": inventory_at,
+                    "last_telemetry_at": telemetry.observed_at if telemetry is not None else None,
                     "active_job": AgentLifecycleJobSerializer(active_job).data if active_job else None,
                 }
             )
@@ -448,7 +500,6 @@ class AgentAdministrationDetailView(APIView):
         from ipms.apps.discovery.models import LinuxSystem, WindowsServer
 
         actor = _actor(request)
-        now = timezone.now()
         with transaction.atomic():
             enrollment = get_object_or_404(
                 AgentEnrollment.objects.select_for_update().exclude(
@@ -468,8 +519,16 @@ class AgentAdministrationDetailView(APIView):
                     inventory_source="agent",
                     source_id=enrollment.device_uri,
                 ).first()
-            contact_state = _agent_contact_state(enrollment, server, now=now)
-            if contact_state not in {"offline", "not-seen", "revoked"}:
+            console_candidates = list(
+                _agent_console_session_candidates(tenant=request.tenant)
+                .select_for_update().filter(enrollment=enrollment)
+            )
+            now = timezone.now()
+            console_sessions = _valid_agent_console_leases(console_candidates, now=now)
+            contact_state = _agent_contact_state(
+                enrollment, server, now=now, console_sessions=console_sessions,
+            )
+            if contact_state not in {"offline", "not-seen", "revoked"} or console_sessions:
                 raise PublicApiError("agent_removal_not_allowed")
             if WindowsAgentDeployment.objects.filter(
                 tenant=request.tenant,
