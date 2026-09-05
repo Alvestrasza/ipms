@@ -144,7 +144,15 @@ session close, with only the VM image producer replaced by a synthetic PNG.
 It checks independent window lifetime, resizing, reuse, occupied-session
 warnings, keyboard/mouse/wheel/secure-attention submission, and clean close.
 
+Live comparison with Agent 0.2.23 reduced the median observed frame interval
+from 1,084 ms to 298 ms on the same test VM. A further 45-second active sample
+remained stable at a 305-ms median. These measurements describe Control Plane
+frame arrival, not browser glass-to-glass latency. See the
+[performance acceptance record](../operations/HYPERV-CONSOLE-PERFORMANCE.md)
+for methodology, input acknowledgement samples and remaining manual checks.
+
 Implementation references:
 
 - [Microsoft SafeArrayAccessData](https://learn.microsoft.com/en-us/windows/win32/api/oleauto/nf-oleauto-safearrayaccessdata)
 - [MDN Window.open](https://developer.mozilla.org/en-US/docs/Web/API/Window/open)
+- [Microsoft WinHTTP sessions](https://learn.microsoft.com/en-us/windows/win32/winhttp/winhttp-sessions-overview)

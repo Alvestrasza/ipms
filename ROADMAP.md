@@ -385,6 +385,11 @@ Migration from IPMS Appliance to IPMS Scale-Out must remain supported.
   connections to remove repeated TLS setup from the frame loop. Each message
   revalidates certificate status and device identity; persistent connections
   cannot switch routes and are bounded to 256 requests.
+- DEV comparison reduced the median observed console frame interval from
+  1,084 ms to 298 ms on one test VM, with a stable 45-second follow-up sample.
+  [Performance acceptance](docs/operations/HYPERV-CONSOLE-PERFORMANCE.md)
+  distinguishes backend timings, isolated browser regression and remaining
+  real-guest manual acceptance.
 - Enforce validation, approval policy, maintenance awareness, idempotency, and
   rollback information for write operations.
 
