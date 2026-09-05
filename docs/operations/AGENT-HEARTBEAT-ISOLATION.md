@@ -1,10 +1,11 @@
 # Agent Heartbeat and Collection Isolation
 
-- Application candidate: 0.2.30
+- Application: 0.2.30
 - Windows Agent: 0.2.25
 - Linux Agent: 0.2.13
 - Date: 2026-09-05
-- Live acceptance: pending the operator's console maintenance window
+- Live acceptance: passed on the selected DEV host and VM
+- Immutable runtime revision: `f04873b9c996f9f659f478676127d57f5c827f06`
 
 ## Failure and required behavior
 
@@ -115,19 +116,69 @@ Deploy the application and additive migration before updating Agents. Older
 Agents remain compatible and gain the legacy-console presence/removal guard;
 independent heartbeat and concurrent Windows collection require the new Agent.
 Only the selected Hyper-V host is the initial canary, not every managed system.
-Do not interrupt an operator-owned console for deployment or measurements.
+Do not interrupt an operator-owned console without explicit authorization.
 
-The DEV Appliance was revalidated at the previous immutable application 0.2.28
-release with Agent 0.2.23 on the selected host, and its console was still active.
-This candidate has not been deployed or measured on that host. Do not infer
-runtime version from repository HEAD or from the older runtime's stale root
-VERSION file. Application API metadata is the version authority there.
+## DEV runtime acceptance
 
-Pending live acceptance: observe more than five minutes with a console open,
-advancing heartbeat and telemetry timestamps, online/non-removable status,
-and compare typed-input acknowledgement/frame timing on the same test VM.
-Backend/worker tests do not establish glass-to-glass performance. The preceding
-0.2.29 detached-browser end-to-end acceptance remains explicitly pending too.
+The operator explicitly authorized closing the occupied console. Its exact
+session was closed through the session service and the authorization was
+audited; the VM remained running. A targeted immutable-release rollout then
+deployed application 0.2.30 and migration 0008 before updating only the selected
+Hyper-V host to Agent 0.2.25. The lifecycle job reported `succeeded` / `updated`.
+
+A fresh custom-format database backup and protected copies of the two existing
+environment files were retained. The backup catalogue was checked; a full
+restore was not rehearsed. Only Agent artifact path/version/digest settings and
+the active release link changed, followed by the affected application/Gateway
+service restarts. OS packages, firewall rules, PKI, nginx and service units were
+not rewritten. The existing DEV HSTS warning remains unchanged.
+
+The active application API reports 0.2.30. Control Plane, Web Console and Agent
+Gateway health passed. Gateway warnings were empty during the checked window;
+the service identity could read and hash the exact published Agent archive.
+Global IPv4/IPv6 firewall allow rules for TCP 9419 were preserved. The observed
+listener is IPv4; this does not establish external IPv6 reachability.
+
+An independently owned test session remained open for **326.9 seconds**:
+
+- All 11 thirty-second observations reported `online` and not removable.
+- All 11 observations had distinct heartbeat and telemetry timestamps.
+- A scheduled inventory update occurred during the active console (two distinct
+  inventory observations); collection was not suspended by console use.
+- Maximum sampled heartbeat age was 4.28 seconds; maximum sampled telemetry age
+  was 10.9 seconds. These are sampled ages, not maximum inter-arrival guarantees.
+- Frame sequence continued advancing beyond the five-minute boundary.
+
+The same-VM twelve-second timing window observed 51 frames, a 235-ms median
+frame interval and 318-ms maximum. Three neutral mouse-movement acknowledgement
+samples were **217 / 217 / 214 ms**, versus **638 / 632 / 527 ms** with Agent
+0.2.23. First-frame arrival was 6,017 ms. The observer retained its 100-ms
+polling granularity; these are Control Plane timings, not glass-to-glass latency
+or a guaranteed frame rate. No keyboard or guest power operation was performed
+in the live comparison.
+
+The test session was closed in its cleanup handler, its transient frame was
+cleared, and no active test session remained. The VM remained running.
+
+## Detached-browser acceptance
+
+The previously pending browser regression passed unchanged against the 0.2.30
+production build: **1/1 test passed** in 5.2 seconds. The isolated front door
+mirrored deployed nginx routing, forwarding `/api/v1` directly to the real
+fixture Django service. Authentication, tenant checks, input submission,
+occupancy warning, detached-window resizing/reuse and lease closure were real;
+only the image producer was synthetic. Login/Overview smoke and visual review
+also passed. All temporary helpers were stopped and their ports were free.
+
+This resolved the verification-harness obstacle without changing product
+authentication or security settings. The precise earlier development-login
+HTTP 403 mechanism was not established and is not claimed fixed. Real guest
+visual pointer mapping, keyboard-layout behavior and perceived responsiveness
+remain manual acceptance items.
+
+Repository documentation may advance beyond the immutable runtime revision;
+revalidate the active release and API metadata instead of inferring runtime
+from repository HEAD.
 
 For rollback, keep the additive database column and return to the prior
 immutable application/Agent pair together. Rolling back only to application

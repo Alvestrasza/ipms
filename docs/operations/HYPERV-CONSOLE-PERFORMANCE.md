@@ -58,6 +58,21 @@ approximately 4.8 to 8.6 seconds across the runs: initial assignment still waits
 for the Agent's normal update cycle. This is a bounded image console, not a
 high-frame-rate video or RDP implementation.
 
+## 0.2.30 follow-up
+
+The same selected VM was measured after deploying application 0.2.30 and host
+Agent 0.2.25. Its twelve-second window produced 51 observed frames, a 235-ms
+median frame interval, a 318-ms maximum and 217 / 217 / 214 ms input
+acknowledgements. First-frame arrival was 6,017 ms. Observer polling remained
+100 ms; this is not browser glass-to-glass timing.
+
+A 326.9-second session also verified independent heartbeat, telemetry and
+scheduled inventory while the Agent remained online and not removable. The
+production-build detached-browser regression passed. See the
+[full acceptance record](AGENT-HEARTBEAT-ISOLATION.md#dev-runtime-acceptance).
+Only the selected host was updated; both the authorized operator session and
+the later test session were closed without stopping the VM.
+
 ## Verification layers
 
 - 180 Django tests passed, including certificate revalidation on every pooled

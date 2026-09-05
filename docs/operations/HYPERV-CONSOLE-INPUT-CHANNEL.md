@@ -3,7 +3,12 @@
 - Application: 0.2.29
 - Windows Agent: 0.2.24
 - Date: 2026-09-05
-- Runtime acceptance: pending the authorized DEV test window
+- Runtime acceptance: completed by the superseding 0.2.30 / Agent 0.2.25 run
+
+The historical preparation record below describes the original 0.2.29 checks
+and blockers. Same-VM timing and production-build detached-browser acceptance
+were subsequently completed in
+[the 0.2.30 heartbeat acceptance](AGENT-HEARTBEAT-ISOLATION.md#dev-runtime-acceptance).
 
 ## Problem
 
