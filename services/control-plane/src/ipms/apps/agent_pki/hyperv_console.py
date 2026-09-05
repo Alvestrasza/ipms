@@ -135,9 +135,10 @@ def renew_console_session(*, session, actor: str):
             update_fields=("status", "failure_code", "closed_at", "frame_png")
         )
         return session
-    session.last_activity_at = now
-    session.lease_expires_at = now + timedelta(seconds=LEASE_SECONDS)
-    session.save(update_fields=("last_activity_at", "lease_expires_at"))
+    if session.lease_expires_at < now + timedelta(seconds=LEASE_SECONDS - 5):
+        session.last_activity_at = now
+        session.lease_expires_at = now + timedelta(seconds=LEASE_SECONDS)
+        session.save(update_fields=("last_activity_at", "lease_expires_at"))
     return session
 
 
@@ -216,11 +217,10 @@ def queue_console_input(*, session, actor: str, event_type: str, payload: object
         raise ValidationError("The console session is owned by another user.")
     validated = _validated_input(event_type, payload)
     if event_type == HyperVConsoleInputEvent.EventType.MOUSE_MOVE:
-        pending_move = session.input_events.filter(
-            event_type=event_type,
-            delivered_at__isnull=True,
-        ).order_by("-created_at").first()
-        if pending_move:
+        # Coalesce only adjacent undelivered moves. Never move a later position
+        # before an already queued click or key event.
+        pending_move = session.input_events.order_by("-created_at").first()
+        if pending_move and pending_move.event_type == event_type and pending_move.delivered_at is None:
             pending_move.payload = validated
             pending_move.save(update_fields=("payload",))
             return pending_move
@@ -242,6 +242,16 @@ def queue_console_input(*, session, actor: str, event_type: str, payload: object
             details={},
         )
     return event
+
+
+@transaction.atomic
+def queue_console_inputs(*, session, actor: str, events: list):
+    if not 1 <= len(events) <= 32:
+        raise ValidationError("The console input batch is invalid.")
+    # Hold the session lock over the entire ordered batch, including validation.
+    # Any invalid event rolls back the complete batch and its audit records.
+    session = HyperVConsoleSession.objects.select_for_update().get(id=session.id, tenant=session.tenant)
+    return [queue_console_input(session=session, actor=actor, event_type=event["type"], payload=event["payload"]) for event in events]
 
 
 def _decode_frame(value: object) -> bytes:

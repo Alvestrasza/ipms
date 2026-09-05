@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cctype>
 #include <cstdint>
+#include <cstring>
 #include <cwchar>
 #include <cwctype>
 #include <map>
@@ -503,8 +504,10 @@ ComPtr<IWbemClassObject> find_related_device(
     IWbemServices* services,
     const wchar_t* class_name,
     const std::string& source_id) {
+  if (normalized_guid(std::wstring(source_id.begin(), source_id.end())) != source_id) return {};
   std::wstring query = L"SELECT * FROM ";
   query += class_name;
+  query += L" WHERE SystemName = '" + std::wstring(source_id.begin(), source_id.end()) + L"'";
   auto rows = execute_query(services, query.c_str());
   if (!rows) return {};
   ComPtr<IWbemClassObject> match;
@@ -854,7 +857,8 @@ std::vector<std::uint8_t> capture_console_frame(
   LONG lower = 0;
   LONG upper = -1;
   std::vector<std::uint8_t> rgb565;
-  if (SUCCEEDED(SafeArrayGetLBound(image.parray, 1, &lower)) &&
+  if (SafeArrayGetDim(image.parray) == 1 &&
+      SUCCEEDED(SafeArrayGetLBound(image.parray, 1, &lower)) &&
       SUCCEEDED(SafeArrayGetUBound(image.parray, 1, &upper)) && upper >= lower) {
     const auto size = static_cast<std::size_t>(upper - lower + 1);
     auto decoded_width = width;
@@ -890,18 +894,18 @@ std::vector<std::uint8_t> capture_console_frame(
     if (matches_payload(decoded_width, decoded_height)) {
       const auto image_bytes = static_cast<std::size_t>(decoded_width) *
                                decoded_height * 2;
+      // Lock the contiguous provider buffer once, rather than performing a COM
+      // array access for every byte (over 1.5 million calls at 1024x768).
       rgb565.resize(image_bytes);
-      for (std::size_t offset = 0; offset < image_bytes; ++offset) {
-        LONG index = lower + static_cast<LONG>(offset);
-        if (FAILED(SafeArrayGetElement(
-                image.parray,
-                &index,
-                &rgb565[offset]))) {
-          rgb565.clear();
-          failure_code = "console_frame_image_read_failed";
-          break;
-        }
+      void* pixels = nullptr;
+      if (SUCCEEDED(SafeArrayAccessData(image.parray, &pixels))) {
+        if (pixels) std::memcpy(rgb565.data(), pixels, image_bytes);
+        const HRESULT unlocked = SafeArrayUnaccessData(image.parray);
+        if (!pixels || FAILED(unlocked)) rgb565.clear();
+      } else {
+        rgb565.clear();
       }
+      if (rgb565.empty()) failure_code = "console_frame_image_read_failed";
       width = decoded_width;
       height = decoded_height;
     } else {

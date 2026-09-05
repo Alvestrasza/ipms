@@ -189,7 +189,7 @@ export const en = {
     infrastructure: "Infrastructure",
     agents: "Agents",
     soon: "Soon",
-    version: "IPMS v0.2.26 development",
+    version: "IPMS v0.2.27 development",
   },
   linuxSystems: {
     liveData: "Live tenant-scoped Linux inventory from enrolled Agents.",
@@ -621,6 +621,8 @@ export const en = {
       directInput:
         "Interactive virtual machine console. Keyboard and mouse input is sent directly to the virtual machine.",
       sessionInUse: "The virtual machine console is already in use",
+      popupBlocked:
+        "Allow pop-up windows for IPMS to open the virtual machine console.",
       sessionInUseDetail:
         "{user} opened the existing session at {time}. Close that session before trying again.",
       unavailable: "The virtual machine console is unavailable.",

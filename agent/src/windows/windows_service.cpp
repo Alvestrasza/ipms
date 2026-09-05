@@ -57,7 +57,12 @@ void WINAPI service_main(DWORD, LPWSTR*) {
       const auto console = ipms::agent::windows::run_console_cycle();
       console_active = console.succeeded && console.console_active;
     }
-    const DWORD interval = console_active ? 750 : 1'000;
+    // A bounded 150 ms cadence includes work time; avoid adding a full sleep
+    // after every capture and mTLS exchange. Keep a yield on busy hosts.
+    const ULONGLONG elapsed = GetTickCount64() - now;
+    const DWORD interval = console_active
+        ? static_cast<DWORD>(elapsed < 125 ? 150 - elapsed : 25)
+        : 1'000;
     if (WaitForSingleObject(stop_event, interval) != WAIT_TIMEOUT) break;
   } while (true);
   CloseHandle(stop_event);

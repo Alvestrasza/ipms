@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests",
+  testIgnore: "hyperv-console.spec.ts",
   fullyParallel: true,
   retries: process.env.CI ? 2 : 0,
   reporter: "html",

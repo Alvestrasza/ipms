@@ -804,16 +804,25 @@ class HyperVConsoleFrameView(APIView):
     )
 
     def get(self, request, pk):
+        from ipms.apps.agent_pki.hyperv_console import renew_console_session
+
         session = get_object_or_404(
             HyperVConsoleSession,
             id=pk,
             tenant=request.tenant,
             requested_by=request.user.get_username(),
         )
-        if not session.frame_png:
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        response = HttpResponse(bytes(session.frame_png), content_type="image/png")
+        session = renew_console_session(session=session, actor=request.user.get_username())
+        after = request.query_params.get("after", "0")
+        if not after.isascii() or not after.isdigit() or len(after) > 18:
+            raise ValidationError({"after": ["invalid_frame_sequence"]})
+        if session.status != HyperVConsoleSession.Status.ACTIVE or not session.frame_png or session.frame_sequence <= int(after):
+            response = HttpResponse(status=status.HTTP_204_NO_CONTENT)
+        else:
+            response = HttpResponse(bytes(session.frame_png), content_type="image/png")
         response["Cache-Control"] = "private, no-store"
+        response["X-IPMS-Console-Status"] = session.status
+        response["X-IPMS-Console-Failure"] = session.failure_code
         response["X-IPMS-Frame-Sequence"] = str(session.frame_sequence)
         response["X-IPMS-Frame-Width"] = str(session.frame_width)
         response["X-IPMS-Frame-Height"] = str(session.frame_height)
@@ -828,7 +837,7 @@ class HyperVConsoleInputView(APIView):
     )
 
     def post(self, request, pk):
-        from ipms.apps.agent_pki.hyperv_console import queue_console_input
+        from ipms.apps.agent_pki.hyperv_console import queue_console_inputs
 
         session = get_object_or_404(
             HyperVConsoleSession,
@@ -836,18 +845,22 @@ class HyperVConsoleInputView(APIView):
             tenant=request.tenant,
             requested_by=request.user.get_username(),
         )
-        serializer = HyperVConsoleInputSerializer(data=request.data)
+        batched = isinstance(request.data, dict) and "events" in request.data
+        documents = request.data.get("events") if batched else [request.data]
+        if not isinstance(documents, list) or not 1 <= len(documents) <= 32:
+            raise ValidationError({"input": ["invalid_input_batch"]})
+        serializer = HyperVConsoleInputSerializer(data=documents, many=True)
         serializer.is_valid(raise_exception=True)
         try:
-            event = queue_console_input(
+            events = queue_console_inputs(
                 session=session,
                 actor=request.user.get_username(),
-                event_type=serializer.validated_data["type"],
-                payload=serializer.validated_data["payload"],
+                events=serializer.validated_data,
             )
         except DjangoValidationError as exc:
             raise ValidationError({"input": exc.messages}) from exc
-        return Response({"id": str(event.id)}, status=status.HTTP_202_ACCEPTED)
+        result = {"ids": [str(event.id) for event in events]} if batched else {"id": str(events[0].id)}
+        return Response(result, status=status.HTTP_202_ACCEPTED)
 
 
 class LinuxSystemListView(ListAPIView):

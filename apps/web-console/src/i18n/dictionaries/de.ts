@@ -203,7 +203,7 @@ export const de = {
     infrastructure: "Infrastruktur",
     agents: "Agenten",
     soon: "Bald",
-    version: "IPMS v0.2.26 Entwicklung",
+    version: "IPMS v0.2.27 Entwicklung",
   },
   linuxSystems: {
     liveData:
@@ -641,6 +641,8 @@ export const de = {
       directInput:
         "Interaktive VM-Konsole. Tastatur- und Mauseingaben werden direkt an die virtuelle Maschine gesendet.",
       sessionInUse: "Die VM-Konsole wird bereits verwendet",
+      popupBlocked:
+        "Erlaube Popup-Fenster für IPMS, um die VM-Konsole zu öffnen.",
       sessionInUseDetail:
         "{user} hat die bestehende Sitzung um {time} geöffnet. Schließe diese Sitzung, bevor du es erneut versuchst.",
       unavailable: "Die VM-Konsole ist nicht verfügbar.",

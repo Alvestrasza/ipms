@@ -17,11 +17,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { DialogPortal } from "@/components/dialog-portal";
-import {
-  type ConsoleDialogState,
-  HyperVConsoleDialog,
-} from "@/components/hyperv-console-dialog";
+import type { ConsoleCopy } from "@/components/hyperv-console-dialog";
 import { StatusPill } from "@/components/status-pill";
+import { useLocale } from "@/i18n/locale-provider";
 import type {
   HyperVAction,
   HyperVActionJob,
@@ -57,21 +55,7 @@ type Copy = {
   queued: string;
   actionFailed: string;
   states: Record<string, string>;
-  console: {
-    open: string;
-    title: string;
-    close: string;
-    secureAttention: string;
-    secureAttentionHint: string;
-    connecting: string;
-    waitingForFrame: string;
-    directInput: string;
-    sessionInUse: string;
-    sessionInUseDetail: string;
-    unavailable: string;
-    failed: string;
-    expired: string;
-  };
+  console: ConsoleCopy & { open: string; popupBlocked: string };
 };
 
 type Menu = { vm: HyperVVirtualMachine; x: number; y: number };
@@ -131,14 +115,12 @@ export function HyperVVirtualMachineInventory({
   canConsole: boolean;
 }) {
   const router = useRouter();
+  const { locale } = useLocale();
   const [menu, setMenu] = useState<Menu | null>(null);
   const [pending, setPending] = useState<StopConfirmation | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [consoleDialog, setConsoleDialog] = useState<ConsoleDialogState | null>(
-    null,
-  );
 
   useEffect(() => {
     const close = () => setMenu(null);
@@ -176,73 +158,25 @@ export function HyperVVirtualMachineInventory({
     });
   }
 
-  async function openConsole(vm: HyperVVirtualMachine) {
+  function openConsole(vm: HyperVVirtualMachine) {
     setMenu(null);
-    setConsoleDialog({
-      vm,
-      session: null,
-      occupied: null,
-      loading: true,
-      error: "",
-    });
-    try {
-      const response = await fetch(
-        `/api/v1/hyper-v/virtual-machines/${vm.id}/console-sessions/`,
-        {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": csrfToken,
-            "X-IPMS-Tenant-ID": tenantId,
-          },
-          body: "{}",
-        },
+    // Open synchronously from the user gesture so popup blockers can allow it.
+    // A named window focuses an existing console without reloading its lease.
+    const popup = window.open(
+      "",
+      `ipms-console-${tenantId}-${vm.id}`,
+      "popup=yes,width=1120,height=840,resizable=yes,scrollbars=yes",
+    );
+    if (!popup) {
+      setError(copy.console.popupBlocked);
+      return;
+    }
+    if (popup.location.href === "about:blank") {
+      popup.location.replace(
+        `/${locale}/virtual/hyper-v/console/${vm.id}?tenant=${encodeURIComponent(tenantId)}`,
       );
-      const document = await response.json();
-      if (response.status === 409) {
-        setConsoleDialog({
-          vm,
-          session: null,
-          occupied: document.session,
-          loading: false,
-          error: "",
-        });
-        return;
-      }
-      if (!response.ok) throw new Error("console_open_failed");
-      setConsoleDialog({
-        vm,
-        session: document,
-        occupied: null,
-        loading: false,
-        error: "",
-      });
-    } catch {
-      setConsoleDialog({
-        vm,
-        session: null,
-        occupied: null,
-        loading: false,
-        error: copy.console.unavailable,
-      });
     }
-  }
-
-  function closeConsole() {
-    const sessionId = consoleDialog?.session?.id;
-    setConsoleDialog(null);
-    if (sessionId) {
-      void fetch(`/api/v1/hyper-v/console-sessions/${sessionId}/`, {
-        method: "DELETE",
-        credentials: "same-origin",
-        keepalive: true,
-        headers: {
-          "X-CSRFToken": csrfToken,
-          "X-IPMS-Tenant-ID": tenantId,
-        },
-      });
-    }
+    popup.focus();
   }
 
   async function runAction(request: ActionRequest) {
@@ -561,20 +495,6 @@ export function HyperVVirtualMachineInventory({
             </section>
           </div>
         </DialogPortal>
-      ) : null}
-      {consoleDialog ? (
-        <HyperVConsoleDialog
-          key={`${consoleDialog.vm.id}:${
-            consoleDialog.session?.id ??
-            consoleDialog.occupied?.id ??
-            (consoleDialog.error ? "error" : "loading")
-          }`}
-          state={consoleDialog}
-          copy={copy.console}
-          csrfToken={csrfToken}
-          tenantId={tenantId}
-          onClose={closeConsole}
-        />
       ) : null}
     </>
   );

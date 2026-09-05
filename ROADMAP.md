@@ -375,6 +375,12 @@ Migration from IPMS Appliance to IPMS Scale-Out must remain supported.
   takeover, and arbitrary remote execution remain excluded. The Agent resolves
   the currently active VM settings through `Msvm_SettingsDefineState` rather
   than scanning a host-wide collection.
+- Application 0.2.27 and Windows Agent 0.2.22 add an independent, resizable
+  browser console window, bulk frame-buffer reads, VM-filtered input-device
+  queries, bounded 150-ms frame cycles, and ordered/coalesced input batches.
+  Frame polling carries status and lease renewal in one response and skips
+  unchanged images. Closing the browser window releases the session; abrupt
+  disconnects retain the bounded lease-expiry fallback.
 - Enforce validation, approval policy, maintenance awareness, idempotency, and
   rollback information for write operations.
 

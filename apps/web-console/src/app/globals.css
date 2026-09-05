@@ -1718,19 +1718,13 @@ td strong {
 .modal-card--wide {
   width: min(720px, 100%);
 }
-.hyperv-console-backdrop {
-  padding: clamp(12px, 3vw, 36px);
-}
-.hyperv-console-modal {
-  width: min(1120px, 100%);
-  max-height: calc(100vh - var(--topbar-height) - 48px);
+.hyperv-console-window {
+  width: 100%;
+  height: 100dvh;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
   background: var(--surface-panel-raised);
-  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.56);
 }
 .hyperv-console-toolbar {
   min-height: 58px;
@@ -1764,7 +1758,7 @@ td strong {
 }
 .hyperv-console-surface,
 .hyperv-console-notice {
-  min-height: min(68vh, 720px);
+  min-height: 0;
 }
 .hyperv-console-surface {
   position: relative;
@@ -1781,6 +1775,8 @@ td strong {
   box-shadow: inset 0 0 0 2px var(--color-accent);
 }
 .hyperv-console-surface img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   display: block;
@@ -2551,9 +2547,6 @@ td strong {
     inset: 0;
     padding: 10px;
   }
-  .hyperv-console-modal {
-    max-height: calc(100vh - 20px);
-  }
   .hyperv-console-toolbar {
     align-items: flex-start;
   }
@@ -2562,10 +2555,6 @@ td strong {
   }
   .hyperv-console-secure-attention span {
     display: none;
-  }
-  .hyperv-console-surface,
-  .hyperv-console-notice {
-    min-height: min(72vh, 620px);
   }
   .form-grid--endpoint {
     grid-template-columns: 1fr;

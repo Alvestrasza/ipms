@@ -228,6 +228,55 @@ class HyperVConsoleTests(TestCase):
         )
         self.assertEqual(next_assignment["session_id"], second_session_id)
 
+    def test_frame_poll_skips_unchanged_image_and_expires_abandoned_session(self) -> None:
+        session_id = self.create_session().json()["id"]
+        session = HyperVConsoleSession.objects.get(id=session_id)
+        session.status = HyperVConsoleSession.Status.ACTIVE
+        session.frame_png = b"\x89PNG\r\n\x1a\nfixture"
+        session.frame_sequence = 4
+        session.lease_expires_at = timezone.now() + timedelta(seconds=2)
+        session.save()
+        url = reverse("core:hyperv-console-frame", args=(session_id,))
+        unchanged = self.client.get(url, {"after": "4"}, **self.headers())
+        self.assertEqual(unchanged.status_code, 204)
+        self.assertEqual(unchanged.content, b"")
+        self.assertEqual(unchanged["X-IPMS-Console-Status"], "active")
+        self.assertEqual(unchanged["Cache-Control"], "private, no-store")
+        session.refresh_from_db()
+        self.assertGreater(session.lease_expires_at, timezone.now() + timedelta(seconds=25))
+        changed = self.client.get(url, {"after": "3"}, **self.headers())
+        self.assertEqual(changed.status_code, 200)
+        self.assertEqual(changed["X-IPMS-Frame-Sequence"], "4")
+        session.lease_expires_at = timezone.now() - timedelta(seconds=1)
+        session.save(update_fields=("lease_expires_at",))
+        expired = self.client.get(url, **self.headers())
+        self.assertEqual(expired.status_code, 204)
+        self.assertEqual(expired["X-IPMS-Console-Status"], "expired")
+        session.refresh_from_db()
+        self.assertEqual(bytes(session.frame_png), b"")
+
+    def test_input_batch_preserves_move_click_move_order(self) -> None:
+        session_id = self.create_session().json()["id"]
+        events = [
+            {"type": "mouse_move", "payload": {"x": 10, "y": 20}},
+            {"type": "mouse_move", "payload": {"x": 30, "y": 40}},
+            {"type": "mouse_button", "payload": {"button": 1, "is_down": True}},
+            {"type": "mouse_move", "payload": {"x": 50, "y": 60}},
+            {"type": "mouse_button", "payload": {"button": 1, "is_down": False}},
+        ]
+        response = self.client.post(reverse("core:hyperv-console-input", args=(session_id,)), {"events": events}, content_type="application/json", **self.headers())
+        self.assertEqual(response.status_code, 202)
+        queued = list(HyperVConsoleInputEvent.objects.filter(session_id=session_id).order_by("created_at"))
+        self.assertEqual([{"type": event.event_type, "payload": event.payload} for event in queued], events[1:])
+
+    def test_invalid_batch_rolls_back_all_inputs_and_audit(self) -> None:
+        session_id = self.create_session().json()["id"]
+        events = [{"type": "secure_attention", "payload": {}}, {"type": "key", "payload": {"key_code": 999, "is_down": True}}]
+        response = self.client.post(reverse("core:hyperv-console-input", args=(session_id,)), {"events": events}, content_type="application/json", **self.headers())
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(HyperVConsoleInputEvent.objects.filter(session_id=session_id).exists())
+        self.assertFalse(AuditEvent.objects.filter(action="hyperv.virtual_machine.console.secure_attention").exists())
+
     def test_secure_attention_is_dedicated_and_audited(self) -> None:
         session_id = self.create_session().json()["id"]
         response = self.client.post(

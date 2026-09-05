@@ -2,7 +2,7 @@
 
 - Status: Accepted for the development foundation
 - Decision date: 2026-09-05
-- Application version: 0.2.26
+- Application version: 0.2.27
 - First compatible Windows Agent: 0.2.21
 
 ## Context
@@ -21,9 +21,12 @@ operation.
 
 ## Decision
 
-The browser opens a centered, tenant-scoped modal from the Hyper-V virtual
+The browser opens an independent, tenant-scoped window from the Hyper-V virtual
 machine inventory. A double click or the **Open console** context-menu item
-requests a session. The modal provides:
+requests a session. It can be moved across monitors and resized using the
+operating system's window controls. The original portal may navigate or close
+independently. Browser popup policy is respected and blocked opens receive a
+localized message. The window provides:
 
 - a bounded current console image;
 - a focusable surface for direct keyboard and absolute mouse input;
@@ -35,7 +38,7 @@ The Control Plane owns the session lease, authorization, tenant binding, input
 queue, and latest frame. A conditional database uniqueness constraint permits
 only one `requested` or `active` session for a tenant and VM identity.
 This makes the rule valid in both standalone and scale-out deployments. A
-30-second browser lease is renewed by authenticated status polling; abandoned
+30-second browser lease is renewed by authenticated frame or status polling; abandoned
 sessions expire and release the VM automatically.
 
 The dedicated `virtual_machines.console.control` permission is granted to
@@ -65,6 +68,21 @@ which is never interpreted as image data. It uses the fixed
 `Msvm_Keyboard` and `Msvm_SyntheticMouse` methods for input, including the
 dedicated `TypeCtrlAltDel` operation. The server cannot supply a WMI query,
 class, method, path, command, script, executable, URL, or guest credential.
+
+Version 0.2.27 targets a bounded 150-ms browser frame cadence. One response
+contains the latest image sequence, dimensions, state, and failure code.
+Clients send their last sequence and receive an empty, uncached response for
+unchanged frames. Lease writes are limited to once every five seconds during
+continuous polling. There is at most one frame request in flight per window.
+
+Input is batched within 25 ms and delivered sequentially in batches of at most
+32 events. Consecutive mouse moves may be coalesced, but never across a click
+or key event. Both browser and Control Plane bound their queues. A failed or
+uncertain browser delivery stops the queue instead of replaying actions.
+Agent 0.2.22 replaces per-byte Automation array calls with one validated bulk
+copy, filters input-device queries to the validated VM GUID, and targets a
+150-ms cycle including capture/exchange time, with a minimum 25-ms yield.
+The achieved frame rate remains dependent on the provider and host workload.
 
 The Agent acknowledges input identifiers only after applying them. Until the
 Control Plane receives an acknowledgement, the event remains eligible for
@@ -100,7 +118,7 @@ Control Plane tests prove permission and tenant isolation, single-session
 enforcement, owner-only control, lease expiry, input validation, secure
 attention auditing, Agent delivery, acknowledgement, and frame retrieval.
 The native Windows build and contract tests prove that the console remains a
-compiled-in capability. The web build proves the localized modal and input
+compiled-in capability. The web build proves the localized detached window and input
 surface compile as a production Next.js application.
 
 Live acceptance with Agent 0.2.21 has verified session exclusivity, repeated
@@ -109,3 +127,14 @@ acknowledgement, clean session release, and removal of the transient frame.
 Frame color, keyboard layout, visual mouse-coordinate mapping, mouse buttons,
 wheel input, secure attention, host failover behavior, and provider timeouts
 remain explicit manual acceptance items.
+
+The detached-window browser regression test uses real local authentication,
+tenant authorization, session creation/exclusivity, input validation and
+session close, with only the VM image producer replaced by a synthetic PNG.
+It checks independent window lifetime, resizing, reuse, occupied-session
+warnings, keyboard/mouse/wheel/secure-attention submission, and clean close.
+
+Implementation references:
+
+- [Microsoft SafeArrayAccessData](https://learn.microsoft.com/en-us/windows/win32/api/oleauto/nf-oleauto-safearrayaccessdata)
+- [MDN Window.open](https://developer.mozilla.org/en-US/docs/Web/API/Window/open)

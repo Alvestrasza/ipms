@@ -3,19 +3,18 @@
 import { Keyboard, Monitor, ShieldAlert, X } from "lucide-react";
 import {
   type MouseEvent as ReactMouseEvent,
-  useCallback,
   useEffect,
   useRef,
   useState,
 } from "react";
 
-import { DialogPortal } from "@/components/dialog-portal";
+import { ConsoleInputQueue } from "@/lib/console-input-queue";
 import type {
   HyperVConsoleSession,
   HyperVVirtualMachine,
 } from "@/lib/hyperv-types";
 
-type ConsoleCopy = {
+export type ConsoleCopy = {
   title: string;
   close: string;
   secureAttention: string;
@@ -128,19 +127,21 @@ export function HyperVConsoleDialog({
   const [session, setSession] = useState(state.session);
   const [frameUrl, setFrameUrl] = useState("");
   const [error, setError] = useState(state.error);
+  const [frameError, setFrameError] = useState("");
   const frameSequence = useRef(0);
   const frameUrlRef = useRef("");
   const pressedKeys = useRef(new Set<number>());
-  const pendingMousePosition = useRef<{ x: number; y: number } | null>(null);
-  const mouseAnimationFrame = useRef<number | null>(null);
+  const pressedButtons = useRef(new Set<number>());
+  const surface = useRef<HTMLDivElement | null>(null);
+  const inputQueue = useRef<ConsoleInputQueue | null>(null);
   const activeSessionId = session?.id;
 
-  const sendInput = useCallback(
-    async (type: string, payload: Record<string, number | boolean>) => {
-      if (!session || !["requested", "active"].includes(session.status)) return;
-      try {
+  useEffect(() => {
+    if (!activeSessionId) return;
+    const queue = new ConsoleInputQueue(
+      async (events) => {
         const response = await fetch(
-          `/api/v1/hyper-v/console-sessions/${session.id}/input/`,
+          `/api/v1/hyper-v/console-sessions/${activeSessionId}/input/`,
           {
             method: "POST",
             credentials: "same-origin",
@@ -149,69 +150,116 @@ export function HyperVConsoleDialog({
               "X-CSRFToken": csrfToken,
               "X-IPMS-Tenant-ID": tenantId,
             },
-            body: JSON.stringify({ type, payload }),
+            body: JSON.stringify({ events }),
+            signal: AbortSignal.timeout(8000),
           },
         );
         if (!response.ok) throw new Error("input_rejected");
-      } catch {
-        setError(copy.unavailable);
-      }
-    },
-    [copy.unavailable, csrfToken, session, tenantId],
-  );
+      },
+      () => setError(copy.unavailable),
+    );
+    inputQueue.current = queue;
+    return () => {
+      queue.dispose();
+      inputQueue.current = null;
+    };
+  }, [activeSessionId, copy.unavailable, csrfToken, tenantId]);
+
+  function sendInput(type: string, payload: Record<string, number | boolean>) {
+    if (session?.status === "active")
+      inputQueue.current?.push({ type, payload });
+  }
+
+  useEffect(() => {
+    const element = surface.current;
+    if (!element || session?.status !== "active" || error || frameError) return;
+    const wheel = (event: WheelEvent) => {
+      event.preventDefault();
+      inputQueue.current?.push({
+        type: "mouse_wheel",
+        payload: { delta: event.deltaY < 0 ? 120 : -120 },
+      });
+    };
+    element.addEventListener("wheel", wheel, { passive: false });
+    return () => element.removeEventListener("wheel", wheel);
+  }, [session?.status, error, frameError]);
 
   useEffect(() => {
     if (!activeSessionId) return;
     let stopped = false;
     let timer = 0;
     const sessionId = activeSessionId;
+    const controller = new AbortController();
     const poll = async () => {
+      const started = performance.now();
+      let retry = false;
       try {
-        const statusResponse = await fetch(
-          `/api/v1/hyper-v/console-sessions/${sessionId}/`,
+        const response = await fetch(
+          `/api/v1/hyper-v/console-sessions/${sessionId}/frame/?after=${frameSequence.current}`,
           {
             cache: "no-store",
             credentials: "same-origin",
             headers: { "X-IPMS-Tenant-ID": tenantId },
+            signal: controller.signal,
           },
         );
-        if (!statusResponse.ok) throw new Error("status_rejected");
-        const current = (await statusResponse.json()) as HyperVConsoleSession;
+        if (!response.ok) throw new Error("frame_rejected");
         if (stopped) return;
-        setSession(current);
+        setFrameError("");
+        const status = response.headers.get(
+          "X-IPMS-Console-Status",
+        ) as HyperVConsoleSession["status"];
         if (
-          current.status === "active" &&
-          current.frame_sequence > frameSequence.current
-        ) {
-          const frameResponse = await fetch(
-            `/api/v1/hyper-v/console-sessions/${sessionId}/frame/`,
-            {
-              cache: "no-store",
-              credentials: "same-origin",
-              headers: { "X-IPMS-Tenant-ID": tenantId },
-            },
-          );
-          if (frameResponse.ok) {
-            const nextUrl = URL.createObjectURL(await frameResponse.blob());
-            if (stopped) {
-              URL.revokeObjectURL(nextUrl);
-              return;
-            }
-            if (frameUrlRef.current) URL.revokeObjectURL(frameUrlRef.current);
-            frameUrlRef.current = nextUrl;
-            frameSequence.current = current.frame_sequence;
-            setFrameUrl(nextUrl);
+          !["requested", "active", "failed", "expired", "closed"].includes(
+            status,
+          )
+        )
+          throw new Error("status_rejected");
+        const sequence = Number(response.headers.get("X-IPMS-Frame-Sequence"));
+        setSession((current) =>
+          current
+            ? {
+                ...current,
+                status,
+                failure_code:
+                  response.headers.get("X-IPMS-Console-Failure") ?? "",
+                frame_sequence: sequence,
+                frame_width: Number(response.headers.get("X-IPMS-Frame-Width")),
+                frame_height: Number(
+                  response.headers.get("X-IPMS-Frame-Height"),
+                ),
+              }
+            : current,
+        );
+        if (response.status === 200) {
+          const nextUrl = URL.createObjectURL(await response.blob());
+          if (stopped) {
+            URL.revokeObjectURL(nextUrl);
+            return;
           }
+          if (frameUrlRef.current) URL.revokeObjectURL(frameUrlRef.current);
+          frameUrlRef.current = nextUrl;
+          frameSequence.current = sequence;
+          setFrameUrl(nextUrl);
         }
-        if (["failed", "expired", "closed"].includes(current.status)) return;
+        if (["failed", "expired", "closed"].includes(status)) {
+          inputQueue.current?.dispose();
+          return;
+        }
       } catch {
-        if (!stopped) setError(copy.unavailable);
+        retry = true;
+        if (!stopped) setFrameError(copy.unavailable);
       }
-      if (!stopped) timer = window.setTimeout(poll, 750);
+      if (!stopped)
+        timer = window.setTimeout(
+          poll,
+          retry ? 1000 : Math.max(25, 150 - (performance.now() - started)),
+        );
     };
     void poll();
     return () => {
       stopped = true;
+      controller.abort();
       window.clearTimeout(timer);
       if (frameUrlRef.current) {
         URL.revokeObjectURL(frameUrlRef.current);
@@ -233,6 +281,9 @@ export function HyperVConsoleDialog({
       void sendInput("key", { key_code: keyCode, is_down: false });
     }
     pressedKeys.current.clear();
+    for (const button of pressedButtons.current)
+      sendInput("mouse_button", { button, is_down: false });
+    pressedButtons.current.clear();
   }
 
   function queueMousePosition(event: ReactMouseEvent<HTMLDivElement>) {
@@ -246,7 +297,7 @@ export function HyperVConsoleDialog({
     const renderedHeight = session.frame_height * scale;
     const renderedLeft = bounds.left + (bounds.width - renderedWidth) / 2;
     const renderedTop = bounds.top + (bounds.height - renderedHeight) / 2;
-    pendingMousePosition.current = {
+    sendInput("mouse_move", {
       x: Math.max(
         0,
         Math.min(
@@ -267,142 +318,132 @@ export function HyperVConsoleDialog({
           ),
         ),
       ),
-    };
-    if (mouseAnimationFrame.current !== null) return;
-    mouseAnimationFrame.current = window.requestAnimationFrame(() => {
-      mouseAnimationFrame.current = null;
-      const position = pendingMousePosition.current;
-      if (position) void sendInput("mouse_move", position);
     });
   }
 
   const terminalMessage =
     session?.status === "failed"
       ? `${copy.failed} (${session.failure_code || "unknown"})`
-      : session?.status === "expired"
+      : session?.status === "expired" || session?.status === "closed"
         ? copy.expired
-        : error;
+        : error || frameError;
 
   return (
-    <DialogPortal>
-      <div className="modal-backdrop hyperv-console-backdrop">
-        <section
-          className="hyperv-console-modal"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="hyperv-console-heading"
+    <main
+      className="hyperv-console-window"
+      aria-labelledby="hyperv-console-heading"
+    >
+      <header className="hyperv-console-toolbar">
+        <div>
+          <Monitor aria-hidden="true" size={19} />
+          <strong id="hyperv-console-heading">
+            {copy.title}: {state.vm.name}
+          </strong>
+        </div>
+        <div className="hyperv-console-toolbar__actions">
+          <button
+            type="button"
+            className="outline-button hyperv-console-secure-attention"
+            title={copy.secureAttentionHint}
+            disabled={session?.status !== "active"}
+            onClick={() => void sendInput("secure_attention", {})}
+          >
+            <ShieldAlert aria-hidden="true" size={16} />
+            <span>{copy.secureAttention}</span>
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={copy.close}
+            onClick={async () => {
+              releasePressedKeys();
+              await inputQueue.current?.flush();
+              onClose();
+            }}
+          >
+            <X aria-hidden="true" size={18} />
+          </button>
+        </div>
+      </header>
+      {state.occupied ? (
+        <div
+          className="hyperv-console-notice hyperv-console-notice--warning"
+          role="alert"
         >
-          <header className="hyperv-console-toolbar">
-            <div>
-              <Monitor aria-hidden="true" size={19} />
-              <strong id="hyperv-console-heading">
-                {copy.title}: {state.vm.name}
-              </strong>
-            </div>
-            <div className="hyperv-console-toolbar__actions">
-              <button
-                type="button"
-                className="outline-button hyperv-console-secure-attention"
-                title={copy.secureAttentionHint}
-                disabled={session?.status !== "active"}
-                onClick={() => void sendInput("secure_attention", {})}
-              >
-                <ShieldAlert aria-hidden="true" size={16} />
-                <span>{copy.secureAttention}</span>
-              </button>
-              <button
-                type="button"
-                className="icon-button"
-                aria-label={copy.close}
-                onClick={() => {
-                  releasePressedKeys();
-                  onClose();
-                }}
-              >
-                <X aria-hidden="true" size={18} />
-              </button>
-            </div>
-          </header>
-          {state.occupied ? (
-            <div
-              className="hyperv-console-notice hyperv-console-notice--warning"
-              role="alert"
-            >
-              <ShieldAlert aria-hidden="true" size={24} />
-              <strong>{copy.sessionInUse}</strong>
-              <span>
-                {copy.sessionInUseDetail
-                  .replace("{user}", state.occupied.requested_by)
-                  .replace(
-                    "{time}",
-                    new Date(state.occupied.created_at).toLocaleString(),
-                  )}
-              </span>
-            </div>
-          ) : state.loading || session?.status === "requested" ? (
-            <div className="hyperv-console-notice" role="status">
-              <Keyboard aria-hidden="true" size={24} />
-              <strong>{copy.connecting}</strong>
-              <span>{copy.waitingForFrame}</span>
-            </div>
-          ) : terminalMessage ? (
-            <div
-              className="hyperv-console-notice hyperv-console-notice--error"
-              role="alert"
-            >
-              <ShieldAlert aria-hidden="true" size={24} />
-              <strong>{copy.unavailable}</strong>
-              <span>{terminalMessage}</span>
-            </div>
-          ) : (
-            <div
-              className="hyperv-console-surface"
-              // The console surface intentionally owns focus for direct VM input.
-              // biome-ignore lint/a11y/noNoninteractiveTabindex: Interactive remote console surface.
-              tabIndex={0}
-              role="application"
-              aria-label={copy.directInput}
-              onKeyDown={(event) => {
-                event.preventDefault();
-                sendKey(event.code, true, event.repeat);
-              }}
-              onKeyUp={(event) => {
-                event.preventDefault();
-                sendKey(event.code, false, false);
-              }}
-              onBlur={releasePressedKeys}
-              onMouseMove={queueMousePosition}
-              onMouseDown={(event) => {
-                event.currentTarget.focus();
-                queueMousePosition(event);
-                const button = buttonIndex(event.button);
-                if (button)
-                  void sendInput("mouse_button", { button, is_down: true });
-              }}
-              onMouseUp={(event) => {
-                const button = buttonIndex(event.button);
-                if (button)
-                  void sendInput("mouse_button", { button, is_down: false });
-              }}
-              onContextMenu={(event) => event.preventDefault()}
-              onWheel={(event) => {
-                event.preventDefault();
-                void sendInput("mouse_wheel", {
-                  delta: event.deltaY < 0 ? 120 : -120,
-                });
-              }}
-            >
-              {frameUrl ? (
-                // The frame is an authenticated, short-lived object URL and is never cached.
-                // biome-ignore lint/performance/noImgElement: Next Image cannot render blob URLs.
-                <img src={frameUrl} alt="" draggable={false} />
-              ) : (
-                <span>{copy.waitingForFrame}</span>
+          <ShieldAlert aria-hidden="true" size={24} />
+          <strong>{copy.sessionInUse}</strong>
+          <span>
+            {copy.sessionInUseDetail
+              .replace("{user}", state.occupied.requested_by)
+              .replace(
+                "{time}",
+                new Date(state.occupied.created_at).toLocaleString(),
               )}
-            </div>
+          </span>
+        </div>
+      ) : state.loading || session?.status === "requested" ? (
+        <div className="hyperv-console-notice" role="status">
+          <Keyboard aria-hidden="true" size={24} />
+          <strong>{copy.connecting}</strong>
+          <span>{copy.waitingForFrame}</span>
+        </div>
+      ) : terminalMessage ? (
+        <div
+          className="hyperv-console-notice hyperv-console-notice--error"
+          role="alert"
+        >
+          <ShieldAlert aria-hidden="true" size={24} />
+          <strong>{copy.unavailable}</strong>
+          <span>{terminalMessage}</span>
+        </div>
+      ) : (
+        <div
+          ref={surface}
+          className="hyperv-console-surface"
+          // The console surface intentionally owns focus for direct VM input.
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: Interactive remote console surface.
+          tabIndex={0}
+          role="application"
+          aria-label={copy.directInput}
+          onKeyDown={(event) => {
+            event.preventDefault();
+            sendKey(event.code, true, event.repeat);
+          }}
+          onKeyUp={(event) => {
+            event.preventDefault();
+            sendKey(event.code, false, false);
+          }}
+          onBlur={releasePressedKeys}
+          onPointerMove={queueMousePosition}
+          onPointerDown={(event) => {
+            event.currentTarget.focus();
+            event.currentTarget.setPointerCapture(event.pointerId);
+            queueMousePosition(event);
+            const button = buttonIndex(event.button);
+            if (button) {
+              pressedButtons.current.add(button);
+              void sendInput("mouse_button", { button, is_down: true });
+            }
+          }}
+          onPointerUp={(event) => {
+            const button = buttonIndex(event.button);
+            if (button) {
+              pressedButtons.current.delete(button);
+              void sendInput("mouse_button", { button, is_down: false });
+            }
+          }}
+          onPointerCancel={releasePressedKeys}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          {frameUrl ? (
+            // The frame is an authenticated, short-lived object URL and is never cached.
+            // biome-ignore lint/performance/noImgElement: Next Image cannot render blob URLs.
+            <img src={frameUrl} alt="" draggable={false} />
+          ) : (
+            <span>{copy.waitingForFrame}</span>
           )}
-        </section>
-      </div>
-    </DialogPortal>
+        </div>
+      )}
+    </main>
   );
 }
