@@ -114,6 +114,28 @@ form. The reverse-proxy Origin mismatch was also reproduced with an invalid
 tenant request on the preceding DEV release; explicit public-origin validation
 fixes that path without accepting forwarded headers.
 
-Known DEV deployment and runtime verification are pending. Real-host
-authentication and native console performance remain separate from testing
-central credential management.
+The known DEV appliance now runs application 0.2.32 from commit
+`1a5ca46a3edf385b8f3eb6d40c0162224ce99b05`. Its independent Linux production
+build and additive migration passed. Protected database, configuration and
+credential-key backups, plus the previous application release, were retained.
+
+Post-cutover verification confirmed all application/Agent/console services
+active, readiness endpoints healthy, anonymous account API access denied, and
+the validated database constraint present. Authenticated read-only view checks
+confirmed the account and assignable-host API contracts without creating a
+real account or assignment. The TLS front-door Origin probes returned 400 for
+the legitimate origin with an invalid tenant value, and 403 for foreign and
+missing Origins; no tenant cookie was set by those probes.
+
+Checks under the actual running broker identity confirmed the exact additional
+table-read grant, denied unrelated database operations and key-file access,
+and correct Unix socket permissions. The synthetic audit test transaction was
+rolled back and its absence independently confirmed. Global TCP 9419 IPv4/IPv6
+firewall allowances remain unchanged; external IPv6 routing was not asserted.
+Local browser fixture helpers were stopped and their ports verified closed.
+The pre-existing DEV HSTS warning remains unchanged.
+
+Windows Agent 0.2.26 and Linux Agent 0.2.13 are unchanged; no Agent rollout was
+performed. Administrator account entry and real-host authentication/display/
+input/performance acceptance remain pending. Testing central credential
+management does not establish those separate native-console acceptance layers.
