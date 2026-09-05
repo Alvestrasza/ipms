@@ -2,7 +2,9 @@
 # Exact-target DEV cutover. No Windows account or firewall configuration.
 set -euo pipefail
 umask 027
-[[ $EUID -eq 0 && $# -eq 5 ]] || exit 2
+[[ $EUID -eq 0 && ( $# -eq 5 || ( $# -eq 6 && $6 == --resume ) ) ]] || exit 2
+resume=false
+[[ $# -eq 5 ]] || resume=true
 expected_host=$1
 public_host=$2
 release_ref=$3
@@ -14,7 +16,15 @@ previous=/srv/ipms/releases/$previous_ref
 release=/srv/ipms/releases/$release_ref
 prefix=/srv/ipms/dependencies/guacamole-1.6.0-ipms1
 [[ $(readlink -f /srv/ipms/current) == "$previous" && $(<"$previous/VERSION") == 0.2.30 ]] || exit 2
-[[ ! -e $release && ! -L $release && ! -e $prefix && ! -L $prefix ]] || exit 2
+if [[ $resume == true ]]; then
+    [[ -d $release && ! -L $release && -d $prefix && ! -L $prefix ]] || exit 2
+    [[ $(git -C "$release" rev-parse HEAD) == "$release_ref" && $(<"$release/VERSION") == 0.2.31 ]] || exit 2
+    git -C "$release" diff --exit-code HEAD -- >/dev/null
+    [[ -x $release/services/control-plane/.venv/bin/python && -f $release/apps/web-console/.next/standalone/server.js ]] || exit 2
+    sha256sum --check --strict "$prefix/SHA256SUMS.runtime" >/dev/null
+else
+    [[ ! -e $release && ! -L $release && ! -e $prefix && ! -L $prefix ]] || exit 2
+fi
 case "$native_stage" in /tmp/ipms-native-console-*/build*/dest/srv/ipms/dependencies/guacamole-1.6.0-ipms1) ;; *) exit 2 ;; esac
 [[ -x $native_stage/sbin/guacd && -f $native_stage/lib/libguac-client-rdp.so ]] || exit 2
 artifact=/srv/ipms/shared/agent-artifacts/ipms-agent-windows-x64-0.2.26.zip
@@ -32,12 +42,15 @@ pg_restore --list "$backup/ipms.dump" >/dev/null
 echo "Protected rollback backup created: $backup"
 
 umask 022
+if [[ $resume == false ]]; then
 git clone --filter=blob:none --no-checkout https://github.com/Alvestrasza/ipms.git "$release"
 git -C "$release" checkout --detach "$release_ref"
+fi
 [[ $(git -C "$release" rev-parse HEAD) == "$release_ref" && $(<"$release/VERSION") == 0.2.31 ]]
 for adaptation in ipms-strict-certificate.h ipms-wol-disabled.c guacamole-1.6.0-strict-certificate.patch guacamole-1.6.0-nested-socket.patch; do
     cmp -- "$release/deploy/native-console/$adaptation" "$native_stage/$adaptation"
 done
+if [[ $resume == false ]]; then
 python3 -m venv "$release/services/control-plane/.venv"
 "$release/services/control-plane/.venv/bin/python" -m pip install "$release/services/control-plane"
 export PATH="/opt/ipms/node-current/bin:$PATH"
@@ -62,6 +75,10 @@ find "$prefix" -type f ! -perm /111 -exec chmod 0640 {} +
 find "$prefix" -type f -perm /111 -exec chmod 0750 {} +
 find "$prefix/lib" "$prefix/sbin" -type f -print0 | sort -z | xargs -0 sha256sum > "$prefix/SHA256SUMS.runtime"
 chmod 0644 "$prefix/SHA256SUMS.runtime"
+fi
+for adaptation in ipms-strict-certificate.h ipms-wol-disabled.c guacamole-1.6.0-strict-certificate.patch guacamole-1.6.0-nested-socket.patch; do
+    cmp -- "$release/deploy/native-console/$adaptation" "$prefix/$adaptation"
+done
 chown root:ipms-runtime "$artifact"
 chmod 0640 "$artifact"
 
@@ -101,8 +118,9 @@ manage="$release/services/control-plane/manage.py"
 "$python" "$manage" collectstatic --noinput
 "$python" "$manage" check --deploy
 bash "$release/scripts/configure-native-console.sh" "$public_host"
-sudo -n -u ipms-guacd test -x "$prefix/sbin/guacd"
-sudo -n -u ipms-guacd test -r "$prefix/lib/libguac-client-rdp.so"
+# Exercise real file access and dynamic loading as the service identity.
+# Permission-predicate syscalls are not a substitute for an actual execution.
+sudo -n -u ipms-guacd env LD_LIBRARY_PATH="$prefix/lib" "$prefix/sbin/guacd" -v
 sudo -n -u ipms-guacd sha256sum --check --strict "$prefix/SHA256SUMS.runtime" >/dev/null
 for env_file in /srv/ipms/shared/control-plane.env /srv/ipms/shared/agent-gateway.env; do
     sed -i -e '/^IPMS_AGENT_WINDOWS_PACKAGE_PATH=/d' \

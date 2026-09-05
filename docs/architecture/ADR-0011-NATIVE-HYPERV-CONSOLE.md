@@ -118,9 +118,10 @@ the official renderer and verify actual synthetic canvas pixels, but mock the
 native broker/configuration collaborators; they do not establish real-host
 authentication, transport performance or browser-visible FPS.
 
-No deployment or live-service cutover has occurred for this change. The existing
-deployed application remains 0.2.30. The administrator will enter an existing
-dedicated host account through the portal after the scoped DEV deployment.
+The scoped DEV application cutover to 0.2.31 completed with separate broker and
+renderer services. The authorized canary host successfully updated to Agent
+0.2.26 and resumed heartbeat and telemetry. The administrator must still enter
+an existing dedicated host account through the portal.
 Real-host authentication, boot-console display/input, close/reopen behavior,
 heartbeat/telemetry under load, browser-visible FPS and resource measurements
 remain required before acceptance. Isolated test success is not a production

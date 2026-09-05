@@ -6,7 +6,7 @@ isolated verification, DEV deployment and real-host acceptance.
 
 ## Existing account configuration
 
-After the scoped DEV deployment, use **Virtual infrastructure → Hyper-V virtual
+Use **Virtual infrastructure → Hyper-V virtual
 machines** (`/en/virtual/hyper-v`), then double-click a running VM. In its
 detached window select **Native console → Host console account**, enter the
 existing account and choose **Save console account**. **Replace stored account**
@@ -154,8 +154,37 @@ TLS client mode on the actual stream direction. The browser's 200-pixel minimum
 viewport matches the broker contract. Local fixture browsers and services were
 stopped after verification.
 
-No deployment or live-service cutover has occurred for this change; the deployed
-application remains 0.2.30. Real-host native authentication, boot-console
+The scoped DEV deployment now runs application 0.2.31 at commit
+`80667317d526795b3070246a8a48ddd73e70435e`. The Control Plane, web console, Agent
+Gateway, broker and renderer are active. The broker and renderer bind only to
+loopback, and the existing all-networks TCP 9419 policy is unchanged. The
+served browser runtime's SHA-256 matches the pinned file in the release.
+
+Post-deployment checks under the actual broker identity and PostgreSQL role
+passed: ten allowed table reads, a zero-row session update and a synthetic
+audit insert inside an unconditional rollback. Unrelated writes and issuer
+reads were denied; an independent query confirmed no synthetic audit row
+persisted. Key access succeeded only for the broker and Control Plane, not the
+renderer or Gateway. The broker environment contains no unrelated master keys,
+and the Unix socket has the expected owner/group and mode 0660. The anonymous
+configuration endpoint returned HTTP 403. The canary configuration state is
+`native_supported=true`, `can_manage=true`, `configured=false` for the
+administrator: the existing account is deliberately still awaiting entry.
+
+The first cutover attempt stopped before changing the application symlink;
+configuration restoration and the previous services were verified. The external
+`test` utility rejected supplementary-group file access while actual reading,
+execution and Bash predicates succeeded. The deployment script now tests real
+renderer execution and manifest reading under the service identity, without
+broadening permissions. Its explicit `--resume` mode checks the exact staged
+commit, unchanged tracked source and adapter manifest before continuing.
+Protected database/configuration backups and the previous release are retained.
+
+The authorized canary host's update completed with `succeeded/updated` and
+reported Agent 0.2.26, with fresh heartbeat and telemetry. Other hosts were not
+updated automatically. Native mode requires at least Agent 0.2.26.
+
+Real-host native authentication, boot-console
 display/input, close/reopen, heartbeat/telemetry under console load,
 browser-visible frame rate, input latency and resource consumption are still
 pending. The administrator selected portal configuration of an existing host

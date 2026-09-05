@@ -19,9 +19,9 @@ Final isolated verification on 2026-09-05 passed 97 upstream `make check`
 checks with allocator perturbation, nine certificate-helper cases and six
 synthetic loopback TLS cases. This is evidence for the adapted build, not a
 license modification, host-compatibility guarantee, deployment approval or
-production-readiness claim. No live-service cutover has occurred for this
-change; real-host console acceptance and performance measurements remain
-pending. See the operations document for the full evidence boundaries.
+production-readiness claim. The scoped DEV deployment is documented separately;
+real-host console acceptance and performance measurements remain pending. See
+the operations document for the full evidence boundaries.
 
 The separately pinned browser runtime and its notices are under
 `apps/web-console/public/vendor/guacamole/1.6.0/`. IPMS's proprietary license
