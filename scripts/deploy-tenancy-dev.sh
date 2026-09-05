@@ -34,6 +34,22 @@ assert_quiescent() {
 }
 assert_quiescent
 
+assert_tenant_administrator_readiness() {
+    local recovery_count
+    recovery_count=$(sudo -n -u postgres psql --no-psqlrc --tuples-only --no-align --dbname=ipms -c \
+        "SELECT count(*) FROM tenancy_tenant t WHERE t.status != 'decommissioned'
+        AND EXISTS (SELECT 1 FROM tenancy_tenantmembership m JOIN auth_user u ON u.id=m.user_id
+            WHERE m.tenant_id=t.id AND m.role='tenant_admin' AND NOT u.is_staff AND NOT u.is_superuser)
+        AND NOT EXISTS (SELECT 1 FROM tenancy_tenantmembership m JOIN auth_user u ON u.id=m.user_id
+            WHERE m.tenant_id=t.id AND m.role='tenant_admin' AND NOT u.is_staff AND NOT u.is_superuser
+            AND m.is_active AND u.is_active AND (m.expires_at IS NULL OR m.expires_at > now()))")
+    [[ $recovery_count == 0 ]] || {
+        echo 'A previously initialized tenant has no active independent administrator. Resolve access recovery explicitly before cutover.' >&2
+        return 1
+    }
+}
+assert_tenant_administrator_readiness
+
 # Build before the maintenance window. A failure here cannot affect the runtime.
 umask 022
 git clone --filter=blob:none --no-checkout https://github.com/Alvestrasza/ipms.git "$release"
@@ -55,6 +71,7 @@ export PATH="/opt/ipms/node-current/bin:$PATH" NEXT_TELEMETRY_DISABLED=1
     ln -s /srv/ipms/shared/web-cache .next/standalone/.next/cache
 )
 assert_quiescent
+assert_tenant_administrator_readiness
 [[ $(readlink -f /srv/ipms/current) == "$previous" ]]
 
 backup=/srv/ipms/backups/tenancy-0233-$(date -u +%Y%m%dT%H%M%SZ)
@@ -104,6 +121,7 @@ systemctl daemon-reload
 systemctl stop "${units[@]}"
 # Recheck after stopping request handlers and timers to close the staging race.
 assert_quiescent
+assert_tenant_administrator_readiness
 sudo -n -u postgres pg_dump --format=custom --dbname=ipms > "$backup/ipms.dump"
 [[ -s $backup/ipms.dump ]]
 pg_restore --list "$backup/ipms.dump" >/dev/null

@@ -112,10 +112,55 @@ Pre-deployment verification completed on 2026-09-05:
 - Four inert deployment-recovery tests passed on Windows and Linux, including
   nested query failure propagation and the persistent forward-recovery fence.
 
-DEV cutover and live acceptance remain pending at this source commit. Test
-credentials and synthetic browser data were not copied to the DEV database.
+The DEV appliance was then deployed from source commit
+`71d4995d9154c9935fa3af4343192ed4d411c979` on 2026-09-05. A protected database,
+configuration and credential-key backup preceded the three migrations. The
+exact new release, ready endpoints, application services and timers were checked
+after startup. The persistent cutover marker is absent after successful cutover.
+
+Live authorization checks under the Control Plane service identity confirmed
+that the migrated platform principal has no tenant memberships or Django
+staff/superuser flags. Its session exposes only platform permissions and its
+tenant Service Account requests are denied. Anonymous HTTPS requests to both
+protected APIs returned 403; `/admin` and `/admin/` returned 404. DE and EN tenant
+pages redirect unauthenticated visitors to sign-in.
+
+The actual broker process was checked with its loaded environment, Unix-socket
+permissions and database identity. It has the intended 12-table SELECT allowlist,
+console-session UPDATE and audit INSERT only. Unrelated keys and writes remained
+inaccessible. The synthetic audit permission check was rolled back and verified
+absent independently. Agent heartbeats resumed; TCP 9419 remains allowed from all
+IPv4/IPv6 sources. Neither Agent packages nor firewall rules were changed.
+
+The deployment check retains the documented DEV-only HSTS warning for the
+self-signed portal certificate. No post-start application traceback or internal
+server-error marker was observed in the bounded acceptance window.
+
+### Existing tenant access requires an explicit recovery decision
+
+The existing DEV tenant has a historical **disabled** independent administrator
+membership. Therefore migration correctly records prior initialization and does
+not reopen one-time provisioning. After separating the old shared platform
+login, that tenant currently has no active operational administrator. New tenant
+creation and first-administrator setup are available normally, but access to this
+existing tenant requires an explicitly authorized recovery decision. No old
+account was reactivated and no password or tenant rights were reset implicitly.
+
+The subsequent deployment-helper correction now checks both active administrator
+availability and all historical administrator membership before staging, after
+staging and again after services stop. It refuses a cutover if a previously
+initialized tenant would lack an active independent administrator. Checking only
+active memberships missed this recovery requirement in the initial DEV cutover.
+Complete that operator decision before migrating another populated deployment.
+The corrected helper passed six inert tests on Windows and Linux; its read-only
+PostgreSQL query also recognized the observed recovery condition on DEV. The
+helper correction does not modify the deployed application or account data.
+
+Test credentials and synthetic browser data were not copied to the DEV database.
 Customer acceptance, automatic tenant PKI provisioning and PostgreSQL row-level
-security are not claimed by this feature.
+security are not claimed by this feature. GitHub Actions CI was not claimed;
+the evidence above comes from the explicitly executed local and isolated DEV
+checks.
 
 A separate pre-existing legacy-thumbnail input ordering defect was reproduced
 with equal event timestamps in both the baseline and candidate. This tenant

@@ -67,6 +67,27 @@ class RecoveryTests(unittest.TestCase):
         unit = (Path(__file__).resolve().parents[2] / "deploy/standalone/ipms-tenant-cutover.conf").read_text()
         self.assertIn("ConditionPathExists=!/srv/ipms/shared/tenant-cutover.pending", unit)
 
+    def check_administrator_readiness(self, count):
+        script = "\n".join([
+            "set -Eeuo pipefail",
+            "sudo() { printf '%s\\n' " + str(count) + "; }",
+            function_source("assert_tenant_administrator_readiness"),
+            "assert_tenant_administrator_readiness",
+            "printf 'CONTINUE\\n'",
+        ])
+        return subprocess.run([BASH, "-c", script], capture_output=True, text=True, timeout=5)
+
+    def test_missing_active_historical_administrator_blocks_cutover(self):
+        result = self.check_administrator_readiness(1)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("CONTINUE", result.stdout)
+        self.assertIn("Resolve access recovery explicitly", result.stderr)
+
+    def test_admin_ready_or_uninitialized_tenants_pass_preflight(self):
+        result = self.check_administrator_readiness(0)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("CONTINUE", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
