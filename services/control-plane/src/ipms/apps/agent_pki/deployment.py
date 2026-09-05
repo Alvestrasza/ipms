@@ -19,8 +19,11 @@ from ipms.apps.discovery.certificates import (
 from ipms.apps.discovery.models import WindowsServer
 
 from .deployment_secrets import load_deployment_secret
-from .models import AgentEnrollment, WindowsAgentDeployment
-
+from .models import (
+    AgentEnrollment,
+    WindowsAgentDeployment,
+    WindowsAgentDeploymentSecret,
+)
 
 class AgentPackageUnavailableError(Exception):
     pass
@@ -37,19 +40,45 @@ class RemoteDeploymentStepError(Exception):
 
 
 def _claim_next_deployment() -> WindowsAgentDeployment | None:
+    from ipms.apps.tenancy.models import Tenant
+    from ipms.apps.tenancy.operations import queued_actor_allowed
+    from ipms.apps.tenancy.rbac import Permission
+
     with transaction.atomic():
+        candidate = (
+            WindowsAgentDeployment.objects.filter(
+                status=WindowsAgentDeployment.Status.QUEUED
+            )
+            .order_by("created_at")
+            .values("id", "tenant_id")
+            .first()
+        )
+        if candidate is None:
+            return None
+        Tenant.objects.select_for_update(no_key=True).get(pk=candidate["tenant_id"])
         deployment = (
-            WindowsAgentDeployment.objects.select_for_update(skip_locked=True)
+            WindowsAgentDeployment.objects.select_for_update(
+                skip_locked=True, of=("self",)
+            )
             .select_related(
                 "tenant",
                 "enrollment",
                 "enrollment__tenant",
             )
-            .filter(status=WindowsAgentDeployment.Status.QUEUED)
+            .filter(pk=candidate["id"], status=WindowsAgentDeployment.Status.QUEUED)
             .order_by("created_at")
             .first()
         )
         if deployment is None:
+            return None
+        if not queued_actor_allowed(
+            deployment.tenant_id, deployment.requested_by, Permission.AGENTS_MANAGE
+        ):
+            deployment.status = WindowsAgentDeployment.Status.FAILED
+            deployment.error_code = "execution_authority_withdrawn"
+            deployment.completed_at = timezone.now()
+            deployment.save(update_fields=("status", "error_code", "completed_at"))
+            WindowsAgentDeploymentSecret.objects.filter(deployment=deployment).delete()
             return None
         deployment.status = WindowsAgentDeployment.Status.RUNNING
         deployment.started_at = timezone.now()
@@ -659,6 +688,9 @@ def _audit(
 
 
 def process_deployment(deployment: WindowsAgentDeployment) -> None:
+    from ipms.apps.tenancy.operations import queued_actor_allowed
+    from ipms.apps.tenancy.rbac import Permission
+
     client = None
     secret_row = None
     staging_path_assignment = _staging_path_assignment(deployment.id)
@@ -671,6 +703,10 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
     error_code = ""
     stage = "initialization"
     try:
+        if not queued_actor_allowed(
+            deployment.tenant_id, deployment.requested_by, Permission.AGENTS_MANAGE
+        ):
+            raise RemoteDeploymentStepError("execution_authority_withdrawn")
         secret_row = deployment.secret
         if deployment.lifecycle_bootstrap_enrollment_id is not None:
             lifecycle_bootstrap_available = AgentEnrollment.objects.filter(

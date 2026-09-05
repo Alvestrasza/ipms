@@ -106,14 +106,22 @@ class HyperVVirtualMachineActionTests(TestCase):
 
     def test_action_state_contract_and_single_active_job_are_enforced(self) -> None:
         with self.assertRaises(ValidationError):
-            create_hyperv_action_job(virtual_machine=self.vm, action="start", actor="fixture")
-        job = create_hyperv_action_job(virtual_machine=self.vm, action="pause", actor="fixture")
+            create_hyperv_action_job(
+                virtual_machine=self.vm, action="start", actor=self.admin.username
+            )
+        job = create_hyperv_action_job(
+            virtual_machine=self.vm, action="pause", actor=self.admin.username
+        )
         with self.assertRaises(ValidationError):
-            create_hyperv_action_job(virtual_machine=self.vm, action="stop", actor="fixture")
+            create_hyperv_action_job(
+                virtual_machine=self.vm, action="stop", actor=self.admin.username
+            )
         self.assertEqual(job.status, HyperVVirtualMachineActionJob.Status.QUEUED)
 
     def test_agent_offer_and_result_update_the_inventory_projection(self) -> None:
-        job = create_hyperv_action_job(virtual_machine=self.vm, action="pause", actor="fixture")
+        job = create_hyperv_action_job(
+            virtual_machine=self.vm, action="pause", actor=self.admin.username
+        )
         assignment = offer_hyperv_action_job(self.enrollment)
         self.assertEqual(
             assignment,
@@ -146,7 +154,7 @@ class HyperVVirtualMachineActionTests(TestCase):
         job = create_hyperv_action_job(
             virtual_machine=self.vm,
             action="shutdown",
-            actor="fixture",
+            actor=self.admin.username,
         )
         self.assertEqual(
             offer_hyperv_action_job(self.enrollment),
@@ -160,7 +168,9 @@ class HyperVVirtualMachineActionTests(TestCase):
         )
 
     def test_failed_result_does_not_change_inventory_state(self) -> None:
-        job = create_hyperv_action_job(virtual_machine=self.vm, action="stop", actor="fixture")
+        job = create_hyperv_action_job(
+            virtual_machine=self.vm, action="stop", actor=self.admin.username
+        )
         offer_hyperv_action_job(self.enrollment)
         record_hyperv_action_result(
             self.enrollment,
@@ -184,5 +194,5 @@ class HyperVVirtualMachineActionTests(TestCase):
             create_hyperv_action_job(
                 virtual_machine=self.vm,
                 action="pause",
-                actor="fixture",
+                actor=self.admin.username,
             )

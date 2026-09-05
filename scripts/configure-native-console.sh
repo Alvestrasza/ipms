@@ -65,6 +65,7 @@ BEGIN
         WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'f') AND (
             (has_table_privilege(broker, c.oid, 'SELECT') AND c.relname NOT IN (
                 'auth_user', 'django_session', 'tenancy_tenant', 'tenancy_tenantmembership',
+                'tenancy_platformadministrator',
                 'agent_pki_agentenrollment', 'agent_pki_agentrevocation', 'agent_pki_nativeconsolecredential',
                 'agent_pki_serviceaccount',
                 'discovery_windowsserver', 'discovery_hypervvirtualmachine', 'discovery_hypervconsolesession'))
@@ -83,6 +84,7 @@ ALTER ROLE ipms_console_broker PASSWORD :'broker_password';
 GRANT CONNECT ON DATABASE ipms TO ipms_console_broker;
 GRANT USAGE ON SCHEMA public TO ipms_console_broker;
 GRANT SELECT ON auth_user, django_session, tenancy_tenant, tenancy_tenantmembership,
+    tenancy_platformadministrator,
     agent_pki_agentenrollment, agent_pki_agentrevocation, agent_pki_nativeconsolecredential,
     agent_pki_serviceaccount,
     discovery_windowsserver, discovery_hypervvirtualmachine, discovery_hypervconsolesession

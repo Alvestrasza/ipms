@@ -6,6 +6,7 @@ import { resolveLocale } from "@/i18n/server";
 import { hasPermission } from "@/lib/auth-types";
 import { getServerSession } from "@/lib/server-auth";
 import { getHyperVVirtualMachines } from "@/lib/server-hyperv";
+import { requireTenantScope } from "@/lib/server-portal-scope";
 
 export default async function ConsolePage({
   params,
@@ -20,7 +21,7 @@ export default async function ConsolePage({
     params,
     searchParams,
   ]);
-  if (!session?.authenticated) redirect(`/${locale}/login`);
+  requireTenantScope(session, locale);
   // Bind the detached window to its original tenant even when the main portal
   // changes the selected-tenant cookie. Membership is always revalidated.
   const tenant = session.tenants.find((item) => item.id === query.tenant);

@@ -35,7 +35,7 @@ export async function getWindowsServers(
       { cache: "no-store", headers },
     );
     return {
-      sessionValid: ![401, 403].includes(response.status),
+      sessionValid: response.status !== 401,
       available: response.ok,
       servers: response.ok ? ((await response.json()) as WindowsServer[]) : [],
     };

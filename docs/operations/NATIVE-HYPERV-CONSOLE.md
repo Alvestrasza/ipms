@@ -1,6 +1,6 @@
 # Native Hyper-V Console
 
-Application target: **0.2.32**. Windows Agent minimum: **0.2.26**.
+Application target: **0.2.33**. Windows Agent minimum: **0.2.26**.
 Linux Agent remains **0.2.13**. This document distinguishes implementation,
 isolated verification, DEV deployment and real-host acceptance.
 
@@ -12,6 +12,10 @@ hosts. The detached console window uses that assignment and no longer asks
 for username or password. See [Service Accounts](SERVICE-ACCOUNTS.md) for
 rotation, assignment cleanup, legacy compatibility and the admin-only
 `service_accounts.manage` permission.
+
+Starting with 0.2.33 this is a tenant-administrator workflow. The IPMS platform
+administrator has no console or Service Account access. See
+[Tenant administration](TENANT-ADMINISTRATION.md).
 
 The account form accepts username, password and optional domain. It does not
 create a Windows account, change

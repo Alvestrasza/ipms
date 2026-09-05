@@ -1,7 +1,40 @@
 import uuid
 
 from django.conf import settings
-from django.db import models
+from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
+from django.db import models, transaction
+from django.utils import timezone
+
+
+class PlatformAdministrator(models.Model):
+    """Platform identity only; never a customer membership or Django admin."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        primary_key=True,
+        on_delete=models.CASCADE,
+        related_name="ipms_platform_administrator",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def clean(self):
+        if self.user_id and (
+            get_user_model()
+            .objects.filter(pk=self.user_id)
+            .filter(models.Q(is_staff=True) | models.Q(is_superuser=True))
+            .exists()
+            or TenantMembership.objects.filter(user_id=self.user_id).exists()
+        ):
+            raise ValidationError(
+                "Platform identities cannot have tenant memberships or Django administrative privileges."
+            )
+
+    def save(self, *args, **kwargs):
+        with transaction.atomic():
+            get_user_model().objects.select_for_update(no_key=True).get(pk=self.user_id)
+            self.clean()
+            return super().save(*args, **kwargs)
 
 
 class Tenant(models.Model):
@@ -27,6 +60,7 @@ class Tenant(models.Model):
     metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    initial_administrator_created_at = models.DateTimeField(blank=True, null=True)
 
     class Meta:
         ordering = ("slug",)
@@ -77,6 +111,37 @@ class TenantMembership(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user} in {self.tenant} ({self.role})"
+
+    def clean(self):
+        if (
+            self.user_id
+            and get_user_model()
+            .objects.filter(pk=self.user_id)
+            .filter(
+                models.Q(is_staff=True)
+                | models.Q(is_superuser=True)
+                | models.Q(ipms_platform_administrator__isnull=False),
+            )
+            .exists()
+        ):
+            raise ValidationError("Platform identities cannot be tenant members.")
+
+    def save(self, *args, **kwargs):
+        with transaction.atomic():
+            Tenant.objects.select_for_update(no_key=True).get(pk=self.tenant_id)
+            get_user_model().objects.select_for_update(no_key=True).get(pk=self.user_id)
+            self.clean()
+            result = super().save(*args, **kwargs)
+            if self.role == self.Role.TENANT_ADMIN:
+                # This is a historical fence, not a count of current admins.
+                # A later disabled/expired/deleted administrator must not
+                # reopen the platform's one-time provisioning capability.
+                Tenant.objects.filter(
+                    pk=self.tenant_id, initial_administrator_created_at__isnull=True
+                ).update(
+                    initial_administrator_created_at=timezone.now(),
+                )
+            return result
 
 
 class ExternalIdentity(models.Model):

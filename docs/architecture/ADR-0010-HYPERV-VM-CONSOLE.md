@@ -42,7 +42,8 @@ This makes the rule valid in both standalone and scale-out deployments. A
 sessions expire and release the VM automatically.
 
 The dedicated `virtual_machines.console.control` permission is granted to
-platform administrators, tenant administrators, and operators. After session
+tenant administrators and operators; platform accounts are excluded by
+[ADR-0012](ADR-0012-PLATFORM-AND-TENANT-ADMINISTRATION.md). After session
 creation, only the requesting user can read the session status or frame, submit
 input, or close it. Another authorized user receives only the occupied-session
 projection returned by the create attempt.

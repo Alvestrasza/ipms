@@ -14,7 +14,7 @@ from django.utils import timezone
 
 from ipms.apps.audit.models import AuditEvent
 from ipms.apps.discovery.models import HyperVVirtualMachine, WindowsServer, WindowsServerRole
-from ipms.apps.tenancy.models import Tenant, TenantMembership
+from ipms.apps.tenancy.models import PlatformAdministrator, Tenant, TenantMembership
 from .hyperv_console import create_console_session
 from .models import AgentEnrollment, AgentRevocation, NativeConsoleCredential, ServiceAccount
 from .native_console import authorize_browser, load_credential, store_credential
@@ -104,10 +104,41 @@ class ServiceAccountTests(ServiceAccountFixture, TestCase):
         response = self.client.post(f"/api/v1/hyper-v/virtual-machines/{self.vm.id}/console-configuration/", self.credential, content_type="application/json", **self.headers)
         self.assertEqual(response.status_code, 405)
 
-    def test_platform_administrator_does_not_need_membership(self):
-        staff = get_user_model().objects.create_user("platform-admin", is_staff=True)
-        self.client.force_login(staff)
-        self.create_account()
+    def test_platform_credentials_denied_even_with_malformed_membership(self):
+        account = self.create_account()
+        self.assign(account)
+        platform = get_user_model().objects.create_user("platform-admin")
+        PlatformAdministrator.objects.create(user=platform)
+        legacy_staff = get_user_model().objects.create_user("legacy-staff", is_staff=True)
+        for user in (platform, legacy_staff):
+            # Bypass model validation to exercise authorization against invalid
+            # historical rows, not merely against a well-formed database.
+            TenantMembership.objects.bulk_create([
+                TenantMembership(tenant=self.tenant, user=user, role="tenant_admin"),
+            ])
+            self.client.force_login(user)
+            for method, url, data in (
+                ("get", self.endpoint, None),
+                ("post", self.endpoint, {"name": "Forbidden", "kind": "hyperv_console", **self.credential}),
+                ("patch", self.endpoint + account["id"] + "/", {"password": "forbidden-change"}),
+                ("delete", self.endpoint + account["id"] + "/", None),
+                ("get", self.endpoint + "hosts/", None),
+                ("put", self.host_endpoint(), {"service_account_id": account["id"]}),
+                ("delete", self.host_endpoint(), None),
+                ("get", f"/api/v1/hyper-v/virtual-machines/{self.vm.id}/console-configuration/", None),
+            ):
+                response = getattr(self.client, method)(
+                    url, data, content_type="application/json", **self.headers,
+                )
+                self.assertEqual(response.status_code, 404, (user.username, method, url))
+                self.assertNotIn(self.credential["username"], response.content.decode())
+            with self.assertRaises(ValidationError):
+                store_credential(self.enrollment, user=user, document=self.credential)
+        self.assertEqual(ServiceAccount.objects.count(), 1)
+        retained = ServiceAccount.objects.get(pk=account["id"])
+        self.assertEqual(decrypt_service_account(retained, tenant_id=self.tenant.id), self.credential)
+        binding = NativeConsoleCredential.objects.get(enrollment=self.enrollment)
+        self.assertEqual(binding.service_account_id, retained.id)
 
     def test_cross_tenant_accounts_hosts_and_ciphertext_fail_closed(self):
         account = self.create_account()

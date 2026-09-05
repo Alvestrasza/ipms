@@ -9,6 +9,13 @@ from django.db import transaction
 from django.utils import timezone
 
 from ipms.apps.audit.models import AuditEvent
+from ipms.apps.tenancy.models import Tenant
+from ipms.apps.tenancy.operations import (
+    require_active_tenant,
+    queued_actor_allowed,
+    withdraw_agent_job,
+)
+from ipms.apps.tenancy.rbac import Permission
 
 from .models import AgentEnrollment, AgentLifecycleJob
 
@@ -54,7 +61,9 @@ def current_windows_agent_artifact() -> tuple[str, bytes, str]:
     return settings.AGENT_WINDOWS_VERSION, binary, hashlib.sha256(binary).hexdigest()
 
 
+@transaction.atomic
 def create_lifecycle_job(*, enrollment, action: str, actor: str) -> AgentLifecycleJob:
+    require_active_tenant(enrollment.tenant_id, lock=True)
     if enrollment.status != AgentEnrollment.Status.ACTIVE:
         raise ValidationError("The Agent enrollment is not active.")
     if action not in AgentLifecycleJob.Action.values:
@@ -80,10 +89,13 @@ def create_lifecycle_job(*, enrollment, action: str, actor: str) -> AgentLifecyc
 
 @transaction.atomic
 def offer_lifecycle_job(enrollment) -> dict | None:
+    Tenant.objects.select_for_update(no_key=True).get(pk=enrollment.tenant_id)
     job = (
         AgentLifecycleJob.objects.select_for_update()
         .filter(
             enrollment=enrollment,
+            tenant_id=enrollment.tenant_id,
+            authority_revoked_at__isnull=True,
             status__in=(
                 AgentLifecycleJob.Status.QUEUED,
                 AgentLifecycleJob.Status.DELIVERED,
@@ -93,6 +105,11 @@ def offer_lifecycle_job(enrollment) -> dict | None:
         .first()
     )
     if job is None:
+        return None
+    if not queued_actor_allowed(
+        enrollment.tenant_id, job.requested_by, Permission.AGENTS_MANAGE
+    ):
+        withdraw_agent_job(job)
         return None
     if job.status == AgentLifecycleJob.Status.QUEUED:
         job.status = AgentLifecycleJob.Status.DELIVERED
@@ -133,7 +150,6 @@ def record_lifecycle_result(
     if job is None or job.status not in ACTIVE_STATUSES:
         raise ValidationError("The Agent lifecycle job is unavailable.")
     if result == "running" and job.status not in (
-        AgentLifecycleJob.Status.QUEUED,
         AgentLifecycleJob.Status.DELIVERED,
     ):
         raise ValidationError("The Agent lifecycle job transition is invalid.")
@@ -168,10 +184,12 @@ def record_lifecycle_result(
 
 
 def lifecycle_artifact(enrollment, *, job_id: str) -> tuple[bytes, str]:
+    require_active_tenant(enrollment.tenant_id)
     job = AgentLifecycleJob.objects.filter(
         id=job_id,
         enrollment=enrollment,
         tenant=enrollment.tenant,
+        authority_revoked_at__isnull=True,
         action=AgentLifecycleJob.Action.UPDATE,
         status__in=(
             AgentLifecycleJob.Status.DELIVERED,
@@ -179,6 +197,13 @@ def lifecycle_artifact(enrollment, *, job_id: str) -> tuple[bytes, str]:
         ),
     ).first()
     if job is None or not SHA256_PATTERN.fullmatch(job.artifact_sha256):
+        raise ValidationError("The Agent lifecycle artifact is unavailable.")
+    if not queued_actor_allowed(
+        enrollment.tenant_id, job.requested_by, Permission.AGENTS_MANAGE
+    ):
+        with transaction.atomic():
+            locked = AgentLifecycleJob.objects.select_for_update().get(pk=job.pk)
+            withdraw_agent_job(locked)
         raise ValidationError("The Agent lifecycle artifact is unavailable.")
     _, binary, digest = current_windows_agent_artifact()
     if digest != job.artifact_sha256:

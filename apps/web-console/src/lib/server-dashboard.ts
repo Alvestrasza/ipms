@@ -49,7 +49,7 @@ export async function getDashboardData(
       }),
     ]);
 
-    const sessionValid = ![401, 403].includes(jobsResponse.status);
+    const sessionValid = jobsResponse.status !== 401;
     const jobsAvailable = jobsResponse.ok;
     const discoveryJobs = jobsAvailable
       ? ((await jobsResponse.json()) as DiscoveryJob[])

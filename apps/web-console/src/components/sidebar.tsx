@@ -2,7 +2,6 @@ import {
   Activity,
   ArchiveRestore,
   Boxes,
-  Building2,
   Database,
   KeyRound,
   LayoutDashboard,
@@ -328,11 +327,6 @@ export async function Sidebar({
       </nav>
 
       <div className="sidebar__footer">
-        <span className="nav-item nav-item--disabled" aria-disabled="true">
-          <Building2 aria-hidden="true" size={18} />
-          <span>{dictionary.navigation.tenants}</span>
-          <span className="nav-item__soon">{dictionary.navigation.soon}</span>
-        </span>
         {canAdmin ? (
           <Link
             className={`nav-item ${administrationExpanded ? "nav-item--active" : ""}`}

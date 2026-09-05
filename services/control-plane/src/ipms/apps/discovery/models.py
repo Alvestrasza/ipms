@@ -502,6 +502,7 @@ class HyperVVirtualMachineActionJob(models.Model):
         default=Status.QUEUED,
     )
     requested_by = models.CharField(max_length=255)
+    authority_revoked_at = models.DateTimeField(blank=True, null=True)
     result_code = models.CharField(max_length=64, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     delivered_at = models.DateTimeField(blank=True, null=True)

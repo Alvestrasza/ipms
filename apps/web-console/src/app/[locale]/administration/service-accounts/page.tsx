@@ -7,6 +7,7 @@ import { getDictionary } from "@/i18n/dictionaries";
 import { resolveLocale } from "@/i18n/server";
 import { hasPermission } from "@/lib/auth-types";
 import { getServerSession } from "@/lib/server-auth";
+import { requireTenantScope } from "@/lib/server-portal-scope";
 import { getServiceAccounts } from "@/lib/server-service-accounts";
 import { selectedTenant } from "@/lib/tenant-selection";
 
@@ -22,12 +23,12 @@ export default async function ServiceAccountsPage({
   const locale = await resolveLocale();
   const copy = getDictionary(locale).serviceAccounts;
   const session = await getServerSession();
-  if (!session?.authenticated) redirect(`/${locale}/login`);
+  requireTenantScope(session, locale);
   const query = await searchParams;
   const tenant = query.tenant
     ? session.tenants.find((item) => item.id === query.tenant)
     : selectedTenant(session, await cookies());
-  if (!tenant) redirect(`/${locale}/login?reason=no-tenant`);
+  if (!tenant) redirect(`/${locale}/access-unavailable`);
   if (!hasPermission(tenant, "service_accounts.manage")) redirect(`/${locale}`);
   const result = await getServiceAccounts(tenant.id);
   if (!result.sessionValid) redirect(`/${locale}/login`);

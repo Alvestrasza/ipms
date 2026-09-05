@@ -41,7 +41,7 @@ export async function getManagedAgents(tenantId: string) {
       headers,
     });
     return {
-      sessionValid: ![401, 403].includes(response.status),
+      sessionValid: response.status !== 401,
       available: response.ok,
       agents: response.ok ? ((await response.json()) as ManagedAgent[]) : [],
     };

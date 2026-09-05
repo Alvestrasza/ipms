@@ -58,7 +58,7 @@ export async function getLinuxSystems(
       `/api/v1/linux-systems/?system_type=${systemType}`,
     );
     return {
-      sessionValid: ![401, 403].includes(response.status),
+      sessionValid: response.status !== 401,
       available: response.ok,
       systems: response.ok ? ((await response.json()) as LinuxSystem[]) : [],
     };

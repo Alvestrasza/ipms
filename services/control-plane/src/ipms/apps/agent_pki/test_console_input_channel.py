@@ -1,14 +1,16 @@
 import base64
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from ipms.apps.discovery.models import HyperVConsoleSession, HyperVVirtualMachine, WindowsServer
-from ipms.apps.tenancy.models import Tenant
+from ipms.apps.tenancy.models import Tenant, TenantMembership
 
 from .hyperv_console import create_console_session, process_console_cycle, queue_console_input
 from .models import AgentEnrollment
@@ -17,6 +19,8 @@ from .models import AgentEnrollment
 class ConsoleInputChannelTests(TestCase):
     def setUp(self):
         self.tenant = Tenant.objects.create(slug="input-channel", display_name="Input channel")
+        user = get_user_model().objects.create_user("operator")
+        TenantMembership.objects.create(tenant=self.tenant, user=user, role="operator")
         self.enrollment = AgentEnrollment.objects.create(
             tenant=self.tenant, display_name="Host", device_uri="urn:ipms:agent:input-host",
             platform="windows", status="active",
@@ -93,9 +97,18 @@ class ConsoleInputChannelTests(TestCase):
         self.session.frame_png = b"\x89PNG\r\n\x1a\nprivate-frame"
         self.session.frame_sequence = 17
         self.session.save(update_fields=("frame_png", "frame_sequence"))
-        first = self.event("mouse_move", {"x": 10, "y": 20})
-        second = self.event("mouse_button", {"button": 1, "is_down": True})
-        third = self.event("mouse_move", {"x": 30, "y": 40})
+        now = timezone.now()
+        # This test exercises distinct chronological inputs, not equal clock ticks.
+        with patch("django.utils.timezone.now", return_value=now):
+            first = self.event("mouse_move", {"x": 10, "y": 20})
+        with patch(
+            "django.utils.timezone.now", return_value=now + timedelta(milliseconds=1)
+        ):
+            second = self.event("mouse_button", {"button": 1, "is_down": True})
+        with patch(
+            "django.utils.timezone.now", return_value=now + timedelta(milliseconds=2)
+        ):
+            third = self.event("mouse_move", {"x": 30, "y": 40})
         assignment = self.input_cycle()[1]
         self.assertEqual([item["id"] for item in assignment["inputs"]], [str(e.id) for e in (first, second, third)])
         self.assertNotIn("frame_png_base64", assignment)
@@ -110,6 +123,37 @@ class ConsoleInputChannelTests(TestCase):
         self.assertEqual(self.input_cycle(), (False, None))
         self.session.refresh_from_db()
         self.assertEqual(self.session.status, HyperVConsoleSession.Status.EXPIRED)
+
+    def test_revoked_requester_closes_and_clears_console_without_delivering_input(self):
+        event = self.event()
+        self.session.frame_png = b"private-frame"
+        self.session.save(update_fields=("frame_png",))
+        TenantMembership.objects.filter(tenant=self.tenant).update(is_active=False)
+        self.assertEqual(self.input_cycle(), (False, None))
+        self.session.refresh_from_db()
+        event.refresh_from_db()
+        self.assertEqual(self.session.status, "closed")
+        self.assertEqual(bytes(self.session.frame_png), b"")
+        self.assertIsNone(event.delivered_at)
+        TenantMembership.objects.filter(tenant=self.tenant).update(is_active=True)
+        self.assertIsNone(self.frame_cycle())
+
+    def test_revoked_requester_cannot_publish_a_late_frame(self):
+        TenantMembership.objects.filter(tenant=self.tenant).update(is_active=False)
+        assignment = process_console_cycle(
+            self.enrollment,
+            session_id=str(self.session.id),
+            frame_png_base64=base64.b64encode(b"\x89PNG\r\n\x1a\nlate-frame").decode(),
+            frame_width=640,
+            frame_height=480,
+            acknowledged_input_ids=[],
+            failure_code="",
+        )
+        self.assertIsNone(assignment)
+        self.session.refresh_from_db()
+        self.assertEqual(self.session.status, "closed")
+        self.assertEqual(self.session.frame_sequence, 0)
+        self.assertEqual(bytes(self.session.frame_png), b"")
 
     def test_other_identity_cannot_acknowledge_input(self):
         event = self.event()

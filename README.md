@@ -9,7 +9,13 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-IPMS application build `0.2.32` adds central **Administration → Service Accounts**
+IPMS application build `0.2.33` adds **Administration → Tenants** and separates
+platform administration from tenant operations. Platform accounts have no
+tenant membership; a separate tenant administrator manages infrastructure and
+Service Accounts. See [Tenant administration](docs/operations/TENANT-ADMINISTRATION.md)
+for initial setup, suspension, migration and acceptance status.
+
+Build `0.2.32` introduced central **Administration → Service Accounts**
 for existing Hyper-V console accounts and explicit host assignments. Console
 windows use the assigned account without a credential-entry form. Native
 activation requires the isolated adapter, Windows Agent
@@ -67,6 +73,7 @@ The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 
 ## Operations Documentation
 
+- [Tenant administration and platform separation](docs/operations/TENANT-ADMINISTRATION.md)
 - [Alice SSH bootstrap](docs/operations/ALICE-SSH-BOOTSTRAP.md)
 - [Ubuntu Appliance hardening baseline](docs/operations/UBUNTU-APPLIANCE-HARDENING.md)
 - [Ubuntu Appliance hardening automation](docs/operations/UBUNTU-HARDENING-AUTOMATION.md)

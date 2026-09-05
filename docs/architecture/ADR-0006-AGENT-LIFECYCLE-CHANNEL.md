@@ -20,8 +20,9 @@ deployment workflow before they can use this channel.
 
 The Web Console exposes **Administration > Infrastructure > Agents** only to an
 actor with the selected tenant's `agents.manage` permission. The initial role
-matrix grants it to platform administrators, tenant administrators, and
-operators. The Control Plane remains the authorization, tenant-isolation,
+matrix grants it to tenant administrators and operators. Platform accounts are
+excluded by [ADR-0012](ADR-0012-PLATFORM-AND-TENANT-ADMINISTRATION.md).
+The Control Plane remains the authorization, tenant-isolation,
 validation, job, and audit boundary.
 
 The lifecycle protocol contains two fixed actions:

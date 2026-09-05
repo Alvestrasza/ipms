@@ -6,6 +6,13 @@ from django.utils import timezone
 
 from ipms.apps.audit.models import AuditEvent
 from ipms.apps.discovery.models import HyperVVirtualMachine, HyperVVirtualMachineActionJob
+from ipms.apps.tenancy.models import Tenant
+from ipms.apps.tenancy.operations import (
+    require_active_tenant,
+    queued_actor_allowed,
+    withdraw_agent_job,
+)
+from ipms.apps.tenancy.rbac import Permission
 
 from .models import AgentEnrollment
 
@@ -50,6 +57,7 @@ def _version_tuple(value: str) -> tuple[int, int, int] | None:
 
 @transaction.atomic
 def create_hyperv_action_job(*, virtual_machine, action: str, actor: str):
+    require_active_tenant(virtual_machine.tenant_id, lock=True)
     virtual_machine = HyperVVirtualMachine.objects.select_for_update().select_related("host").get(
         id=virtual_machine.id,
         tenant=virtual_machine.tenant,
@@ -98,10 +106,13 @@ def create_hyperv_action_job(*, virtual_machine, action: str, actor: str):
 
 @transaction.atomic
 def offer_hyperv_action_job(enrollment) -> dict | None:
+    Tenant.objects.select_for_update(no_key=True).get(pk=enrollment.tenant_id)
     job = (
         HyperVVirtualMachineActionJob.objects.select_for_update()
         .filter(
             enrollment=enrollment,
+            tenant_id=enrollment.tenant_id,
+            authority_revoked_at__isnull=True,
             status__in=(
                 HyperVVirtualMachineActionJob.Status.QUEUED,
                 HyperVVirtualMachineActionJob.Status.DELIVERED,
@@ -111,6 +122,11 @@ def offer_hyperv_action_job(enrollment) -> dict | None:
         .first()
     )
     if job is None:
+        return None
+    if not queued_actor_allowed(
+        enrollment.tenant_id, job.requested_by, Permission.VIRTUAL_MACHINES_OPERATE
+    ):
+        withdraw_agent_job(job)
         return None
     if job.status == HyperVVirtualMachineActionJob.Status.QUEUED:
         job.status = HyperVVirtualMachineActionJob.Status.DELIVERED
@@ -146,7 +162,6 @@ def record_hyperv_action_result(enrollment, *, job_id: str, result: str, result_
     if job is None or job.status not in ACTIVE_STATUSES:
         raise ValidationError("The Hyper-V virtual machine action is unavailable.")
     if result == "running" and job.status not in (
-        HyperVVirtualMachineActionJob.Status.QUEUED,
         HyperVVirtualMachineActionJob.Status.DELIVERED,
     ):
         raise ValidationError("The Hyper-V virtual machine action transition is invalid.")
@@ -161,7 +176,12 @@ def record_hyperv_action_result(enrollment, *, job_id: str, result: str, result_
     else:
         job.completed_at = timezone.now()
         update_fields.append("completed_at")
-        if result == "succeeded" and job.virtual_machine_id:
+        if (
+            result == "succeeded"
+            and job.virtual_machine_id
+            and job.authority_revoked_at is None
+            and Tenant.objects.filter(pk=enrollment.tenant_id, status="active").exists()
+        ):
             HyperVVirtualMachine.objects.filter(id=job.virtual_machine_id).update(
                 state=EXPECTED_STATES[job.action],
                 observed_at=timezone.now(),

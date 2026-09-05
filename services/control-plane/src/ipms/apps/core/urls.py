@@ -1,8 +1,15 @@
 from django.urls import include, path
+from ipms.apps.tenancy.platform_views import (
+    PlatformTenantListCreateView,
+    PlatformTenantDetailView,
+    InitialTenantAdministratorView,
+)
 from ipms.apps.agent_pki.native_views import NativeConsoleConfigurationView
 from ipms.apps.agent_pki.service_account_views import (
-    ServiceAccountListView, ServiceAccountDetailView,
-    ServiceAccountHostListView, ServiceAccountHostDetailView,
+    ServiceAccountListView,
+    ServiceAccountDetailView,
+    ServiceAccountHostListView,
+    ServiceAccountHostDetailView,
 )
 
 from ipms.apps.agent_pki.views import (
@@ -50,15 +57,49 @@ from ipms.apps.discovery.views import (
 
 from . import views
 
-
 app_name = "core"
 
 urlpatterns = [
-    path("service-accounts/", ServiceAccountListView.as_view(), name="service-account-list"),
-    path("service-accounts/hosts/", ServiceAccountHostListView.as_view(), name="service-account-host-list"),
-    path("service-accounts/hosts/<uuid:pk>/", ServiceAccountHostDetailView.as_view(), name="service-account-host-detail"),
-    path("service-accounts/<uuid:pk>/", ServiceAccountDetailView.as_view(), name="service-account-detail"),
-    path("hyper-v/virtual-machines/<uuid:pk>/console-configuration/", NativeConsoleConfigurationView.as_view(), name="native-console-configuration"),
+    path(
+        "platform/tenants/",
+        PlatformTenantListCreateView.as_view(),
+        name="platform-tenant-list",
+    ),
+    path(
+        "platform/tenants/<uuid:pk>/",
+        PlatformTenantDetailView.as_view(),
+        name="platform-tenant-detail",
+    ),
+    path(
+        "platform/tenants/<uuid:pk>/initial-administrator/",
+        InitialTenantAdministratorView.as_view(),
+        name="platform-tenant-initial-administrator",
+    ),
+    path(
+        "service-accounts/",
+        ServiceAccountListView.as_view(),
+        name="service-account-list",
+    ),
+    path(
+        "service-accounts/hosts/",
+        ServiceAccountHostListView.as_view(),
+        name="service-account-host-list",
+    ),
+    path(
+        "service-accounts/hosts/<uuid:pk>/",
+        ServiceAccountHostDetailView.as_view(),
+        name="service-account-host-detail",
+    ),
+    path(
+        "service-accounts/<uuid:pk>/",
+        ServiceAccountDetailView.as_view(),
+        name="service-account-detail",
+    ),
+    path(
+        "hyper-v/virtual-machines/<uuid:pk>/console-configuration/",
+        NativeConsoleConfigurationView.as_view(),
+        name="native-console-configuration",
+    ),
     path("", views.api_information, name="api-information"),
     path("health/live/", views.liveness, name="liveness"),
     path("health/ready/", views.readiness, name="readiness"),
@@ -99,9 +140,21 @@ urlpatterns = [
         name="agent-lifecycle",
     ),
     path("connectors/", ConnectorEndpointListView.as_view(), name="connector-list"),
-    path("connectors/devices/", ManagedDeviceEnrollmentView.as_view(), name="managed-device-enroll"),
-    path("connectors/devices/certificate/", ManagedDeviceCertificateProbeView.as_view(), name="managed-device-certificate"),
-    path("managed-devices/", ManagedInfrastructureDeviceListView.as_view(), name="managed-device-list"),
+    path(
+        "connectors/devices/",
+        ManagedDeviceEnrollmentView.as_view(),
+        name="managed-device-enroll",
+    ),
+    path(
+        "connectors/devices/certificate/",
+        ManagedDeviceCertificateProbeView.as_view(),
+        name="managed-device-certificate",
+    ),
+    path(
+        "managed-devices/",
+        ManagedInfrastructureDeviceListView.as_view(),
+        name="managed-device-list",
+    ),
     path("connectors/bmc/", BmcConnectorEnrollmentView.as_view(), name="bmc-enroll"),
     path(
         "connectors/bmc/certificate/",
@@ -124,7 +177,9 @@ urlpatterns = [
         name="connector-discover",
     ),
     path("physical-systems/", PhysicalSystemListView.as_view(), name="physical-list"),
-    path("windows-servers/", WindowsServerListView.as_view(), name="windows-server-list"),
+    path(
+        "windows-servers/", WindowsServerListView.as_view(), name="windows-server-list"
+    ),
     path(
         "windows-server-roles/",
         WindowsServerRoleListView.as_view(),

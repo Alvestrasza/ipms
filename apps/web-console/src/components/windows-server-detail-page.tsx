@@ -20,6 +20,7 @@ import { documentLocale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionaries";
 import { resolveLocale } from "@/i18n/server";
 import { getServerSession } from "@/lib/server-auth";
+import { requireTenantScope } from "@/lib/server-portal-scope";
 import { getSoftwareInventory } from "@/lib/server-software";
 import { getWindowsServer } from "@/lib/server-windows";
 import { selectedTenant } from "@/lib/tenant-selection";
@@ -63,9 +64,9 @@ export async function WindowsServerDetailPage({
   const dictionary = getDictionary(locale);
   const copy = dictionary.windowsServerDetail;
   const session = await getServerSession();
-  if (!session?.authenticated) redirect(`/${locale}/login`);
+  requireTenantScope(session, locale);
   const tenant = selectedTenant(session, await cookies());
-  if (!tenant) redirect(`/${locale}/login?reason=no-tenant`);
+  if (!tenant) redirect(`/${locale}/access-unavailable`);
 
   const inventory = await getWindowsServer(tenant.id, id);
   if (!inventory.sessionValid) redirect(`/${locale}/login`);

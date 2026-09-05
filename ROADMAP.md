@@ -338,6 +338,15 @@ Migration from IPMS Appliance to IPMS Scale-Out must remain supported.
 
 ### Phase 1: Platform and Bootstrap
 
+- Application 0.2.33 introduces platform-only **Administration > Tenants**,
+  explicit platform principals without tenant membership, separate initial
+  tenant administrators, tenant suspension/reactivation and reauthorization
+  before background dispatch. Service Accounts remain strictly tenant-owned.
+  Tenant creation does not yet automate PKI/gateway trust provisioning or
+  per-service entitlements. See [Tenant administration](docs/operations/TENANT-ADMINISTRATION.md)
+  and [ADR-0012](docs/architecture/ADR-0012-PLATFORM-AND-TENANT-ADMINISTRATION.md)
+  for the migration, operational boundaries and verification status.
+
 - Implement tenant management, identity integration, RBAC, platform roles, and
   customer support access with explicit, time-limited approval.
 - The 0.2.13 foundation centralizes stable permission codes, tenant roles,

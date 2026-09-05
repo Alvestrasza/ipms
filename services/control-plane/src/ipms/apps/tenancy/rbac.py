@@ -3,7 +3,7 @@ from __future__ import annotations
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 
-from .models import Tenant, TenantMembership
+from .models import PlatformAdministrator, Tenant, TenantMembership
 
 
 class Permission:
@@ -61,18 +61,44 @@ def effective_memberships(
     queryset: QuerySet[TenantMembership] | None = None,
 ) -> QuerySet[TenantMembership]:
     memberships = queryset if queryset is not None else TenantMembership.objects.all()
-    return memberships.filter(is_active=True).filter(
-        Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())
-    )
+    return memberships.filter(
+        is_active=True,
+        user__is_active=True,
+        user__is_staff=False,
+        user__is_superuser=False,
+        user__ipms_platform_administrator__isnull=True,
+    ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()))
 
 
 def is_platform_administrator(user) -> bool:
-    return bool(user.is_authenticated and user.is_staff)
+    return bool(
+        user.is_authenticated
+        and user.is_active
+        and PlatformAdministrator.objects.filter(user_id=user.pk).exists()
+    )
+
+
+def is_tenant_principal(user) -> bool:
+    return bool(
+        user.is_authenticated
+        and user.is_active
+        and not user.is_staff
+        and not user.is_superuser
+        and not PlatformAdministrator.objects.filter(user_id=user.pk).exists()
+    )
+
+
+def effective_platform_permissions(user) -> frozenset[str]:
+    return (
+        frozenset({"tenants.manage"})
+        if is_platform_administrator(user)
+        else frozenset()
+    )
 
 
 def effective_tenant_role(user, tenant: Tenant) -> str | None:
-    if is_platform_administrator(user):
-        return "platform_admin"
+    if not is_tenant_principal(user) or tenant.status != Tenant.Status.ACTIVE:
+        return None
     membership = effective_memberships(
         TenantMembership.objects.filter(user=user, tenant=tenant)
     ).first()
@@ -80,8 +106,6 @@ def effective_tenant_role(user, tenant: Tenant) -> str | None:
 
 
 def effective_tenant_permissions(user, tenant: Tenant) -> frozenset[str]:
-    if is_platform_administrator(user):
-        return ALL_PERMISSIONS
     role = effective_tenant_role(user, tenant)
     return ROLE_PERMISSIONS.get(role, frozenset())
 

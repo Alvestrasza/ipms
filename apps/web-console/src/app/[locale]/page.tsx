@@ -20,6 +20,7 @@ import { resolveLocale } from "@/i18n/server";
 import { getServerSession } from "@/lib/server-auth";
 import { type DiscoveryJob, getDashboardData } from "@/lib/server-dashboard";
 import { getPhysicalInfrastructure } from "@/lib/server-physical";
+import { requireTenantScope } from "@/lib/server-portal-scope";
 import { getWindowsServers } from "@/lib/server-windows";
 import { selectedTenant } from "@/lib/tenant-selection";
 
@@ -70,9 +71,9 @@ export default async function OverviewPage() {
   const locale = await resolveLocale();
   const dictionary = getDictionary(locale);
   const session = await getServerSession();
-  if (!session?.authenticated) redirect(`/${locale}/login`);
+  requireTenantScope(session, locale);
   const tenant = selectedTenant(session, await cookies());
-  if (!tenant) redirect(`/${locale}/login?reason=no-tenant`);
+  if (!tenant) redirect(`/${locale}/access-unavailable`);
 
   const [
     dashboard,

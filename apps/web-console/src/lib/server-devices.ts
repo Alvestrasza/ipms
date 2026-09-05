@@ -58,8 +58,7 @@ export async function getManagedDevices(tenantId: string) {
     return {
       available: connectorsResponse.ok && devicesResponse.ok,
       sessionValid:
-        ![401, 403].includes(connectorsResponse.status) &&
-        ![401, 403].includes(devicesResponse.status),
+        connectorsResponse.status !== 401 && devicesResponse.status !== 401,
       connectors: allConnectors.filter((connector) =>
         ["sophos-firewall", "loadbalancer-org", "hpe-comware"].includes(
           connector.connector_type,

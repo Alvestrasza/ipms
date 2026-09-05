@@ -6,6 +6,7 @@ export default defineConfig({
     "hyperv-console.spec.ts",
     "hyperv-native-console.spec.ts",
     "service-accounts.spec.ts",
+    "platform-tenants.spec.ts",
   ],
   timeout: 60_000,
   workers: 1,
@@ -14,5 +15,6 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:3107",
     browserName: "chromium",
     headless: true,
+    timezoneId: "Europe/Berlin",
   },
 });

@@ -1,6 +1,6 @@
 # Service Accounts
 
-Application target: **0.2.32**. Windows Agent remains **0.2.26** and Linux Agent
+Application target: **0.2.33**. Windows Agent remains **0.2.26** and Linux Agent
 remains **0.2.13**. Implementation and verification status are recorded below.
 
 ## Administrator workflow
@@ -32,8 +32,9 @@ A name-only edit preserves the credentials and active sessions.
 
 ## Security and compatibility
 
-The new `service_accounts.manage` permission is limited to tenant and platform
-administrators. Existing `agents.manage` permission alone does not authorize
+The `service_accounts.manage` permission is limited to tenant administrators.
+Platform accounts have no tenant access; see [Tenant administration](TENANT-ADMINISTRATION.md).
+Existing `agents.manage` permission alone does not authorize
 secret management. All list, mutation and assignment endpoints enforce the
 selected tenant and permission independently of navigation visibility.
 
@@ -63,6 +64,10 @@ native console sessions through the existing authorization checks. Windows
 permissions are not changed by these operations.
 
 ## Deployment and rollback
+
+The original 0.2.32 deployment record below predates the principal separation.
+For an upgrade to 0.2.33 or later, follow [Tenant administration](TENANT-ADMINISTRATION.md)
+and do not restore the old platform-to-tenant privilege model.
 
 Back up the database, protected configuration and credential key according to
 the appliance backup policy. Apply additive migrations and grant the broker

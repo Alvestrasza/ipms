@@ -10,7 +10,7 @@ import type { ManagedTenantUser } from "@/lib/server-users";
 import { DialogPortal } from "./dialog-portal";
 
 type UserCopy = Dictionary["userAdministration"];
-type EditableRole = Exclude<TenantRole, "platform_admin">;
+type EditableRole = TenantRole;
 
 const EDITABLE_ROLES: EditableRole[] = [
   "tenant_admin",

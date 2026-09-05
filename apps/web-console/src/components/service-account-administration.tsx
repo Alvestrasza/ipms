@@ -184,6 +184,7 @@ export function ServiceAccountAdministration({
       : new Intl.DateTimeFormat(locale, {
           dateStyle: "medium",
           timeStyle: "short",
+          timeZone: "UTC",
         }).format(date);
   };
   return (
@@ -237,7 +238,7 @@ export function ServiceAccountAdministration({
                 <th>{copy.username}</th>
                 <th>{copy.domain}</th>
                 <th>{copy.hostCount}</th>
-                <th>{copy.updated}</th>
+                <th>{copy.updated} (UTC)</th>
                 <th>{copy.actions}</th>
               </tr>
             </thead>

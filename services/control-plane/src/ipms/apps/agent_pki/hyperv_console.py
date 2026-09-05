@@ -17,7 +17,8 @@ from ipms.apps.discovery.models import (
 )
 
 from .models import AgentEnrollment
-
+from ipms.apps.tenancy.operations import require_active_tenant, queued_actor_allowed
+from ipms.apps.tenancy.rbac import Permission
 
 ACTIVE_STATUSES = (
     HyperVConsoleSession.Status.REQUESTED,
@@ -61,6 +62,7 @@ def _expire_stale_sessions(now=None, *, enrollment=None, virtual_machine=None) -
 
 @transaction.atomic
 def create_console_session(*, virtual_machine, actor: str, transport="thumbnail", owner=None, external_session_acknowledged=False):
+    require_active_tenant(virtual_machine.tenant_id, lock=True)
     if transport not in ("thumbnail", "vmconnect"):
         raise ValidationError("The console transport is invalid.")
     if transport == "vmconnect" and (owner is None or external_session_acknowledged is not True):
@@ -313,6 +315,7 @@ def process_console_cycle(
     failure_code: str,
     include_inputs: bool = True,
 ):
+    require_active_tenant(enrollment.tenant_id)
     if not include_inputs and acknowledged_input_ids != []:
         raise ValidationError("The frame channel cannot acknowledge console inputs.")
     now = timezone.now()
@@ -336,7 +339,9 @@ def process_console_cycle(
                 raise ValidationError("The console input acknowledgement is invalid.")
             acknowledgement_ids.append(value)
         reported_session.input_events.filter(id__in=acknowledgement_ids).delete()
-        if reported_session.status in ACTIVE_STATUSES:
+        if reported_session.status in ACTIVE_STATUSES and _console_authority_allowed(
+            reported_session, now
+        ):
             reported_session.last_agent_contact_at = now
             update_fields = ["last_agent_contact_at"]
             if failure_code:
@@ -370,7 +375,11 @@ def process_console_cycle(
 
     session = (
         HyperVConsoleSession.objects.select_for_update()
-        .filter(enrollment=enrollment, status__in=ACTIVE_STATUSES)
+        .filter(
+            enrollment=enrollment,
+            tenant_id=enrollment.tenant_id,
+            status__in=ACTIVE_STATUSES,
+        )
         .order_by(F("last_agent_contact_at").asc(nulls_first=True), "created_at")
         .first()
     )
@@ -379,7 +388,24 @@ def process_console_cycle(
     return _console_assignment(session, now, include_inputs=include_inputs)
 
 
+def _console_authority_allowed(session, now):
+    if queued_actor_allowed(
+        session.tenant_id,
+        session.requested_by,
+        Permission.VIRTUAL_MACHINES_CONSOLE_CONTROL,
+    ):
+        return True
+    session.status = HyperVConsoleSession.Status.CLOSED
+    session.failure_code = "requester_permission_revoked"
+    session.closed_at = now
+    session.frame_png = b""
+    session.save(update_fields=("status", "failure_code", "closed_at", "frame_png"))
+    return False
+
+
 def _console_assignment(session, now, *, include_inputs=True):
+    if not _console_authority_allowed(session, now):
+        return None
     if session.transport == "vmconnect":
         return {
             "transport": "vmconnect", "stream_generation": str(session.stream_generation),
@@ -420,6 +446,7 @@ def process_console_input_cycle(
     Result posts are idempotent acknowledgements and never offer the next batch.
     Polls select the oldest pending event across this Agent's active sessions.
     """
+    require_active_tenant(enrollment.tenant_id)
     if not isinstance(acknowledged_input_ids, list) or len(acknowledged_input_ids) > MAX_INPUT_BATCH:
         raise ValidationError("The console input acknowledgement is invalid.")
     try:
@@ -466,4 +493,5 @@ def process_console_input_cycle(
     session = active_sessions.select_for_update().filter(id=pending_session_id).first()
     if session is None:
         return active_sessions.exists(), None
-    return True, _console_assignment(session, now)
+    assignment = _console_assignment(session, now)
+    return active_sessions.exists(), assignment

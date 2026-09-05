@@ -9,6 +9,7 @@ import { resolveLocale } from "@/i18n/server";
 import { hasPermission } from "@/lib/auth-types";
 import { getServerSession } from "@/lib/server-auth";
 import { getManagedDevices } from "@/lib/server-devices";
+import { requireTenantScope } from "@/lib/server-portal-scope";
 import { selectedTenant } from "@/lib/tenant-selection";
 
 function interfaceValue(item: Record<string, unknown>, ...keys: string[]) {
@@ -25,9 +26,9 @@ export default async function NetworkPage() {
   const locale = await resolveLocale();
   const dictionary = getDictionary(locale);
   const session = await getServerSession();
-  if (!session?.authenticated) redirect(`/${locale}/login`);
+  requireTenantScope(session, locale);
   const tenant = selectedTenant(session, await cookies());
-  if (!tenant) redirect(`/${locale}/login?reason=no-tenant`);
+  if (!tenant) redirect(`/${locale}/access-unavailable`);
   const inventory = await getManagedDevices(tenant.id);
   if (!inventory.sessionValid) redirect(`/${locale}/login`);
   const copy = dictionary.networkDevices;

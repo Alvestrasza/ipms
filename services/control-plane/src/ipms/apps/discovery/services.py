@@ -10,6 +10,9 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from ipms.apps.audit.models import AuditEvent
+from ipms.apps.tenancy.models import Tenant
+from ipms.apps.tenancy.operations import queued_actor_allowed
+from ipms.apps.tenancy.rbac import Permission
 
 from .connectors.ilo_redfish import RedfishConnectorError, RedfishTransport, discover_ilo
 from .connectors.hpe_comware import ComwareConnectorError, discover_comware
@@ -130,6 +133,14 @@ def _finish_failed(
 
 def process_discovery_job(job: DiscoveryJob) -> None:
     endpoint = job.connector
+    if not queued_actor_allowed(
+        job.tenant_id, job.requested_by, Permission.CONNECTORS_MANAGE
+    ):
+        job.status = DiscoveryJob.Status.FAILED
+        job.error_code = "execution_authority_withdrawn"
+        job.completed_at = timezone.now()
+        job.save(update_fields=("status", "error_code", "completed_at"))
+        return
     if endpoint is None or not endpoint.enabled:
         job.status = DiscoveryJob.Status.FAILED
         job.error_code = "connector_unavailable"
@@ -338,25 +349,48 @@ def process_discovery_job(job: DiscoveryJob) -> None:
 
 def process_discovery_queue(*, limit: int = 5) -> int:
     processed = 0
+    supported_types = (
+        DiscoveryJob.ConnectorType.ILO_REDFISH,
+        DiscoveryJob.ConnectorType.SOPHOS_FIREWALL,
+        DiscoveryJob.ConnectorType.LOADBALANCER_ORG,
+        DiscoveryJob.ConnectorType.HPE_COMWARE,
+    )
     for _ in range(limit):
         with transaction.atomic():
+            candidate = (
+                DiscoveryJob.objects.filter(
+                    status=DiscoveryJob.Status.QUEUED,
+                    connector_type__in=supported_types,
+                )
+                .order_by("created_at")
+                .values("id", "tenant_id")
+                .first()
+            )
+            if candidate is None:
+                break
+            Tenant.objects.select_for_update(no_key=True).get(pk=candidate["tenant_id"])
             job = (
                 DiscoveryJob.objects.select_for_update(skip_locked=True, of=("self",))
                 .select_related("connector", "connector__tenant")
                 .filter(
+                    pk=candidate["id"],
                     status=DiscoveryJob.Status.QUEUED,
-                    connector_type__in=(
-                        DiscoveryJob.ConnectorType.ILO_REDFISH,
-                        DiscoveryJob.ConnectorType.SOPHOS_FIREWALL,
-                        DiscoveryJob.ConnectorType.LOADBALANCER_ORG,
-                        DiscoveryJob.ConnectorType.HPE_COMWARE,
-                    ),
+                    connector_type__in=supported_types,
                 )
                 .order_by("created_at")
                 .first()
             )
             if job is None:
-                break
+                continue
+            if not queued_actor_allowed(
+                job.tenant_id, job.requested_by, Permission.CONNECTORS_MANAGE
+            ):
+                job.status = DiscoveryJob.Status.FAILED
+                job.error_code = "execution_authority_withdrawn"
+                job.completed_at = timezone.now()
+                job.save(update_fields=("status", "error_code", "completed_at"))
+                processed += 1
+                continue
             job.status = DiscoveryJob.Status.RUNNING
             job.started_at = timezone.now()
             job.save(update_fields=("status", "started_at"))

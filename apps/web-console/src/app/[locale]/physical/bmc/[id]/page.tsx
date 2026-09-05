@@ -12,6 +12,7 @@ import { getDictionary } from "@/i18n/dictionaries";
 import { resolveLocale } from "@/i18n/server";
 import { getServerSession } from "@/lib/server-auth";
 import { getPhysicalInfrastructure } from "@/lib/server-physical";
+import { requireTenantScope } from "@/lib/server-portal-scope";
 import { selectedTenant } from "@/lib/tenant-selection";
 
 type BmcDetailPageProps = {
@@ -39,9 +40,9 @@ export default async function BmcDetailPage({ params }: BmcDetailPageProps) {
   const [locale, { id }] = await Promise.all([resolveLocale(), params]);
   const dictionary = getDictionary(locale);
   const session = await getServerSession();
-  if (!session?.authenticated) redirect(`/${locale}/login`);
+  requireTenantScope(session, locale);
   const tenant = selectedTenant(session, await cookies());
-  if (!tenant) redirect(`/${locale}/login?reason=no-tenant`);
+  if (!tenant) redirect(`/${locale}/access-unavailable`);
 
   const infrastructure = await getPhysicalInfrastructure(tenant.id);
   if (!infrastructure.sessionValid) redirect(`/${locale}/login`);

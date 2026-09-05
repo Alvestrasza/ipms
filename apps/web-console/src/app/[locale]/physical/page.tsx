@@ -13,6 +13,7 @@ import {
   getPhysicalInfrastructure,
   type PhysicalSystem,
 } from "@/lib/server-physical";
+import { requireTenantScope } from "@/lib/server-portal-scope";
 import { selectedTenant } from "@/lib/tenant-selection";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -41,9 +42,9 @@ export default async function PhysicalInfrastructurePage() {
   const locale = await resolveLocale();
   const dictionary = getDictionary(locale);
   const session = await getServerSession();
-  if (!session?.authenticated) redirect(`/${locale}/login`);
+  requireTenantScope(session, locale);
   const tenant = selectedTenant(session, await cookies());
-  if (!tenant) redirect(`/${locale}/login?reason=no-tenant`);
+  if (!tenant) redirect(`/${locale}/access-unavailable`);
 
   const infrastructure = await getPhysicalInfrastructure(tenant.id);
   if (!infrastructure.sessionValid) redirect(`/${locale}/login`);

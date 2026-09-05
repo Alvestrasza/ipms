@@ -7,7 +7,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.core.exceptions import ValidationError
-from django.test import SimpleTestCase, TestCase
+from django.db import connections
+from django.test import SimpleTestCase, TestCase, TransactionTestCase
 from django.utils import timezone
 
 from ipms.apps.tenancy.models import Tenant
@@ -90,6 +91,8 @@ class HeartbeatTransportTests(SimpleTestCase):
             self.assertIn(b"HTTP/1.1 400", output)
             self.assertNotIn("confirm_heartbeat", calls)
 
+
+class HeartbeatDatabaseLaneTests(TransactionTestCase):
     async def test_heartbeat_database_lane_progresses_while_normal_lane_is_blocked(self):
         entered, release = threading.Event(), threading.Event()
 
@@ -98,16 +101,24 @@ class HeartbeatTransportTests(SimpleTestCase):
             if not release.wait(5):
                 raise RuntimeError("The test did not release the normal lane.")
 
-        with patch.object(gateway, "close_old_connections"):
-            task = asyncio.create_task(gateway._database_call_async(blocked))
+        task = asyncio.create_task(gateway._database_call_async(blocked))
+        try:
+            self.assertTrue(await asyncio.to_thread(entered.wait, 2))
+            result = await asyncio.wait_for(
+                gateway._heartbeat_database_call_async(lambda: "alive"), 1
+            )
+            self.assertEqual(result, "alive")
+            self.assertFalse(task.done())
+        finally:
+            release.set()
             try:
-                self.assertTrue(await asyncio.to_thread(entered.wait, 2))
-                result = await asyncio.wait_for(gateway._heartbeat_database_call_async(lambda: "alive"), 1)
-                self.assertEqual(result, "alive")
-                self.assertFalse(task.done())
-            finally:
-                release.set()
                 await task
+            finally:
+                # The dedicated executor outlives this test. Close its real
+                # thread-local connection before test database destruction.
+                await asyncio.get_running_loop().run_in_executor(
+                    gateway._heartbeat_executor, connections.close_all
+                )
 
 
 class HeartbeatPersistenceTests(TestCase):

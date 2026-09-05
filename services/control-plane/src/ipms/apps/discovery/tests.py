@@ -451,9 +451,15 @@ class DiscoveryJobApiTests(TestCase):
     def tenant_header(self, tenant: Tenant | None = None) -> dict[str, str]:
         return {"HTTP_X_IPMS_TENANT_ID": str((tenant or self.tenant).id)}
 
-    def test_platform_admin_must_select_and_is_scoped_to_one_tenant(self) -> None:
+    def test_platform_admin_is_denied_even_with_selected_tenant(self) -> None:
         self.client.force_login(self.platform_admin)
 
+        response = self.client.get(self.list_url, **self.tenant_header())
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_tenant_reader_receives_scoped_sanitized_projection(self) -> None:
+        self.client.force_login(self.tenant_reader)
         response = self.client.get(self.list_url, **self.tenant_header())
 
         self.assertEqual(response.status_code, 200)
@@ -512,7 +518,7 @@ class DiscoveryJobApiTests(TestCase):
         )
 
     def test_state_changing_method_is_not_available(self) -> None:
-        self.client.force_login(self.platform_admin)
+        self.client.force_login(self.tenant_reader)
 
         response = self.client.post(
             self.list_url,
@@ -568,7 +574,7 @@ class InventoryApiTests(DiscoveryJobApiTests):
         self.assertNotIn("redfish", json.dumps(response.json()).lower())
 
     def test_inventory_write_is_not_available(self) -> None:
-        self.client.force_login(self.platform_admin)
+        self.client.force_login(self.tenant_reader)
         response = self.client.post(
             reverse("core:physical-list"),
             data={},

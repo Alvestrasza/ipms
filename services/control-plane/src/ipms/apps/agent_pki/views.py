@@ -20,6 +20,7 @@ from ipms.apps.discovery.certificates import (
     request_windows_http_probe,
 )
 from ipms.apps.tenancy.permissions import HasSelectedTenantAccess
+from ipms.apps.tenancy.operations import require_active_tenant
 
 from .deployment_secrets import store_deployment_secret
 from .deployment_approval import (
@@ -237,6 +238,7 @@ class WindowsAgentDeploymentListCreateView(APIView):
         actor = _actor(request)
         try:
             with transaction.atomic():
+                require_active_tenant(request.tenant.id, lock=True)
                 lifecycle_bootstrap_enrollment = None
                 existing_enrollment_id = data.get("existing_enrollment_id")
                 if existing_enrollment_id is not None:
@@ -588,6 +590,7 @@ class AgentLifecycleView(APIView):
         actor = _actor(request)
         try:
             with transaction.atomic():
+                require_active_tenant(request.tenant.id, lock=True)
                 enrollment = get_object_or_404(
                     AgentEnrollment.objects.select_for_update(),
                     id=pk,

@@ -1,5 +1,4 @@
 export type TenantRole =
-  | "platform_admin"
   | "tenant_admin"
   | "operator"
   | "approver"
@@ -24,7 +23,7 @@ export type TenantSummary = {
   slug: string;
   display_name: string;
   role: TenantRole;
-  permissions?: PermissionCode[];
+  permissions: PermissionCode[];
 };
 
 export type AuthenticatedSession = {
@@ -36,6 +35,7 @@ export type AuthenticatedSession = {
     is_platform_admin: boolean;
   };
   tenants: TenantSummary[];
+  platform_permissions: "tenants.manage"[];
 };
 
 export type AnonymousSession = {
@@ -49,6 +49,23 @@ export function hasPermission(
   tenant: TenantSummary,
   permission: PermissionCode,
 ): boolean {
-  if (tenant.permissions) return tenant.permissions.includes(permission);
-  return ["platform_admin", "tenant_admin"].includes(tenant.role);
+  return tenant.permissions?.includes(permission) === true;
+}
+
+export function hasPlatformPermission(
+  session: AuthenticatedSession,
+  permission: "tenants.manage",
+): boolean {
+  return (
+    session.user.is_platform_admin &&
+    session.platform_permissions?.includes(permission) === true
+  );
+}
+
+export function portalScope(
+  session: IpmsSession | null,
+): "anonymous" | "platform" | "tenant" | "no-tenant" {
+  if (!session?.authenticated) return "anonymous";
+  if (session.user.is_platform_admin) return "platform";
+  return session.tenants.length ? "tenant" : "no-tenant";
 }

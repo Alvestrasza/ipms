@@ -14,6 +14,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from ipms.apps.audit.models import AuditEvent
+from ipms.apps.tenancy.operations import require_active_tenant
 
 from .crypto import (
     _issue_leaf,
@@ -559,6 +560,7 @@ def create_enrollment_token(
     platform: str = AgentEnrollment.Platform.WINDOWS,
     lifetime_minutes: int = 30,
 ):
+    require_active_tenant(tenant.id, lock=True)
     if not 5 <= lifetime_minutes <= 1440:
         raise ValidationError("Enrollment token lifetime must be between 5 and 1440 minutes.")
     if platform not in AgentEnrollment.Platform.values:
@@ -600,10 +602,20 @@ def create_enrollment_token(
 @transaction.atomic
 def enroll_agent(*, raw_token: str, csr_pem: str):
     digest = hashlib.sha256(raw_token.encode()).hexdigest()
+    token_tenant = (
+        AgentEnrollmentToken.objects.filter(token_digest=digest)
+        .values_list("tenant_id", flat=True)
+        .first()
+    )
+    if token_tenant is None:
+        raise ValidationError("The enrollment token is invalid or expired.")
+    require_active_tenant(token_tenant, lock=True)
     token = (
-        AgentEnrollmentToken.objects.select_for_update()
+        AgentEnrollmentToken.objects.select_for_update(of=("self",))
         .select_related("enrollment", "tenant")
-        .filter(token_digest=digest, used_at__isnull=True, expires_at__gt=timezone.now())
+        .filter(
+            token_digest=digest, used_at__isnull=True, expires_at__gt=timezone.now()
+        )
         .first()
     )
     if token is None:
@@ -655,7 +667,7 @@ def enroll_agent(*, raw_token: str, csr_pem: str):
     return enrollment, enrollment.certificate_pem, issuer.certificate_pem + issuer.chain_pem
 
 
-def validate_peer_certificate(certificate_der: bytes):
+def validate_peer_certificate(certificate_der: bytes, *, allow_suspended_report=False):
     certificate = x509.load_der_x509_certificate(certificate_der)
     # Persistent console connections can survive beyond their TLS handshake.
     # Recheck the certificate validity window for every authenticated message.
@@ -681,6 +693,10 @@ def validate_peer_certificate(certificate_der: bytes):
     ).first()
     if enrollment is None or AgentRevocation.objects.filter(enrollment=enrollment).exists():
         raise ValidationError("The Agent identity is not active.")
+    if not allow_suspended_report:
+        require_active_tenant(enrollment.tenant_id)
+    elif enrollment.tenant.status not in {"active", "suspended"}:
+        raise ValidationError("tenant_inactive")
     if enrollment.issuer.tenant_id != enrollment.tenant_id:
         raise ValidationError("The Agent issuer tenant binding is invalid.")
     if enrollment.issuer.status not in {AgentIssuer.Status.ACTIVE, AgentIssuer.Status.OVERLAP}:
@@ -692,6 +708,7 @@ def validate_peer_certificate(certificate_der: bytes):
 
 @transaction.atomic
 def renew_agent_certificate(*, enrollment: AgentEnrollment, csr_pem: str):
+    require_active_tenant(enrollment.tenant_id, lock=True)
     enrollment = AgentEnrollment.objects.select_for_update().select_related("tenant").get(
         id=enrollment.id,
         status=AgentEnrollment.Status.ACTIVE,
@@ -1068,6 +1085,7 @@ def confirm_inventory(
     inventory: object,
     agent_version: str,
 ) -> None:
+    require_active_tenant(enrollment.tenant_id, lock=True)
     from ipms.apps.discovery.models import (
         HyperVVirtualMachine,
         WindowsServer,
@@ -1322,19 +1340,22 @@ def confirm_heartbeat(enrollment: AgentEnrollment) -> None:
     revoked, removed, rotated, or expired since authentication.
     """
     now = timezone.now()
-    updated = AgentEnrollment.objects.filter(
-        id=enrollment.id,
-        tenant_id=enrollment.tenant_id,
-        device_uri=enrollment.device_uri,
-        status=AgentEnrollment.Status.ACTIVE,
-        certificate_fingerprint_sha256=enrollment.certificate_fingerprint_sha256,
-        certificate_not_before__lte=now,
-        certificate_not_after__gte=now,
-        issuer__tenant_id=enrollment.tenant_id,
-        issuer__status__in=(AgentIssuer.Status.ACTIVE, AgentIssuer.Status.OVERLAP),
-    ).exclude(
-        id__in=AgentRevocation.objects.values("enrollment_id")
-    ).update(last_heartbeat_at=now)
+    updated = (
+        AgentEnrollment.objects.filter(
+            id=enrollment.id,
+            tenant_id=enrollment.tenant_id,
+            tenant__status="active",
+            device_uri=enrollment.device_uri,
+            status=AgentEnrollment.Status.ACTIVE,
+            certificate_fingerprint_sha256=enrollment.certificate_fingerprint_sha256,
+            certificate_not_before__lte=now,
+            certificate_not_after__gte=now,
+            issuer__tenant_id=enrollment.tenant_id,
+            issuer__status__in=(AgentIssuer.Status.ACTIVE, AgentIssuer.Status.OVERLAP),
+        )
+        .exclude(id__in=AgentRevocation.objects.values("enrollment_id"))
+        .update(last_heartbeat_at=now)
+    )
     if updated != 1:
         raise ValidationError("The Agent heartbeat identity is no longer active.")
 
@@ -1381,6 +1402,7 @@ def confirm_telemetry(
     telemetry: object,
     agent_version: str,
 ) -> None:
+    require_active_tenant(enrollment.tenant_id, lock=True)
     from ipms.apps.discovery.models import WindowsServer, WindowsServerTelemetry
 
     if not isinstance(telemetry, dict) or len(telemetry) > 16:
@@ -1515,6 +1537,7 @@ def confirm_software_inventory(
     document: object,
     agent_version: str,
 ) -> None:
+    require_active_tenant(enrollment.tenant_id, lock=True)
     from ipms.apps.discovery.models import (
         LinuxSystem,
         SoftwareInventorySnapshot,

@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
 import { isTrustedPortalOrigin } from "@/lib/portal-origin";
+import { getServerSession } from "@/lib/server-auth";
 import { TENANT_COOKIE } from "@/lib/tenant-selection";
 
 const UUID_PATTERN =
@@ -29,6 +30,14 @@ export async function POST(request: NextRequest) {
   }
 
   const cookieStore = await cookies();
+  const session = await getServerSession();
+  if (
+    !session?.authenticated ||
+    session.user.is_platform_admin ||
+    !session.tenants.some((tenant) => tenant.id === tenantId)
+  ) {
+    return Response.json({ error: "forbidden" }, { status: 403 });
+  }
   cookieStore.set(TENANT_COOKIE, tenantId, {
     httpOnly: true,
     sameSite: "lax",

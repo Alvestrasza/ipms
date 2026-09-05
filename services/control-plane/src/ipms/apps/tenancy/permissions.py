@@ -1,7 +1,12 @@
 from rest_framework.permissions import BasePermission
 
 from .access import selected_tenant_for_request
-from .rbac import has_tenant_permission
+from .rbac import has_tenant_permission, is_platform_administrator
+
+
+class IsPlatformAdministrator(BasePermission):
+    def has_permission(self, request, view):
+        return is_platform_administrator(request.user)
 
 
 class HasSelectedTenantAccess(BasePermission):

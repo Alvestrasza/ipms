@@ -8,6 +8,7 @@ import { getDictionary } from "@/i18n/dictionaries";
 import { resolveLocale } from "@/i18n/server";
 import { hasPermission } from "@/lib/auth-types";
 import { getServerSession } from "@/lib/server-auth";
+import { requireTenantScope } from "@/lib/server-portal-scope";
 import { getManagedTenantUsers } from "@/lib/server-users";
 import { selectedTenant } from "@/lib/tenant-selection";
 
@@ -20,9 +21,9 @@ export default async function UserAdministrationPage() {
   const locale = await resolveLocale();
   const dictionary = getDictionary(locale);
   const session = await getServerSession();
-  if (!session?.authenticated) redirect(`/${locale}/login`);
+  requireTenantScope(session, locale);
   const tenant = selectedTenant(session, await cookies());
-  if (!tenant) redirect(`/${locale}/login?reason=no-tenant`);
+  if (!tenant) redirect(`/${locale}/access-unavailable`);
   if (!hasPermission(tenant, "users.view")) redirect(`/${locale}`);
   const result = await getManagedTenantUsers(tenant.id);
   if (!result.sessionValid) redirect(`/${locale}/login`);

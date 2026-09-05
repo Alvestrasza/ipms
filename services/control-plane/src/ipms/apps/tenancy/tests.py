@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from ipms.apps.audit.models import AuditEvent
 
-from .models import ExternalIdentity, Tenant, TenantMembership
+from .models import ExternalIdentity, PlatformAdministrator, Tenant, TenantMembership
 from .rbac import Permission, effective_tenant_permissions
 
 
@@ -198,7 +198,7 @@ class AuthenticationApiTests(TestCase):
 
 
 class InstanceBootstrapCommandTests(TestCase):
-    def test_command_creates_idempotent_platform_admin_and_membership(self) -> None:
+    def test_command_creates_idempotent_platform_admin_without_membership(self) -> None:
         with TemporaryDirectory() as directory:
             password_file = Path(directory) / "password"
             password_file.write_text(
@@ -222,12 +222,14 @@ class InstanceBootstrapCommandTests(TestCase):
 
         user = get_user_model().objects.get(username="alice")
         tenant = Tenant.objects.get(slug="development")
-        self.assertTrue(user.is_staff)
-        self.assertTrue(user.is_superuser)
-        self.assertTrue(user.check_password("A-strong-test-only-bootstrap-password-482!"))
-        membership = TenantMembership.objects.get(user=user, tenant=tenant)
-        self.assertEqual(membership.role, TenantMembership.Role.TENANT_ADMIN)
-        self.assertEqual(TenantMembership.objects.count(), 1)
+        self.assertFalse(user.is_staff)
+        self.assertFalse(user.is_superuser)
+        self.assertTrue(PlatformAdministrator.objects.filter(user=user).exists())
+        self.assertTrue(
+            user.check_password("A-strong-test-only-bootstrap-password-482!")
+        )
+        self.assertFalse(TenantMembership.objects.filter(user=user).exists())
+        self.assertIsNone(tenant.initial_administrator_created_at)
 
 
 class TenantUserAdministrationApiTests(TestCase):
@@ -334,17 +336,18 @@ class TenantUserAdministrationApiTests(TestCase):
         )
         self.assertIn(hidden.status_code, (403, 404))
 
-    def test_platform_user_is_visible_but_protected(self) -> None:
+    def test_malformed_platform_membership_is_hidden_and_inaccessible(self) -> None:
         platform = get_user_model().objects.create_user(
             username="platform-admin",
             password="test-only-password",
             is_staff=True,
         )
-        membership = TenantMembership.objects.create(
+        membership = TenantMembership(
             tenant=self.tenant,
             user=platform,
             role=TenantMembership.Role.TENANT_ADMIN,
         )
+        TenantMembership.objects.bulk_create([membership])
         self.client.force_login(self.admin)
 
         response = self.client.patch(
@@ -353,4 +356,8 @@ class TenantUserAdministrationApiTests(TestCase):
             content_type="application/json",
             **self.headers(),
         )
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 404)
+        listed = self.client.get(
+            reverse("core:tenancy:user-list"), **self.headers()
+        ).json()
+        self.assertNotIn("platform-admin", str(listed))

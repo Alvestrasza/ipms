@@ -14,6 +14,7 @@ import { resolveLocale } from "@/i18n/server";
 import { hasPermission } from "@/lib/auth-types";
 import { getServerSession } from "@/lib/server-auth";
 import { getPhysicalInfrastructure } from "@/lib/server-physical";
+import { requireTenantScope } from "@/lib/server-portal-scope";
 import { selectedTenant } from "@/lib/tenant-selection";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -25,9 +26,9 @@ export default async function BareMetalControllerPage() {
   const locale = await resolveLocale();
   const dictionary = getDictionary(locale);
   const session = await getServerSession();
-  if (!session?.authenticated) redirect(`/${locale}/login`);
+  requireTenantScope(session, locale);
   const tenant = selectedTenant(session, await cookies());
-  if (!tenant) redirect(`/${locale}/login?reason=no-tenant`);
+  if (!tenant) redirect(`/${locale}/access-unavailable`);
 
   const infrastructure = await getPhysicalInfrastructure(tenant.id);
   if (!infrastructure.sessionValid) redirect(`/${locale}/login`);

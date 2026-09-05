@@ -7,6 +7,7 @@ import {
   hasPermission,
   type TenantSummary,
 } from "@/lib/auth-types";
+import { requireTenantScope } from "@/lib/server-portal-scope";
 import {
   getWindowsClientFamilies,
   getWindowsServerRoles,
@@ -33,14 +34,14 @@ export async function ConsoleShell({
   activeWindowsRole?: string;
   activeWindowsClientFamily?: string;
 }) {
-  const [locale, windowsRoles, windowsClientFamilies] = await Promise.all([
-    resolveLocale(),
+  const locale = await resolveLocale();
+  requireTenantScope(session, locale);
+  const [windowsRoles, windowsClientFamilies] = await Promise.all([
     getWindowsServerRoles(tenant.id),
     getWindowsClientFamilies(tenant.id),
   ]);
   const dictionary = getDictionary(locale);
   const roleLabels = {
-    platform_admin: dictionary.shell.platformAdmin,
     tenant_admin: dictionary.shell.tenantAdmin,
     operator: dictionary.shell.operator,
     approver: dictionary.shell.approver,

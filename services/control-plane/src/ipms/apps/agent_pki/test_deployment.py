@@ -416,6 +416,12 @@ class WindowsAgentDeploymentApiTests(TestCase):
 class WindowsAgentDeploymentWorkerTests(TestCase):
     def setUp(self) -> None:
         self.tenant = Tenant.objects.create(slug="worker", display_name="Worker")
+        self.operator = get_user_model().objects.create_user("test-operator")
+        TenantMembership.objects.create(
+            tenant=self.tenant,
+            user=self.operator,
+            role=TenantMembership.Role.TENANT_ADMIN,
+        )
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         bootstrap_managed_pki(

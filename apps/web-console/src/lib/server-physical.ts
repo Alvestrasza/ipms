@@ -167,8 +167,7 @@ export async function getPhysicalInfrastructure(tenantId: string) {
     ]);
     return {
       sessionValid:
-        ![401, 403].includes(connectorsResponse.status) &&
-        ![401, 403].includes(systemsResponse.status),
+        connectorsResponse.status !== 401 && systemsResponse.status !== 401,
       available: connectorsResponse.ok && systemsResponse.ok,
       connectors: connectorsResponse.ok
         ? ((await connectorsResponse.json()) as ConnectorEndpoint[])
@@ -205,7 +204,7 @@ export async function getBmcLogs(tenantId: string, queryString: string) {
     return {
       sessionValid:
         ![401, 403].includes(connectorsResponse.status) &&
-        ![401, 403].includes(logsResponse.status),
+        logsResponse.status !== 401,
       available: connectorsResponse.ok && logsResponse.ok,
       connectors: connectorsResponse.ok
         ? ((await connectorsResponse.json()) as ConnectorEndpoint[])

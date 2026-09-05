@@ -304,6 +304,11 @@ async def _handle_http_connection(
     enrollment = await database_call(
         validate_peer_certificate,
         peer_certificate,
+        allow_suspended_report=(path, document.get("type"))
+        in {
+            ("/v1/lifecycle-result", "lifecycle_result"),
+            ("/v1/hyperv-action-result", "hyperv_action_result"),
+        },
     )
     if document.get("device_uri") != enrollment.device_uri:
         raise ValidationError("The Agent message identity is invalid.")
@@ -504,6 +509,11 @@ async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.Stream
             peer_certificate,
         )
         while True:
+            # The legacy line protocol can keep one TLS connection for many
+            # messages. Recheck mutable identity and tenant state every time.
+            enrollment = await _database_call_async(
+                validate_peer_certificate, peer_certificate
+            )
             if document["type"] not in ALLOWED_AGENT_MESSAGES:
                 raise ValidationError("The Agent message type is not allowed.")
             if document.get("device_uri") != enrollment.device_uri:

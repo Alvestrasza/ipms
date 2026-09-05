@@ -82,6 +82,11 @@ sudo bash -c 'set -a; . /srv/ipms/shared/control-plane.env; set +a; \
 Then remove the one-time password file through the approved privileged
 operations process.
 
+From 0.2.33 the bootstrap account is exclusively an IPMS platform administrator
+and has no tenant membership. Open **Administration > Tenants** to provision a
+different initial tenant administrator, then sign in with that separate account
+for infrastructure and Service Accounts. See [Tenant administration](TENANT-ADMINISTRATION.md).
+
 ## Acceptance
 
 ```shell
@@ -94,7 +99,8 @@ curl --fail --insecure --resolve ipms-dev.example.invalid:443:127.0.0.1 \
   https://ipms-dev.example.invalid/api/v1/health/ready/
 ```
 
-Only SSH and HTTPS may listen on non-loopback addresses. PostgreSQL, Gunicorn,
+Only SSH, HTTPS and the authenticated Agent Gateway on TCP 9419 may listen on
+non-loopback addresses. PostgreSQL, Gunicorn,
 Next.js, and the certificate-probe helper must remain loopback-only. The
 Control Plane systemd unit permits only localhost traffic. The certificate
 helper and fixed Agent deployment worker permit localhost and private address
@@ -112,6 +118,10 @@ Application rollback consists of selecting the previous release symlink and
 restarting the IPMS application services and connector timer. Database migrations require a separately
 reviewed backward-compatibility or restore decision; switching application code
 does not reverse a migration automatically.
+
+The 0.2.33 platform/tenant identity migration is a forward-only security cutover.
+Do not select an older authorization implementation after that migration. Follow
+the fenced recovery procedure in [Tenant administration](TENANT-ADMINISTRATION.md).
 
 ## Scale-Out Migration
 

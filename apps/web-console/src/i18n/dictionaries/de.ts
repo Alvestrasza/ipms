@@ -204,7 +204,7 @@ export const de = {
     infrastructure: "Infrastruktur",
     agents: "Agenten",
     soon: "Bald",
-    version: "IPMS v0.2.32 Entwicklung",
+    version: "IPMS v0.2.33 Entwicklung",
   },
   linuxSystems: {
     liveData:
@@ -290,6 +290,71 @@ export const de = {
     interfaceState: "Betriebszustand",
     interfaceAddress: "Adresse / Geschwindigkeit",
     interfaceDescription: "Beschreibung / Zone",
+  },
+  platform: {
+    setupBoundary:
+      "Das Anlegen eines Mandanten initialisiert weder Agent-PKI noch Gateway-Vertrauen, zusätzliche Dienste oder Dienstberechtigungen. Dafür ist eine separate Einrichtung erforderlich.",
+    scope: "Plattformverwaltung",
+    title: "Mandanten",
+    account: "IPMS-Konto",
+    description:
+      "Verwalte Mandanten und ihre ersten Administratoren. Plattformadministratoren haben keinen Zugriff auf die Infrastruktur oder Dienstkonten der Mandanten.",
+    noAccessTitle: "Kein Zugriff",
+    noAccessDescription:
+      "Dein Konto hat keinen Zugriff auf diesen Arbeitsbereich. Wende dich an den zuständigen Mandantenadministrator oder melde dich mit einem anderen Konto an.",
+    name: "Mandantenname",
+    slug: "Mandanten-ID",
+    status: "Status",
+    administrator: "Erster Administrator",
+    updated: "Aktualisiert",
+    actions: "Aktionen",
+    refresh: "Aktualisieren",
+    create: "Mandant erstellen",
+    edit: "Mandant bearbeiten",
+    suspend: "Mandant sperren",
+    reactivate: "Mandant freigeben",
+    setupAdministrator: "Administrator einrichten",
+    setupRequired: "Einrichtung erforderlich",
+    initialized: "Bereits eingerichtet",
+    empty: "Keine Mandanten eingerichtet.",
+    save: "Mandant speichern",
+    cancel: "Abbrechen",
+    username: "Benutzername",
+    password: "Initiales Passwort",
+    firstName: "Vorname (optional)",
+    lastName: "Nachname (optional)",
+    email: "E-Mail (optional)",
+    createAdministrator: "Separaten Administrator erstellen",
+    slugHint:
+      "Verwende Kleinbuchstaben, Ziffern und Bindestriche. Die Mandanten-ID kann später nicht geändert werden.",
+    passwordHint:
+      "Mindestens 12 Zeichen und ein starkes, einzigartiges Passwort verwenden. Das Passwort wird von der API niemals zurückgegeben.",
+    setupWarning:
+      "Einmalige Einrichtung eines separaten Mandantenadministrators. Dein Konto wird dem Mandanten nicht hinzugefügt. Dies ist keine Passwort-Zurücksetzung oder Benutzerübernahme.",
+    administratorCreated:
+      "Der separate Mandantenadministrator wurde erstellt. Du bleibst als Plattformadministrator angemeldet. Melde dich ab und mit dem neuen Mandantenkonto an, um dessen Infrastruktur zu verwalten.",
+    suspendWarning:
+      "Diesen Mandanten sperren? Mandantenzugriff und neue Vorgänge werden blockiert; ausstehende Einbindungen können ungültig werden. Bereits übermittelte Aktionen können nicht zurückgerufen werden; ihre Ergebnisse können weiterhin erfasst werden. Gespeicherte Daten bleiben erhalten; die Firewall-Regel für Port 9419 bleibt unverändert.",
+    reactivateWarning:
+      "Diesen Mandanten freigeben und den Zugriff für seine berechtigten Mitglieder wiederherstellen?",
+    saved: "Der Mandant wurde gespeichert.",
+    unavailable: "Die Mandantenverwaltung ist derzeit nicht verfügbar.",
+    refreshFailed:
+      "Die Änderung wurde durchgeführt, aber die Liste konnte nicht aktualisiert werden. Aktualisiere sie vor einer weiteren Aktion.",
+    failed:
+      "Die Anfrage konnte nicht abgeschlossen werden. Prüfe ihr Ergebnis durch Aktualisieren, bevor du sie wiederholst.",
+    slugUnavailable: "Diese Mandanten-ID wird bereits verwendet.",
+    alreadyInitialized:
+      "Für diesen Mandanten existierte bereits ein unabhängiger Administrator. Die Ersteinrichtung kann nicht wiederholt werden.",
+    usernameUnavailable:
+      "Dieser Benutzername ist nicht verfügbar. Wähle ein separates, noch nicht verwendetes Administratorkonto.",
+    invalid: "Prüfe die eingegebenen Werte und Passwortanforderungen.",
+    forbidden: "Du bist für diese Plattformaktion nicht berechtigt.",
+    states: {
+      active: "Aktiv",
+      suspended: "Gesperrt",
+      decommissioned: "Außer Betrieb",
+    },
   },
   serviceAccounts: {
     title: "Service Accounts",

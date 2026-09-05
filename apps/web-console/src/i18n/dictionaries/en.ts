@@ -190,7 +190,7 @@ export const en = {
     infrastructure: "Infrastructure",
     agents: "Agents",
     soon: "Soon",
-    version: "IPMS v0.2.32 development",
+    version: "IPMS v0.2.33 development",
   },
   linuxSystems: {
     liveData: "Live tenant-scoped Linux inventory from enrolled Agents.",
@@ -274,6 +274,71 @@ export const en = {
     interfaceState: "Operational state",
     interfaceAddress: "Address / speed",
     interfaceDescription: "Description / zone",
+  },
+  platform: {
+    setupBoundary:
+      "Creating tenant metadata does not initialize Agent PKI, gateway trust, additional services or service entitlements. These require separate setup.",
+    scope: "Platform administration",
+    title: "Tenants",
+    account: "IPMS account",
+    description:
+      "Manage tenants and their initial administrators. Platform administrators have no access to tenant infrastructure or service credentials.",
+    noAccessTitle: "Access unavailable",
+    noAccessDescription:
+      "Your account has no access to this workspace. Contact the administrator responsible for the tenant, or sign out and use a different account.",
+    name: "Tenant name",
+    slug: "Tenant ID",
+    status: "Status",
+    administrator: "Initial administrator",
+    updated: "Updated",
+    actions: "Actions",
+    refresh: "Refresh",
+    create: "Create tenant",
+    edit: "Edit tenant",
+    suspend: "Suspend tenant",
+    reactivate: "Reactivate tenant",
+    setupAdministrator: "Set up administrator",
+    setupRequired: "Setup required",
+    initialized: "Already initialized",
+    empty: "No tenants configured.",
+    save: "Save tenant",
+    cancel: "Cancel",
+    username: "Username",
+    password: "Initial password",
+    firstName: "First name (optional)",
+    lastName: "Last name (optional)",
+    email: "Email (optional)",
+    createAdministrator: "Create separate administrator",
+    slugHint:
+      "Use lowercase letters, digits and hyphens. The tenant ID cannot be changed later.",
+    passwordHint:
+      "Use at least 12 characters and a strong, unique password. The password is never returned by the API.",
+    setupWarning:
+      "One-time setup of a separate tenant administrator. You are not added to the tenant. This is not a password reset or impersonation feature.",
+    administratorCreated:
+      "The separate tenant administrator was created. You remain signed in as platform administrator. Sign out and sign in with the new tenant account to manage its infrastructure.",
+    suspendWarning:
+      "Suspend this tenant? Tenant access and new operations will be blocked; pending enrollments may be invalidated. Already dispatched actions cannot be recalled, and their outcomes may still be recorded. Stored data is retained, and the port 9419 firewall policy is unchanged.",
+    reactivateWarning:
+      "Reactivate this tenant and restore access for its authorized members?",
+    saved: "The tenant was saved.",
+    unavailable: "Tenant administration is currently unavailable.",
+    refreshFailed:
+      "The change completed, but the list could not be refreshed. Refresh before another action.",
+    failed:
+      "The request could not be completed. Refresh to check its outcome before retrying.",
+    slugUnavailable: "This tenant ID is already in use.",
+    alreadyInitialized:
+      "This tenant has already had an independent administrator. Initial setup cannot be repeated.",
+    usernameUnavailable:
+      "This username is unavailable. Choose a separate, unused tenant administrator account.",
+    invalid: "Check the entered values and password requirements.",
+    forbidden: "You are not authorized to perform this platform action.",
+    states: {
+      active: "Active",
+      suspended: "Suspended",
+      decommissioned: "Decommissioned",
+    },
   },
   serviceAccounts: {
     title: "Service Accounts",

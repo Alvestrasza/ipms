@@ -2,7 +2,7 @@
 
 ## Scope
 
-Tenant and platform administrators manage Bare Metal Controller (BMC)
+Tenant administrators manage Bare Metal Controller (BMC)
 connectors through **Physical infrastructure > Bare Metal Controller**. The
 initial implementation uses a read-only Redfish transport for HPE iLO 4,
 modern HPE iLO generations, Dell iDRAC, and generic standards-compatible

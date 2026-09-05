@@ -59,5 +59,16 @@ explicit assignment, assigned-account deletion protection, refresh persistence,
 confirmed unassignment and deletion through the isolated Django database and
 test encryption key. They also check German controls and real operator denial.
 
+The platform tenant tests use the separate `e2e-platform` account, which has
+the platform administrator marker and no tenant memberships, plus the
+unassigned ordinary account `e2e-unassigned` (both use the same test-only
+password). Real API checks cover tenant metadata creation, immutable slugs,
+edit, suspension, reactivation, a one-time separate initial administrator,
+no automatic membership or sign-in switch, denied operational routes and
+Service Accounts access, stable localized no-access pages, and read-only
+decommissioned tenants. No Agent PKI, gateway trust or live host is created.
+The browser timezone is Europe/Berlin; run the standalone Node helper with
+`TZ=UTC` to verify deterministic UTC table timestamps across server and browser.
+
 Run deterministic native state and dependency integrity tests with
 `node --test tests/native-console-channel.test.mjs tests/guacamole-artifact.test.mjs`.

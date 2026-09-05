@@ -7,6 +7,7 @@ import { WindowsServerInventory } from "@/components/windows-server-inventory";
 import { getDictionary } from "@/i18n/dictionaries";
 import { resolveLocale } from "@/i18n/server";
 import { getServerSession } from "@/lib/server-auth";
+import { requireTenantScope } from "@/lib/server-portal-scope";
 import { getWindowsServers } from "@/lib/server-windows";
 import { selectedTenant } from "@/lib/tenant-selection";
 
@@ -23,9 +24,9 @@ export default async function VirtualWindowsClientsPage({
   const locale = await resolveLocale();
   const dictionary = getDictionary(locale);
   const session = await getServerSession();
-  if (!session?.authenticated) redirect(`/${locale}/login`);
+  requireTenantScope(session, locale);
   const tenant = selectedTenant(session, await cookies());
-  if (!tenant) redirect(`/${locale}/login?reason=no-tenant`);
+  if (!tenant) redirect(`/${locale}/access-unavailable`);
   const familyParameter = (await searchParams).family;
   const requestedFamily = Array.isArray(familyParameter)
     ? familyParameter[0]

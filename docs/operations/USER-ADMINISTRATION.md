@@ -14,8 +14,10 @@ with `users.manage` can:
 - set or remove a future access-expiry timestamp.
 
 The API never returns the submitted initial password. Deactivation preserves
-the user, membership, and append-only audit history. Platform administrator
-accounts are visible but protected from tenant-scoped changes.
+the user, membership, and append-only audit history. Starting with 0.2.33,
+platform accounts have no tenant membership and are excluded from tenant user
+administration. Their separate metadata-only workflow is documented in
+[Tenant administration](TENANT-ADMINISTRATION.md).
 
 ## Role model
 
@@ -36,7 +38,7 @@ visibility is not a security boundary.
 - Expired memberships cannot select or access their former tenant.
 - Tenant administrators cannot remove their own administrator access or the
   last effective tenant administrator.
-- Platform administrator membership is managed only at platform scope.
+- Platform administrators cannot have tenant memberships or tenant permissions.
 - User creation and membership changes write tenant-attributed audit events.
 
 ## OIDC readiness

@@ -10,6 +10,7 @@ export function selectedTenant(
   session: AuthenticatedSession,
   cookieStore: CookieReader,
 ): TenantSummary | null {
+  if (session.user.is_platform_admin) return null;
   const selectedId = cookieStore.get(TENANT_COOKIE)?.value;
   return (
     session.tenants.find((tenant) => tenant.id === selectedId) ??

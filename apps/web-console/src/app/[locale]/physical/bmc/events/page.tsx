@@ -11,6 +11,7 @@ import { getDictionary } from "@/i18n/dictionaries";
 import { resolveLocale } from "@/i18n/server";
 import { getServerSession } from "@/lib/server-auth";
 import { getBmcEventLogs } from "@/lib/server-physical";
+import { requireTenantScope } from "@/lib/server-portal-scope";
 import { selectedTenant } from "@/lib/tenant-selection";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -31,9 +32,9 @@ export default async function BmcEventsPage({
   const dictionary = getDictionary(locale);
   const copy = dictionary.bmcEvents;
   const session = await getServerSession();
-  if (!session?.authenticated) redirect(`/${locale}/login`);
+  requireTenantScope(session, locale);
   const tenant = selectedTenant(session, await cookies());
-  if (!tenant) redirect(`/${locale}/login?reason=no-tenant`);
+  if (!tenant) redirect(`/${locale}/access-unavailable`);
   const selected = await searchParams;
   const query = new URLSearchParams();
   for (const key of ["severity", "log_type"] as const)

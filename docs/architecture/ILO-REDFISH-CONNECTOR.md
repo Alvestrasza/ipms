@@ -52,7 +52,7 @@ inventory operations.
 
 ## Discovery Sequence
 
-1. A tenant or platform administrator completes the portal wizard; the Control
+1. A tenant administrator completes the portal wizard; the Control
    Plane stores the encrypted credential and queues a durable discovery job.
 2. The isolated connector worker claims the job and validates its private
    destination and trust material.

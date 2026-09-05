@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-04
 - Decision owners: IPMS architecture and security
+- Platform authority updated by [ADR-0012](ADR-0012-PLATFORM-AND-TENANT-ADMINISTRATION.md)
 
 ## Context
 
@@ -32,13 +33,16 @@ Initial tenant roles are:
 | Auditor | Read-only inventory, Agent, user-assignment, and audit visibility |
 | Reader | Read-only inventory |
 
-Platform administrators retain platform-wide recovery authority and are not
-modifiable through tenant-scoped user administration.
+Platform administrators manage tenant metadata and one-time initial tenant
+administration, not tenant data or operations. They have no tenant membership
+and no implicit tenant recovery/impersonation authority. This separation,
+including upgrade behavior, is defined by ADR-0012.
 
 Tenant memberships can be disabled or given an expiry timestamp. Expired
 memberships are excluded from tenant selection and permission resolution. A
 tenant administrator cannot remove his own administrator role or remove the
-last effective tenant administrator. Platform recovery remains separate.
+last effective tenant administrator. Lost tenant access after initial setup
+requires a separately authorized recovery procedure.
 
 Local accounts use Django's password hashing and password validators. Initial
 passwords are write-only request values and are never returned by the API,

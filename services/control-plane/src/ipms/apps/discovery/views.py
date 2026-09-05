@@ -21,6 +21,7 @@ from rest_framework.views import APIView
 
 from ipms.apps.audit.models import AuditEvent
 from ipms.apps.tenancy.permissions import HasSelectedTenantAccess
+from ipms.apps.tenancy.operations import require_active_tenant
 
 from .certificates import (
     CertificateProbeError,
@@ -89,7 +90,9 @@ def _active_connector(request, pk):
     )
 
 
+@transaction.atomic
 def _queue_discovery(endpoint: ConnectorEndpoint, actor: str) -> DiscoveryJob:
+    require_active_tenant(endpoint.tenant_id, lock=True)
     active_job = DiscoveryJob.objects.filter(
         connector=endpoint,
         status__in=(DiscoveryJob.Status.QUEUED, DiscoveryJob.Status.RUNNING),
