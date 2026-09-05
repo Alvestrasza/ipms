@@ -3,7 +3,7 @@
 The IPMS Agent is a native C++20 service for customer-managed Windows and Linux systems. It will establish an outbound, mutually authenticated connection to the IPMS Control Plane and collect only capabilities explicitly assigned to the enrolled device.
 
 The implementation contains the pack registry and fixed read-only Windows and
-Linux inventory capabilities. Windows build 0.2.25 and Linux build 0.2.13
+Linux inventory capabilities. Windows build 0.2.26 and Linux build 0.2.13
 include native services and bounded, paged installed-software and
 update-posture inventory. Both platforms
 use the same Agent-initiated TCP 9419 enrollment and mTLS trust boundary. The
@@ -72,8 +72,8 @@ polls the resulting state before reporting success. The assignment contains no
 WMI expression, method name, script, command, path, URL, or free-form argument.
 Stop remains an immediate power-off operation.
 
-Agent 0.2.25 provides the compiled-in `hyperv.vm.console` capability. For one
-Control Plane lease-bound session, the Agent validates the VM identity and
+Agent 0.2.26 provides the compiled-in `hyperv.vm.console` capability. Its retained
+thumbnail transport validates the VM identity and
 running state, captures a bounded console image through the local Hyper-V V2
 provider, and applies only typed keyboard, mouse, or secure-attention input.
 It resolves the provider's currently active VM setting object through the
@@ -146,6 +146,59 @@ Gateway enrollment is implemented, it truthfully reports `Not enrolled`; saving
 settings does not claim that an mTLS connection was validated.
 
 ## Agent gateway
+
+### Native Hyper-V console (Windows 0.2.26)
+
+An explicitly selected `vmconnect` assignment opens an Agent-initiated mTLS
+WebSocket on the fixed `/v1/hyperv-console-native` Gateway route. The immutable
+session and stream-generation UUIDs are sent in fixed headers. This is separate
+from the existing thumbnail transport; authentication, trust or protocol failures
+never silently select another transport.
+
+The Agent verifies the assigned VM GUID and exact name using fixed local WMI
+metadata queries. It then validates the complete RDP preconnection PDU v2, with
+zero flags/unused numerical ID and only the assigned GUID (optionally followed
+by `;EnhancedMode=0`). Only after validation can bytes reach the compiled-in
+`127.0.0.1:2179` endpoint. No hostname, port, credential, command or arbitrary
+network target is accepted from a console payload. The broker handles host
+authentication and explicit certificate trust; Agent enrollment is not host login.
+
+The first valid Gateway lease is required before forwarding. Strict JSON lease
+controls contain only `type`, `seconds` and `stream_generation`; durations are
+1-15 seconds, generation must match, and an expired monotonic lease cannot be
+revived. Replayed preconnection gates, oversized/invalid messages and changed
+local identity fail closed. A binary message is at most 64 KiB, control messages
+at most 256 bytes, and each direction has bounded buffering and backpressure.
+There are no persisted display bytes, keystrokes or credentials.
+
+One native attachment owns the frame worker. Gateway-controlled certificate
+observation and authenticated display connections run sequentially, with a
+500 ms minimum reconnect delay and a fresh assignment poll. Async callback
+buffers remain owned until WinHTTP's final `HANDLE_CLOSING` notification;
+another attachment cannot accumulate buffers before the previous one closes.
+WebSocket upgrade is bounded by the initial 15-second deadline, preconnection
+by 10 seconds, and local connect/write and Gateway write stalls by 2 seconds.
+Service cancellation is checked throughout the I/O loop. A single independent,
+read-only metadata worker checks the enrolled identity and local VM every five
+seconds. Initial validation waits at most ten seconds; the relay closes if the
+generation-bound last success becomes ten seconds old. No disk or WMI operation
+runs inside the relay's lease/cancellation check. Delayed results cannot authorize
+a replacement session, and requests replace one bounded slot instead of queuing.
+A stuck COM provider is not forcibly cancelled: shutdown stops accepting work,
+waits at most 100 ms for that worker, and otherwise lets its independently owned
+state survive until the call returns or the service process exits. It never
+retains socket ownership or causes additional metadata workers to be spawned.
+This bounds socket/service shutdown without claiming that COM itself is bounded.
+Inventory, telemetry and
+the independent 10-second heartbeat remain on their existing separate workers.
+
+The deterministic `native-console-guards` test covers every two-part PDU split,
+wrong VM/mode/length/flags/ID/encoding, replay, control bounds, wrong generation,
+duplicate JSON fields and non-monotonic/expired leases. It also proves that blocked
+metadata cannot block lease expiry/worker stop and that stale-generation or
+expired identity results cannot authorize a stream. These checks and a local
+MSVC build do not establish live console rendering, host authentication, latency
+or throughput acceptance. See [ADR-0011](../docs/architecture/ADR-0011-NATIVE-HYPERV-CONSOLE.md).
 
 The Agent will initiate one persistent, mutually authenticated TLS connection
 to the IPMS Agent Gateway on **TCP 9419**. It is bidirectional after

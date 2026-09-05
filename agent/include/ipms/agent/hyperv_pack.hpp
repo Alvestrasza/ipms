@@ -31,6 +31,12 @@ hyperv_action_result execute_hyperv_virtual_machine_action(
     const std::string& expected_name,
     const std::string& action);
 
+// Resolves only the assigned GUID through a fixed local WMI query and retains
+// the existing exact-name/running-state guards. This does not open a console.
+hyperv_action_result validate_native_hyperv_console_identity(
+    const std::string& source_id, const std::string& expected_name,
+    const std::function<bool()>& cancelled);
+
 struct hyperv_console_input {
   std::string id;
   std::string type;

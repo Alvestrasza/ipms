@@ -87,6 +87,7 @@ void WINAPI service_main(DWORD, LPWSTR*) {
   heartbeat.stop();
   console_frames.stop();
   console_inputs.stop();
+  ipms::agent::windows::stop_native_console_identity_validation();
   CloseHandle(stop_event);
   report(SERVICE_STOPPED);
 }

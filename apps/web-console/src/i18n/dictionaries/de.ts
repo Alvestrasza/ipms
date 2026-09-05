@@ -203,7 +203,7 @@ export const de = {
     infrastructure: "Infrastruktur",
     agents: "Agenten",
     soon: "Bald",
-    version: "IPMS v0.2.30 Entwicklung",
+    version: "IPMS v0.2.31 Entwicklung",
   },
   linuxSystems: {
     liveData:
@@ -650,6 +650,68 @@ export const de = {
         "Der Host-Agent konnte die Konsolensitzung nicht aufrechterhalten",
       expired:
         "Die Konsolensitzung ist abgelaufen, weil der Browser sie nicht verlängert hat.",
+      native: {
+        nativeMode: "Native Konsole",
+        thumbnailMode: "Kompatibilitätskonsole",
+        connect: "Verbinden",
+        cancel: "Abbrechen",
+        externalWarning:
+          "IPMS kann außerhalb von IPMS geöffnete Konsolen nicht erkennen. Beim Verbinden kann eine bestehende externe Konsolensitzung übernommen werden.",
+        externalAcknowledgement:
+          "Ich verstehe, dass eine externe Konsolensitzung unterbrochen werden kann.",
+        configurationTitle: "Konsolenkonto des Hosts",
+        configurationDescription:
+          "Verwende ein vorhandenes dediziertes Konto mit Konsolenberechtigung auf diesem Hyper-V-Host. IPMS speichert die Zugangsdaten verschlüsselt für diesen Mandanten und Host. Es wird kein Windows-Konto erstellt.",
+        configurationRequired:
+          "Ein Administrator muss das dedizierte Konsolenkonto des Hosts konfigurieren, bevor nativer Zugriff möglich ist.",
+        configure: "Konsolenkonto speichern",
+        rotate: "Gespeichertes Konto ersetzen",
+        saved: "Das verschlüsselte Konsolenkonto ist konfiguriert.",
+        saveFailed:
+          "Das Konsolenkonto konnte nicht gespeichert werden. Prüfe deine Berechtigungen und die eingegebenen Werte.",
+        username: "Konsolen-Benutzername",
+        password: "Konsolen-Passwort",
+        domain: "Domäne (optional)",
+        certificateTitle: "Host-Zertifikat prüfen",
+        certificateDescription:
+          "Prüfe vor dem Verbinden, ob dieses Zertifikat zum vorgesehenen Hyper-V-Host gehört. Ein geändertes Zertifikat muss erneut bestätigt werden.",
+        trust: "Diesem Zertifikat vertrauen und verbinden",
+        subject: "Ausgestellt für",
+        issuer: "Aussteller",
+        validFrom: "Gültig ab",
+        validUntil: "Gültig bis",
+        fingerprint: "SHA-256-Fingerabdruck",
+        ready: "Native Konsole verbunden",
+        thumbnailHint:
+          "Die Kompatibilitätskonsole nutzt regelmäßige Einzelbilder. Sie ist langsamer und wird nach einem Fehler der nativen Verbindung niemals automatisch gewählt.",
+        errors: {
+          native_protocol_error:
+            "Der Konsolen-Datenstrom entspricht nicht dem erwarteten Protokoll.",
+          native_stream_failed:
+            "Die native Konsole konnte nicht verbunden werden. Prüfe Host-Konto, Zertifikat und Agent-Status.",
+          native_stream_timeout:
+            "Zeitüberschreitung der nativen Konsole. Schließe dieses Fenster und starte eine neue Verbindung.",
+          native_stream_backpressure:
+            "Die Verbindung kann die Konsolendaten nicht schnell genug übertragen und wurde sicher geschlossen.",
+          native_authentication_failed:
+            "Der Hyper-V-Host hat das gespeicherte Konsolenkonto abgewiesen.",
+          native_certificate_changed:
+            "Das Host-Zertifikat hat sich nach der Bestätigung geändert. Die Verbindung wurde abgewiesen.",
+          native_certificate_rejected:
+            "Das Host-Zertifikat wurde nicht bestätigt oder konnte nicht geprüft werden.",
+          native_agent_unavailable:
+            "Der Host-Agent ist nicht verfügbar oder unterstützt den nativen Konsolenzugriff nicht.",
+          native_session_expired: "Die Konsolensitzung ist abgelaufen.",
+          native_permission_denied:
+            "Der Konsolenzugriff ist nicht mehr erlaubt.",
+          native_configuration_required:
+            "Ein Administrator muss das Konsolenkonto des Hosts konfigurieren.",
+          native_console_unavailable:
+            "Der native Konsolendienst ist nicht verfügbar.",
+          native_connection_failed:
+            "Die native Konsolenverbindung ist fehlgeschlagen. Prüfe Host-Konto, Zertifikat und Agent-Status.",
+        },
+      },
     },
     states: {
       running: "Gestartet",

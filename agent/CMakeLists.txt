@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(ipms_agent VERSION 0.2.25 LANGUAGES CXX)
+project(ipms_agent VERSION 0.2.26 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -8,6 +8,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(MSVC)
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  # Socket, callback and credential lifetimes rely on C++ stack unwinding.
+  # Keep it explicit even if an external build environment clears CXXFLAGS.
+  add_compile_options(/EHsc)
 endif()
 
 add_library(ipms_agent_core STATIC src/configuration.cpp src/gateway_contract.cpp src/management_pack.cpp)
@@ -22,7 +25,7 @@ add_executable(ipms-agent src/main.cpp)
 target_link_libraries(ipms-agent PRIVATE ipms_agent_core)
 
 if(WIN32)
-  target_sources(ipms-agent PRIVATE src/windows/hyperv_pack.cpp src/windows/updater.cpp src/windows/windows_core_pack.cpp src/windows/windows_service.cpp src/windows/windows_software_pack.cpp src/windows/windows_telemetry.cpp src/windows/windows_transport.cpp)
+  target_sources(ipms-agent PRIVATE src/windows/hyperv_pack.cpp src/windows/updater.cpp src/windows/windows_core_pack.cpp src/windows/windows_service.cpp src/windows/windows_software_pack.cpp src/windows/windows_telemetry.cpp src/windows/windows_transport.cpp src/windows/windows_native_console.cpp)
   target_link_libraries(ipms-agent PRIVATE advapi32 bcrypt crypt32 iphlpapi ncrypt ole32 oleaut32 shell32 wbemuuid windowscodecs winhttp ws2_32)
   target_compile_definitions(ipms-agent PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
   target_compile_options(ipms-agent PRIVATE /W4 /permissive-)
@@ -71,6 +74,12 @@ if(BUILD_TESTING)
     target_compile_options(ipms-agent-worker-isolation-tests PRIVATE /W4 /permissive-)
   endif()
   add_test(NAME service-worker-isolation COMMAND ipms-agent-worker-isolation-tests)
+  add_executable(ipms-agent-native-console-tests tests/native_console_guard_tests.cpp)
+  target_link_libraries(ipms-agent-native-console-tests PRIVATE ipms_agent_core)
+  if(MSVC)
+    target_compile_options(ipms-agent-native-console-tests PRIVATE /W4 /permissive-)
+  endif()
+  add_test(NAME native-console-guards COMMAND ipms-agent-native-console-tests)
   if(WIN32)
     add_test(NAME embedded-updater-rejects-incomplete-command COMMAND ipms-agent --apply-lifecycle-update)
     set_tests_properties(embedded-updater-rejects-incomplete-command PROPERTIES WILL_FAIL TRUE)

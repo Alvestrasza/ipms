@@ -14,6 +14,7 @@ struct TransportResult {
 TransportResult run_inventory_cycle();
 TransportResult run_telemetry_cycle();
 TransportResult run_console_cycle(const std::function<bool()>& cancelled = {});
+void stop_native_console_identity_validation();
 bool run_console_input_cycle(const std::function<bool()>& cancelled);
 TransportResult run_heartbeat_cycle(const std::function<bool()>& cancelled);
 TransportResult report_lifecycle_result(

@@ -736,9 +736,14 @@ class HyperVConsoleSessionCreateView(APIView):
             host__tenant=request.tenant,
         )
         try:
+            data = request.data
+            if not isinstance(data, dict) or set(data) - {"transport", "external_session_acknowledged"}:
+                raise DjangoValidationError("The console request is invalid.")
             session, occupied = create_console_session(
                 virtual_machine=virtual_machine,
                 actor=request.user.get_username(),
+                transport=data.get("transport", "thumbnail"), owner=request.user,
+                external_session_acknowledged=data.get("external_session_acknowledged", False),
             )
         except DjangoValidationError as exc:
             raise ValidationError({"console": exc.messages}) from exc
@@ -764,12 +769,15 @@ class HyperVConsoleSessionView(APIView):
     )
 
     def _session(self, request, pk):
-        return get_object_or_404(
-            HyperVConsoleSession,
+        session = get_object_or_404(
+            HyperVConsoleSession.objects.filter(
+                Q(transport="vmconnect", owner=request.user)
+                | Q(transport="thumbnail", requested_by=request.user.get_username())
+            ),
             id=pk,
             tenant=request.tenant,
-            requested_by=request.user.get_username(),
         )
+        return session
 
     def get(self, request, pk):
         from ipms.apps.agent_pki.hyperv_console import renew_console_session
@@ -778,6 +786,7 @@ class HyperVConsoleSessionView(APIView):
             session = renew_console_session(
                 session=self._session(request, pk),
                 actor=request.user.get_username(),
+                owner=request.user,
             )
         except DjangoValidationError as exc:
             raise ValidationError({"console": exc.messages}) from exc
@@ -790,6 +799,7 @@ class HyperVConsoleSessionView(APIView):
             close_console_session(
                 session=self._session(request, pk),
                 actor=request.user.get_username(),
+                owner=request.user,
             )
         except DjangoValidationError as exc:
             raise ValidationError({"console": exc.messages}) from exc
@@ -811,6 +821,7 @@ class HyperVConsoleFrameView(APIView):
             id=pk,
             tenant=request.tenant,
             requested_by=request.user.get_username(),
+            transport="thumbnail",
         )
         session = renew_console_session(session=session, actor=request.user.get_username())
         after = request.query_params.get("after", "0")
@@ -844,6 +855,7 @@ class HyperVConsoleInputView(APIView):
             id=pk,
             tenant=request.tenant,
             requested_by=request.user.get_username(),
+            transport="thumbnail",
         )
         batched = isinstance(request.data, dict) and "events" in request.data
         documents = request.data.get("events") if batched else [request.data]

@@ -1,5 +1,6 @@
 import uuid
 
+from django.conf import settings
 from django.db import models
 from django.db.models import Q
 
@@ -529,6 +530,10 @@ class HyperVVirtualMachineActionJob(models.Model):
 
 
 class HyperVConsoleSession(models.Model):
+    class Transport(models.TextChoices):
+        THUMBNAIL = "thumbnail", "Thumbnail"
+        VMCONNECT = "vmconnect", "Native VMConnect"
+
     class Status(models.TextChoices):
         REQUESTED = "requested", "Requested"
         ACTIVE = "active", "Active"
@@ -557,6 +562,10 @@ class HyperVConsoleSession(models.Model):
     vm_source_id = models.CharField(max_length=64)
     vm_name = models.CharField(max_length=255)
     requested_by = models.CharField(max_length=255)
+    transport = models.CharField(max_length=16, choices=Transport.choices, default=Transport.THUMBNAIL)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="native_console_sessions")
+    stream_generation = models.UUIDField(null=True, blank=True)
+    browser_claim = models.UUIDField(null=True, blank=True)
     status = models.CharField(
         max_length=16,
         choices=Status.choices,

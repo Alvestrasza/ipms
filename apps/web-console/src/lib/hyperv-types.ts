@@ -44,6 +44,7 @@ export type HyperVActionJob = {
 
 export type HyperVConsoleSession = {
   id: string;
+  transport?: "thumbnail" | "vmconnect";
   virtual_machine_id: string | null;
   vm_name: string;
   requested_by: string;

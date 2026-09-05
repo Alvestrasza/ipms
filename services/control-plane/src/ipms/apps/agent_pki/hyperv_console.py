@@ -60,7 +60,11 @@ def _expire_stale_sessions(now=None, *, enrollment=None, virtual_machine=None) -
 
 
 @transaction.atomic
-def create_console_session(*, virtual_machine, actor: str):
+def create_console_session(*, virtual_machine, actor: str, transport="thumbnail", owner=None, external_session_acknowledged=False):
+    if transport not in ("thumbnail", "vmconnect"):
+        raise ValidationError("The console transport is invalid.")
+    if transport == "vmconnect" and (owner is None or external_session_acknowledged is not True):
+        raise ValidationError("External console occupancy must be acknowledged.")
     # Read the routing identity without locks, then use the same lock order as
     # Agent removal: enrollment -> VM/host -> console session. Recheck the host
     # binding after locking, since inventory may move a VM in the meantime.
@@ -89,6 +93,13 @@ def create_console_session(*, virtual_machine, actor: str):
         raise ValidationError(
             "The Hyper-V host Agent must be updated before it can provide a console."
         )
+    if transport == "vmconnect":
+        from .native_console import NATIVE_MIN_VERSION
+        from .models import NativeConsoleCredential
+        if agent_version < NATIVE_MIN_VERSION:
+            raise ValidationError("Update the Agent before opening a native console.")
+        if not NativeConsoleCredential.objects.filter(tenant=enrollment.tenant, enrollment=enrollment).exists():
+            raise ValidationError("Configure a dedicated console account first.")
     now = timezone.now()
     _expire_stale_sessions(now, virtual_machine=virtual_machine)
     occupied = HyperVConsoleSession.objects.filter(
@@ -109,6 +120,9 @@ def create_console_session(*, virtual_machine, actor: str):
                 vm_source_id=virtual_machine.source_id,
                 vm_name=virtual_machine.name,
                 requested_by=actor,
+                transport=transport,
+                owner=owner if transport == "vmconnect" else None,
+                stream_generation=uuid.uuid4() if transport == "vmconnect" else None,
                 lease_expires_at=now + timedelta(seconds=LEASE_SECONDS),
                 last_activity_at=now,
             )
@@ -132,7 +146,7 @@ def create_console_session(*, virtual_machine, actor: str):
 
 
 @transaction.atomic
-def renew_console_session(*, session, actor: str):
+def renew_console_session(*, session, actor: str, owner=None):
     now = timezone.now()
     session = HyperVConsoleSession.objects.select_for_update().get(
         id=session.id,
@@ -140,7 +154,9 @@ def renew_console_session(*, session, actor: str):
     )
     if session.status not in ACTIVE_STATUSES:
         return session
-    if session.requested_by != actor:
+    if (session.transport == "vmconnect" and (owner is None or session.owner_id != owner.pk)) or (
+        session.transport != "vmconnect" and session.requested_by != actor
+    ):
         raise ValidationError("The console session is owned by another user.")
     if session.lease_expires_at < now:
         session.status = HyperVConsoleSession.Status.EXPIRED
@@ -159,14 +175,16 @@ def renew_console_session(*, session, actor: str):
 
 
 @transaction.atomic
-def close_console_session(*, session, actor: str):
+def close_console_session(*, session, actor: str, owner=None):
     session = HyperVConsoleSession.objects.select_for_update().get(
         id=session.id,
         tenant=session.tenant,
     )
     if session.status not in ACTIVE_STATUSES:
         return session
-    if session.requested_by != actor:
+    if (session.transport == "vmconnect" and (owner is None or session.owner_id != owner.pk)) or (
+        session.transport != "vmconnect" and session.requested_by != actor
+    ):
         raise ValidationError("The console session is owned by another user.")
     session.status = HyperVConsoleSession.Status.CLOSED
     session.closed_at = timezone.now()
@@ -229,6 +247,8 @@ def queue_console_input(*, session, actor: str, event_type: str, payload: object
     )
     if session.status not in ACTIVE_STATUSES or session.lease_expires_at < timezone.now():
         raise ValidationError("The console session is no longer active.")
+    if session.transport != "thumbnail":
+        raise ValidationError("Native input requires the bound native stream.")
     if session.requested_by != actor:
         raise ValidationError("The console session is owned by another user.")
     validated = _validated_input(event_type, payload)
@@ -307,6 +327,8 @@ def process_console_cycle(
         ).first()
         if reported_session is None:
             raise ValidationError("The console session identity is invalid.")
+        if reported_session.transport == "vmconnect":
+            raise ValidationError("Native sessions require their authenticated byte stream.")
         if not isinstance(acknowledged_input_ids, list) or len(acknowledged_input_ids) > MAX_INPUT_BATCH:
             raise ValidationError("The console input acknowledgement is invalid.")
         acknowledgement_ids = []
@@ -359,6 +381,12 @@ def process_console_cycle(
 
 
 def _console_assignment(session, now, *, include_inputs=True):
+    if session.transport == "vmconnect":
+        return {
+            "transport": "vmconnect", "stream_generation": str(session.stream_generation),
+            "session_id": str(session.id), "vm_source_id": session.vm_source_id,
+            "vm_name": session.vm_name, "width": 1024, "height": 768, "inputs": [],
+        }
     events = (
         list(session.input_events.order_by("created_at", "id")[:MAX_INPUT_BATCH])
         if include_inputs else []
@@ -415,10 +443,13 @@ def process_console_input_cycle(
         enrollment=enrollment, tenant=enrollment.tenant,
     ).defer("frame_png")
     active_sessions = sessions.filter(status__in=ACTIVE_STATUSES, lease_expires_at__gte=now)
+    active_sessions = active_sessions.filter(transport="thumbnail")
     if session_id:
         session = sessions.select_for_update().filter(id=session_id).first()
         if session is None:
             raise ValidationError("The console session identity is invalid.")
+        if session.transport != "thumbnail":
+            raise ValidationError("Native input requires the bound native stream.")
         session.input_events.filter(id__in=ids).delete()
         if failure_code and session.status in ACTIVE_STATUSES:
             session.status = HyperVConsoleSession.Status.FAILED

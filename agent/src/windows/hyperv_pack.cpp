@@ -1346,6 +1346,31 @@ hyperv_action_result execute_hyperv_virtual_machine_action(
              : hyperv_action_result{false, "state_confirmation_timeout"};
 }
 
+hyperv_action_result validate_native_hyperv_console_identity(
+    const std::string& source_id, const std::string& expected_name,
+    const std::function<bool()>& cancelled) {
+  if (!is_guid(source_id) || expected_name.empty() || expected_name.size() > 255 ||
+      (cancelled && cancelled())) return {false, "invalid_vm_identity"};
+  auto normalized_source_id = source_id;
+  std::transform(normalized_source_id.begin(), normalized_source_id.end(),
+                 normalized_source_id.begin(), [](unsigned char c) {
+                   return static_cast<char>(std::tolower(c));
+                 });
+  com_scope com;
+  if (!com.initialized) return {false, "com_initialization_failed"};
+  const auto connection = connect_hyperv_services();
+  if (!connection.value) return {false, "vm_lookup_failed"};
+  const auto lookup = find_virtual_machine(connection.value.Get(), normalized_source_id,
+                                           expected_name, cancelled);
+  if (!lookup.query_succeeded) return {false, "vm_lookup_failed"};
+  if (lookup.identity_conflict) return {false, "vm_identity_conflict"};
+  if (!lookup.system) return {false, "vm_not_found"};
+  if (normalized_state(wmi_uint64(lookup.system.Get(), L"EnabledState").value_or(0)) != "running")
+    return {false, "invalid_vm_state"};
+  if (cancelled && cancelled()) return {false, "console_cancelled"};
+  return {true, "vm_identity_confirmed"};
+}
+
 hyperv_console_result execute_hyperv_console_cycle(
     const std::string& source_id,
     const std::string& expected_name,

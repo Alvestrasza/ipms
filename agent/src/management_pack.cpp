@@ -8,7 +8,7 @@ const std::vector<ManagementPack>& builtin_management_packs() {
   static const std::vector<ManagementPack> packs{
       {"windows-server-core", "0.2.12", AccessMode::read_inventory, {}, {"windows.os", "windows.hardware", "windows.storage", "windows.network", "windows.roles-features"}},
       {"windows-software", "0.2.12", AccessMode::read_inventory, {"windows-server-core"}, {"windows.software", "windows.update-posture"}},
-      {"hyper-v-host", "0.2.25", AccessMode::management, {"windows-server-core"}, {"hyperv.host", "hyperv.virtual-machines", "hyperv.network", "hyperv.vm.lifecycle", "hyperv.vm.console"}},
+      {"hyper-v-host", "0.2.26", AccessMode::management, {"windows-server-core"}, {"hyperv.host", "hyperv.virtual-machines", "hyperv.network", "hyperv.vm.lifecycle", "hyperv.vm.console"}},
       {"linux-core", "0.2.12", AccessMode::read_inventory, {}, {"linux.os", "linux.hardware", "linux.storage", "linux.network", "linux.software", "linux.update-posture"}},
   };
   return packs;

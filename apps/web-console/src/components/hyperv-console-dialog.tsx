@@ -27,6 +27,35 @@ export type ConsoleCopy = {
   unavailable: string;
   failed: string;
   expired: string;
+  native: {
+    nativeMode: string;
+    thumbnailMode: string;
+    connect: string;
+    cancel: string;
+    externalWarning: string;
+    externalAcknowledgement: string;
+    configurationTitle: string;
+    configurationDescription: string;
+    configurationRequired: string;
+    configure: string;
+    rotate: string;
+    saved: string;
+    saveFailed: string;
+    username: string;
+    password: string;
+    domain: string;
+    certificateTitle: string;
+    certificateDescription: string;
+    trust: string;
+    subject: string;
+    issuer: string;
+    validFrom: string;
+    validUntil: string;
+    fingerprint: string;
+    ready: string;
+    thumbnailHint: string;
+    errors: Record<string, string>;
+  };
 };
 
 export type ConsoleDialogState = {

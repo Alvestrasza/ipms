@@ -189,7 +189,7 @@ export const en = {
     infrastructure: "Infrastructure",
     agents: "Agents",
     soon: "Soon",
-    version: "IPMS v0.2.30 development",
+    version: "IPMS v0.2.31 development",
   },
   linuxSystems: {
     liveData: "Live tenant-scoped Linux inventory from enrolled Agents.",
@@ -629,6 +629,67 @@ export const en = {
       failed: "The host Agent could not maintain the console session",
       expired:
         "The console session expired because the browser lease was not renewed.",
+      native: {
+        nativeMode: "Native console",
+        thumbnailMode: "Compatibility console",
+        connect: "Connect",
+        cancel: "Cancel",
+        externalWarning:
+          "IPMS cannot detect consoles opened outside IPMS. Connecting may take over an existing external console session.",
+        externalAcknowledgement:
+          "I understand that an external console session may be interrupted.",
+        configurationTitle: "Host console account",
+        configurationDescription:
+          "Use an existing dedicated account authorized for this Hyper-V host. IPMS stores the credentials encrypted for this tenant and host. No Windows account is created.",
+        configurationRequired:
+          "An administrator must configure the dedicated host console account before native access is available.",
+        configure: "Save console account",
+        rotate: "Replace stored account",
+        saved: "The encrypted console account is configured.",
+        saveFailed:
+          "The console account could not be saved. Check your permissions and the entered values.",
+        username: "Console username",
+        password: "Console password",
+        domain: "Domain (optional)",
+        certificateTitle: "Review the host certificate",
+        certificateDescription:
+          "Verify this certificate belongs to the intended Hyper-V host before allowing this connection. A changed certificate requires a new approval.",
+        trust: "Trust this certificate and connect",
+        subject: "Subject",
+        issuer: "Issuer",
+        validFrom: "Valid from",
+        validUntil: "Valid until",
+        fingerprint: "SHA-256 fingerprint",
+        ready: "Native console connected",
+        thumbnailHint:
+          "The compatibility console uses periodic snapshots. It is slower and is never selected automatically after a native connection fails.",
+        errors: {
+          native_protocol_error:
+            "The console stream did not follow the expected protocol.",
+          native_stream_failed:
+            "The native console could not be connected. Check the host account, certificate and Agent status.",
+          native_stream_timeout:
+            "The native console timed out. Close this window and start a new connection.",
+          native_stream_backpressure:
+            "The connection cannot keep up with console traffic and was closed safely.",
+          native_authentication_failed:
+            "The Hyper-V host rejected the stored console account.",
+          native_certificate_changed:
+            "The host certificate changed after approval. The connection was rejected.",
+          native_certificate_rejected:
+            "The host certificate was not approved or could not be verified.",
+          native_agent_unavailable:
+            "The host Agent is unavailable or does not support native console access.",
+          native_session_expired: "The console session has expired.",
+          native_permission_denied: "Console access is no longer authorized.",
+          native_configuration_required:
+            "An administrator must configure the host console account.",
+          native_console_unavailable:
+            "The native console service is unavailable.",
+          native_connection_failed:
+            "The native console connection failed. Check the host account, certificate and Agent status.",
+        },
+      },
     },
     states: {
       running: "Running",

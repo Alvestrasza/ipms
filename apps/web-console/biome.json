@@ -6,7 +6,8 @@
       "!!node_modules",
       "!!.next",
       "!!playwright-report",
-      "!!test-results"
+      "!!test-results",
+      "!!public/vendor"
     ]
   },
   "formatter": {

@@ -1,0 +1,66 @@
+diff --git a/src/libguac/socket-nest.c b/src/libguac/socket-nest.c
+--- a/src/libguac/socket-nest.c
++++ b/src/libguac/socket-nest.c
+@@ -20,11 +20,13 @@
+ 
+ #include "config.h"
+ 
++#include "guacamole/error.h"
+ #include "guacamole/mem.h"
+ #include "guacamole/protocol.h"
+ #include "guacamole/socket.h"
+ #include "guacamole/unicode.h"
+ 
++#include <pthread.h>
+ #include <stddef.h>
+ #include <stdlib.h>
+ #include <string.h>
+@@ -275,6 +277,8 @@ static int guac_socket_nest_free_handler(guac_socket* socket) {
+ 
+     /* Free associated data */
+     guac_socket_nest_data* data = (guac_socket_nest_data*) socket->data;
++    pthread_mutex_destroy(&(data->buffer_lock));
++    pthread_mutex_destroy(&(data->socket_lock));
+     guac_mem_free(data);
+ 
+     return 0;
+@@ -315,7 +319,23 @@ guac_socket* guac_socket_nest(guac_socket* parent, int index) {
+ 
+     /* Allocate socket and associated data */
+     guac_socket* socket = guac_socket_alloc();
+-    guac_socket_nest_data* data = guac_mem_alloc(sizeof(guac_socket_nest_data));
++    if (socket == NULL)
++        return NULL;
++
++    guac_socket_nest_data* data = guac_mem_zalloc(sizeof(guac_socket_nest_data));
++    if (data == NULL) {
++        guac_socket_free(socket);
++        return NULL;
++    }
++
++    /* Both locks and the empty buffer must exist before publishing handlers. */
++    if (pthread_mutex_init(&(data->socket_lock), NULL))
++        goto fail;
++
++    if (pthread_mutex_init(&(data->buffer_lock), NULL)) {
++        pthread_mutex_destroy(&(data->socket_lock));
++        goto fail;
++    }
+ 
+     /* Store nested socket details as socket data */
+     data->parent = parent;
+@@ -330,6 +350,14 @@ guac_socket* guac_socket_nest(guac_socket* parent, int index) {
+     socket->free_handler   = guac_socket_nest_free_handler;
+ 
+     return socket;
++
++fail:
++    /* No handlers are installed yet, and the parent remains caller-owned. */
++    guac_mem_free(data);
++    guac_socket_free(socket);
++    guac_error = GUAC_STATUS_INTERNAL_ERROR;
++    guac_error_message = "Could not initialize nested socket locks";
++    return NULL;
+ 
+ }
+ 

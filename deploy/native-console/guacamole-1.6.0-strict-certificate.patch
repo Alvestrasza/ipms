@@ -1,0 +1,194 @@
+diff --git a/config.h.in b/config.h.in
+--- a/config.h.in
++++ b/config.h.in
+@@ -286,7 +286,9 @@
+ #undef _GNU_SOURCE
+ 
+ /* Uses X/Open and POSIX APIs */
++#ifndef _XOPEN_SOURCE
+ #undef _XOPEN_SOURCE
++#endif
+ 
+ /* Uses BSD-specific APIs (if available) */
+ #undef __BSD_VISIBLE
+diff --git a/src/libguac/display.c b/src/libguac/display.c
+--- a/src/libguac/display.c
++++ b/src/libguac/display.c
+@@ -148,7 +148,8 @@
+                 "processor(s) are available.", cpu_count);
+     }
+ 
+-    display->worker_thread_count = cpu_count * GUAC_DISPLAY_CPU_THREAD_FACTOR;
++    /* IPMS: bounded native-session encoding; never one worker per host CPU. */
++    display->worker_thread_count = cpu_count > 2 ? 2 : cpu_count;
+     display->worker_threads = guac_mem_alloc(display->worker_thread_count, sizeof(pthread_t));
+     guac_client_log(client, GUAC_LOG_INFO, "Graphical updates will be encoded "
+             "using %i worker thread(s).", display->worker_thread_count);
+diff --git a/src/libguac/string.c b/src/libguac/string.c
+--- a/src/libguac/string.c
++++ b/src/libguac/string.c
+@@ -103,7 +103,7 @@
+ #ifdef HAVE_STRNSTR
+     return strnstr(haystack, needle, len);
+ #else
+-    char* chr;
++    const char* chr;
+     size_t nlen = strlen(needle), off = 0;
+ 
+     /* Follow documented API: return haystack if needle is the empty string. */
+@@ -119,7 +119,7 @@
+             return NULL;
+         /* Now that we know we have at least nlen bytes, compare them. */
+         if (!memcmp(chr, needle, nlen))
+-            return chr;
++            return (char*) chr;
+         /* Make sure we make progress. */
+         off += 1;
+     }
+diff --git a/src/protocols/rdp/rdp.c b/src/protocols/rdp/rdp.c
+index aad1763..2215a0f 100644
+--- a/src/protocols/rdp/rdp.c
++++ b/src/protocols/rdp/rdp.c
+@@ -42,6 +42,7 @@
+ #include "print-job.h"
+ #include "rdp.h"
+ #include "settings.h"
++#include "ipms-strict-certificate.h"
+ 
+ #ifdef ENABLE_COMMON_SSH
+ #include "common-ssh/sftp.h"
+@@ -166,7 +167,6 @@ static BOOL rdp_freerdp_load_channels(freerdp* instance) {
+ static BOOL rdp_freerdp_pre_connect(freerdp* instance) {
+ 
+     rdpContext* context = GUAC_RDP_CONTEXT(instance);
+-    rdpGraphics* graphics = context->graphics;
+ 
+     guac_client* client = ((rdp_freerdp_context*) context)->client;
+     guac_rdp_client* rdp_client = (guac_rdp_client*) client->data;
+@@ -175,6 +175,22 @@ static BOOL rdp_freerdp_pre_connect(freerdp* instance) {
+     /* Push desired settings to FreeRDP */
+     guac_rdp_push_settings(client, settings, instance);
+ 
++    /* IPMS: fixed native-console adapter, never a general RDP gateway. */
++    unsigned char approved_pin[32];
++    if (settings->security_mode != GUAC_SECURITY_VMCONNECT ||
++            !settings->hostname || strcmp(settings->hostname, "127.0.0.1") ||
++            settings->ignore_certificate || settings->certificate_tofu ||
++            settings->disable_authentication ||
++            !ipms_parse_sha256_pin(settings->certificate_fingerprints, approved_pin))
++        return FALSE;
++    if (!freerdp_settings_set_bool(context->settings, FreeRDP_ExternalCertificateManagement, TRUE) ||
++            !freerdp_settings_set_bool(context->settings, FreeRDP_CertificateCallbackPreferPEM, TRUE) ||
++            !freerdp_settings_set_bool(context->settings, FreeRDP_IgnoreCertificate, FALSE) ||
++            !freerdp_settings_set_bool(context->settings, FreeRDP_AutoAcceptCertificate, FALSE) ||
++            !freerdp_settings_set_string(context->settings, FreeRDP_CertificateAcceptedFingerprints, NULL) ||
++            !freerdp_settings_set_uint16(context->settings, FreeRDP_TLSMinVersion, 0x0303))
++        return FALSE;
++
+     /* Init FreeRDP add-in provider */
+     freerdp_register_addin_provider(freerdp_channels_load_static_addin_entry, 0);
+ 
+@@ -192,7 +208,21 @@ static BOOL rdp_freerdp_pre_connect(freerdp* instance) {
+ 
+     }
+ 
+-    /* Init FreeRDP internal GDI implementation */
++    /*
++     * FreeRDP 3.31 initializes its rendering state during connection setup.
++     * Register channels now, but defer GDI and rendering hooks to PostConnect.
++     */
++    #ifndef RDP_INST_HAS_LOAD_CHANNELS
++        rdp_freerdp_load_channels(instance);
++    #endif
++    return TRUE;
++}
++
++static BOOL ipms_rdp_post_connect(freerdp* instance) {
++    rdpContext* context = GUAC_RDP_CONTEXT(instance);
++    rdpGraphics* graphics = context->graphics;
++
++    /* Init FreeRDP internal GDI implementation after server negotiation. */
+     if (!gdi_init(instance, guac_rdp_get_native_pixel_format(FALSE)))
+         return FALSE;
+ 
+@@ -220,14 +250,6 @@ static BOOL rdp_freerdp_pre_connect(freerdp* instance) {
+     GUAC_RDP_CONTEXT(instance)->update->SurfaceFrameMarker = guac_rdp_gdi_surface_frame_marker;
+     GUAC_RDP_CONTEXT(instance)->update->altsec->FrameMarker = guac_rdp_gdi_frame_marker;
+ 
+-    /*
+-     * If the freerdp instance does not have a LoadChannels callback for
+-     * loading plugins we use the PreConnect callback to load plugins instead.
+-     */
+-    #ifndef RDP_INST_HAS_LOAD_CHANNELS
+-        rdp_freerdp_load_channels(instance);
+-    #endif
+-
+     return TRUE;
+ }
+ 
+@@ -325,6 +347,23 @@ static BOOL rdp_freerdp_authenticate(freerdp* instance, char** username,
+ 
+ }
+ 
++static BOOL ipms_rdp_reject_redirect(freerdp* instance) {
++    (void) instance;
++    return FALSE;
++}
++
++/* IPMS: external verification runs before CA/known-host fallbacks. */
++static int ipms_rdp_verify_x509(freerdp* instance, const BYTE* data,
++        size_t length, const char* hostname, UINT16 port, DWORD flags) {
++    rdpContext* context = GUAC_RDP_CONTEXT(instance);
++    guac_client* client = ((rdp_freerdp_context*) context)->client;
++    guac_rdp_client* rdp_client = (guac_rdp_client*) client->data;
++    (void) port;
++    if (!hostname || strcmp(hostname, "127.0.0.1")) return 0;
++    return ipms_verify_native_certificate(
++        rdp_client->settings->certificate_fingerprints, data, length, flags);
++}
++
+ #ifdef HAVE_FREERDP_VERIFYCERTIFICATEEX
+ /**
+  * Callback invoked by FreeRDP when the SSL/TLS certificate of the RDP server
+@@ -549,7 +588,10 @@ static int guac_rdp_handle_connection(guac_client* client) {
+         rdp_inst->LoadChannels = rdp_freerdp_load_channels;
+     #endif
+     rdp_inst->PreConnect = rdp_freerdp_pre_connect;
++    rdp_inst->PostConnect = ipms_rdp_post_connect;
+     rdp_inst->Authenticate = rdp_freerdp_authenticate;
++    rdp_inst->VerifyX509Certificate = ipms_rdp_verify_x509;
++    rdp_inst->Redirect = ipms_rdp_reject_redirect;
+ 
+ #ifdef HAVE_FREERDP_VERIFYCERTIFICATEEX
+     rdp_inst->VerifyCertificateEx = rdp_freerdp_verify_certificate;
+diff --git a/src/protocols/rdp/settings.c b/src/protocols/rdp/settings.c
+index 4c10c15..8464f50 100644
+--- a/src/protocols/rdp/settings.c
++++ b/src/protocols/rdp/settings.c
+@@ -151,6 +151,7 @@ const char* GUAC_RDP_CLIENT_ARGS[] = {
+ 
+     "force-lossless",
+     "normalize-clipboard",
++    "ipms-strict-certificate",
+     NULL
+ };
+ 
+@@ -723,6 +724,8 @@ enum RDP_ARGS_IDX {
+      */
+     IDX_NORMALIZE_CLIPBOARD,
+ 
++    IDX_IPMS_STRICT_CERTIFICATE,
++
+     RDP_ARGS_COUNT
+ };
+ 
+@@ -737,6 +740,9 @@ guac_rdp_settings* guac_rdp_parse_args(guac_user* user,
+         return NULL;
+     }
+ 
++    /* IPMS capability fence: reject clients unaware of strict pinning. */
++    if (strcmp(argv[IDX_IPMS_STRICT_CERTIFICATE], "true")) return NULL;
++
+     guac_rdp_settings* settings = guac_mem_zalloc(sizeof(guac_rdp_settings));
+ 
+     /* Use console */

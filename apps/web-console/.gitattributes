@@ -1,0 +1,6 @@
+# Preserve exact upstream bytes across Windows/Linux checkouts and SRI checks.
+public/vendor/guacamole/*/all.min.js -text
+public/vendor/guacamole/*/LICENSE -text
+public/vendor/guacamole/*/NOTICE -text
+# Preserve the official license's exact trailing blank line.
+public/vendor/guacamole/1.6.0/LICENSE -whitespace

@@ -256,6 +256,17 @@ async def _handle_http_connection(
     from ipms.apps.agent_pki.hyperv_console import process_console_cycle
 
     header = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=15)
+    if header.startswith(b"GET "):
+        if console_only:
+            raise ValidationError("A persistent console connection cannot change routes.")
+        from .native_gateway import handle_native_gateway
+        try:
+            await handle_native_gateway(reader, writer, peer_certificate, header)
+        except Exception:
+            # Native protocol bytes, credentials and arbitrary peer errors must
+            # never enter operational tracebacks. Closing is fail-closed.
+            logger.warning("Native console transport ended or was rejected.")
+        return
     path, headers, content_length = _parse_http_request(header)
     if console_only and path != "/v1/hyperv-console":
         raise ValidationError("A persistent console connection cannot change routes.")

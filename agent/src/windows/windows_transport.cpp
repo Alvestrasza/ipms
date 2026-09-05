@@ -3,6 +3,9 @@
 #include "ipms/agent/configuration.hpp"
 #include "ipms/agent/console_input_dispatcher.hpp"
 #include "ipms/agent/hyperv_pack.hpp"
+#include "ipms/agent/native_console_guard.hpp"
+#include "ipms/agent/native_identity_worker.hpp"
+#include "ipms/agent/windows_native_console.hpp"
 #include "ipms/agent/windows_core_pack.hpp"
 #include "ipms/agent/windows_telemetry.hpp"
 #include "ipms/agent/windows_software_pack.hpp"
@@ -29,13 +32,22 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <chrono>
+#include <thread>
 
 namespace {
 using Microsoft::WRL::ComPtr;
 constexpr std::size_t k_max_document_bytes = 65'536;
-constexpr wchar_t k_agent_version[] = L"0.2.25";
+constexpr wchar_t k_agent_version[] = L"0.2.26";
 constexpr std::size_t k_max_artifact_bytes = 64 * 1024 * 1024;
 std::mutex identity_mutex;
+std::atomic<ipms::agent::native_identity_worker*> active_native_validation{nullptr};
+
+ipms::agent::native_identity_worker& native_identity_validation() {
+  static ipms::agent::native_identity_worker worker;
+  active_native_validation.store(&worker);
+  return worker;
+}
 
 struct internet_closer { void operator()(void* handle) const { if (handle) WinHttpCloseHandle(handle); } };
 using internet_handle = std::unique_ptr<void, internet_closer>;
@@ -461,7 +473,7 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
     ~failure_reset() { if (cache && !succeeded) cache->reset(); }
   } guard{reusable ? &console_transport : nullptr};
   if (!transport->session) {
-    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.25", WINHTTP_ACCESS_TYPE_NO_PROXY,
+    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.26", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
     if (!transport->session) throw std::runtime_error("The Agent HTTP session could not be created.");
     if (input_channel || path == L"/v1/heartbeat") {
@@ -541,7 +553,7 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
 }
 
 http_response post_binary(const state& identity, const std::string& body, PCCERT_CONTEXT certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.25", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.26", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent artifact session could not be created.");
   WinHttpSetTimeouts(session.get(), 10'000, 10'000, 60'000, 60'000);
@@ -842,6 +854,8 @@ struct console_assignment {
   std::string session_id;
   std::string vm_source_id;
   std::string vm_name;
+  std::string transport;
+  std::string stream_generation;
   std::uint16_t width{};
   std::uint16_t height{};
   std::vector<ipms::agent::windows::hyperv_console_input> inputs;
@@ -857,6 +871,8 @@ std::optional<console_assignment> parse_console_assignment(const std::string& do
   const auto width = json_integer(*raw, "width");
   const auto height = json_integer(*raw, "height");
   const auto inputs = json_array(*raw, "inputs");
+  const auto transport = json_string(*raw, "transport");
+  const auto stream_generation = json_string(*raw, "stream_generation");
   if (!session_id || !vm_source_id || !vm_name || !width || !height || !inputs ||
       !safe_lifecycle_value(*session_id) || !safe_lifecycle_value(*vm_source_id) ||
       !safe_vm_name(*vm_name) || *width < 160 || *width > 1920 ||
@@ -866,6 +882,18 @@ std::optional<console_assignment> parse_console_assignment(const std::string& do
   assignment.session_id = *session_id;
   assignment.vm_source_id = *vm_source_id;
   assignment.vm_name = *vm_name;
+  assignment.transport = transport.value_or("thumbnail");
+  if (assignment.transport != "thumbnail" && assignment.transport != "vmconnect") {
+    throw std::runtime_error("The Hyper-V console transport is unsupported.");
+  }
+  if (assignment.transport == "vmconnect") {
+    if (!ipms::agent::native_console_uuid(*session_id) ||
+        !ipms::agent::native_console_uuid(*vm_source_id) || !stream_generation ||
+        !ipms::agent::native_console_uuid(*stream_generation) || *inputs != "[]") {
+      throw std::runtime_error("The native Hyper-V console assignment is invalid.");
+    }
+    assignment.stream_generation = *stream_generation;
+  }
   assignment.width = static_cast<std::uint16_t>(*width);
   assignment.height = static_cast<std::uint16_t>(*height);
   const auto objects = json_array_objects(*inputs);
@@ -929,6 +957,54 @@ bool process_hyperv_console_assignment(
   if (!assignment) return false;
   if (!assignment->inputs.empty()) {
     throw std::runtime_error("The frame channel cannot execute console input.");
+  }
+  if (assignment->transport == "vmconnect") {
+    const auto state_path = data_directory() / L"agent-state.json";
+    auto& validation = native_identity_validation();
+    const auto ticket = validation.submit(
+        [identity, state_path, vm_id = assignment->vm_source_id,
+         vm_name = assignment->vm_name](const auto& stop) {
+      if (stop()) return false;
+      const auto current = load_state(state_path);
+      if (current.device_uri != identity.device_uri || current.gateway != identity.gateway ||
+          current.port != identity.port || current.certificate_sha256 != identity.certificate_sha256)
+        return false;
+      return ipms::agent::windows::validate_native_hyperv_console_identity(vm_id, vm_name, stop).succeeded;
+    });
+    struct validation_retirement {
+      ipms::agent::native_identity_worker& worker;
+      std::uint64_t ticket;
+      ~validation_retirement() { worker.retire(ticket); }
+    } retirement{validation, ticket};
+    const auto initial_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while ((!cancelled || !cancelled()) && !validation.failed(ticket) &&
+           !validation.fresh(ticket, std::chrono::steady_clock::now()) &&
+           std::chrono::steady_clock::now() < initial_deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    if ((cancelled && cancelled()) ||
+        !validation.fresh(ticket, std::chrono::steady_clock::now())) {
+      throw std::runtime_error("The native Hyper-V console local identity could not be verified.");
+    }
+    const auto stopped = [&] {
+      // No disk, mutex or COM call is allowed on this socket deadline path.
+      return (cancelled && cancelled()) ||
+          !validation.fresh(ticket, std::chrono::steady_clock::now());
+    };
+    // Every attachment gets fresh Gateway authentication. A certificate probe
+    // and the real console connect sequentially; neither grants an open tunnel.
+    try {
+      ipms::agent::windows::relay_native_hyperv_console(identity.gateway, identity.port,
+          assignment->session_id, assignment->stream_generation, assignment->vm_source_id,
+          certificate, stopped);
+    } catch (...) {
+      // Connection availability is broker-controlled. Retry only a fresh
+      // assignment after a bounded backoff, never downgrade to thumbnails.
+    }
+    const auto retry_after = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    while ((!cancelled || !cancelled()) && std::chrono::steady_clock::now() < retry_after)
+      std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    return !cancelled || !cancelled();
   }
   const auto result = ipms::agent::windows::execute_hyperv_console_cycle(
       assignment->vm_source_id,
@@ -1040,6 +1116,10 @@ state enroll(const std::filesystem::path& bootstrap_path, const std::filesystem:
 }  // namespace
 
 namespace ipms::agent::windows {
+
+void stop_native_console_identity_validation() {
+  if (auto* worker = active_native_validation.load()) worker->stop();
+}
 TransportResult run_inventory_cycle() {
   try {
     com_scope com;
@@ -1054,7 +1134,7 @@ TransportResult run_inventory_cycle() {
     const auto inventory = collect_windows_server_core_inventory_json();
     const std::string body = "{\"type\":\"inventory\",\"device_uri\":\"" + json_escape(identity.device_uri) +
                              "\",\"correlation_id\":\"windows-agent-cycle\",\"agent_version\":\"" +
-                             utf8(k_agent_version) + "\",\"console_channels\":true,\"inventory\":" + inventory + "}";
+                             utf8(k_agent_version) + "\",\"console_channels\":true,\"console_native\":true,\"inventory\":" + inventory + "}";
     const auto response = post_json(identity.gateway, identity.port, L"/v1/inventory", body, nullptr, certificate.get());
     if (response.status != 200 || json_string(response.body, "type") != std::optional<std::string>("accepted"))
       throw std::runtime_error("The Agent inventory was rejected.");
@@ -1105,7 +1185,7 @@ TransportResult run_telemetry_cycle() {
     if (telemetry.empty()) throw std::runtime_error("The Agent telemetry snapshot is unavailable.");
     const std::string body = "{\"type\":\"telemetry\",\"device_uri\":\"" + json_escape(identity.device_uri) +
                              "\",\"correlation_id\":\"windows-agent-telemetry\",\"agent_version\":\"" +
-                             utf8(k_agent_version) + "\",\"console_channels\":true,\"telemetry\":" + telemetry + "}";
+                             utf8(k_agent_version) + "\",\"console_channels\":true,\"console_native\":true,\"telemetry\":" + telemetry + "}";
     const auto response = post_json(identity.gateway, identity.port, L"/v1/telemetry", body, nullptr, certificate.get());
     if (response.status != 200 || json_string(response.body, "type") != std::optional<std::string>("accepted"))
       throw std::runtime_error("The Agent telemetry was rejected.");
@@ -1126,7 +1206,7 @@ TransportResult run_console_cycle(const std::function<bool()>& cancelled) {
     cert_context certificate(find_agent_certificate(identity.certificate_sha256));
     if (!certificate) throw std::runtime_error("The enrolled Agent certificate is unavailable.");
     const std::string body =
-        "{\"type\":\"hyperv_console_cycle\",\"channel\":\"frame\",\"device_uri\":\"" +
+        "{\"type\":\"hyperv_console_cycle\",\"channel\":\"frame\",\"console_native\":true,\"device_uri\":\"" +
         json_escape(identity.device_uri) +
         "\",\"correlation_id\":\"hyperv-console-poll\",\"session_id\":\"\","
         "\"frame_png_base64\":\"\",\"frame_width\":0,\"frame_height\":0,"
@@ -1221,6 +1301,10 @@ bool run_console_input_cycle(const std::function<bool()>& cancelled) {
         ipms::agent::console_input_poll_result polled;
         polled.active = json_boolean(response, "console_active").value_or(false);
         if (const auto assignment = parse_console_assignment(response)) {
+          if (assignment->transport == "vmconnect") {
+            polled.active = false;
+            return polled;
+          }
           if (!polled.active || assignment->inputs.empty()) {
             throw std::runtime_error("The Hyper-V console input assignment is invalid.");
           }

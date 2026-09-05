@@ -420,6 +420,8 @@ class HyperVConsoleSessionSerializer(serializers.ModelSerializer):
             "virtual_machine_id",
             "vm_name",
             "requested_by",
+            "transport",
+            "stream_generation",
             "status",
             "frame_sequence",
             "frame_width",

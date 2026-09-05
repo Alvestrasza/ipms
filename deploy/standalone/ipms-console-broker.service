@@ -1,0 +1,45 @@
+[Unit]
+Description=IPMS Native VM Console Broker
+After=network-online.target postgresql.service ipms-guacd.service
+Requires=postgresql.service ipms-guacd.service
+
+[Service]
+Type=simple
+User=ipms-console-broker
+Group=ipms-console-transport
+SupplementaryGroups=ipms-native-console ipms-runtime
+RuntimeDirectory=ipms-console
+RuntimeDirectoryMode=0750
+WorkingDirectory=/srv/ipms/current/services/control-plane
+EnvironmentFile=/srv/ipms/shared/console-broker.env
+Environment=PYTHONPATH=/srv/ipms/current/services/control-plane/src
+ExecStart=/srv/ipms/current/services/control-plane/.venv/bin/python -m ipms.apps.agent_pki.console_broker
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+UMask=0027
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectHostname=true
+ProtectClock=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET
+IPAddressDeny=any
+IPAddressAllow=localhost
+SystemCallArchitectures=native
+LimitCORE=0
+MemoryMax=768M
+TasksMax=96
+
+[Install]
+WantedBy=multi-user.target

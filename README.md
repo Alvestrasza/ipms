@@ -9,9 +9,12 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-IPMS application build `0.2.30` separates Agent heartbeat from inventory,
-telemetry and the Hyper-V VM console. It retains the independent console input
-delivery introduced in `0.2.29`. A standalone development
+IPMS application build `0.2.31` prepares an additional native Hyper-V console
+transport with encrypted, host-scoped credentials for an existing dedicated
+account. Native activation requires the isolated adapter, Windows Agent
+`0.2.26`, explicit certificate approval and live host acceptance; implementation
+and runtime acceptance are separate. It retains the independent heartbeat and
+legacy console input delivery introduced in `0.2.30` and `0.2.29`. A standalone development
 Appliance currently runs the tenant-aware Django Control Plane, PostgreSQL,
 the multilingual Next.js Web Console, and the isolated connector worker.
 
@@ -79,6 +82,7 @@ The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 - [Portal Windows Agent deployment](docs/operations/PORTAL-WINDOWS-AGENT-DEPLOYMENT.md)
 - [Development versioning](docs/operations/VERSIONING.md)
 - [User administration](docs/operations/USER-ADMINISTRATION.md)
+- [Native Hyper-V console configuration and acceptance](docs/operations/NATIVE-HYPERV-CONSOLE.md)
 
 ## Architecture Decisions
 
@@ -94,6 +98,7 @@ The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 - [Network connector security boundary](docs/architecture/NETWORK-CONNECTOR-BOUNDARY.md)
 - [ADR-0009: Identity, tenant RBAC, and OIDC boundary](docs/architecture/ADR-0009-IDENTITY-RBAC-AND-OIDC.md)
 - [ADR-0010: Hyper-V virtual machine console](docs/architecture/ADR-0010-HYPERV-VM-CONSOLE.md)
+- [ADR-0011: Native Hyper-V console transport](docs/architecture/ADR-0011-NATIVE-HYPERV-CONSOLE.md)
 
 ## Source Layout
 

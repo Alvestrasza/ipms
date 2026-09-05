@@ -305,6 +305,14 @@ class WindowsAgentDeploymentSecret(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
+class NativeConsoleCredential(models.Model):
+    tenant = models.ForeignKey("tenancy.Tenant", on_delete=models.PROTECT)
+    enrollment = models.OneToOneField(AgentEnrollment, on_delete=models.CASCADE, related_name="native_console_credential")
+    nonce = models.BinaryField()
+    ciphertext = models.BinaryField()
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class AgentRevocation(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(

@@ -1,0 +1,48 @@
+[Unit]
+Description=IPMS Isolated Native Console Renderer
+After=network.target
+
+[Service]
+Type=simple
+User=ipms-guacd
+Group=ipms-guacd
+SupplementaryGroups=ipms-runtime
+Environment=LD_LIBRARY_PATH=/srv/ipms/dependencies/guacamole-1.6.0-ipms1/lib
+Environment=HOME=/nonexistent
+Environment=XDG_CONFIG_HOME=/nonexistent
+ExecStartPre=/usr/bin/sha256sum --check --strict /srv/ipms/dependencies/guacamole-1.6.0-ipms1/SHA256SUMS.runtime
+ExecStart=/srv/ipms/dependencies/guacamole-1.6.0-ipms1/sbin/guacd -f -b 127.0.0.1 -l 4822 -L error
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectHostname=true
+ProtectClock=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET
+IPAddressDeny=any
+IPAddressAllow=localhost
+SystemCallArchitectures=native
+LimitCORE=0
+MemoryMax=1536M
+TasksMax=128
+CPUQuota=200%
+# Screen/input/credentials must never be persisted by renderer diagnostics.
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target

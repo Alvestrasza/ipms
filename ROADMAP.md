@@ -404,6 +404,14 @@ Migration from IPMS Appliance to IPMS Scale-Out must remain supported.
   suspends telemetry/inventory. Presence and removal guards preserve independent
   heartbeat, inventory and telemetry timestamps. Live acceptance is tracked in
   [heartbeat isolation](docs/operations/AGENT-HEARTBEAT-ISOLATION.md).
+- Application 0.2.31 and Windows Agent 0.2.26 implement the native VMConnect
+  path through the host's fixed local TCP 2179 endpoint and outbound mTLS 9419.
+  Store an existing dedicated host account in encrypted tenant/enrollment-bound
+  configuration, with explicit certificate approval and external-MMC occupancy
+  acknowledgement. Do not create host accounts or expose a generic proxy.
+  Preserve the detached interactive window and explicit legacy fallback.
+  Isolated verification and real-host acceptance are tracked separately in
+  [native console operations](docs/operations/NATIVE-HYPERV-CONSOLE.md).
 - Evaluate an optional separately deployed console Gateway for scale-out and
   differentiated firewall/QoS policy. A new port alone is not a latency or
   security fix. Keep the default Agent-initiated TCP 9419 and existing firewall

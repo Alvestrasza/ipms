@@ -1811,6 +1811,105 @@ td strong {
 .hyperv-console-notice--error {
   color: var(--color-critical);
 }
+.native-console-body {
+  position: relative;
+  min-height: 0;
+  background: #000;
+}
+.native-console-display {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.native-console-display > div:focus-visible {
+  outline: 2px solid var(--color-accent-blue);
+}
+.native-console-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  background: var(--surface-panel-raised);
+}
+.native-console-setup,
+.native-certificate {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px;
+}
+.native-console-card {
+  width: min(620px, 100%);
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--surface-panel-raised);
+  color: var(--color-text-primary);
+}
+.native-console-card h2,
+.native-console-card p {
+  margin: 0;
+}
+.native-console-card h2 {
+  font-size: 1rem;
+}
+.native-console-card p {
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--color-text-muted);
+}
+.native-console-buttons,
+.native-console-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.native-console-modes {
+  border: 1px solid var(--border-default);
+  padding: 14px;
+}
+.native-console-ack,
+.native-console-modes label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+.native-account-form {
+  display: grid;
+  gap: 12px;
+}
+.native-account-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.85rem;
+}
+.native-account-form input {
+  width: 100%;
+  padding: 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface-panel);
+  color: var(--color-text-primary);
+}
+.native-certificate dl {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+.native-certificate dt {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+}
+.native-certificate dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 0.82rem;
+}
 .modal-card__header,
 .modal-card__heading {
   display: flex;

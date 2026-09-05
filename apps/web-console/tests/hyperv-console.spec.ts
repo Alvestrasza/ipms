@@ -62,6 +62,8 @@ test("opens an independent console window, orders input, warns on occupancy and 
     .getByRole("cell", { name: "Console acceptance VM", exact: true })
     .dblclick();
   const popup = await popupEvent;
+  await popup.getByLabel("Compatibility console", { exact: true }).check();
+  await popup.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(popup.locator(".hyperv-console-surface img")).toBeVisible();
   await expect(popup.locator(".console-shell, .modal-backdrop")).toHaveCount(0);
   expect(creates).toBe(1);
@@ -99,6 +101,8 @@ test("opens an independent console window, orders input, warns on occupancy and 
   expect(framePolls).toBeGreaterThan(1);
   const second = await context.newPage();
   await second.goto(url);
+  await second.getByLabel("Compatibility console", { exact: true }).check();
+  await second.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(
     second.getByText("The virtual machine console is already in use", {
       exact: true,
