@@ -160,9 +160,33 @@ class IdentityOperationWithdrawalTests(TestCase):
                 "vm_actions": 1,
                 "console_sessions": 0,
                 "console_inputs": 0,
+                "management_jobs": 0,
             },
         )
         self.assertFalse(any(self.withdraw().values()))
+
+    def test_management_authority_uses_immutable_actor_and_preserves_accepted_work(self):
+        from ipms.apps.discovery.models import HyperVManagementJob
+
+        jobs = []
+        for status in ("queued", "delivered", "running", "requires_reconciliation"):
+            jobs.append(HyperVManagementJob.objects.create(
+                tenant=self.tenant, enrollment=self.enrollment, actor=self.user,
+                requested_by="historical-name", operation="checkpoint_create",
+                status=status, vm_source_id=str(uuid.uuid4()), vm_name="Synthetic VM",
+                request_id=uuid.uuid4(),
+                request_digest="a" * 64, input_digest="b" * 64,
+                parameters={"policy": "configured"},
+            ))
+        counts = self.withdraw("password_reset")
+        self.assertEqual(counts["management_jobs"], 4)
+        for job, expected in zip(jobs, ("cancelled", "cancelled", "running", "requires_reconciliation")):
+            job.refresh_from_db()
+            self.assertEqual(job.status, expected)
+            self.assertIsNotNone(job.authority_revoked_at)
+            self.assertEqual(job.requested_by, "historical-name")
+            self.assertEqual(job.actor_id, self.user.pk)
+        self.assertEqual(self.withdraw("username_changed")["management_jobs"], 0)
 
     def test_delivered_and_running_jobs_remain_report_only_without_reoffer(self):
         from .lifecycle import offer_lifecycle_job, record_lifecycle_result

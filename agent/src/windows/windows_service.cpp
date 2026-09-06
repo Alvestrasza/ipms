@@ -62,6 +62,12 @@ void WINAPI service_main(DWORD, LPWSTR*) {
           return cancelled() || WaitForSingleObject(stop_event, 0) == WAIT_OBJECT_0;
         });
       });
+  ipms::agent::periodic_worker management(std::chrono::seconds(5),
+      [](const auto& cancelled) {
+        ipms::agent::windows::run_management_cycle([&] {
+          return cancelled() || WaitForSingleObject(stop_event, 0) == WAIT_OBJECT_0;
+        });
+      });
   do {
     if (WaitForSingleObject(stop_event, 0) != WAIT_TIMEOUT) break;
     const ULONGLONG now = GetTickCount64();
@@ -85,6 +91,7 @@ void WINAPI service_main(DWORD, LPWSTR*) {
     if (WaitForSingleObject(stop_event, 1'000) != WAIT_TIMEOUT) break;
   } while (true);
   heartbeat.stop();
+  management.stop();
   console_frames.stop();
   console_inputs.stop();
   ipms::agent::windows::stop_native_console_identity_validation();

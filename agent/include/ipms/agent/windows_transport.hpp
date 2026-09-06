@@ -17,6 +17,7 @@ TransportResult run_console_cycle(const std::function<bool()>& cancelled = {});
 void stop_native_console_identity_validation();
 bool run_console_input_cycle(const std::function<bool()>& cancelled);
 TransportResult run_heartbeat_cycle(const std::function<bool()>& cancelled);
+TransportResult run_management_cycle(const std::function<bool()>& cancelled);
 TransportResult report_lifecycle_result(
     const std::string& job_id,
     const std::string& result,

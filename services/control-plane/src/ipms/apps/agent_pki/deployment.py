@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 
 from django.conf import settings
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 from ipms.apps.audit.models import AuditEvent
@@ -37,6 +37,103 @@ class RemoteDeploymentStepError(Exception):
     def __init__(self, code: str) -> None:
         self.code = code
         super().__init__(code)
+
+
+def pending_agent_deployments(enrollment, host=None):
+    """The queued/running deployment row is the durable maintenance reservation."""
+    addresses = set(
+        WindowsAgentDeployment.objects.filter(
+            models.Q(enrollment=enrollment)
+            | models.Q(lifecycle_bootstrap_enrollment=enrollment),
+            tenant_id=enrollment.tenant_id,
+            status=WindowsAgentDeployment.Status.SUCCEEDED,
+        ).values_list("target_address", flat=True)
+    )
+    if host is not None:
+        addresses.update(value for value in (host.fqdn, host.hostname) if value)
+    target = models.Q(enrollment=enrollment) | models.Q(
+        lifecycle_bootstrap_enrollment=enrollment
+    )
+    # No DNS resolution or inferred cross-tenant identity. This is exactly the
+    # historical endpoint match used by automatic existing-Agent assessment.
+    for address in addresses:
+        target |= models.Q(target_address__iexact=address)
+    return WindowsAgentDeployment.objects.filter(
+        target,
+        tenant_id=enrollment.tenant_id,
+        status__in=("queued", "running"),
+    )
+
+
+def _existing_deployment_enrollment(deployment):
+    if deployment.lifecycle_bootstrap_enrollment_id is not None:
+        enrollment = AgentEnrollment.objects.filter(
+            pk=deployment.lifecycle_bootstrap_enrollment_id,
+            tenant_id=deployment.tenant_id,
+            status=AgentEnrollment.Status.ACTIVE,
+        ).first()
+        if enrollment is None:
+            raise RemoteDeploymentStepError("agent_lifecycle_bootstrap_unavailable")
+        return enrollment
+    return (
+        AgentEnrollment.objects.filter(
+            tenant_id=deployment.tenant_id,
+            status=AgentEnrollment.Status.ACTIVE,
+            windows_deployment__target_address__iexact=deployment.target_address,
+            windows_deployment__status=WindowsAgentDeployment.Status.SUCCEEDED,
+        )
+        .order_by("-windows_deployment__completed_at")
+        .first()
+    )
+
+
+@transaction.atomic
+def _guard_deployment_management(deployment, *, expected_enrollment=None):
+    """Reserve a resolved host under the tenant lock, never across remote I/O."""
+    from ipms.apps.tenancy.models import Tenant
+    from ipms.apps.tenancy.operations import queued_actor_allowed
+    from ipms.apps.tenancy.rbac import Permission
+    from .hyperv_management import active_management_jobs
+
+    Tenant.objects.select_for_update(no_key=True).get(pk=deployment.tenant_id)
+    current = WindowsAgentDeployment.objects.select_for_update().get(
+        pk=deployment.pk, tenant_id=deployment.tenant_id
+    )
+    if current.status not in ("queued", "running") or not queued_actor_allowed(
+        current.tenant_id, current.requested_by, Permission.AGENTS_MANAGE
+    ):
+        raise RemoteDeploymentStepError("execution_authority_withdrawn")
+    enrollment = _existing_deployment_enrollment(current)
+    if expected_enrollment is not None and (
+        enrollment is None or enrollment.pk != expected_enrollment.pk
+    ):
+        raise RemoteDeploymentStepError("remote_existing_agent_identity_mismatch")
+    target_sources = WindowsServer.objects.filter(
+        models.Q(fqdn__iexact=current.target_address)
+        | models.Q(hostname__iexact=current.target_address),
+        tenant_id=current.tenant_id,
+        inventory_source="agent",
+    ).values_list("source_id", flat=True)
+    protected_enrollments = set(
+        AgentEnrollment.objects.filter(
+            tenant_id=current.tenant_id, device_uri__in=target_sources
+        ).values_list("pk", flat=True)
+    )
+    protected_enrollments.add(current.enrollment_id)
+    if enrollment is not None:
+        enrollment = AgentEnrollment.objects.select_for_update().get(
+            pk=enrollment.pk, tenant_id=current.tenant_id
+        )
+        if enrollment.status != AgentEnrollment.Status.ACTIVE:
+            raise RemoteDeploymentStepError("agent_lifecycle_bootstrap_unavailable")
+        protected_enrollments.add(enrollment.pk)
+    if (
+        active_management_jobs(current.tenant_id)
+        .filter(enrollment_id__in=protected_enrollments)
+        .exists()
+    ):
+        raise RemoteDeploymentStepError("agent_management_operation_pending")
+    return enrollment
 
 
 def _claim_next_deployment() -> WindowsAgentDeployment | None:
@@ -76,6 +173,15 @@ def _claim_next_deployment() -> WindowsAgentDeployment | None:
         ):
             deployment.status = WindowsAgentDeployment.Status.FAILED
             deployment.error_code = "execution_authority_withdrawn"
+            deployment.completed_at = timezone.now()
+            deployment.save(update_fields=("status", "error_code", "completed_at"))
+            WindowsAgentDeploymentSecret.objects.filter(deployment=deployment).delete()
+            return None
+        try:
+            _guard_deployment_management(deployment)
+        except RemoteDeploymentStepError as exc:
+            deployment.status = WindowsAgentDeployment.Status.FAILED
+            deployment.error_code = exc.code
             deployment.completed_at = timezone.now()
             deployment.save(update_fields=("status", "error_code", "completed_at"))
             WindowsAgentDeploymentSecret.objects.filter(deployment=deployment).delete()
@@ -703,6 +809,7 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
     error_code = ""
     stage = "initialization"
     try:
+        _guard_deployment_management(deployment)
         if not queued_actor_allowed(
             deployment.tenant_id, deployment.requested_by, Permission.AGENTS_MANAGE
         ):
@@ -807,23 +914,8 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
             + "{ throw 'Administrative access is required.' }",
             failure_code="remote_administrator_required",
         )
-        existing_enrollment = deployment.lifecycle_bootstrap_enrollment
-        explicit_lifecycle_bootstrap = existing_enrollment is not None
-        if existing_enrollment is None:
-            existing_enrollment = (
-                AgentEnrollment.objects.filter(
-                    tenant_id=deployment.tenant_id,
-                    status=AgentEnrollment.Status.ACTIVE,
-                    windows_deployment__target_address__iexact=(
-                        deployment.target_address
-                    ),
-                    windows_deployment__status=(
-                        WindowsAgentDeployment.Status.SUCCEEDED
-                    ),
-                )
-                .order_by("-windows_deployment__completed_at")
-                .first()
-            )
+        explicit_lifecycle_bootstrap = deployment.lifecycle_bootstrap_enrollment_id is not None
+        existing_enrollment = _guard_deployment_management(deployment)
         if existing_enrollment is not None:
             existing_agent_version = (
                 WindowsServer.objects.filter(
@@ -933,6 +1025,9 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
 
         if updated_existing_agent:
             stage = "update"
+            _guard_deployment_management(
+                deployment, expected_enrollment=existing_enrollment
+            )
             if legacy_migration_required:
                 _execute_checked(
                     client,
@@ -1048,8 +1143,9 @@ def process_deployment(deployment: WindowsAgentDeployment) -> None:
                 id=deployment.enrollment_id,
                 status=AgentEnrollment.Status.PENDING,
             ).update(status=AgentEnrollment.Status.REVOKED)
-        if secret_row is not None:
-            secret_row.delete()
+        WindowsAgentDeploymentSecret.objects.filter(
+            deployment_id=deployment.pk, tenant_id=deployment.tenant_id
+        ).delete()
         _audit(
             deployment,
             outcome=(

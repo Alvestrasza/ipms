@@ -3,6 +3,8 @@
 #include "ipms/agent/configuration.hpp"
 #include "ipms/agent/console_input_dispatcher.hpp"
 #include "ipms/agent/hyperv_pack.hpp"
+#include "ipms/agent/hyperv_management.hpp"
+#include "ipms/agent/windows_management_journal.hpp"
 #include "ipms/agent/native_console_guard.hpp"
 #include "ipms/agent/native_identity_worker.hpp"
 #include "ipms/agent/windows_native_console.hpp"
@@ -38,9 +40,10 @@
 namespace {
 using Microsoft::WRL::ComPtr;
 constexpr std::size_t k_max_document_bytes = 65'536;
-constexpr wchar_t k_agent_version[] = L"0.2.26";
+constexpr wchar_t k_agent_version[] = L"0.2.27";
 constexpr std::size_t k_max_artifact_bytes = 64 * 1024 * 1024;
 std::mutex identity_mutex;
+std::mutex management_cycle_mutex;
 std::atomic<ipms::agent::native_identity_worker*> active_native_validation{nullptr};
 
 ipms::agent::native_identity_worker& native_identity_validation() {
@@ -473,10 +476,10 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
     ~failure_reset() { if (cache && !succeeded) cache->reset(); }
   } guard{reusable ? &console_transport : nullptr};
   if (!transport->session) {
-    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.26", WINHTTP_ACCESS_TYPE_NO_PROXY,
+    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.27", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
     if (!transport->session) throw std::runtime_error("The Agent HTTP session could not be created.");
-    if (input_channel || path == L"/v1/heartbeat") {
+    if (input_channel || path == L"/v1/heartbeat" || path == L"/v1/hyperv-management") {
       // These are per-phase limits, not a two-second end-to-end deadline.
       // Small liveness/input messages do not inherit image-transfer timeouts.
       WinHttpSetTimeouts(transport->session.get(), 2'000, 2'000, 2'000, 2'000);
@@ -553,7 +556,7 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
 }
 
 http_response post_binary(const state& identity, const std::string& body, PCCERT_CONTEXT certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.26", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.27", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent artifact session could not be created.");
   WinHttpSetTimeouts(session.get(), 10'000, 10'000, 60'000, 60'000);
@@ -1224,6 +1227,170 @@ TransportResult run_console_cycle(const std::function<bool()>& cancelled) {
   } catch (const std::exception& error) {
     try { return {false, wide(error.what()), false}; }
     catch (...) { return {false, L"The Hyper-V console cycle failed.", false}; }
+  }
+}
+
+TransportResult run_management_cycle(const std::function<bool()>& cancelled) {
+  namespace json = ipms::agent::management_json;
+  namespace ledger = ipms::agent::hyperv_management_journal;
+  std::unique_lock cycle_lock(management_cycle_mutex, std::try_to_lock);
+  if (!cycle_lock.owns_lock()) return {true, L"Management worker is already active."};
+  try {
+    if (cancelled()) return {true, L"Management worker stopped."};
+    const auto state_path = data_directory() / L"agent-state.json";
+    if (!std::filesystem::is_regular_file(state_path)) return {true, L"Management awaits enrollment."};
+    const state identity = load_state(state_path);
+    cert_context certificate(find_agent_certificate(identity.certificate_sha256));
+    if (!certificate) return {true, L"Management awaits credentials."};
+    const auto journal_directory = data_directory() / L"hyperv-management";
+    const auto identity_current = [&] {
+      const auto current = load_state(state_path);
+      return current.device_uri == identity.device_uri && current.gateway == identity.gateway &&
+             current.port == identity.port && current.certificate_sha256 == identity.certificate_sha256;
+    };
+    const auto string = [](const json::object& object, const char* key) -> const std::string& {
+      return object.at(key).as<std::string>();
+    };
+    const auto exchange = [&](json::object message) {
+      if (cancelled() || !identity_current()) throw std::runtime_error("Management identity changed or stopped.");
+      const std::string correlation = "management-" + std::to_string(GetTickCount64());
+      message.emplace("type", "hyperv_management");
+      message.emplace("device_uri", identity.device_uri);
+      message.emplace("correlation_id", correlation);
+      const auto response = post_json(identity.gateway, identity.port, L"/v1/hyperv-management",
+                                      json::serialize(message), nullptr, certificate.get());
+      const auto document = json::parse(response.body).as<json::object>();
+      if (response.status != 200 || string(document, "type") != "accepted" ||
+          string(document, "correlation_id") != correlation)
+        throw std::runtime_error("The management message was rejected.");
+      return document;
+    };
+    auto recorded = load_management_journal(journal_directory);
+    const auto report = [&](const ledger::journal& item) {
+      auto document = json::parse(item.result_json).as<json::object>();
+      document.emplace("action", "result");
+      document.emplace("job_id", item.identity.job_id);
+      exchange(std::move(document));
+    };
+    if (recorded && recorded->identity.enrollment_device_uri != identity.device_uri)
+      throw std::runtime_error("The management journal belongs to a different enrollment.");
+    if (recorded && recorded->state == ledger::phase::terminal) report(*recorded);
+    const auto response = recorded && recorded->state != ledger::phase::terminal
+        ? exchange({{"action", "lookup"}, {"job_id", recorded->identity.job_id}})
+        : exchange({{"action", "poll"}});
+    const auto& offered_value = response.at("management_job");
+    if (offered_value.get_if<std::nullptr_t>()) return {true, L"No management work is pending."};
+    const auto offered = offered_value.as<json::object>();
+    ledger::binding binding{1, string(offered, "job_id"), string(offered, "input_digest"),
+                            identity.device_uri, ledger::parse_operation(string(offered, "operation")),
+                            string(offered, "vm_source_id")};
+    if (!ledger::valid(binding)) throw std::runtime_error("The management assignment is invalid.");
+    if (offered.at("schema").as<std::int64_t>() != 1)
+      throw std::runtime_error("The management assignment schema is invalid.");
+    if (recorded && recorded->identity != binding && recorded->state != ledger::phase::terminal)
+      throw std::runtime_error("A different management operation requires reconciliation.");
+    if (!recorded || recorded->identity != binding) {
+      recorded = ledger::prepare(binding);
+      save_management_journal(journal_directory, *recorded);
+    }
+    if (string(offered, "status") == "cancelled" && recorded->state == ledger::phase::prepared) {
+      archive_prepared_management_journal(journal_directory, binding);
+      return {true, L"The uninvoked management operation was cancelled."};
+    }
+    if (recorded->state == ledger::phase::terminal) {
+      report(*recorded);
+      return {true, L"Management result was acknowledged."};
+    }
+    // Inspection is safe to reconstruct after a lost claim response. A write
+    // never takes this recovery path: its invoking window must be reconciled.
+    if ((recorded->state == ledger::phase::invoking || recorded->state == ledger::phase::requires_reconciliation) && ledger::is_mutation(binding.action)) {
+      *recorded = ledger::require_reconciliation(*recorded);
+      save_management_journal(journal_directory, *recorded);
+      exchange({{"action", "result"}, {"job_id", binding.job_id},
+                {"status", "requires_reconciliation"}, {"phase", "reconciliation"},
+                {"progress", 0}, {"result_code", "management_reconciliation_required"}, {"snapshot", nullptr}});
+      return {true, L"Management operation requires reconciliation."};
+    }
+    const auto claim_started = GetTickCount64();
+    bool authorized = false;
+    if (recorded->state != ledger::phase::observing) {
+      const auto claimed = exchange({{"action", "claim"}, {"job_id", binding.job_id},
+                                      {"input_digest", binding.input_digest}}).at("management_claim").as<json::object>();
+      const auto& claimed_job = claimed.at("job").as<json::object>();
+      for (const auto* key : {"job_id", "input_digest", "operation", "vm_source_id", "vm_name", "expected_revision", "parameters"})
+        if (claimed_job.at(key) != offered.at(key)) throw std::runtime_error("The management claim binding changed.");
+      authorized = claimed.at("authorized").as<bool>();
+      if (cancelled() || !identity_current()) return {true, L"Management worker stopped before execution."};
+      if (!authorized && string(claimed, "mode") == "cancelled" && recorded->state == ledger::phase::prepared) {
+        archive_prepared_management_journal(journal_directory, binding);
+        return {true, L"The uninvoked management operation was cancelled."};
+      }
+      if (!authorized && binding.action != ledger::operation::inspect) {
+        // A lost execute grant is indistinguishable from an earlier invocation
+        // with a lost local receipt. Fence it; never request another grant.
+        if (recorded->state == ledger::phase::prepared) *recorded = ledger::begin_invocation(*recorded);
+        *recorded = ledger::require_reconciliation(*recorded);
+        save_management_journal(journal_directory, *recorded);
+        return {false, L"The management execution grant requires reconciliation."};
+      }
+      if (!authorized && string(claimed, "mode") != "observe")
+        return {true, L"Management execution was not authorized."};
+    }
+    json::object result{{"status", "failed"}, {"phase", "completed"}, {"progress", 100},
+                        {"result_code", "management_operation_unsupported"}, {"snapshot", nullptr}};
+    if (binding.action == ledger::operation::inspect) {
+      if (recorded->state == ledger::phase::prepared) {
+        *recorded = ledger::begin_invocation(*recorded);
+        save_management_journal(journal_directory, *recorded);
+      }
+      if (!offered.at("parameters").as<json::object>().empty())
+        throw std::runtime_error("The inspection assignment parameters are invalid.");
+      const auto inspection = inspect_hyperv_virtual_machine({binding.vm_source_id, string(offered, "vm_name")});
+      result["status"] = inspection.succeeded ? "succeeded" : "failed";
+      result["result_code"] = inspection.result_code;
+      if (inspection.succeeded) result["snapshot"] = json::parse(inspection.document_json);
+    } else {
+      const hyperv_management_command command{{binding.vm_source_id, string(offered, "vm_name")},
+          binding.action, string(offered, "expected_revision"), offered.at("parameters")};
+      const auto progress = recorded->state == ledger::phase::observing
+          ? observe_hyperv_management(command, recorded->provider_job_ref)
+          : execute_hyperv_management(command, [&] {
+              if (!authorized || cancelled() || !identity_current() ||
+                  GetTickCount64() - claim_started >= 15'000 || recorded->state != ledger::phase::prepared) return false;
+              *recorded = ledger::begin_invocation(*recorded);
+              save_management_journal(journal_directory, *recorded);
+              // Durable I/O can outlast the short execution grant. No provider
+              // call has happened yet, so recheck authority after the flush.
+              return !cancelled() && identity_current() &&
+                  GetTickCount64() - claim_started < 15'000;
+            }, [&](const std::string& local_job) {
+              *recorded = ledger::begin_observation(*recorded, local_job);
+              save_management_journal(journal_directory, *recorded);
+              return true;
+            });
+      result["status"] = progress.status;
+      result["phase"] = progress.phase;
+      result["progress"] = progress.progress ? json::value(*progress.progress) : json::value{};
+      result["result_code"] = progress.result_code;
+      if (!progress.snapshot_json.empty()) result["snapshot"] = json::parse(progress.snapshot_json);
+      if (progress.status == "running" || progress.status == "requires_reconciliation") {
+        if (progress.status == "requires_reconciliation") {
+          *recorded = ledger::require_reconciliation(*recorded);
+          save_management_journal(journal_directory, *recorded);
+        }
+        result.emplace("action", "result");
+        result.emplace("job_id", binding.job_id);
+        exchange(std::move(result));
+        return {true, L"The accepted management operation is being observed."};
+      }
+    }
+    *recorded = ledger::complete(*recorded, result);
+    save_management_journal(journal_directory, *recorded);
+    report(*recorded);
+    return {true, L"Management cycle completed."};
+  } catch (...) {
+    // Do not disclose raw provider object paths or remote exception text.
+    return {false, L"The management cycle failed; its journal is retained."};
   }
 }
 

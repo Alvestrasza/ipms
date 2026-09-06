@@ -2738,3 +2738,190 @@ td strong {
     transition-duration: 0.01ms !important;
   }
 }
+
+.hyperv-vm-inventory .table-scroll {
+  /* Keep the absolute screen-reader-only action heading inside local scrolling. */
+  position: relative;
+}
+dialog.hyperv-management-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  padding: 0;
+  width: min(1040px, calc(100vw - 48px));
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  color: var(--color-text-primary);
+  background: var(--surface-panel);
+  border: 1px solid var(--border-strong);
+  overflow: auto;
+}
+.hyperv-management-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+.hyperv-management-dialog > .modal-card__heading {
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border-default);
+}
+.hyperv-management-dialog__layout {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  min-height: 420px;
+}
+.hyperv-management-dialog__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 10px;
+  background: var(--surface-navigation);
+  border-right: 1px solid var(--border-default);
+}
+.hyperv-management-dialog__nav button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 10px;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--color-text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+.hyperv-management-dialog__nav button:hover,
+.hyperv-management-dialog__nav button[aria-current] {
+  color: var(--color-text-primary);
+  background: var(--surface-hover);
+  border-color: var(--border-default);
+}
+.hyperv-management-dialog__body {
+  min-width: 0;
+  padding: 22px 24px;
+  overflow-wrap: anywhere;
+}
+.hyperv-management-dialog__toolbar,
+.hyperv-management-dialog__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.hyperv-management-dialog__toolbar {
+  margin: 12px 0;
+}
+.hyperv-management-dialog__footer {
+  justify-content: flex-end;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-default);
+}
+.hyperv-management-dialog__details {
+  margin: 12px 0 24px;
+}
+.hyperv-management-dialog__details > div {
+  display: grid;
+  grid-template-columns: minmax(140px, 40%) minmax(0, 1fr);
+  gap: 16px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border-default);
+}
+.hyperv-management-dialog__details dt,
+.hyperv-management-dialog__muted {
+  color: var(--color-text-muted);
+}
+.hyperv-management-dialog__details dd {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.hyperv-management-dialog__tree {
+  list-style: none;
+  padding-left: 20px;
+}
+.hyperv-management-dialog__checkpoint {
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  margin: 3px 0;
+  border: 1px solid var(--border-default);
+  border-radius: 5px;
+  color: var(--color-text-primary);
+  background: var(--surface-panel-raised);
+  cursor: pointer;
+}
+.hyperv-management-dialog__checkpoint[aria-pressed="true"] {
+  border-color: var(--color-accent-blue);
+  background: var(--surface-hover);
+}
+.hyperv-management-dialog__confirmation,
+.hyperv-management-dialog__job {
+  padding: 16px;
+  margin: 16px 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-panel-raised);
+}
+.hyperv-management-dialog__confirmation {
+  border-color: var(--color-warning);
+}
+.hyperv-management-dialog__confirmation label {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+.hyperv-management-dialog__confirmation input[type="checkbox"] {
+  width: auto;
+  justify-self: start;
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+.hyperv-management-dialog__confirmation label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: flex-start;
+}
+.hyperv-management-dialog__settings-form fieldset {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 20px;
+  padding: 16px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  min-width: 0;
+}
+.hyperv-management-dialog__settings-form legend {
+  padding: 0 8px;
+  font-weight: 600;
+}
+.hyperv-management-dialog__settings-form textarea {
+  width: 100%;
+  min-height: 100px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  color: var(--color-text-primary);
+  background: var(--surface-page);
+  font: inherit;
+}
+.hyperv-management-dialog__settings-form input[type="checkbox"] {
+  width: auto;
+  justify-self: start;
+}
+@media (max-width: 650px) {
+  dialog.hyperv-management-dialog {
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+  .hyperv-management-dialog__layout {
+    grid-template-columns: 1fr;
+  }
+  .hyperv-management-dialog__nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-default);
+  }
+  .hyperv-management-dialog__details > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}

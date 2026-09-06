@@ -87,6 +87,20 @@ def _bounded_json(line: bytes, maximum_bytes: int = MAX_MESSAGE_BYTES) -> dict:
     return document
 
 
+def _unique_management_json(line: bytes) -> dict:
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValidationError("The management message contains duplicate keys.")
+            result[key] = value
+        return result
+    try:
+        return json.loads(line, object_pairs_hook=unique)
+    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError) as exc:
+        raise ValidationError("The management message is invalid.") from exc
+
+
 def build_tls_context(runtime_directory: Path) -> ssl.SSLContext:
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_3
@@ -129,6 +143,7 @@ def _parse_http_request(header: bytes) -> tuple[str, dict[str, str], int]:
         "/v1/lifecycle-result",
         "/v1/lifecycle-artifact",
         "/v1/hyperv-action-result",
+        "/v1/hyperv-management",
         "/v1/hyperv-console",
     }:
         raise ValidationError("The Agent Gateway HTTP route is invalid.")
@@ -228,6 +243,48 @@ async def _console_input_exchange(enrollment, document, peer_certificate):
         waited = True
 
 
+def _management_exchange(enrollment, document):
+    """Independent, bounded management channel. Offers are not execution grants."""
+    from ipms.apps.agent_pki.hyperv_management import (
+        claim_management_job, offer_management_job, record_management_result, management_job_status,
+    )
+
+    envelope = {"type", "action", "device_uri", "correlation_id"}
+    action = document.get("action")
+    fields = {
+        "poll": set(),
+        "lookup": {"job_id"},
+        "claim": {"job_id", "input_digest"},
+        "result": {"job_id", "status", "phase", "progress", "result_code", "snapshot"},
+    }
+    if (
+        document.get("type") != "hyperv_management"
+        or not isinstance(action, str)
+        or action not in fields
+        or set(document) != envelope | fields[action]
+        or document.get("device_uri") != enrollment.device_uri
+        or not isinstance(document.get("correlation_id"), str)
+        or not 1 <= len(document["correlation_id"]) <= 128
+    ):
+        raise ValidationError("The management channel envelope is invalid.")
+    response = {"type": "accepted", "correlation_id": document["correlation_id"]}
+    if action == "poll":
+        response["management_job"] = offer_management_job(enrollment)
+    elif action == "lookup":
+        response["management_job"] = management_job_status(enrollment, document["job_id"])
+    elif action == "claim":
+        response["management_claim"] = claim_management_job(
+            enrollment, job_id=document["job_id"], input_digest=document["input_digest"],
+        )
+    else:
+        record_management_result(
+            enrollment, job_id=document["job_id"], status=document["status"],
+            phase=document["phase"], progress=document["progress"],
+            result_code=document["result_code"], snapshot=document["snapshot"],
+        )
+    return response
+
+
 async def _handle_http_connection(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
@@ -277,6 +334,8 @@ async def _handle_http_connection(
         if path == "/v1/hyperv-console"
         else MAX_MESSAGE_BYTES,
     )
+    if path == "/v1/hyperv-management":
+        document = _unique_management_json(body)
     if path == "/v1/enroll":
         if peer_certificate:
             raise ValidationError("Enrollment does not accept an existing client certificate.")
@@ -304,14 +363,22 @@ async def _handle_http_connection(
     enrollment = await database_call(
         validate_peer_certificate,
         peer_certificate,
-        allow_suspended_report=(path, document.get("type"))
+        allow_suspended_report=((path == "/v1/hyperv-management"
+                                 and document.get("type") == "hyperv_management"
+                                 and document.get("action") in ("poll", "lookup", "result")) or (path, document.get("type"))
         in {
             ("/v1/lifecycle-result", "lifecycle_result"),
             ("/v1/hyperv-action-result", "hyperv_action_result"),
-        },
+        }),
     )
     if document.get("device_uri") != enrollment.device_uri:
         raise ValidationError("The Agent message identity is invalid.")
+    if path == "/v1/hyperv-management":
+        response = await _database_call_async(
+            _management_exchange, enrollment, document,
+        )
+        await _http_reply(writer, 200, response)
+        return
     if path == "/v1/heartbeat":
         if (
             document.get("type") != "heartbeat"

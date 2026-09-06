@@ -127,7 +127,7 @@ void relay_native_hyperv_console(
     require(!state->error, "The native console authenticated transport failed.");
   };
   check();
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.26", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.27", WINHTTP_ACCESS_TYPE_NO_PROXY,
       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, WINHTTP_FLAG_ASYNC));
   require(session != nullptr, "The native console session could not be created.");
   require(WinHttpSetStatusCallback(session.get(), status_callback,

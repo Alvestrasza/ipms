@@ -327,6 +327,22 @@ Migration from IPMS Appliance to IPMS Scale-Out must remain supported.
 
 ## Phased Delivery
 
+### Hyper-V management expansion (Issue #24)
+
+- Application 0.2.35 / Windows Agent 0.2.27 implement a durable, tenant-scoped
+  management channel, explicit current-configuration inspection, standard
+  checkpoints, and stopped-VM name/notes, processor and memory edits. Native
+  provider acceptance is tracked separately from source and browser tests.
+- Centered, localized settings/checkpoint dialogs support visible action menus,
+  right-click and Shift+F10, exact destructive-action confirmation, persistent
+  job progress and fail-closed uncertain outcomes.
+- Production checkpoint creation, host/storage migration and existing-cluster
+  VM-role add/remove remain pending. Migration requires an explicitly selected
+  target host, approved storage and qualified host-to-host authorization.
+- See [Issue #24](https://github.com/Alvestrasza/ipms/issues/24),
+  [ADR-0013](docs/architecture/ADR-0013-HYPERV-MANAGEMENT-OPERATIONS.md) and
+  [deployment and acceptance](docs/operations/HYPERV-MANAGEMENT.md).
+
 ### Phase 0: Product Foundation
 
 - Establish repository governance, proprietary licensing, contribution policy,

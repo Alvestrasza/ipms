@@ -64,6 +64,9 @@ def current_windows_agent_artifact() -> tuple[str, bytes, str]:
 @transaction.atomic
 def create_lifecycle_job(*, enrollment, action: str, actor: str) -> AgentLifecycleJob:
     require_active_tenant(enrollment.tenant_id, lock=True)
+    from .hyperv_management import active_management_jobs
+    if active_management_jobs(enrollment.tenant_id, enrollment_id=enrollment.id).exists():
+        raise ValidationError("A Hyper-V management operation must finish before Agent maintenance.")
     if enrollment.status != AgentEnrollment.Status.ACTIVE:
         raise ValidationError("The Agent enrollment is not active.")
     if action not in AgentLifecycleJob.Action.values:

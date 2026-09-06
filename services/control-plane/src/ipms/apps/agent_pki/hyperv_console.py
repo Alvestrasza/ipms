@@ -88,6 +88,12 @@ def create_console_session(*, virtual_machine, actor: str, transport="thumbnail"
     )
     if virtual_machine.host.source_id != enrollment.device_uri:
         raise ValidationError("The Hyper-V host changed. Retry opening the console.")
+    from .hyperv_management import active_management_jobs
+    if active_management_jobs(
+        virtual_machine.tenant_id, enrollment_id=enrollment.id,
+        vm_source_id=virtual_machine.source_id,
+    ).exclude(operation="inspect").exists():
+        raise ValidationError("A Hyper-V management operation is already active.")
     if virtual_machine.state != HyperVVirtualMachine.State.RUNNING:
         raise ValidationError("The virtual machine must be running to open its console.")
     agent_version = _version_tuple(virtual_machine.host.agent_version)

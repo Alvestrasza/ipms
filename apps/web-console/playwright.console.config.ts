@@ -8,6 +8,7 @@ export default defineConfig({
     "service-accounts.spec.ts",
     "platform-tenants.spec.ts",
     "account-security.spec.ts",
+    "hyperv-management.spec.ts",
   ],
   timeout: 60_000,
   workers: 1,
@@ -16,6 +17,9 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:3107",
     browserName: "chromium",
     headless: true,
+    launchOptions: {
+      executablePath: process.env.IPMS_TEST_BROWSER_EXECUTABLE,
+    },
     timezoneId: "Europe/Berlin",
   },
 });

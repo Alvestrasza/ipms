@@ -5,6 +5,12 @@ from ipms.apps.tenancy.platform_views import (
     InitialTenantAdministratorView,
 )
 from ipms.apps.agent_pki.native_views import NativeConsoleConfigurationView
+from ipms.apps.discovery.hyperv_management_views import (
+    HyperVManagementView,
+    HyperVManagementRefreshView,
+    HyperVManagementOperationView,
+    HyperVManagementJobView,
+)
 from ipms.apps.agent_pki.service_account_views import (
     ServiceAccountListView,
     ServiceAccountDetailView,
@@ -60,6 +66,10 @@ from . import views
 app_name = "core"
 
 urlpatterns = [
+    path("hyper-v/virtual-machines/<uuid:pk>/management/", HyperVManagementView.as_view(), name="hyperv-management"),
+    path("hyper-v/virtual-machines/<uuid:pk>/management/refresh/", HyperVManagementRefreshView.as_view(), name="hyperv-management-refresh"),
+    path("hyper-v/virtual-machines/<uuid:pk>/management/operations/", HyperVManagementOperationView.as_view(), name="hyperv-management-operation"),
+    path("hyper-v/management-jobs/<uuid:pk>/", HyperVManagementJobView.as_view(), name="hyperv-management-job"),
     path(
         "platform/tenants/",
         PlatformTenantListCreateView.as_view(),

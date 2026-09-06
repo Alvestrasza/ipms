@@ -1,4 +1,5 @@
 #include "ipms/agent/hyperv_pack.hpp"
+#include "ipms/agent/hyperv_management_wmi.hpp"
 
 #include <windows.h>
 #include <winsvc.h>
@@ -535,26 +536,8 @@ ComPtr<IWbemClassObject> find_realized_settings(
   // Msvm_SettingsDefineState association. Scanning the whole settings class is
   // both ambiguous in the presence of checkpoints and bounded by our global
   // WMI row limit, which can hide a valid VM on larger hosts.
-  const std::wstring vm_id(source_id.begin(), source_id.end());
-  const std::wstring query =
-      L"ASSOCIATORS OF {Msvm_ComputerSystem.CreationClassName=\"Msvm_ComputerSystem\","
-      L"Name=\"" + vm_id +
-      L"\"} WHERE AssocClass=Msvm_SettingsDefineState "
-      L"ResultClass=Msvm_VirtualSystemSettingData "
-      L"Role=ManagedElement ResultRole=SettingData";
-  auto rows = execute_query(services, query.c_str());
-  if (!rows) return {};
-  ComPtr<IWbemClassObject> match;
-  const bool completed = consume_rows(
-      rows.Get(), 8,
-      std::chrono::steady_clock::now() + std::chrono::seconds(10),
-      [&match, &source_id](IWbemClassObject* row) {
-        if (match || normalized_guid(wmi_string(row, L"VirtualSystemIdentifier")) != source_id) {
-          return;
-        }
-        match = row;
-      });
-  return completed ? match : ComPtr<IWbemClassObject>{};
+  return ipms::agent::windows::management_wmi::current_settings(
+      services, source_id, std::chrono::steady_clock::now() + std::chrono::seconds(10));
 }
 
 bool invoke_input_method(
@@ -1039,61 +1022,21 @@ hyperv_inventory_result collect_hyperv_inventory() {
     return {"unavailable", "hyperv_system_query_failed", "[]"};
   }
 
-  auto settings = execute_query(
-      services.Get(),
-      L"SELECT VirtualSystemIdentifier, VirtualSystemType, Version "
-      L"FROM Msvm_VirtualSystemSettingData");
-  if (!settings || !consume_rows(
-          settings.Get(),
-          k_max_related_rows,
-          deadline,
-          [&vms](IWbemClassObject* row) {
-            const auto type = wmi_string(row, L"VirtualSystemType");
-            if (_wcsicmp(type.c_str(), L"Microsoft:Hyper-V:System:Realized") != 0) return;
-            const auto id = normalized_guid(
-                wmi_string(row, L"VirtualSystemIdentifier"));
-            const auto match = vms.find(id);
-            if (match == vms.end()) return;
-            const auto version = utf8(wmi_string(row, L"Version"));
-            if (version.size() <= 64) match->second.configuration_version = version;
-          })) {
-    return {"unavailable", "hyperv_settings_query_failed", "[]"};
-  }
-
-  auto processors = execute_query(
-      services.Get(),
-      L"SELECT InstanceID, VirtualQuantity FROM Msvm_ProcessorSettingData");
-  if (!processors || !consume_rows(
-          processors.Get(),
-          k_max_related_rows,
-          deadline,
-          [&vms](IWbemClassObject* row) {
-            const auto match = vms.find(guid_from_instance_id(
-                wmi_string(row, L"InstanceID")));
-            if (match == vms.end()) return;
-            const auto quantity = wmi_uint64(row, L"VirtualQuantity");
-            if (quantity && *quantity <= 65'535) match->second.vcpu_count = quantity;
-          })) {
-    return {"unavailable", "hyperv_processor_query_failed", "[]"};
-  }
-
-  auto memory = execute_query(
-      services.Get(),
-      L"SELECT InstanceID, VirtualQuantity FROM Msvm_MemorySettingData");
-  if (!memory || !consume_rows(
-          memory.Get(),
-          k_max_related_rows,
-          deadline,
-          [&vms](IWbemClassObject* row) {
-            const auto match = vms.find(guid_from_instance_id(
-                wmi_string(row, L"InstanceID")));
-            if (match == vms.end()) return;
-            const auto quantity_mb = wmi_uint64(row, L"VirtualQuantity");
-            if (quantity_mb && *quantity_mb <= (UINT64_MAX / (1024 * 1024))) {
-              match->second.memory_bytes = *quantity_mb * 1024 * 1024;
-            }
-          })) {
-    return {"unavailable", "hyperv_memory_query_failed", "[]"};
+  for (auto& [source_id, vm] : vms) {
+    // Resource InstanceIDs also occur in historical checkpoint configurations.
+    // Traverse from the one current configuration instead of joining any
+    // host-wide resource row whose identifier happens to contain the VM GUID.
+    const auto configuration = management_wmi::read_current_configuration(
+        services.Get(), source_id, deadline);
+    if (!configuration.error.empty()) return {"unavailable", configuration.error, "[]"};
+    const auto version = utf8(wmi_string(configuration.settings.Get(), L"Version"));
+    if (version.size() <= 64) vm.configuration_version = version;
+    const auto quantity = management_wmi::number(configuration.processor.Get(), L"VirtualQuantity");
+    if (quantity && *quantity <= 65'535) vm.vcpu_count = quantity;
+    const auto quantity_mb = management_wmi::number(configuration.memory.Get(), L"VirtualQuantity");
+    if (quantity_mb && *quantity_mb <= (UINT64_MAX / (1024 * 1024))) {
+      vm.memory_bytes = *quantity_mb * 1024 * 1024;
+    }
   }
 
   auto networks = execute_query(

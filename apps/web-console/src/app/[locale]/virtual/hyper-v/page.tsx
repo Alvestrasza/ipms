@@ -57,6 +57,11 @@ export default async function HyperVVirtualMachinesPage() {
         tenantId={tenant.id}
         canManage={hasPermission(tenant, "virtual_machines.operate")}
         canConsole={hasPermission(tenant, "virtual_machines.console.control")}
+        canManageCheckpoints={hasPermission(
+          tenant,
+          "virtual_machines.checkpoints.manage",
+        )}
+        canConfigure={hasPermission(tenant, "virtual_machines.configure")}
       />
     </ConsoleShell>
   );

@@ -77,6 +77,9 @@ def create_hyperv_action_job(*, virtual_machine, action: str, actor: str):
     ).first()
     if enrollment is None:
         raise ValidationError("The Hyper-V host Agent is unavailable.")
+    from .hyperv_management import management_job_conflicts
+    if management_job_conflicts(virtual_machine, enrollment):
+        raise ValidationError("A Hyper-V management operation is already active.")
     if HyperVVirtualMachineActionJob.objects.filter(
         enrollment=enrollment,
         vm_source_id=virtual_machine.source_id,

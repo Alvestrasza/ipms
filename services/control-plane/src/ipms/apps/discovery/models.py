@@ -1014,3 +1014,113 @@ class DiscoveryJob(models.Model):
 
     def __str__(self) -> str:
         return f"{self.connector_type}: {self.status}"
+
+
+class HyperVManagementJob(models.Model):
+    class Operation(models.TextChoices):
+        INSPECT = "inspect", "Inspect"
+        CHECKPOINT_CREATE = "checkpoint_create", "Create checkpoint"
+        CHECKPOINT_DELETE = "checkpoint_delete", "Delete checkpoint"
+        CHECKPOINT_APPLY = "checkpoint_apply", "Apply checkpoint"
+        SETTINGS_UPDATE = "settings_update", "Update settings"
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Queued"
+        DELIVERED = "delivered", "Delivered"
+        RUNNING = "running", "Running"
+        SUCCEEDED = "succeeded", "Succeeded"
+        FAILED = "failed", "Failed"
+        CANCELLED = "cancelled", "Cancelled"
+        REQUIRES_RECONCILIATION = "requires_reconciliation", "Requires reconciliation"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    request_id = models.UUIDField(unique=True)
+    request_digest = models.CharField(max_length=64)
+    input_digest = models.CharField(max_length=64)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.PROTECT, related_name="hyperv_management_jobs"
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="hyperv_management_jobs",
+    )
+    requested_by = models.CharField(max_length=255)
+    enrollment = models.ForeignKey(
+        "agent_pki.AgentEnrollment",
+        on_delete=models.PROTECT,
+        related_name="hyperv_management_jobs",
+    )
+    virtual_machine = models.ForeignKey(
+        HyperVVirtualMachine,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="management_jobs",
+    )
+    vm_source_id = models.CharField(max_length=64)
+    vm_name = models.CharField(max_length=256)
+    operation = models.CharField(max_length=32, choices=Operation.choices)
+    expected_revision = models.CharField(max_length=64, blank=True)
+    parameters = models.JSONField(default=dict)
+    status = models.CharField(
+        max_length=32, choices=Status.choices, default=Status.QUEUED
+    )
+    phase = models.CharField(max_length=64, blank=True)
+    progress = models.PositiveSmallIntegerField(null=True, blank=True)
+    result_code = models.CharField(max_length=64, blank=True)
+    result_digest = models.CharField(max_length=64, blank=True)
+    execution_lease_expires_at = models.DateTimeField(null=True, blank=True)
+    authority_revoked_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=("enrollment", "status"), name="hvmgmt_agent_state_idx")
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("enrollment", "vm_source_id"),
+                condition=Q(
+                    status__in=(
+                        "queued",
+                        "delivered",
+                        "running",
+                        "requires_reconciliation",
+                    )
+                ),
+                name="unique_active_hvmgmt_vm",
+            ),
+            models.CheckConstraint(
+                condition=Q(progress__isnull=True) | Q(progress__lte=100),
+                name="hvmgmt_progress_lte100",
+            ),
+        ]
+
+
+class HyperVManagementSnapshot(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.PROTECT, related_name="hyperv_management_snapshots"
+    )
+    enrollment = models.ForeignKey(
+        "agent_pki.AgentEnrollment",
+        on_delete=models.PROTECT,
+        related_name="hyperv_management_snapshots",
+    )
+    virtual_machine = models.OneToOneField(
+        HyperVVirtualMachine,
+        on_delete=models.CASCADE,
+        related_name="management_snapshot",
+    )
+    job = models.ForeignKey(
+        HyperVManagementJob, on_delete=models.PROTECT, related_name="snapshots"
+    )
+    revision = models.CharField(max_length=64)
+    document = models.JSONField(default=dict)
+    observed_at = models.DateTimeField()
+    updated_at = models.DateTimeField(auto_now=True)

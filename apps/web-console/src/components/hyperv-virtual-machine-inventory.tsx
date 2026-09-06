@@ -2,24 +2,31 @@
 
 import {
   Boxes,
+  Camera,
+  ChevronRight,
   CirclePause,
   CirclePlay,
   Cpu,
   MemoryStick,
   MonitorUp,
+  MoreHorizontal,
   Play,
   Power,
   PowerOff,
+  Settings,
   Square,
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { DialogPortal } from "@/components/dialog-portal";
 import type { ConsoleCopy } from "@/components/hyperv-console-dialog";
+import { HyperVManagementDialog } from "@/components/hyperv-management-dialog";
 import { StatusPill } from "@/components/status-pill";
+import { getHyperVManagementCopy } from "@/i18n/hyperv-management-copy";
 import { useLocale } from "@/i18n/locale-provider";
+import type { ManagementSection } from "@/lib/hyperv-management-types";
 import type {
   HyperVAction,
   HyperVActionJob,
@@ -106,6 +113,8 @@ export function HyperVVirtualMachineInventory({
   tenantId,
   canManage,
   canConsole,
+  canManageCheckpoints,
+  canConfigure,
 }: {
   copy: Copy;
   virtualMachines: HyperVVirtualMachine[];
@@ -113,10 +122,19 @@ export function HyperVVirtualMachineInventory({
   tenantId: string;
   canManage: boolean;
   canConsole: boolean;
+  canManageCheckpoints: boolean;
+  canConfigure: boolean;
 }) {
   const router = useRouter();
   const { locale } = useLocale();
+  const managementCopy = getHyperVManagementCopy(locale);
+  const menuElement = useRef<HTMLDivElement>(null);
+  const menuOpener = useRef<HTMLElement | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
+  const [management, setManagement] = useState<{
+    vm: HyperVVirtualMachine;
+    section: ManagementSection;
+  } | null>(null);
   const [pending, setPending] = useState<StopConfirmation | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -137,6 +155,13 @@ export function HyperVVirtualMachineInventory({
     };
   }, []);
 
+  useEffect(() => {
+    if (menu)
+      menuElement.current
+        ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
+        ?.focus();
+  }, [menu]);
+
   const running = virtualMachines.filter((vm) => vm.state === "running").length;
   const stopped = virtualMachines.filter((vm) => vm.state === "stopped").length;
   const memory = virtualMachines.reduce(
@@ -145,16 +170,14 @@ export function HyperVVirtualMachineInventory({
   );
 
   function openMenu(vm: HyperVVirtualMachine, x: number, y: number) {
-    const consoleAvailable = canConsole && vm.state === "running";
-    if (
-      busy ||
-      (!consoleAvailable && (!canManage || availableActions(vm).length === 0))
-    )
-      return;
+    menuOpener.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     setMenu({
       vm,
       x: Math.max(8, Math.min(x, window.innerWidth - 220)),
-      y: Math.max(8, Math.min(y, window.innerHeight - 190)),
+      y: Math.max(8, Math.min(y, window.innerHeight - 420)),
     });
   }
 
@@ -283,7 +306,7 @@ export function HyperVVirtualMachineInventory({
         </article>
       </section>
       <section
-        className="panel inventory-panel"
+        className="panel inventory-panel hyperv-vm-inventory"
         aria-labelledby="hyperv-vm-inventory-heading"
       >
         <div className="panel__header">
@@ -295,8 +318,8 @@ export function HyperVVirtualMachineInventory({
             <strong>{virtualMachines.length}</strong>
           </span>
         </div>
-        {(canManage || canConsole) && virtualMachines.length > 0 ? (
-          <p className="hyperv-context-hint">{copy.contextHint}</p>
+        {virtualMachines.length > 0 ? (
+          <p className="hyperv-context-hint">{managementCopy.hint}</p>
         ) : null}
         {error && !pending ? (
           <p className="form-error hyperv-action-message" role="alert">
@@ -321,32 +344,21 @@ export function HyperVVirtualMachineInventory({
                   <th>{copy.uptime}</th>
                   <th>{copy.configurationVersion}</th>
                   <th>{copy.ipAddresses}</th>
+                  <th>
+                    <span className="sr-only">{managementCopy.actions}</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {virtualMachines.map((vm) => (
                   <tr
                     key={vm.id}
-                    className={
-                      (canManage && availableActions(vm).length) ||
-                      (canConsole && vm.state === "running")
-                        ? "hyperv-vm-row--actionable"
-                        : undefined
-                    }
-                    tabIndex={
-                      (canManage && availableActions(vm).length) ||
-                      (canConsole && vm.state === "running")
-                        ? 0
-                        : undefined
-                    }
+                    className="hyperv-vm-row--actionable"
+                    tabIndex={0}
                     onContextMenu={(event) => {
-                      if (
-                        (canManage && availableActions(vm).length) ||
-                        (canConsole && vm.state === "running")
-                      ) {
-                        event.preventDefault();
-                        openMenu(vm, event.clientX, event.clientY);
-                      }
+                      event.preventDefault();
+                      event.currentTarget.focus();
+                      openMenu(vm, event.clientX, event.clientY);
                     }}
                     onKeyDown={(event) => {
                       if (
@@ -384,6 +396,24 @@ export function HyperVVirtualMachineInventory({
                         ? vm.ip_addresses.join(", ")
                         : "—"}
                     </td>
+                    <td>
+                      <button
+                        className="icon-button"
+                        type="button"
+                        aria-label={`${managementCopy.actions}: ${vm.name}`}
+                        aria-haspopup="menu"
+                        aria-expanded={menu?.vm.id === vm.id}
+                        onDoubleClick={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          const bounds =
+                            event.currentTarget.getBoundingClientRect();
+                          openMenu(vm, bounds.right - 220, bounds.bottom + 4);
+                        }}
+                      >
+                        <MoreHorizontal aria-hidden="true" size={18} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -399,12 +429,65 @@ export function HyperVVirtualMachineInventory({
       </section>
       {menu ? (
         <div
+          ref={menuElement}
           className="hyperv-context-menu"
           role="menu"
           aria-label={copy.actionMenu}
           style={{ left: menu.x, top: menu.y }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setMenu(null);
+              menuOpener.current?.focus();
+              return;
+            }
+            if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key))
+              return;
+            event.preventDefault();
+            const buttons = [
+              ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                "button:not(:disabled)",
+              ),
+            ];
+            const current =
+              document.activeElement instanceof HTMLButtonElement
+                ? buttons.indexOf(document.activeElement)
+                : -1;
+            const next =
+              event.key === "Home"
+                ? 0
+                : event.key === "End"
+                  ? buttons.length - 1
+                  : (current +
+                      (event.key === "ArrowDown" ? 1 : -1) +
+                      buttons.length) %
+                    buttons.length;
+            buttons[next]?.focus();
+          }}
         >
           <strong>{menu.vm.name}</strong>
+          {(Object.keys(managementCopy.sections) as ManagementSection[]).map(
+            (section) => (
+              <button
+                key={section}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setManagement({ vm: menu.vm, section });
+                  setMenu(null);
+                }}
+              >
+                {section === "settings" ? (
+                  <Settings aria-hidden="true" size={16} />
+                ) : section === "checkpoints" ? (
+                  <Camera aria-hidden="true" size={16} />
+                ) : (
+                  <ChevronRight aria-hidden="true" size={16} />
+                )}
+                <span>{managementCopy.sections[section]}</span>
+              </button>
+            ),
+          )}
           {canConsole && menu.vm.state === "running" ? (
             <button
               type="button"
@@ -436,6 +519,22 @@ export function HyperVVirtualMachineInventory({
               ))
             : null}
         </div>
+      ) : null}
+      {management ? (
+        <HyperVManagementDialog
+          key={`${tenantId}:${management.vm.id}`}
+          virtualMachine={management.vm}
+          initialSection={management.section}
+          tenantId={tenantId}
+          csrfToken={csrfToken}
+          canManageCheckpoints={canManageCheckpoints}
+          canConfigure={canConfigure}
+          onClose={() => {
+            setManagement(null);
+            menuOpener.current?.focus();
+            router.refresh();
+          }}
+        />
       ) : null}
       {pending ? (
         <DialogPortal>

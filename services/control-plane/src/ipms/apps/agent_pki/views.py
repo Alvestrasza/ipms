@@ -503,6 +503,9 @@ class AgentAdministrationDetailView(APIView):
 
         actor = _actor(request)
         with transaction.atomic():
+            from ipms.apps.tenancy.operations import require_active_tenant
+            from .hyperv_management import active_management_jobs
+            require_active_tenant(request.tenant.pk, lock=True)
             enrollment = get_object_or_404(
                 AgentEnrollment.objects.select_for_update().exclude(
                     status=AgentEnrollment.Status.REMOVED,
@@ -510,6 +513,8 @@ class AgentAdministrationDetailView(APIView):
                 id=pk,
                 tenant=request.tenant,
             )
+            if active_management_jobs(request.tenant.pk, enrollment_id=enrollment.pk).exists():
+                raise PublicApiError("agent_removal_operation_pending")
             server = WindowsServer.objects.select_for_update().filter(
                 tenant=request.tenant,
                 inventory_source=WindowsServer.InventorySource.AGENT,

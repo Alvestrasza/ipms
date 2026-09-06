@@ -127,6 +127,13 @@ def withdraw_identity_operations(user, *, reason):
     counts["console_inputs"], _ = HyperVConsoleInputEvent.objects.filter(
         session_id__in=session_ids
     ).delete()
+    from ipms.apps.agent_pki.hyperv_management import withdraw_management_jobs
+    from ipms.apps.discovery.models import HyperVManagementJob
+    tenant_ids = HyperVManagementJob.objects.filter(actor_id=user.pk).values_list("tenant_id", flat=True).distinct()
+    counts["management_jobs"] = sum(
+        withdraw_management_jobs(tenant_id=tenant_id, actor_id=user.pk, reason=reason)
+        for tenant_id in sorted(tenant_ids)
+    )
     return counts
 
 
@@ -208,6 +215,8 @@ def apply_tenant_status_change(tenant, previous_status, actor):
         jobs.filter(status__in=("delivered", "running")).update(
             authority_revoked_at=now, result_code="tenant_suspended"
         )
+    from ipms.apps.agent_pki.hyperv_management import withdraw_management_jobs
+    counts["management_jobs"] = withdraw_management_jobs(tenant_id=tenant.pk, reason="tenant_suspended")
     AuditEvent.objects.create(
         tenant=tenant,
         actor=actor,
