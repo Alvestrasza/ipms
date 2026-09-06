@@ -104,8 +104,36 @@ list refresh. The diagnostic rerun passed with all related GET responses 200 and
 no backend exception; this remains an unreproduced transient, not a claimed
 product fix.
 
-DEV deployment remains pending. Installing the feature does not change a live
-username or password. Tests use isolated synthetic identities; customer
-acceptance is separate. The existing cutover helper readiness SQL does not cover
+The existing cutover helper readiness SQL does not cover
 all historical/marker states, so the DEV preflight independently verifies every
 historically initialized tenant has an effective non-platform administrator.
+
+## DEV deployment evidence - 2026-09-06
+
+Implementation commit `89ecd396e23f01a81b1499c2434b941bd9bd2fcc` is published and
+running on the established DEV appliance as application **0.2.34**. This is not
+customer or production acceptance.
+
+- The exact-target helper built the candidate before the maintenance window,
+  verified quiescence, created a protected database/configuration backup, applied
+  migration `0005`, checked nginx, switched the release and restored services.
+- Pre/post comparison confirmed unchanged usernames, password hashes, account
+  flags, memberships and platform markers. Existing names have reservations.
+- A real HTTPS/CSRF login verified the account API, German account page and
+  tenant-user capability flags without any username/password mutation. Only the
+  newly created smoke-test session was logged out.
+- Actual broker process identity, secret-file isolation, Unix socket and its
+  restricted PostgreSQL permission matrix passed. The synthetic permission
+  probe's audit insert was rolled back and absence was confirmed.
+- Anonymous account/administration APIs remain denied; Django admin remains
+  unavailable. Services are healthy and the persistent cutover fence is clear.
+- Agent packages, global IPv4/IPv6 firewall allowances for TCP 9419 and the
+  loopback-only native console broker binding are unchanged. The isolated
+  PostgreSQL test database was removed by the test runner.
+
+The first transfer preflight rejected Windows archive line endings before any
+live action; generating the archive with `git -c core.autocrlf=false archive`
+resolved that packaging issue. The existing Django deployment check still emits
+`security.W004` because HSTS is not configured; this account feature does not
+change the appliance TLS/HSTS policy. Customer acceptance, PostgreSQL RLS,
+Keycloak integration and forced first-login password rotation remain separate.
