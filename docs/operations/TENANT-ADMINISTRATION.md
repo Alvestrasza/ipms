@@ -136,14 +136,14 @@ The deployment check retains the documented DEV-only HSTS warning for the
 self-signed portal certificate. No post-start application traceback or internal
 server-error marker was observed in the bounded acceptance window.
 
-### Existing tenant access requires an explicit recovery decision
+### Existing tenant recovery after explicit approval
 
-The existing DEV tenant has a historical **disabled** independent administrator
-membership. Therefore migration correctly records prior initialization and does
+At the initial cutover, the existing DEV tenant had a historical **disabled**
+independent administrator membership. Therefore migration correctly records prior initialization and does
 not reopen one-time provisioning. After separating the old shared platform
-login, that tenant currently has no active operational administrator. New tenant
+login, that tenant had no active operational administrator. New tenant
 creation and first-administrator setup are available normally, but access to this
-existing tenant requires an explicitly authorized recovery decision. No old
+existing tenant required an explicitly authorized recovery decision. No old
 account was reactivated and no password or tenant rights were reset implicitly.
 
 The subsequent deployment-helper correction now checks both active administrator
@@ -155,6 +155,25 @@ Complete that operator decision before migrating another populated deployment.
 The corrected helper passed six inert tests on Windows and Linux; its read-only
 PostgreSQL query also recognized the observed recovery condition on DEV. The
 helper correction does not modify the deployed application or account data.
+
+On 2026-09-06 the owner explicitly approved recovery with a **new**, separate
+tenant administrator. A guarded transaction created one ordinary local user,
+exactly one active tenant-administrator membership and a dedicated recovery audit
+event. It preserved the platform principal, disabled legacy account, their
+password hashes and memberships, and the historical initialization timestamp.
+No first-administrator provisioning fence was cleared or bypassed by the portal.
+
+Fresh live verification used the actual HTTPS endpoint with certificate
+verification, CSRF and cookie authentication. Sign-in, tenant users, inventory,
+Service Accounts and authenticated portal pages succeeded; platform and foreign
+tenant requests were denied. The verification session was logged out. A random
+initial password was retained only in a new root-owned 0600 file within a 0700
+directory for operator retrieval; it was not printed or published. This is an
+initial password, not an enforced single-use credential.
+
+The existing tenant's operational access is restored. Application 0.2.33,
+Agent versions and deployment configuration were unchanged; this was an approved
+account-configuration operation, not an application release.
 
 Test credentials and synthetic browser data were not copied to the DEV database.
 Customer acceptance, automatic tenant PKI provisioning and PostgreSQL row-level
