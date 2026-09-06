@@ -1,6 +1,6 @@
 # ADR-0013: Durable Hyper-V Management Operations
 
-- Status: Checkpoint/settings source implemented; native acceptance pending
+- Status: DEV 0.2.36 deployed; native inspection accepted; native writes pending
 - Decision date: 2026-09-06
 - Baseline application: 0.2.34; Windows Agent: 0.2.26
 
@@ -139,9 +139,14 @@ role removal. Never evict hosts or request cleanup of VM disks.
 
 The management channel, inspector, standard checkpoint execution and three
 typed settings sections are implemented and covered by native contract/guard,
-backend and isolated browser tests. This is not live provider acceptance. Native
-execution, restart/response-loss behavior and VM preservation still require
-separate evidence. Production checkpoint creation, migration and cluster-role
-execution remain unimplemented. A test VM is authorized; migration destination,
-storage and cluster test target are pending. See the operations document for
-fresh evidence and exact release/activation status.
+backend and isolated browser tests. Application 0.2.36 is deployed to the known
+DEV appliance and the selected host runs Windows Agent 0.2.27. Two native
+read-only inspections passed with the same configuration revision and exactly
+one audit event per lifecycle stage. A graceful shutdown request was rejected;
+the VM remains running unchanged. No settings or checkpoint writes were
+performed, and no hard-stop fallback was used. Native writes, restart/response-loss
+behavior and VM preservation still require separate evidence. Production
+checkpoint creation, migration and cluster-role execution remain unimplemented.
+A test VM is authorized; migration destination, storage and cluster test target
+are pending. See the operations document for fresh evidence and exact
+release/activation status.

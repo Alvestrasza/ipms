@@ -1,9 +1,11 @@
-# Hyper-V management: prepared DEV rollout and acceptance
+# Hyper-V management: DEV rollout and acceptance
 
-Status: prepared, not deployed or accepted by this document. Target application
-version: **0.2.36**. Required Windows Agent package: **0.2.27**. The exact Git
-commit and package SHA-256 must be recorded from the completed release build;
-neither is inferred from a version string. See [VERSIONING.md](VERSIONING.md).
+Status: application **0.2.36 deployed to the known DEV appliance** on 2026-09-06;
+read-only native inspection accepted on the explicitly authorized test VM.
+Settings/checkpoint writes, recovery fault injection, migration and cluster-role
+acceptance remain open. Required Windows Agent package: **0.2.27**; only the
+selected test host was upgraded. Immutable release identities and evidence are
+recorded below, separately from version labels. See [VERSIONING.md](VERSIONING.md).
 
 ## Delivered source boundaries
 
@@ -82,11 +84,13 @@ explicit target selection before implementation can be accepted.
   and unexpected typed fields are rejected. Journals contain only locally
   obtained relative provider-job references.
 
-## Prepared deployment procedure
+## Exact-target deployment procedure
 
 `scripts/deploy-hyperv-management-dev.sh` is an exact-target DEV cutover from
 application **0.2.34** to **0.2.36**, not a general installer or automatic updater.
 Do not run it against another environment or use it as production acceptance.
+This cutover has already completed on the known DEV appliance; do not rerun it
+against that now-upgraded runtime.
 
 Before execution, independently verify the appliance hostname, current resolved
 release and Git commit, service identities, absence of pending recovery state,
@@ -214,14 +218,56 @@ positioned table-scroll container. These layers do not prove live Hyper-V execut
 The Windows Agent 0.2.27 ZIP was built locally with exactly the three executables
 and three fixed installation/enrollment scripts. Package SHA-256:
 `e7deeb3794b34abf243e6f9a323e674f55781866ee0a62db3011c25eafc01814`.
-The package digest identifies this build; publication and DEV activation must
-be recorded independently. Full transport crash/response-loss/slow-flush fault
+The package digest identifies this build; publication and DEV activation are
+recorded separately below. Full transport crash/response-loss/slow-flush fault
 injection and protected journal I/O remain explicit acceptance gaps.
 
-Before functional acceptance, record the final combined native/backend/browser
-results, immutable package hash/version and DEV cutover evidence. Upgrade only
-the explicitly selected test host Agent, verify unique test-VM GUID and host,
-and perform one operation at a time. Check the actual Hyper-V result, persisted
+### DEV activation and bounded native acceptance (2026-09-06)
+
+- Published application 0.2.35 at commit
+  `257bcd8e0bb89318750ef84e8af07d49904ae54a`, including the immutable Windows
+  Agent 0.2.27 ZIP. The uploaded asset digest matched the local package digest.
+  That application version was not activated.
+- Published and activated application 0.2.36 at commit
+  `c4676e58e8ef2283dd44d2bf154c1155199528ca`. The appliance's resolved current
+  release and VERSION were checked independently after cutover. The native
+  Agent artifact remains the unchanged 0.2.27 package published with 0.2.35.
+- Created and checked the protected configuration/database backup in a
+  root-owned mode-0700 directory under the separate management-backup parent.
+  Applied `discovery.0022_hyperv_management`. All six application/console/proxy
+  services were active, no cutover fence remained, and the all-network TCP 9419
+  and loopback-only console-broker listeners were preserved. No account,
+  credential, tenant membership, nginx group or firewall change was made.
+  The pre-existing HSTS deployment-check warning remains unchanged.
+- Upgraded only the explicitly selected test host through the authenticated
+  tenant Agent lifecycle API. Its job completed with `updated`; subsequent
+  inventory and heartbeat confirmed Agent 0.2.27 online. No fleet rollout ran.
+- Two explicit native inspections of the same authorized VM completed with
+  `inspection_collected` and identical configuration revisions. They returned
+  current processor/memory/general settings, the running state and an empty
+  checkpoint collection. Uncollected device details remained `not-reported`.
+  Freshness expires after 60 seconds; persisted data is not indefinite proof of
+  current host state.
+- Each inspection had exactly one queue, delivery, claim and result audit event
+  at the later audit readback. The successful round trips exercise the normal
+  LocalSystem journal/transport path, not crash, duplicate-delivery or response-loss
+  recovery and not a substitute for the skipped elevated journal I/O test.
+- An explicit graceful shutdown attempt failed with `guest_shutdown_rejected`.
+  The VM remained running; the second inspection confirmed unchanged settings.
+  No hard stop, settings write, checkpoint create/apply/delete, migration or
+  cluster-role action followed. The settings write tests require a stopped VM;
+  hard power-off requires a separate user decision and is not an automatic
+  shutdown fallback.
+- Authenticated HTTPS/CSRF API checks and the deployed English Hyper-V page
+  returned the authorized VM, new action menu and application 0.2.36 footer.
+  This is live HTTP/SSR evidence, separate from the isolated browser/visual
+  checks above; it is not live browser acceptance of a native write.
+
+### Remaining acceptance
+
+For the remaining functional acceptance, reverify the selected VM identity,
+host Agent, release, current settings and authorization, and perform one
+operation at a time. Check the actual Hyper-V result, persisted
 job, expected postcondition, Agent journal behavior and unchanged tenant/console
 boundaries. Settings tests must preserve/reinstate the agreed test configuration;
 checkpoint apply/delete are destructive to VM state and require explicitly
