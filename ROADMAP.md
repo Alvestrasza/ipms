@@ -338,9 +338,13 @@ Migration from IPMS Appliance to IPMS Scale-Out must remain supported.
   boundaries. The 0.2.35 rollout stopped safely before runtime changes.
 - Application 0.2.36 is deployed to the known DEV appliance. The selected host
   runs Agent 0.2.27 and repeated native read-only inspection passed with stable
-  settings and one audit event per lifecycle stage. Graceful shutdown was rejected; the test
-  VM remains running unchanged. Settings/checkpoint write acceptance is still
-  open; no hard-stop fallback or wider Agent rollout was performed.
+  settings and one audit event per lifecycle stage. After graceful shutdown was
+  rejected, a separately approved hard stop enabled six successful native
+  settings jobs: notes, processor count and startup memory were each changed
+  and restored. All reported settings matched the baseline before restart;
+  fresh running inspection confirmed the original configuration. This bounded
+  acceptance used unchanged software and no wider Agent rollout. Rename, other
+  memory edits, checkpoint writes and recovery acceptance remain open.
 - Centered, localized settings/checkpoint dialogs support visible action menus,
   right-click and Shift+F10, exact destructive-action confirmation, persistent
   job progress and fail-closed uncertain outcomes.

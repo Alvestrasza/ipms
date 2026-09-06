@@ -1,11 +1,13 @@
 # Hyper-V management: DEV rollout and acceptance
 
 Status: application **0.2.36 deployed to the known DEV appliance** on 2026-09-06;
-read-only native inspection accepted on the explicitly authorized test VM.
-Settings/checkpoint writes, recovery fault injection, migration and cluster-role
-acceptance remain open. Required Windows Agent package: **0.2.27**; only the
-selected test host was upgraded. Immutable release identities and evidence are
-recorded below, separately from version labels. See [VERSIONING.md](VERSIONING.md).
+native inspection and bounded notes, processor-count and startup-memory writes
+accepted on the explicitly authorized test VM, with restoration and restart
+verified. Other settings, checkpoint writes, recovery fault injection, migration
+and cluster-role acceptance remain open. Required Windows Agent package:
+**0.2.27**; only the selected test host was upgraded. Immutable release identities
+and evidence are recorded below, separately from version labels.
+See [VERSIONING.md](VERSIONING.md).
 
 ## Delivered source boundaries
 
@@ -189,6 +191,10 @@ Bash recovery tests passed for direct failure, nested query failure, handled
 termination, active-work rejection and quiescent continuation; these exercise
 the extracted actual guard/recovery functions without touching services.
 
+The build, unit, static and isolated browser results below are previously
+recorded implementation evidence. They were not rerun during the second live
+acceptance pass; that pass required no software fix, build or new release.
+
 The final integrated MSVC Release build completed. **11 native CTest programs
 passed; one protected Windows journal I/O test was skipped** because the test
 process had no enabled administrator/LocalSystem token. The pure JSON/journal
@@ -254,16 +260,43 @@ injection and protected journal I/O remain explicit acceptance gaps.
   recovery and not a substitute for the skipped elevated journal I/O test.
 - An explicit graceful shutdown attempt failed with `guest_shutdown_rejected`.
   The VM remained running; the second inspection confirmed unchanged settings.
-  No hard stop, settings write, checkpoint create/apply/delete, migration or
-  cluster-role action followed. The settings write tests require a stopped VM;
-  hard power-off requires a separate user decision and is not an automatic
-  shutdown fallback.
+  This initial pass stopped at the approval gate: no hard stop or settings write
+  followed before the user separately authorized hard power-off. It was not an
+  automatic shutdown fallback. The subsequent bounded pass is recorded below.
 - Authenticated HTTPS/CSRF API checks and the deployed English Hyper-V page
   returned the authorized VM, new action menu and application 0.2.36 footer.
   This is live HTTP/SSR evidence, separate from the isolated browser/visual
   checks above; it is not live browser acceptance of a native write.
 
+### Second pass: bounded settings writes and restoration (2026-09-06)
+
+- With explicit approval for the same test VM, hard stop succeeded with
+  `state_confirmed`. A fresh native inspection confirmed the stopped state,
+  unchanged checkpoint policy 3 and an empty checkpoint collection.
+- Six native settings jobs each succeeded with `operation_confirmed`: notes
+  changed from empty to a temporary test marker and back; processor count from
+  4 to 3 and back; startup memory from 4096 to 3072 MiB and back. Dynamic memory
+  remained enabled, with minimum 512 MiB and maximum 4096 MiB unchanged.
+  Final audit readback found exactly one queue, delivery, claim and result event
+  per settings job; this does not qualify duplicate-delivery or crash recovery.
+- The exact preceding job ID, successful status and current settings were read
+  back between actions. Each restore returned the same stopped configuration
+  revision. Before starting, all reported settings, including untouched general,
+  processor/memory properties and automatic actions/delay, matched the original
+  baseline; the checkpoint collection remained empty.
+- Start succeeded with `state_confirmed`. Final fresh native inspection confirmed
+  the running state, original running configuration revision and baseline
+  settings, with `settings_update` false and no active management operation.
+- Application 0.2.36 at the recorded commit and host Agent 0.2.27 remained
+  unchanged. No other VM or fleet update was involved. This verifies the bounded
+  settings round trips and reported configuration restoration, not guest-service
+  health or live browser execution of the writes.
+
 ### Remaining acceptance
+
+VM rename, dynamic-memory mode changes, minimum/maximum memory edits and all
+checkpoint writes remain unaccepted. No disk, migration or cluster action was
+performed in either pass, and guest-service health was not assessed.
 
 For the remaining functional acceptance, reverify the selected VM identity,
 host Agent, release, current settings and authorization, and perform one
