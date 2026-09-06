@@ -1,13 +1,28 @@
 "use client";
 
-import { Pencil, Plus, Search, ShieldCheck, UserRound } from "lucide-react";
-import { type FormEvent, useDeferredValue, useMemo, useState } from "react";
+import {
+  KeyRound,
+  Pencil,
+  Plus,
+  Search,
+  ShieldCheck,
+  UserRound,
+} from "lucide-react";
+import {
+  type FormEvent,
+  useDeferredValue,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
+import type { IdentityAction } from "@/lib/account-security";
 import type { TenantRole } from "@/lib/auth-types";
 import type { ManagedTenantUser } from "@/lib/server-users";
 
 import { DialogPortal } from "./dialog-portal";
+import { IdentityActionDialog } from "./identity-action-dialog";
 
 type UserCopy = Dictionary["userAdministration"];
 type EditableRole = TenantRole;
@@ -53,6 +68,7 @@ export function UserAdministrationTable({
   tenantId,
   locale,
   copy,
+  accountCopy,
 }: {
   initialUsers: ManagedTenantUser[];
   canManage: boolean;
@@ -60,6 +76,7 @@ export function UserAdministrationTable({
   tenantId: string;
   locale: Locale;
   copy: UserCopy;
+  accountCopy: Dictionary["account"];
 }) {
   const [users, setUsers] = useState(initialUsers);
   const [search, setSearch] = useState("");
@@ -68,12 +85,19 @@ export function UserAdministrationTable({
     { mode: "create" } | { mode: "edit"; user: ManagedTenantUser } | null
   >(null);
   const [submitting, setSubmitting] = useState(false);
+  const pending = useRef(false);
+  const [identityDialog, setIdentityDialog] = useState<{
+    action: IdentityAction;
+    user: ManagedTenantUser;
+  } | null>(null);
+  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const dateFormatter = useMemo(
     () =>
       new Intl.DateTimeFormat(locale, {
         dateStyle: "medium",
         timeStyle: "short",
+        timeZone: "UTC",
       }),
     [locale],
   );
@@ -94,6 +118,7 @@ export function UserAdministrationTable({
     const response = await fetch(url, {
       method,
       credentials: "same-origin",
+      signal: AbortSignal.timeout(15_000),
       headers: {
         "Content-Type": "application/json",
         "X-CSRFToken": csrfToken,
@@ -113,9 +138,12 @@ export function UserAdministrationTable({
 
   async function createUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pending.current) return;
+    pending.current = true;
     setSubmitting(true);
     setError("");
-    const form = new FormData(event.currentTarget);
+    const element = event.currentTarget;
+    const form = new FormData(element);
     const expiration = String(form.get("expires_at") ?? "");
     try {
       const created = await request("/api/v1/auth/users/", "POST", {
@@ -136,13 +164,18 @@ export function UserAdministrationTable({
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : copy.actionFailed);
     } finally {
+      const password = element.elements.namedItem("initial_password");
+      if (password instanceof HTMLInputElement) password.value = "";
+      form.delete("initial_password");
+      pending.current = false;
       setSubmitting(false);
     }
   }
 
   async function updateUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (dialog?.mode !== "edit") return;
+    if (dialog?.mode !== "edit" || pending.current) return;
+    pending.current = true;
     setSubmitting(true);
     setError("");
     const form = new FormData(event.currentTarget);
@@ -166,6 +199,7 @@ export function UserAdministrationTable({
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : copy.actionFailed);
     } finally {
+      pending.current = false;
       setSubmitting(false);
     }
   }
@@ -181,6 +215,11 @@ export function UserAdministrationTable({
       className="inventory-panel agent-admin-panel"
       aria-labelledby="user-table-heading"
     >
+      {notice ? (
+        <p role="status" className="preview-notice preview-notice--live">
+          {notice}
+        </p>
+      ) : null}
       <div className="panel__header agent-admin-toolbar">
         <div>
           <span>{copy.tableHeading}</span>
@@ -221,8 +260,8 @@ export function UserAdministrationTable({
               <th>{copy.authentication}</th>
               <th>{copy.role}</th>
               <th>{copy.status}</th>
-              <th>{copy.expires}</th>
-              <th>{copy.lastLogin}</th>
+              <th>{copy.expires} (UTC)</th>
+              <th>{copy.lastLogin} (UTC)</th>
               <th>{copy.actions}</th>
             </tr>
           </thead>
@@ -272,6 +311,32 @@ export function UserAdministrationTable({
                     >
                       <Pencil aria-hidden="true" size={15} />
                     </button>
+                    <button
+                      className="icon-button icon-button--compact"
+                      type="button"
+                      disabled={!canManage || !user.can_rename}
+                      aria-label={`${accountCopy.rename} ${user.username}`}
+                      title={accountCopy.rename}
+                      onClick={() => {
+                        setNotice("");
+                        setIdentityDialog({ action: "rename", user });
+                      }}
+                    >
+                      <UserRound size={15} aria-hidden="true" />
+                    </button>
+                    <button
+                      className="icon-button icon-button--compact"
+                      type="button"
+                      disabled={!canManage || !user.can_reset_password}
+                      aria-label={`${accountCopy.resetPassword} ${user.username}`}
+                      title={accountCopy.resetPassword}
+                      onClick={() => {
+                        setNotice("");
+                        setIdentityDialog({ action: "password", user });
+                      }}
+                    >
+                      <KeyRound size={15} aria-hidden="true" />
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -283,6 +348,34 @@ export function UserAdministrationTable({
         <p className="table-empty">{copy.noUsers}</p>
       ) : null}
 
+      {identityDialog ? (
+        <IdentityActionDialog
+          action={identityDialog.action}
+          username={identityDialog.user.username}
+          endpoint={`/api/v1/auth/users/${identityDialog.user.membership_id}/${identityDialog.action === "rename" ? "rename" : "password"}/`}
+          tenantId={tenantId}
+          csrfToken={csrfToken}
+          administrative
+          copy={accountCopy}
+          onClose={() => setIdentityDialog(null)}
+          onCompleted={(payload) => {
+            if (identityDialog.action === "rename") {
+              const updated = (payload as { user: ManagedTenantUser }).user;
+              setUsers((current) =>
+                current.map((user) =>
+                  user.membership_id === updated.membership_id ? updated : user,
+                ),
+              );
+            }
+            setNotice(
+              identityDialog.action === "rename"
+                ? accountCopy.renamed
+                : accountCopy.reset,
+            );
+            setIdentityDialog(null);
+          }}
+        />
+      ) : null}
       {dialog ? (
         <DialogPortal>
           <div className="modal-backdrop">

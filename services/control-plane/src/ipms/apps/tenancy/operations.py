@@ -7,6 +7,7 @@ dispatchers use the same tenant-first order; no network work occurs under it.
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from .models import Tenant
@@ -45,6 +46,88 @@ def withdraw_agent_job(job, *, code="requester_permission_revoked"):
         job.completed_at = now
         fields.extend(("status", "completed_at"))
     job.save(update_fields=fields)
+
+
+def withdraw_identity_operations(user, *, reason):
+    """Withdraw old-name authority without rewriting history or granting access.
+
+    The identity service owns the surrounding transaction and has locked the
+    relevant tenants in ID order, then the users. Call before changing username.
+    Already executing remote work cannot be recalled; Agent result settlement
+    stays available, but the durable marker prevents another offer/download.
+    """
+    from ipms.apps.agent_pki.models import (
+        AgentLifecycleJob,
+        WindowsAgentDeployment,
+        WindowsAgentDeploymentSecret,
+    )
+    from ipms.apps.discovery.models import (
+        DiscoveryJob,
+        HyperVConsoleInputEvent,
+        HyperVConsoleSession,
+        HyperVVirtualMachineActionJob,
+    )
+
+    if not transaction.get_connection().in_atomic_block:
+        raise ValidationError("identity_transaction_required")
+    if reason not in {"username_changed", "password_changed", "password_reset"}:
+        raise ValidationError("identity_withdrawal_reason_invalid")
+    if not user.pk or not user.get_username():
+        raise ValidationError("identity_withdrawal_user_invalid")
+    actor = user.get_username()
+    now = timezone.now()
+    counts = {
+        "discovery_jobs": DiscoveryJob.objects.filter(
+            requested_by=actor,
+            status="queued",
+        ).update(status="failed", error_code=reason, completed_at=now),
+    }
+    deployments = WindowsAgentDeployment.objects.filter(
+        requested_by=actor, status="queued"
+    )
+    deployment_ids = list(deployments.values_list("id", flat=True))
+    counts["deployments"] = deployments.update(
+        status="failed", error_code=reason, completed_at=now
+    )
+    WindowsAgentDeploymentSecret.objects.filter(
+        deployment_id__in=deployment_ids
+    ).delete()
+    for model, label in (
+        (AgentLifecycleJob, "lifecycle_jobs"),
+        (HyperVVirtualMachineActionJob, "vm_actions"),
+    ):
+        jobs = model.objects.filter(
+            requested_by=actor,
+            status__in=("queued", "delivered", "running"),
+            authority_revoked_at__isnull=True,
+        )
+        queued_count = jobs.filter(status="queued").update(
+            status="cancelled",
+            authority_revoked_at=now,
+            result_code=reason,
+            completed_at=now,
+        )
+        settled_count = jobs.filter(status__in=("delivered", "running")).update(
+            authority_revoked_at=now,
+            result_code=reason,
+        )
+        counts[label] = queued_count + settled_count
+    sessions = HyperVConsoleSession.objects.filter(
+        Q(owner_id=user.pk) | Q(requested_by=actor),
+        status__in=("requested", "active"),
+    )
+    # Lock session rows before removing inputs, matching the input producer.
+    session_ids = list(sessions.select_for_update().values_list("id", flat=True))
+    counts["console_sessions"] = sessions.update(
+        status="closed",
+        failure_code=reason,
+        closed_at=now,
+        frame_png=b"",
+    )
+    counts["console_inputs"], _ = HyperVConsoleInputEvent.objects.filter(
+        session_id__in=session_ids
+    ).delete()
+    return counts
 
 
 @transaction.atomic

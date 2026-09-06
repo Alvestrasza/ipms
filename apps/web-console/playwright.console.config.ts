@@ -7,6 +7,7 @@ export default defineConfig({
     "hyperv-native-console.spec.ts",
     "service-accounts.spec.ts",
     "platform-tenants.spec.ts",
+    "account-security.spec.ts",
   ],
   timeout: 60_000,
   workers: 1,

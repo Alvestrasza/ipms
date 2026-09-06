@@ -16,9 +16,11 @@ import { ThemeToggle } from "./theme-toggle";
 export async function PlatformShell({
   session,
   children,
+  activeSection = "tenants",
 }: {
   session: AuthenticatedSession;
   children: React.ReactNode;
+  activeSection?: "tenants" | "account";
 }) {
   const locale = await resolveLocale();
   const dictionary = getDictionary(locale);
@@ -33,8 +35,8 @@ export async function PlatformShell({
           <p className="sidebar__section-label">{dictionary.platform.scope}</p>
           {canManage ? (
             <Link
-              className="nav-item nav-item--active"
-              aria-current="page"
+              className={`nav-item ${activeSection === "tenants" ? "nav-item--active" : ""}`}
+              aria-current={activeSection === "tenants" ? "page" : undefined}
               href={`/${locale}/administration/tenants` as Route}
             >
               <Building2 size={18} aria-hidden="true" />
@@ -59,7 +61,13 @@ export async function PlatformShell({
           <div className="topbar__tools">
             <LanguageSwitcher />
             <ThemeToggle />
-            <div className="user-summary">
+            <Link
+              className="user-summary user-summary--link"
+              href={`/${locale}/account`}
+              aria-label={dictionary.account.title}
+              title={dictionary.account.title}
+              aria-current={activeSection === "account" ? "page" : undefined}
+            >
               <CircleUserRound size={21} aria-hidden="true" />
               <span>
                 <strong>
@@ -69,7 +77,7 @@ export async function PlatformShell({
                 </strong>
                 <small>{session.user.display_name}</small>
               </span>
-            </div>
+            </Link>
             <LogoutButton csrfToken={session.csrf_token} />
           </div>
         </header>

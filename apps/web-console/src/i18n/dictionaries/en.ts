@@ -190,7 +190,7 @@ export const en = {
     infrastructure: "Infrastructure",
     agents: "Agents",
     soon: "Soon",
-    version: "IPMS v0.2.33 development",
+    version: "IPMS v0.2.34 development",
   },
   linuxSystems: {
     liveData: "Live tenant-scoped Linux inventory from enrolled Agents.",
@@ -397,6 +397,58 @@ export const en = {
     actionFailed:
       "The request could not be completed. Refresh to check its outcome before retrying.",
     invalid: "Check the account values and password requirements.",
+  },
+  account: {
+    title: "My account",
+    eyebrow: "Account security",
+    description:
+      "Manage your own local sign-in identity. Account settings do not grant access to tenant infrastructure.",
+    back: "Back to console",
+    username: "Username",
+    rename: "Rename username",
+    newUsername: "New username",
+    changePassword: "Change password",
+    resetPassword: "Reset password",
+    currentPassword: "Current password",
+    administratorPassword: "Your administrator password",
+    administratorPasswordHint:
+      "Enter your own password to authorize this change, not the target user's password.",
+    newPassword: "New password",
+    confirmPassword: "Confirm new password",
+    passwordHint:
+      "Use a strong, unique password with at least 12 characters. Passwords are never returned or displayed after submission.",
+    renameWarning:
+      "The new username applies to this account everywhere. Browser sign-ins remain active, but its console sessions close and pending operations are withdrawn. Already dispatched work cannot be recalled.",
+    passwordWarning:
+      "Changing your password signs you out on every device, closes your console sessions and withdraws pending operations. You must sign in again with the new password.",
+    resetWarning:
+      "This sets a new password for the selected user and ends all of that user's sign-ins and console sessions. Pending operations are withdrawn. Share the new password through a separate secure channel; your own sign-in stays active.",
+    renamed:
+      "The username was changed. Use the new username for future sign-ins.",
+    reset:
+      "The password was reset and the user's sign-ins were invalidated. Deliver the new password through a separate secure channel.",
+    passwordChanged:
+      "Your password was changed. Sign in again with your new password.",
+    cancel: "Cancel",
+    unavailable: "Account settings are currently unavailable.",
+    failed:
+      "The request could not be completed. Its result may be uncertain; verify the account before retrying.",
+    passwordMismatch:
+      "The new passwords do not match. Re-enter the password fields.",
+    invalid: "Check the entered values and password requirements.",
+    weakPassword: "The new password does not meet the password requirements.",
+    currentPasswordInvalid: "Your current password could not be verified.",
+    forbidden: "You are not authorized to change this account.",
+    usernameUnavailable: "This username is unavailable.",
+    sharedIdentityProtected:
+      "This account has memberships in other tenants. Only its owner can change its global sign-in identity.",
+    externalIdentityManaged:
+      "This account is managed by an external identity provider. Change its sign-in details there.",
+    selfPasswordResetDenied: "Use My account to change your own password.",
+    userInactive: "This account is inactive and cannot be changed here.",
+    userNotFound: "This account is no longer available in this tenant.",
+    rateLimited:
+      "Too many account changes were attempted. Wait at least one minute before trying again; the request will not be retried automatically.",
   },
   userAdministration: {
     title: "User administration",

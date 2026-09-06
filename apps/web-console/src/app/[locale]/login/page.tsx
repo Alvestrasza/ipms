@@ -11,8 +11,13 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: dictionary.login.title };
 }
 
-export default async function LocalizedLoginPage() {
+export default async function LocalizedLoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ notice?: string }>;
+}) {
   const dictionary = getDictionary(await resolveLocale());
+  const { notice } = await searchParams;
   return (
     <main className="login-page">
       <section
@@ -47,6 +52,11 @@ export default async function LocalizedLoginPage() {
           <p className="eyebrow">{dictionary.login.console}</p>
           <h2 id="sign-in-heading">{dictionary.login.heading}</h2>
           <p>{dictionary.login.prompt}</p>
+          {notice === "password-changed" ? (
+            <p role="status" className="preview-notice preview-notice--live">
+              {dictionary.account.passwordChanged}
+            </p>
+          ) : null}
           <LoginForm />
           <small>{dictionary.login.credentialNote}</small>
         </div>

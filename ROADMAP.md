@@ -338,6 +338,12 @@ Migration from IPMS Appliance to IPMS Scale-Out must remain supported.
 
 ### Phase 1: Platform and Bootstrap
 
+- Application 0.2.34 adds local account self-service, tenant-scoped renaming and
+  password reset, current-password confirmation, session invalidation and
+  permanent retired-name reservations. External and cross-tenant identities
+  remain protected. See [Account management](docs/operations/ACCOUNT-MANAGEMENT.md)
+  for verification and the forward-only deployment boundary.
+
 - Application 0.2.33 introduces platform-only **Administration > Tenants**,
   explicit platform principals without tenant membership, separate initial
   tenant administrators, tenant suspension/reactivation and reauthorization

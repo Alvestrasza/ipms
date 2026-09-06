@@ -9,7 +9,12 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-IPMS application build `0.2.33` adds **Administration → Tenants** and separates
+IPMS application build `0.2.34` adds local account renaming, administrative
+password reset and **My account** password changes, with reauthentication,
+session invalidation and tenant isolation. See [Account management](docs/operations/ACCOUNT-MANAGEMENT.md)
+for scope, session behavior and verification status.
+
+Build `0.2.33` added **Administration → Tenants** and separates
 platform administration from tenant operations. Platform accounts have no
 tenant membership; a separate tenant administrator manages infrastructure and
 Service Accounts. See [Tenant administration](docs/operations/TENANT-ADMINISTRATION.md)

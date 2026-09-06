@@ -70,5 +70,16 @@ decommissioned tenants. No Agent PKI, gateway trust or live host is created.
 The browser timezone is Europe/Berlin; run the standalone Node helper with
 `TZ=UTC` to verify deterministic UTC table timestamps across server and browser.
 
+The account-security suite uses disposable, separately seeded identities. Real
+API workflows cover own username/password changes for tenant, platform,
+unassigned and suspended-tenant accounts; actor-password reauthentication;
+preserved sessions after rename; invalidated sessions and successful new-password
+sign-in after password change; tenant-admin rename/reset; protected shared and
+external identities; localized centered dialogs; and password-field clearing.
+Two additional browser cases inject only transport-boundary failures (HTTP 429
+and an ambiguous network abort) to verify static messages and no automatic retry.
+The suite does not exercise nginx's real rate counter, a real OIDC provider or
+live tenant credentials. No forced-next-login-password-change workflow is claimed.
+
 Run deterministic native state and dependency integrity tests with
 `node --test tests/native-console-channel.test.mjs tests/guacamole-artifact.test.mjs`.

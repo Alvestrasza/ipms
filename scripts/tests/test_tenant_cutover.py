@@ -6,7 +6,9 @@ import subprocess
 import unittest
 
 
-SOURCE = (Path(__file__).resolve().parents[1] / "deploy-tenancy-dev.sh").read_text()
+SOURCE = (Path(__file__).resolve().parents[1] / os.environ.get(
+    "IPMS_TEST_CUTOVER_SCRIPT", "deploy-tenancy-dev.sh",
+)).read_text()
 BASH = os.environ.get("IPMS_TEST_BASH") or shutil.which("bash")
 
 

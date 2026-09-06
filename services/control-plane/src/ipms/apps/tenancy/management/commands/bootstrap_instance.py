@@ -5,6 +5,12 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.views.decorators.debug import sensitive_variables
+from ipms.apps.core.exceptions import PublicApiError
+from ipms.apps.tenancy.identity import (
+    create_local_user,
+    reserve_username,
+    validate_username,
+)
 
 from ipms.apps.tenancy.models import PlatformAdministrator, Tenant, TenantMembership
 
@@ -36,16 +42,29 @@ class Command(BaseCommand):
             defaults={"display_name": options["tenant_name"]},
         )
         user_model = get_user_model()
-        user, created = user_model.objects.get_or_create(
-            username=options["admin_username"],
+        try:
+            username = validate_username(options["admin_username"])
+        except PublicApiError:
+            raise CommandError("The bootstrap username is invalid.") from None
+        user = (
+            user_model.objects.select_for_update(no_key=True)
+            .filter(username=username)
+            .first()
         )
-        if created:
-            validate_password(password, user=user)
-            user.set_password(password)
-            user.is_active = True
-            user.is_staff = False
-            user.is_superuser = False
-            user.save()
+        if user is None:
+            if not 12 <= len(password) <= 1024:
+                raise CommandError("The bootstrap password does not meet the policy.")
+            validate_password(password, user=user_model(username=username))
+            try:
+                user = create_local_user(
+                    username=username,
+                    password=password,
+                    is_active=True,
+                    is_staff=False,
+                    is_superuser=False,
+                )
+            except PublicApiError:
+                raise CommandError("The bootstrap username is unavailable.") from None
             PlatformAdministrator.objects.create(user=user)
         elif (
             not PlatformAdministrator.objects.filter(user=user).exists()
@@ -57,6 +76,8 @@ class Command(BaseCommand):
             raise CommandError(
                 "The bootstrap username is already assigned to another identity; no privileges were changed."
             )
+        else:
+            reserve_username(user.username, user=user, current=True)
         self.stdout.write(
             self.style.SUCCESS(
                 "IPMS instance bootstrap completed; no password was printed."

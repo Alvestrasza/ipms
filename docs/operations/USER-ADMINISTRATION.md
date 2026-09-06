@@ -3,6 +3,10 @@
 IPMS 0.2.13 introduces tenant-scoped user administration under
 **Administration > Users**.
 
+Application 0.2.34 adds separate username and password actions for eligible local
+identities, plus self-service under **My account**. See [Account management](ACCOUNT-MANAGEMENT.md)
+for reauthentication, cross-tenant restrictions and session behavior.
+
 ## Available operations
 
 An actor with `users.view` can list the selected tenant's memberships. An actor

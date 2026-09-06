@@ -204,7 +204,7 @@ export const de = {
     infrastructure: "Infrastruktur",
     agents: "Agenten",
     soon: "Bald",
-    version: "IPMS v0.2.33 Entwicklung",
+    version: "IPMS v0.2.34 Entwicklung",
   },
   linuxSystems: {
     liveData:
@@ -415,6 +415,60 @@ export const de = {
     actionFailed:
       "Die Anfrage konnte nicht abgeschlossen werden. Prüfe ihr Ergebnis durch Aktualisieren, bevor du sie wiederholst.",
     invalid: "Prüfe die Kontodaten und Passwortanforderungen.",
+  },
+  account: {
+    title: "Mein Konto",
+    eyebrow: "Kontosicherheit",
+    description:
+      "Verwalte deine eigenen lokalen Anmeldedaten. Kontoeinstellungen erteilen keinen Zugriff auf die Infrastruktur eines Mandanten.",
+    back: "Zurück zur Konsole",
+    username: "Benutzername",
+    rename: "Benutzernamen ändern",
+    newUsername: "Neuer Benutzername",
+    changePassword: "Passwort ändern",
+    resetPassword: "Passwort zurücksetzen",
+    currentPassword: "Aktuelles Passwort",
+    administratorPassword: "Dein Administratorpasswort",
+    administratorPasswordHint:
+      "Gib zur Bestätigung dein eigenes Passwort ein, nicht das Passwort des Zielbenutzers.",
+    newPassword: "Neues Passwort",
+    confirmPassword: "Neues Passwort bestätigen",
+    passwordHint:
+      "Verwende ein starkes, einzigartiges Passwort mit mindestens 12 Zeichen. Passwörter werden nach dem Absenden weder zurückgegeben noch angezeigt.",
+    renameWarning:
+      "Der neue Benutzername gilt überall für dieses Konto. Browser-Anmeldungen bleiben bestehen, Konsolensitzungen werden jedoch geschlossen und ausstehende Vorgänge zurückgezogen. Bereits übermittelte Aktionen können nicht zurückgerufen werden.",
+    passwordWarning:
+      "Die Passwortänderung meldet dich auf allen Geräten ab, schließt deine Konsolensitzungen und zieht ausstehende Vorgänge zurück. Du musst dich mit dem neuen Passwort erneut anmelden.",
+    resetWarning:
+      "Für den ausgewählten Benutzer wird ein neues Passwort gesetzt. Alle seine Anmeldungen und Konsolensitzungen werden beendet und ausstehende Vorgänge zurückgezogen. Übermittle das neue Passwort über einen separaten sicheren Kanal; deine eigene Anmeldung bleibt bestehen.",
+    renamed:
+      "Der Benutzername wurde geändert. Verwende ihn bei künftigen Anmeldungen.",
+    reset:
+      "Das Passwort wurde zurückgesetzt und die Anmeldungen des Benutzers wurden ungültig. Übermittle das neue Passwort über einen separaten sicheren Kanal.",
+    passwordChanged:
+      "Dein Passwort wurde geändert. Melde dich mit dem neuen Passwort erneut an.",
+    cancel: "Abbrechen",
+    unavailable: "Die Kontoeinstellungen sind derzeit nicht verfügbar.",
+    failed:
+      "Die Anfrage konnte nicht abgeschlossen werden. Ihr Ergebnis ist möglicherweise unklar; prüfe das Konto vor einer Wiederholung.",
+    passwordMismatch:
+      "Die neuen Passwörter stimmen nicht überein. Gib die Passwortfelder erneut ein.",
+    invalid: "Prüfe die eingegebenen Werte und Passwortanforderungen.",
+    weakPassword: "Das neue Passwort erfüllt die Passwortanforderungen nicht.",
+    currentPasswordInvalid:
+      "Dein aktuelles Passwort konnte nicht bestätigt werden.",
+    forbidden: "Du bist nicht berechtigt, dieses Konto zu ändern.",
+    usernameUnavailable: "Dieser Benutzername ist nicht verfügbar.",
+    sharedIdentityProtected:
+      "Dieses Konto besitzt Mitgliedschaften in anderen Mandanten. Nur sein Besitzer kann die globalen Anmeldedaten ändern.",
+    externalIdentityManaged:
+      "Dieses Konto wird von einem externen Identitätsanbieter verwaltet. Ändere die Anmeldedaten dort.",
+    selfPasswordResetDenied: "Ändere dein eigenes Passwort unter Mein Konto.",
+    userInactive:
+      "Dieses Konto ist inaktiv und kann hier nicht geändert werden.",
+    userNotFound: "Dieses Konto ist in diesem Mandanten nicht mehr verfügbar.",
+    rateLimited:
+      "Es wurden zu viele Kontoänderungen versucht. Warte mindestens eine Minute vor einem neuen Versuch; die Anfrage wird nicht automatisch wiederholt.",
   },
   userAdministration: {
     title: "Benutzerverwaltung",

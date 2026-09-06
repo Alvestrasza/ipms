@@ -91,6 +91,15 @@ test("platform account lands without a tenant and cannot open operational routes
 test("real platform tenant create edit suspend reactivate and one-time separate administrator setup", async ({
   page,
 }) => {
+  const failedReads: string[] = [];
+  page.on("response", (response) => {
+    if (
+      response.request().method() === "GET" &&
+      response.url().includes("/api/v1/platform/tenants/") &&
+      response.status() >= 400
+    )
+      failedReads.push(`GET platform tenants: ${response.status()}`);
+  });
   await page.setViewportSize({ width: 1600, height: 1000 });
   await login(page, "e2e-platform", undefined, platformUrl);
   await page
@@ -161,6 +170,7 @@ test("real platform tenant create edit suspend reactivate and one-time separate 
     .click();
   await expect(
     row.getByRole("cell", { name: "Suspended", exact: true }),
+    `Platform list refresh failures: ${JSON.stringify(failedReads)}`,
   ).toBeVisible();
   await row
     .getByRole("button", {

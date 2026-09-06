@@ -174,3 +174,23 @@ class ExternalIdentity(models.Model):
 
     def __str__(self) -> str:
         return f"{self.issuer}#{self.subject}"
+
+    def save(self, *args, **kwargs):
+        # Identity changes and external-provider enrollment share the user lock.
+        # A local password operation must never race an external identity binding.
+        with transaction.atomic():
+            get_user_model().objects.select_for_update(no_key=True).get(pk=self.user_id)
+            return super().save(*args, **kwargs)
+
+
+class UsernameReservation(models.Model):
+    """Permanent normalized-name tombstone, including deleted/renamed identities."""
+
+    normalized_username = models.CharField(max_length=450, primary_key=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="ipms_username_reservations",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)

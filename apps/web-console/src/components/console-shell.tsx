@@ -1,4 +1,5 @@
 import { Bell, CircleUserRound, Search } from "lucide-react";
+import Link from "next/link";
 
 import { getDictionary } from "@/i18n/dictionaries";
 import { resolveLocale } from "@/i18n/server";
@@ -102,13 +103,18 @@ export async function ConsoleShell({
             >
               <Bell aria-hidden="true" size={18} />
             </button>
-            <div className="user-summary">
+            <Link
+              className="user-summary user-summary--link"
+              href={`/${locale}/account`}
+              aria-label={dictionary.account.title}
+              title={dictionary.account.title}
+            >
               <CircleUserRound aria-hidden="true" size={24} strokeWidth={1.6} />
               <span>
                 <strong>{roleLabels[tenant.role]}</strong>
                 <small>{session.user.display_name}</small>
               </span>
-            </div>
+            </Link>
             <LogoutButton csrfToken={session.csrf_token} />
           </div>
         </header>

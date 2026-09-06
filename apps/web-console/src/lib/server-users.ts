@@ -20,6 +20,8 @@ export type ManagedTenantUser = {
   last_login: string | null;
   authentication_source: "local" | "oidc" | "hybrid";
   manageable: boolean;
+  can_rename: boolean;
+  can_reset_password: boolean;
 };
 
 export async function getManagedTenantUsers(tenantId: string) {

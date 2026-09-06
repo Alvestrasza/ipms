@@ -59,6 +59,7 @@ export default async function UserAdministrationPage() {
         tenantId={tenant.id}
         locale={locale}
         copy={dictionary.userAdministration}
+        accountCopy={dictionary.account}
       />
     </ConsoleShell>
   );

@@ -1,6 +1,7 @@
 import threading
 import time
 import uuid
+from importlib import import_module
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from pathlib import Path
@@ -12,7 +13,7 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.db import close_old_connections, connection, transaction
+from django.db import close_old_connections, connection, migrations, transaction
 from django.db.migrations.executor import MigrationExecutor
 from django.test import Client, TestCase, TransactionTestCase
 from django.utils import timezone
@@ -416,6 +417,13 @@ class PlatformMigrationTests(TransactionTestCase):
     ):
         executor = MigrationExecutor(connection)
         restore_targets = executor.loader.graph.leaf_nodes()
+        # Only this disposable migration fixture may remove the later ledger.
+        # Production migration 0005 remains deliberately irreversible.
+        ledger_step = import_module(
+            "ipms.apps.tenancy.migrations.0005_username_reservation"
+        ).Migration.operations[-1]
+        ledger_reverse = ledger_step.reverse_code
+        ledger_step.reverse_code = migrations.RunPython.noop
         old_target = [("tenancy", "0003_tenantmembership_expires_at_and_more")]
         new_target = [("tenancy", "0004_platformadministrator_and_more")]
         try:
@@ -484,7 +492,10 @@ class PlatformMigrationTests(TransactionTestCase):
             self.assertFalse(Memberships.objects.filter(user_id=legacy.pk).exists())
             self.assertTrue(Memberships.objects.filter(user_id=independent.pk).exists())
         finally:
-            MigrationExecutor(connection).migrate(restore_targets)
+            try:
+                MigrationExecutor(connection).migrate(restore_targets)
+            finally:
+                ledger_step.reverse_code = ledger_reverse
 
 
 @skipUnless(connection.vendor == "postgresql", "Requires real PostgreSQL row locks")

@@ -18,6 +18,7 @@ from ipms.apps.audit.models import AuditEvent
 from ipms.apps.core.exceptions import PublicApiError
 
 from .access import tenants_for_user
+from .identity import create_local_user
 from .models import Tenant, TenantMembership
 from .permissions import HasSelectedTenantAccess, HasTenantPermission
 from .rbac import (
@@ -206,7 +207,7 @@ def _audit_user_change(request, *, action: str, membership, outcome: str, detail
         outcome=outcome,
         correlation_id=request.correlation_id,
         source_ip=_source_ip(request),
-        details=details or {},
+        details={"actor_user_id": str(request.user.pk), **(details or {})},
     )
 
 
@@ -227,7 +228,10 @@ class TenantUserListCreateView(APIView):
 
     def get(self, request):
         return Response(
-            [tenant_user_payload(item) for item in _membership_queryset(request)]
+            [
+                tenant_user_payload(item, actor=request.user)
+                for item in _membership_queryset(request)
+            ]
         )
 
     @sensitive_variables()
@@ -245,7 +249,7 @@ class TenantUserListCreateView(APIView):
         try:
             with transaction.atomic():
                 _lock_membership_tenant(request)
-                user = user_model.objects.create_user(
+                user = create_local_user(
                     username=data["username"],
                     password=data["initial_password"],
                     first_name=data.get("first_name", ""),
@@ -268,7 +272,10 @@ class TenantUserListCreateView(APIView):
         except IntegrityError as exc:
             raise PublicApiError("username_unavailable", status_code=409) from exc
         membership = _membership_queryset(request).get(id=membership.id)
-        return Response(tenant_user_payload(membership), status=status.HTTP_201_CREATED)
+        return Response(
+            tenant_user_payload(membership, actor=request.user),
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class TenantUserDetailView(APIView):
@@ -343,4 +350,4 @@ class TenantUserDetailView(APIView):
                 },
             )
         membership = _membership_queryset(request).get(id=membership.id)
-        return Response(tenant_user_payload(membership))
+        return Response(tenant_user_payload(membership, actor=request.user))

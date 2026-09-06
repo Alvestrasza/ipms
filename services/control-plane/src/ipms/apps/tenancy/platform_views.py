@@ -13,6 +13,7 @@ from rest_framework.views import APIView
 from ipms.apps.audit.models import AuditEvent
 from ipms.apps.core.exceptions import PublicApiError
 from .models import Tenant, TenantMembership
+from .identity import create_local_user
 from .permissions import IsPlatformAdministrator
 from .serializers import (
     InitialTenantAdministratorSerializer,
@@ -53,7 +54,7 @@ def audit_platform(request, tenant, action, **details):
         object_id=str(tenant.id),
         outcome=AuditEvent.Outcome.SUCCEEDED,
         correlation_id=getattr(request, "correlation_id", None),
-        details=details,
+        details={"actor_user_id": str(request.user.pk), **details},
     )
 
 
@@ -140,7 +141,7 @@ class InitialTenantAdministratorView(PlatformTenantView):
                 users = get_user_model()
                 if users.objects.filter(username__iexact=data["username"]).exists():
                     raise PublicApiError("username_unavailable", status_code=409)
-                user = users.objects.create_user(
+                user = create_local_user(
                     username=data["username"],
                     password=data["initial_password"],
                     first_name=data.get("first_name", ""),
