@@ -1,7 +1,7 @@
 # Hyper-V management: prepared DEV rollout and acceptance
 
 Status: prepared, not deployed or accepted by this document. Target application
-version: **0.2.35**. Required Windows Agent package: **0.2.27**. The exact Git
+version: **0.2.36**. Required Windows Agent package: **0.2.27**. The exact Git
 commit and package SHA-256 must be recorded from the completed release build;
 neither is inferred from a version string. See [VERSIONING.md](VERSIONING.md).
 
@@ -85,7 +85,7 @@ explicit target selection before implementation can be accepted.
 ## Prepared deployment procedure
 
 `scripts/deploy-hyperv-management-dev.sh` is an exact-target DEV cutover from
-application **0.2.34** to **0.2.35**, not a general installer or automatic updater.
+application **0.2.34** to **0.2.36**, not a general installer or automatic updater.
 Do not run it against another environment or use it as production acceptance.
 
 Before execution, independently verify the appliance hostname, current resolved
@@ -95,7 +95,10 @@ publish the reviewed immutable source and Agent package separately. Stage the
 ZIP under a dedicated `/tmp/ipms-hyperv-management-<identifier>/` directory with
 the exact filename `ipms-agent-windows-x64-0.2.27.zip`.
 
-The script takes six explicit arguments:
+The script takes six explicit arguments. Append `--preflight` to check current
+runtime/ownership/quiescence prerequisites and the staged ZIP digest without
+building a release, creating backups/fences or changing services. This preflight
+does not replace immutable-source/build/ZIP-content checks during deployment.
 
 ```text
 sudo bash scripts/deploy-hyperv-management-dev.sh \
@@ -126,7 +129,8 @@ The script:
    both use the existing `ipms` database role, while the console broker retains
    its isolated role. A different topology requires a reviewed deployment
    adaptation; the script never creates users or guesses new grants.
-4. Creates a root-only backup directory with a known-file configuration archive
+4. Creates a root-only backup directory under the separate root-controlled
+   `/srv/ipms/shared/hyperv-management-backups` parent with a known-file configuration archive
    and a validated PostgreSQL custom-format dump. Environment files, the native
    credential key and nginx configuration are protected and never printed.
 5. Checks existing systemd start-fence drop-ins, creates the persistent fence,
@@ -168,11 +172,27 @@ ordinary shell error trap is not a distributed transaction or power-loss proof.
 
 ## Evidence and outstanding acceptance
 
+The 0.2.35 source and Windows Agent artifact were published, but its initial DEV
+rollout stopped at a read-only ownership precondition before creating a release,
+backup or fence and before stopping services. The existing general backup parent
+was owned by PostgreSQL rather than root. Version 0.2.36 uses a separate root-only
+management-backup parent; existing backups and permissions remain untouched.
+Collected static directories retain the previous 022 umask and are checked using
+the existing Control Plane identity. No nginx group/traversal privilege is added;
+the pre-existing private application-root boundary is preserved.
+The corrected `--preflight` passed on the unchanged DEV baseline. Five inert
+Bash recovery tests passed for direct failure, nested query failure, handled
+termination, active-work rejection and quiescent continuation; these exercise
+the extracted actual guard/recovery functions without touching services.
+
 The final integrated MSVC Release build completed. **11 native CTest programs
 passed; one protected Windows journal I/O test was skipped** because the test
 process had no enabled administrator/LocalSystem token. The pure JSON/journal
 executable passed **617 checks**; the earlier 615-check revision also ran under
 AddressSanitizer. Provider/settings boundary tests used warnings-as-errors.
+The full Linux Agent/core build and all **8 Linux CTests** also passed using
+existing dependencies in an isolated temporary build; no Linux Agent was run
+against the environment or deployed.
 
 The full backend suite passed **381 tests** under **Python 3.14.4 and PostgreSQL**
 with no skips, including row-lock concurrency and maintenance exclusion. Schema

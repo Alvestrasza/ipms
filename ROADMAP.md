@@ -333,6 +333,9 @@ Migration from IPMS Appliance to IPMS Scale-Out must remain supported.
   management channel, explicit current-configuration inspection, standard
   checkpoints, and stopped-VM name/notes, processor and memory edits. Native
   provider acceptance is tracked separately from source and browser tests.
+- Application 0.2.36 corrects the DEV cutover backup-parent precondition without
+  changing PostgreSQL backup ownership or widening runtime/negative-access
+  boundaries. The 0.2.35 rollout stopped safely before runtime changes.
 - Centered, localized settings/checkpoint dialogs support visible action menus,
   right-click and Shift+F10, exact destructive-action confirmation, persistent
   job progress and fail-closed uncertain outcomes.

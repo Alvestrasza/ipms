@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Prepared exact-target DEV cutover: IPMS 0.2.34 -> 0.2.35, Windows Agent 0.2.27.
+# Prepared exact-target DEV cutover: IPMS 0.2.34 -> 0.2.36, Windows Agent 0.2.27.
 # Stages an Agent package only; never rolls out Agents or invokes VM operations.
 set -Eeuo pipefail
 umask 027
-[[ $EUID -eq 0 && $# -eq 6 ]] || {
-    echo 'Usage: sudo deploy-hyperv-management-dev.sh EXPECTED_HOST PUBLIC_HOST NEW_COMMIT PREVIOUS_COMMIT STAGED_AGENT_ZIP SHA256' >&2
+trap 'echo "Deployment preflight failed at line $LINENO; existing privileges were not broadened." >&2' ERR
+[[ $EUID -eq 0 && ( $# -eq 6 || ( $# -eq 7 && ${7:-} == --preflight ) ) ]] || {
+    echo 'Usage: sudo deploy-hyperv-management-dev.sh EXPECTED_HOST PUBLIC_HOST NEW_COMMIT PREVIOUS_COMMIT STAGED_AGENT_ZIP SHA256 [--preflight]' >&2
     exit 2
 }
 expected_host=$1
@@ -30,7 +31,7 @@ protected_file() {
     mode=$(stat -c %a -- "$1")
     (( (8#$mode & 0022) == 0 ))
 }
-for directory in /srv/ipms /srv/ipms/releases /srv/ipms/shared /srv/ipms/backups /srv/ipms/shared/agent-artifacts; do
+for directory in /srv/ipms /srv/ipms/releases /srv/ipms/shared /srv/ipms/shared/agent-artifacts; do
     protected_directory "$directory" || exit 2
 done
 # Reuse the root-owned lock established by the previous account-management cutover.
@@ -43,6 +44,8 @@ previous=/srv/ipms/releases/$previous_ref
 release=/srv/ipms/releases/$release_ref
 next_link=/srv/ipms/.current-hyperv-management-next
 fence=/srv/ipms/shared/tenant-cutover.pending
+backup_root=/srv/ipms/shared/hyperv-management-backups
+if [[ -e $backup_root || -L $backup_root ]]; then protected_directory "$backup_root" || exit 2; fi
 artifact=/srv/ipms/shared/agent-artifacts/ipms-agent-windows-x64-0.2.27.zip
 artifact_next=/srv/ipms/shared/agent-artifacts/.ipms-agent-windows-x64-0.2.27.pending.zip
 protected_directory "$previous" || exit 2
@@ -116,12 +119,17 @@ broker_acl() {
 }
 before_broker_acl=$(broker_acl)
 [[ $before_broker_acl =~ ^[0-9a-f]{32}$ ]]
+if [[ ${7:-} == --preflight ]]; then
+    printf '%s  %s\n' "$artifact_sha" "$staged_artifact" | sha256sum --check --strict - >/dev/null
+    echo 'Current-runtime preflight and staged ZIP digest passed. No release, backup, fence, environment or service changed; immutable release/build/ZIP-content validation remains a deployment step.'
+    exit 0
+fi
 
 # Build the immutable forward release before any runtime interruption.
 umask 022
 git clone --filter=blob:none --no-checkout https://github.com/Alvestrasza/ipms.git "$release"
 git -C "$release" checkout --detach "$release_ref"
-[[ $(git -C "$release" rev-parse HEAD) == "$release_ref" && $(<"$release/VERSION") == 0.2.35 ]]
+[[ $(git -C "$release" rev-parse HEAD) == "$release_ref" && $(<"$release/VERSION") == 0.2.36 ]]
 [[ -f $release/services/control-plane/src/ipms/apps/discovery/migrations/0022_hyperv_management.py ]]
 grep -Fxq 'project(ipms_agent VERSION 0.2.27 LANGUAGES CXX)' "$release/agent/CMakeLists.txt"
 cmp "$previous/deploy/standalone/ipms-tenant-cutover.conf" "$release/deploy/standalone/ipms-tenant-cutover.conf"
@@ -184,9 +192,13 @@ assert_administrators
 [[ $(readlink -f /srv/ipms/current) == "$previous" ]]
 
 umask 077
-backup=/srv/ipms/backups/hyperv-management-0235-$(date -u +%Y%m%dT%H%M%SZ)
+# Preserve the existing PostgreSQL-owned backup directory. Root-sensitive
+# configuration backups use their own root-controlled parent instead.
+if [[ ! -e $backup_root ]]; then mkdir --mode=0700 -- "$backup_root"; fi
+protected_directory "$backup_root"
+backup=$backup_root/0236-$(date -u +%Y%m%dT%H%M%SZ)
 [[ ! -e $backup && ! -L $backup ]]
-install -d -m 0700 -o root -g root "$backup"
+mkdir --mode=0700 -- "$backup"
 # Explicit known-file archive only: no traversal, wildcard or uploaded tar input.
 tar --create --file "$backup/configuration.tar" --directory / --no-recursion -- \
     srv/ipms/shared/control-plane.env srv/ipms/shared/web-console.env \
@@ -237,12 +249,12 @@ export PYTHONPATH="$release/services/control-plane/src"
 "$python" "$manage" migrate discovery 0022_hyperv_management --noinput
 "$python" "$manage" migrate --check
 (
-    # Backup files remain private; collected public assets need traversable
-    # directories for the existing nginx worker, as in the previous release.
+    # Backup files remain private; preserve the previous release's static
+    # directory modes without widening /srv/ipms or nginx group membership.
     umask 022
     "$python" "$manage" collectstatic --noinput
 )
-sudo -n -u www-data test -r "$release/services/control-plane/staticfiles/admin/css/base.css"
+sudo -n -u ipms-control-plane test -r "$release/services/control-plane/staticfiles/admin/css/base.css"
 "$python" "$manage" check --deploy
 [[ $(psql_read "SELECT count(*) FROM django_migrations WHERE app='discovery' AND name='0022_hyperv_management'") == 1 ]]
 [[ $(psql_read "SELECT count(*) FROM pg_class c JOIN pg_roles r ON r.oid=c.relowner JOIN pg_namespace n ON n.oid=c.relnamespace
@@ -297,7 +309,7 @@ done
 [[ $ready == true ]]
 for unit in ipms-control-plane ipms-web-console ipms-agent-gateway ipms-console-broker ipms-guacd nginx; do systemctl is-active --quiet "$unit"; done
 curl --connect-timeout 2 --max-time 5 --fail --silent --show-error --header "Host: $public_host" --header 'X-Forwarded-Proto: https' \
-    http://127.0.0.1:8000/api/v1/ | "$python" -c 'import json,sys; assert json.load(sys.stdin)["application_version"] == "0.2.35"'
+    http://127.0.0.1:8000/api/v1/ | "$python" -c 'import json,sys; assert json.load(sys.stdin)["application_version"] == "0.2.36"'
 for route in api/v1/hyper-v/virtual-machines/00000000-0000-4000-8000-000000000000/management/ api/v1/auth/account/ api/v1/platform/tenants/ api/v1/service-accounts/ admin/ admin; do
     code=$(curl --connect-timeout 2 --max-time 5 --silent --show-error --output /dev/null --write-out '%{http_code}' \
         --cacert /etc/ipms/tls/server.crt --resolve "$public_host:443:127.0.0.1" "https://$public_host/$route")
@@ -309,4 +321,4 @@ ss -lntH 'sport = :4822' | grep -q '127.0.0.1:4822'
 test -S /run/ipms-console/agent.sock
 [[ $(broker_acl) == "$before_broker_acl" ]]
 trap - ERR INT TERM
-echo "IPMS 0.2.35 DEV cutover completed; Windows Agent 0.2.27 is staged only. No VM operation or Agent rollout occurred. Protected backup: $backup"
+echo "IPMS 0.2.36 DEV cutover completed; Windows Agent 0.2.27 is staged only. No VM operation or Agent rollout occurred. Protected backup: $backup"
