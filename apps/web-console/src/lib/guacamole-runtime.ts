@@ -2,6 +2,10 @@ import {
   NativeConsoleChannel,
   type NativeFailureCode,
 } from "./native-console-channel";
+import {
+  NativeConsoleMetrics,
+  type NativeMetricsSample,
+} from "./native-console-metrics";
 
 type GuacStatus = { code: number; message: string };
 export type GuacTunnel = {
@@ -80,24 +84,39 @@ export function createNativeTunnel(
     height: number;
     onReady: () => void;
     onFailure: (code: NativeFailureCode) => void;
+    onMetrics?: (sample: NativeMetricsSample) => void;
   },
 ) {
   const tunnel = new runtime.Tunnel();
   const parser = new runtime.Parser();
   let ping: ReturnType<typeof setInterval> | null = null;
+  const metrics = new NativeConsoleMetrics();
+  let pingSequence = 0;
+  const visibilityChanged = () => {
+    metrics.reset();
+    options.onMetrics?.({ fps: null, rtt: null });
+  };
   const stopPing = () => {
     if (ping) clearInterval(ping);
     ping = null;
+    metrics.reset();
+    document.removeEventListener("visibilitychange", visibilityChanged);
+    options.onMetrics?.({ fps: null, rtt: null });
   };
   const channel = new NativeConsoleChannel({
     ...options,
     onProtocol: (data) => parser.receive(data),
     onReady: () => {
       tunnel.setState(1);
-      ping = setInterval(
-        () => tunnel.sendMessage("", "ping", Date.now()),
-        1000,
-      );
+      metrics.reset();
+      document.addEventListener("visibilitychange", visibilityChanged);
+      ping = setInterval(() => {
+        const sample = metrics.sample();
+        options.onMetrics?.(
+          document.hidden ? { fps: null, rtt: null } : sample,
+        );
+        tunnel.sendMessage("", "ping", ++pingSequence);
+      }, 1000);
       options.onReady();
     },
     onFailure: (code) => {
@@ -107,6 +126,7 @@ export function createNativeTunnel(
     },
   });
   parser.oninstruction = (opcode, parameters) => {
+    metrics.instruction(opcode, parameters);
     if (opcode === "") {
       if (parameters.length === 1) tunnel.setUUID(parameters[0]);
       return;
@@ -123,6 +143,7 @@ export function createNativeTunnel(
     tunnel.setState(2);
   };
   tunnel.sendMessage = (...elements) => {
+    metrics.sent(elements);
     const message = `${elements
       .map((value) => {
         const text = String(value);

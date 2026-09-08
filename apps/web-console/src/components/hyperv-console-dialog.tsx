@@ -47,6 +47,11 @@ export type ConsoleCopy = {
     validUntil: string;
     fingerprint: string;
     ready: string;
+    metricsTitle: string;
+    fps: string;
+    fpsHint: string;
+    rtt: string;
+    rttHint: string;
     thumbnailHint: string;
     errors: Record<string, string>;
   };

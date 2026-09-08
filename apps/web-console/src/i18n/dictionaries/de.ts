@@ -204,7 +204,7 @@ export const de = {
     infrastructure: "Infrastruktur",
     agents: "Agenten",
     soon: "Bald",
-    version: "IPMS v0.2.41 Entwicklung",
+    version: "IPMS v0.2.42 Entwicklung",
   },
   linuxSystems: {
     liveData:
@@ -854,6 +854,13 @@ export const de = {
         validUntil: "Gültig bis",
         fingerprint: "SHA-256-Fingerabdruck",
         ready: "Native Konsole verbunden",
+        metricsTitle: "Konsolenleistung",
+        fps: "Anzeige-FPS",
+        fpsHint:
+          "Abgeschlossene Bildaktualisierungen pro Sekunde, nicht die Monitorfrequenz. Ein ruhender Desktop kann 0 FPS zeigen. Heartbeats und reine Cursor-Updates zählen nicht mit. Ein Strich bedeutet nicht verfügbar.",
+        rtt: "Broker-RTT",
+        rttHint:
+          "Hin- und Rücklaufzeit des vorhandenen Browser-Broker-Heartbeats. Agent, Hyper-V-Host und die Eingabe-Bild-Verzögerung des Gasts sind darin nicht enthalten. Ein Strich bedeutet nicht verfügbar oder veraltet.",
         thumbnailHint:
           "Die Kompatibilitätskonsole nutzt regelmäßige Einzelbilder. Sie ist langsamer und wird nach einem Fehler der nativen Verbindung niemals automatisch gewählt.",
         errors: {

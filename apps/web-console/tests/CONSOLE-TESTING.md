@@ -56,6 +56,13 @@ browser integration evidence, not proof of host
 authentication, backend authorization, TLS pinning, relay behavior, or FPS.
 Those require their own backend tests and separately authorized live acceptance.
 
+The 0.2.42 native scenarios additionally check a positive display-update rate
+after completed PNG frames, zero FPS while only heartbeats continue, a matched
+browser-broker RTT, stale RTT removal, and unavailable metrics on authentication
+failure. Run `node --test tests/native-console-metrics.test.mjs` for deterministic
+measurement boundaries, including offscreen/cursor exclusion and bounded queues.
+These synthetic rates do not establish real-host FPS or guest input latency.
+
 The Service Accounts tests do not mock the account or assignment API. They
 exercise real tenant-admin create/edit/password preservation/password rotation,
 explicit assignment, assigned-account deletion protection, refresh persistence,

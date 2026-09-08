@@ -5,6 +5,7 @@ import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 import { createNativeTunnel } from "@/lib/guacamole-runtime";
 import type { NativeFailureCode } from "@/lib/native-console-channel";
+import type { NativeMetricsSample } from "@/lib/native-console-metrics";
 import type { ConsoleCopy } from "./hyperv-console-dialog";
 
 export function HyperVNativeConsole({
@@ -21,6 +22,10 @@ export function HyperVNativeConsole({
   const [loaded, setLoaded] = useState(false);
   const [active, setActive] = useState(false);
   const [failure, setFailure] = useState<NativeFailureCode | null>(null);
+  const [metrics, setMetrics] = useState<NativeMetricsSample>({
+    fps: null,
+    rtt: null,
+  });
   const container = useRef<HTMLDivElement | null>(null);
   const actions = useRef<{
     secureAttention: () => void;
@@ -57,6 +62,9 @@ export function HyperVNativeConsole({
           }
         },
         onFailure: fail,
+        onMetrics: (sample) => {
+          if (!stopped) setMetrics(sample);
+        },
       });
       const client = new runtime.Client(tunnel);
       const display = client.getDisplay();
@@ -202,6 +210,27 @@ export function HyperVNativeConsole({
           </button>
         </div>
       </header>
+      <section
+        className="native-console-metrics"
+        aria-label={copy.native.metricsTitle}
+      >
+        <span title={copy.native.fpsHint}>
+          {copy.native.fps}:{" "}
+          <span data-testid="native-console-fps">
+            {active && !failure && metrics.fps !== null
+              ? metrics.fps.toFixed(1)
+              : "—"}
+          </span>
+        </span>
+        <span title={copy.native.rttHint}>
+          {copy.native.rtt}:{" "}
+          <span data-testid="native-console-rtt">
+            {active && !failure && metrics.rtt !== null
+              ? `${Math.round(metrics.rtt)} ms`
+              : "—"}
+          </span>
+        </span>
+      </section>
       <div className="native-console-body">
         <div
           ref={container}

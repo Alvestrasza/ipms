@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(ipms_agent VERSION 0.2.28 LANGUAGES CXX)
+project(ipms_agent VERSION 0.2.29 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -95,6 +95,11 @@ if(BUILD_TESTING)
   endif()
   add_test(NAME native-console-guards COMMAND ipms-agent-native-console-tests)
   if(WIN32)
+    add_executable(ipms-agent-native-console-event-tests tests/windows_native_console_event_tests.cpp)
+    target_link_libraries(ipms-agent-native-console-event-tests PRIVATE ipms_agent_core ws2_32)
+    target_compile_definitions(ipms-agent-native-console-event-tests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
+    target_compile_options(ipms-agent-native-console-event-tests PRIVATE /W4 /permissive-)
+    add_test(NAME native-console-events COMMAND ipms-agent-native-console-event-tests)
     add_executable(ipms-agent-hyperv-management-boundary-tests
       tests/hyperv_management_boundary_tests.cpp
       src/windows/hyperv_management.cpp

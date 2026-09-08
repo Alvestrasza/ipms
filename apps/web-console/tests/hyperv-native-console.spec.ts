@@ -18,6 +18,8 @@ for (const mode of [
     const creates: unknown[] = [];
     const errors: string[] = [];
     let socketClosed = false;
+    let respondToPing = true;
+    let sendFrame: (() => void) | null = null;
     let configured = mode !== "configure" && mode !== "operator";
     const png = await page.evaluate(() => {
       const canvas = document.createElement("canvas");
@@ -61,6 +63,13 @@ for (const mode of [
       route.fulfill({ status: 204 }),
     );
     await context.routeWebSocket("**/native-stream/", (socket) => {
+      let timestamp = 1;
+      sendFrame = () => {
+        const next = String(++timestamp);
+        socket.send(
+          `3.img,1.0,2.14,1.0,9.image/png,1.0,1.0;4.blob,1.0,${png.length}.${png};3.end,1.0;4.sync,${next.length}.${next};`,
+        );
+      };
       expect(new URL(socket.url()).search).toBe("");
       socket.onClose(() => {
         socketClosed = true;
@@ -69,7 +78,7 @@ for (const mode of [
         const text = data.toString();
         messages.push(text);
         if (!text.startsWith("{")) {
-          if (text.startsWith("0.,4.ping")) socket.send(text);
+          if (respondToPing && text.startsWith("0.,4.ping")) socket.send(text);
           return;
         }
         const message = JSON.parse(text);
@@ -182,6 +191,8 @@ for (const mode of [
       .toBe(true);
     expect(creates).toEqual([{ transport: "vmconnect" }]);
     if (mode === "failure") {
+      await expect(popup.getByTestId("native-console-fps")).toHaveText("—");
+      await expect(popup.getByTestId("native-console-rtt")).toHaveText("—");
       await expect(
         popup.getByText(
           "The Hyper-V host rejected the stored console account.",
@@ -249,6 +260,26 @@ for (const mode of [
       expect(messages.some((value) => value.startsWith("5.mouse,"))).toBe(true);
       await popup.setViewportSize({ width: 900, height: 600 });
       await expect(surface).toBeVisible();
+      const fps = popup.getByTestId("native-console-fps");
+      const rtt = popup.getByTestId("native-console-rtt");
+      await expect(rtt).toHaveText(/^\d+ ms$/);
+      await expect(fps).toHaveText("0.0");
+      if (!sendFrame) throw new Error("The synthetic stream was not opened.");
+      for (let frame = 0; frame < 10; frame++) (sendFrame as () => void)();
+      await expect
+        .poll(async () => Number(await fps.textContent()))
+        .toBeGreaterThan(0);
+      await popup.screenshot({
+        path: test.info().outputPath("native-metrics-active.png"),
+      });
+      await expect(fps).toHaveText("0.0"); // Pings must not fabricate frames.
+      respondToPing = false;
+      await expect(rtt).toHaveText("—", { timeout: 6000 });
+      respondToPing = true;
+      await expect(rtt).toHaveText(/^\d+ ms$/);
+      await expect(
+        popup.getByRole("region", { name: "Console performance" }),
+      ).toBeVisible();
       // Genuine browser timers, not accelerated time. Keep an idle rendered
       // PNG connected beyond the old disconnect window without typing/clicks.
       await expect

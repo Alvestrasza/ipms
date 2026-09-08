@@ -3,7 +3,7 @@
 The IPMS Agent is a native C++20 service for customer-managed Windows and Linux systems. It will establish an outbound, mutually authenticated connection to the IPMS Control Plane and collect only capabilities explicitly assigned to the enrolled device.
 
 The implementation contains the pack registry and fixed read-only Windows and
-Linux inventory capabilities. Windows build 0.2.26 and Linux build 0.2.13
+Linux inventory capabilities. Windows build 0.2.29 and Linux build 0.2.13
 include native services and bounded, paged installed-software and
 update-posture inventory. Both platforms
 use the same Agent-initiated TCP 9419 enrollment and mTLS trust boundary. The
@@ -11,6 +11,18 @@ Windows executable also reports roles/features and local Hyper-V VMs. Its
 Hyper-V pack accepts only fixed start, graceful shutdown, stop, pause, and
 resume assignments for an exact VM GUID; it never invokes `Win32_Product`,
 PowerShell, or a server-supplied query or method.
+
+## Event-driven native console relay
+
+Windows Agent **0.2.29** replaces fixed 10 ms relay sleeps with WinHTTP completion
+and Winsock readiness events. Ready work is drained immediately, while idle waits
+remain bounded to 100 ms for cancellation and authorization checks. Fixed
+loopback port 2179, exact VM preconnection validation, mTLS, lease enforcement,
+bounded buffers and one outstanding asynchronous read/write are unchanged.
+Application **0.2.42** adds display-update FPS and browser-to-broker RTT metrics;
+these do not measure complete guest input latency. Real-host performance still
+requires canary acceptance. See [verification](../docs/operations/NATIVE-CONSOLE-0242-VERIFICATION.md)
+and [vendor research](../docs/architecture/HYPERV-CONSOLE-IMPLEMENTATION-COMPARISON.md).
 
 ## State-aware Hyper-V settings
 

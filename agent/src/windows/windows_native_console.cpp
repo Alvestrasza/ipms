@@ -5,13 +5,13 @@
 
 #include "ipms/agent/windows_native_console.hpp"
 #include "ipms/agent/native_console_guard.hpp"
+#include "ipms/agent/windows_native_console_events.hpp"
 
 #include <array>
 #include <chrono>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
-#include <thread>
 #include <vector>
 
 namespace {
@@ -28,6 +28,7 @@ using internet_handle = std::unique_ptr<void, internet_closer>;
 // this state until HANDLE_CLOSING, the documented last WinHTTP notification.
 struct asynchronous_state {
   std::mutex mutex;
+  ipms::agent::windows::native_console_events events;
   bool request_sent{false}, headers{false}, read_ready{false}, write_ready{true};
   bool error{false};
   DWORD read_size{0};
@@ -61,6 +62,7 @@ void CALLBACK status_callback(HINTERNET, DWORD_PTR raw, DWORD notification,
   else if (notification == WINHTTP_CALLBACK_STATUS_READ_COMPLETE) {
     if (!information || length != sizeof(WINHTTP_WEB_SOCKET_STATUS)) {
       state->error = true;
+      state->events.notify();
       return;
     }
     const auto* status = static_cast<WINHTTP_WEB_SOCKET_STATUS*>(information);
@@ -69,6 +71,7 @@ void CALLBACK status_callback(HINTERNET, DWORD_PTR raw, DWORD notification,
     state->read_ready = true;
     if (state->read_size > state->read_buffer.size()) state->error = true;
   }
+  state->events.notify();
 }
 
 struct winsock_scope {
@@ -127,7 +130,7 @@ void relay_native_hyperv_console(
     require(!state->error, "The native console authenticated transport failed.");
   };
   check();
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.28", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.29", WINHTTP_ACCESS_TYPE_NO_PROXY,
       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, WINHTTP_FLAG_ASYNC));
   require(session != nullptr, "The native console session could not be created.");
   require(WinHttpSetStatusCallback(session.get(), status_callback,
@@ -162,7 +165,7 @@ void relay_native_hyperv_console(
     while (true) {
       check();
       { std::lock_guard lock(state->mutex); if (state.get()->*member) return; }
-      std::this_thread::sleep_for(10ms);
+      state->events.wait();
     }
   };
   require(WinHttpSendRequest(request.get(), headers.c_str(), static_cast<DWORD>(headers.size()),
@@ -198,9 +201,7 @@ void relay_native_hyperv_console(
     check();
     local.value = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     require(local.value != INVALID_SOCKET, "The local native console socket is unavailable.");
-    u_long nonblocking = 1;
-    require(ioctlsocket(local.value, FIONBIO, &nonblocking) == 0,
-            "The local native console socket could not be bounded.");
+    state->events.watch(local.value);
     BOOL no_delay = TRUE;
     require(setsockopt(local.value, IPPROTO_TCP, TCP_NODELAY,
                       reinterpret_cast<const char*>(&no_delay), sizeof(no_delay)) == 0,
@@ -217,10 +218,12 @@ void relay_native_hyperv_console(
   };
   for (;;) {
     check();
+    bool progressed = false;
     const auto now = clock_type::now();
     require(preconnection_valid || now < preconnection_deadline,
             "The native console preconnection timed out.");
     if (local.value != INVALID_SOCKET) {
+      state->events.consume_network(local.value);
       require(lease.authorized(now), "The native console stream has no valid lease.");
       if (connecting) {
         require(now < connect_deadline, "The local native console connection timed out.");
@@ -234,6 +237,7 @@ void relay_native_hyperv_console(
                              reinterpret_cast<char*>(&error), &length) == 0 && error == 0,
                   "The local native console connection failed.");
           connecting = false;
+          progressed = true;
           local_write_deadline = now + 2s;
         }
       }
@@ -242,7 +246,10 @@ void relay_native_hyperv_console(
         const auto sent = send(local.value,
             reinterpret_cast<const char*>(local_output.data() + local_offset),
             static_cast<int>(local_output.size() - local_offset), 0);
-        if (sent > 0) local_offset += static_cast<std::size_t>(sent);
+        if (sent > 0) {
+          local_offset += static_cast<std::size_t>(sent);
+          progressed = true;
+        }
         else require(sent == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK,
                      "The local native console write failed.");
         if (local_offset == local_output.size()) { local_output.clear(); local_offset = 0; }
@@ -262,10 +269,11 @@ void relay_native_hyperv_console(
       }
     }
     if (write_pending) {
-      if (write_ready) write_pending = false;
+      if (write_ready) { write_pending = false; progressed = true; }
       else require(now < websocket_write_deadline, "The native console Gateway write stalled.");
     }
     if (read_ready) {
+      progressed = true;
       read_pending = false;
       require(received <= state->read_buffer.size(), "The native console receive exceeds its bound.");
       if (buffer_type == WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE) return;
@@ -322,6 +330,7 @@ void relay_native_hyperv_console(
                               static_cast<int>(state->write_buffer.size()), 0);
       if (count == 0) return;
       if (count > 0) {
+        progressed = true;
         {
           std::lock_guard lock(state->mutex);
           state->write_ready = false;
@@ -336,7 +345,10 @@ void relay_native_hyperv_console(
       } else require(WSAGetLastError() == WSAEWOULDBLOCK,
                      "The local native console receive failed.");
     }
-    std::this_thread::sleep_for(10ms);
+    // Drain ready work immediately in both directions. Wait only after no I/O
+    // made progress; completions/readiness wake us without a fixed packet delay.
+    // The bounded timeout still checks cancellation, leases and stalled writes.
+    if (!progressed) state->events.wait();
   }
 }
 

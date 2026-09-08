@@ -190,7 +190,7 @@ export const en = {
     infrastructure: "Infrastructure",
     agents: "Agents",
     soon: "Soon",
-    version: "IPMS v0.2.41 development",
+    version: "IPMS v0.2.42 development",
   },
   linuxSystems: {
     liveData: "Live tenant-scoped Linux inventory from enrolled Agents.",
@@ -829,6 +829,13 @@ export const en = {
         validUntil: "Valid until",
         fingerprint: "SHA-256 fingerprint",
         ready: "Native console connected",
+        metricsTitle: "Console performance",
+        fps: "Display FPS",
+        fpsHint:
+          "Completed display updates per second, not monitor refresh rate. An idle desktop can show 0 FPS. Heartbeats and cursor-only updates are excluded. A dash means unavailable.",
+        rtt: "Broker RTT",
+        rttHint:
+          "Round-trip time of the existing browser-to-broker heartbeat. This does not include the Agent, Hyper-V host or guest input-to-screen delay. A dash means unavailable or stale.",
         thumbnailHint:
           "The compatibility console uses periodic snapshots. It is slower and is never selected automatically after a native connection fails.",
         errors: {
