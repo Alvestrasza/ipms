@@ -35,14 +35,25 @@ const english = {
   yes: "Yes",
   no: "No",
   readonly:
-    "Only General, processor count and memory can be changed in this release. Each section is applied separately while the VM is stopped. Other settings remain read-only.",
+    "General, processor count and memory use field-specific state rules. Other settings remain read-only in IPMS, even where Hyper-V supports live changes.",
   applySettings: "Apply this section",
   settingsStopped:
-    "Settings changes require a stopped VM and a current, complete inspection. IPMS does not stop the VM automatically.",
+    "Changes require a stable running or stopped VM and a current inspection. IPMS never changes the power state automatically.",
   settingsRunning:
-    "This section is read-only while the VM is powered on. Live changes are not yet supported by the current IPMS Agent. IPMS does not stop the VM automatically.",
+    "While running: name and notes can be edited; Dynamic Memory minimum can only decrease and maximum can only increase. Other fields are locked. IPMS does not stop the VM automatically.",
+  settingsLegacy:
+    "This Agent only supports settings changes while stopped. Update the Windows Agent to 0.2.28 or later and refresh from the host to enable supported live fields.",
+  fieldRules: {
+    increase_only: "While running: increase only.",
+    decrease_only: "While running: decrease only.",
+    offline_only: "This field can only be changed while the VM is stopped.",
+    guest_support_required:
+      "Static hot-memory changes require verified host/guest support; not yet enabled by IPMS. Stop the VM to edit this field.",
+    unavailable:
+      "Read-only: this value, state or Agent capability is unavailable.",
+  },
   settingsMissing:
-    "This section contains unreported values and cannot be edited. Unknown values will not be replaced with defaults.",
+    "Unreported values and dependent fields are read-only. Unknown values will not be replaced with defaults.",
   settingsInvalid:
     "Check the values. Names must be non-empty and at most 100 characters; CPU and memory values must be positive whole numbers. Memory must satisfy minimum ≤ startup ≤ maximum.",
   permission: "Your tenant role does not permit this change.",
@@ -156,6 +167,10 @@ const english = {
     settings_update: "Update settings",
   },
   errors: {
+    management_setting_not_editable:
+      "This field or change direction is not permitted in the current VM state. Refresh from the host and review the field hint.",
+    management_vm_must_be_stopped:
+      "This Agent contract requires a stopped VM for settings changes.",
     checkpoint_policy_unsupported:
       "The configured checkpoint policy is not supported by this Agent operation. No automatic fallback to a standard checkpoint is permitted.",
     invalid_vm_state:
@@ -247,14 +262,26 @@ const german: HyperVManagementCopy = {
   yes: "Ja",
   no: "Nein",
   readonly:
-    "In dieser Version können nur Allgemein, Prozessoranzahl und Arbeitsspeicher geändert werden. Jeder Bereich wird einzeln bei ausgeschalteter VM angewendet. Die übrigen Einstellungen bleiben schreibgeschützt.",
+    "Für Allgemein, Prozessoranzahl und Arbeitsspeicher gelten feldgenaue Zustandsregeln. Andere Einstellungen bleiben in IPMS schreibgeschützt, auch wenn Hyper-V Live-Änderungen unterstützt.",
   applySettings: "Diesen Bereich anwenden",
   settingsStopped:
-    "Änderungen erfordern eine ausgeschaltete VM und eine aktuelle, vollständige Prüfung. IPMS schaltet die VM nicht automatisch aus.",
+    "Änderungen erfordern einen stabilen Zustand (eingeschaltet oder ausgeschaltet) und eine aktuelle Prüfung. IPMS ändert den Betriebszustand niemals automatisch.",
   settingsRunning:
-    "Dieser Bereich ist bei eingeschalteter VM schreibgeschützt. Live-Änderungen werden vom aktuellen IPMS-Agent noch nicht unterstützt. IPMS schaltet die VM nicht automatisch aus.",
+    "Im Betrieb: Name und Notizen sind änderbar; bei dynamischem Arbeitsspeicher kann das Minimum nur gesenkt und das Maximum nur erhöht werden. Andere Felder sind gesperrt. IPMS schaltet die VM nicht automatisch aus.",
+  settingsLegacy:
+    "Dieser Agent unterstützt Einstellungsänderungen nur bei ausgeschalteter VM. Aktualisiere den Windows-Agent auf mindestens 0.2.28 und lade die Daten vom Host neu, um unterstützte Live-Felder freizugeben.",
+  fieldRules: {
+    increase_only: "Im Betrieb: nur erhöhen.",
+    decrease_only: "Im Betrieb: nur senken.",
+    offline_only:
+      "Dieses Feld kann nur bei ausgeschalteter VM geändert werden.",
+    guest_support_required:
+      "Statischer Hot-RAM erfordert nachgewiesene Host-/Gast-Unterstützung; in IPMS noch nicht freigegeben. Zum Bearbeiten VM herunterfahren.",
+    unavailable:
+      "Schreibgeschützt: Wert, Zustand oder Agent-Fähigkeit nicht verfügbar.",
+  },
   settingsMissing:
-    "Dieser Bereich enthält nicht gemeldete Werte und kann nicht bearbeitet werden. Unbekannte Werte werden nicht durch Standardwerte ersetzt.",
+    "Nicht gemeldete Werte und davon abhängige Felder sind schreibgeschützt. Unbekannte Werte werden nicht durch Standardwerte ersetzt.",
   settingsInvalid:
     "Prüfe die Werte. Namen dürfen nicht leer sein und höchstens 100 Zeichen enthalten; CPU- und Speicherwerte müssen positive ganze Zahlen sein. Es muss Minimum ≤ Startwert ≤ Maximum gelten.",
   permission: "Deine Tenant-Rolle erlaubt diese Änderung nicht.",
@@ -370,6 +397,10 @@ const german: HyperVManagementCopy = {
   errors: {
     checkpoint_policy_unsupported:
       "Die konfigurierte Prüfpunktrichtlinie wird von dieser Agent-Aktion nicht unterstützt. Ein automatischer Fallback auf Standardprüfpunkte ist nicht erlaubt.",
+    management_setting_not_editable:
+      "Dieses Feld oder diese Änderungsrichtung ist im aktuellen VM-Zustand nicht erlaubt. Aktualisiere vom Host und beachte den Feldhinweis.",
+    management_vm_must_be_stopped:
+      "Dieser Agent-Vertrag erfordert eine ausgeschaltete VM für Einstellungsänderungen.",
     invalid_vm_state:
       "Die VM befindet sich nicht in einem für diese Aktion zulässigen Zustand. Aktualisiere ihren Zustand vor dem Fortfahren.",
     settings_property_unsupported:

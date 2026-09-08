@@ -1,5 +1,10 @@
 # Hyper-V management: DEV rollout and acceptance
 
+For the **0.2.38 / Windows Agent 0.2.28 source implementation**, see the
+[state-aware field matrix](../architecture/HYPERV-LIVE-SETTINGS-MATRIX.md) and
+[verification record](HYPERV-SETTINGS-0238-ACCEPTANCE.md). The stopped-only contract
+below describes the earlier schema-1 release, not the new schema-2 policy.
+
 Status: application **0.2.36 deployed to the known DEV appliance** on 2026-09-06;
 native inspection and bounded notes, processor-count and startup-memory writes
 accepted on the explicitly authorized test VM, with restoration and restart

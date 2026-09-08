@@ -1,4 +1,4 @@
-"""Bounded schema 1 contracts; never accept executable provider object strings."""
+"""Bounded schema 1/2 contracts; never accept executable provider object strings."""
 
 import hashlib
 import json
@@ -103,7 +103,9 @@ def validate_snapshot(document):
             "collection_status",
         ),
     )
-    if type(document["schema_version"]) is not int or document["schema_version"] != 1:
+    if type(document["schema_version"]) is not int or document[
+        "schema_version"
+    ] not in (1, 2):
         invalid()
     canonical_uuid(document["vm_source_id"])
     text(document["vm_name"], 256, blank=False)
@@ -269,38 +271,66 @@ def validate_parameters(operation, parameters):
         text(parameters["confirmation_vm_name"], 256, blank=False)
         text(parameters["confirmation_checkpoint_name"], 256, blank=False)
     elif operation == "settings_update":
-        exact(parameters, ("section", "values"))
+        sparse = isinstance(parameters, dict) and "expected_state" in parameters
+        exact(
+            parameters,
+            (
+                ("section", "values", "expected_state")
+                if sparse
+                else ("section", "values")
+            ),
+        )
+        if sparse and parameters["expected_state"] not in ("running", "stopped"):
+            invalid()
         section = parameters["section"]
         values = parameters["values"]
+        keys = {
+            "general": {"name", "notes"},
+            "processor": {"count"},
+            "memory": {"startup_mib", "minimum_mib", "maximum_mib", "dynamic_enabled"},
+        }
+        if (
+            not isinstance(section, str)
+            or section not in keys
+            or not isinstance(values, dict)
+        ):
+            invalid()
+        if (
+            not values
+            or not set(values) <= keys[section]
+            or (not sparse and set(values) != keys[section])
+        ):
+            invalid()
         if section == "general":
-            exact(values, ("name", "notes"))
-            text(values["name"], 100, blank=False)
-            text(values["notes"], 4096)
+            for key, value in values.items():
+                text(value, 100 if key == "name" else 4096, blank=key != "name")
+                if "\x7f" in value:
+                    invalid()
             try:
                 if (
-                    len(values["name"].encode("utf-16-le")) > 200
-                    or len(values["name"].encode("utf-8")) > 256
-                    or len(values["notes"].encode("utf-8")) > 4096
+                    len(values.get("name", "").encode("utf-16-le")) > 200
+                    or len(values.get("name", "").encode("utf-8")) > 256
+                    or len(values.get("notes", "").encode("utf-8")) > 4096
                 ):
                     invalid()
             except UnicodeError:
                 invalid()
-            if not values["name"].strip() or any(
-                character in values["name"] for character in "\r\n\t"
+            if "name" in values and (
+                not values["name"].strip()
+                or any(character in values["name"] for character in "\r\n\t")
             ):
                 invalid()
         elif section == "processor":
-            exact(values, ("count",))
             integer(values["count"], 2048, minimum=1)
         elif section == "memory":
-            exact(
-                values, ("startup_mib", "minimum_mib", "maximum_mib", "dynamic_enabled")
-            )
-            for key in ("startup_mib", "minimum_mib", "maximum_mib"):
-                integer(values[key], 2**40, minimum=1)
-            boolean(values["dynamic_enabled"])
+            for key, value in values.items():
+                if key == "dynamic_enabled":
+                    boolean(value)
+                else:
+                    integer(value, 2**40, minimum=1)
             if (
-                not values["minimum_mib"]
+                not sparse
+                and not values["minimum_mib"]
                 <= values["startup_mib"]
                 <= values["maximum_mib"]
             ):
@@ -310,3 +340,43 @@ def validate_parameters(operation, parameters):
     else:
         invalid()
     return parameters
+
+
+def validate_settings_change(parameters, snapshot):
+    """Recompute the field policy, including at delivery/claim; never trust the UI."""
+    validate_parameters("settings_update", parameters)
+    sparse = "expected_state" in parameters
+    if not sparse:
+        if snapshot["state"] != "stopped":
+            raise PublicApiError("management_vm_must_be_stopped")
+        return
+    if snapshot["schema_version"] != 2:
+        raise PublicApiError("management_operation_unsupported")
+    if snapshot["state"] != parameters["expected_state"]:
+        raise PublicApiError("management_revision_changed")
+    section, values = parameters["section"], parameters["values"]
+    current = (
+        snapshot["settings"] if section == "general" else snapshot["settings"][section]
+    )
+    running = snapshot["state"] == "running"
+    for key, value in values.items():
+        if current.get(key) is None:
+            raise PublicApiError("settings_property_unsupported")
+        # Schema 2 is a changed-fields patch, not a full-section overwrite.
+        if current[key] == value:
+            invalid()
+        if running and section != "general":
+            if section != "memory" or current.get("dynamic_enabled") is not True:
+                raise PublicApiError("management_setting_not_editable")
+            if not (
+                (key == "minimum_mib" and value < current[key])
+                or (key == "maximum_mib" and value > current[key])
+            ):
+                raise PublicApiError("management_setting_not_editable")
+    if section == "memory":
+        merged = {**current, **values}
+        for key in ("startup_mib", "minimum_mib", "maximum_mib"):
+            integer(merged.get(key), 2**40, minimum=1)
+        boolean(merged.get("dynamic_enabled"))
+        if not merged["minimum_mib"] <= merged["startup_mib"] <= merged["maximum_mib"]:
+            invalid()

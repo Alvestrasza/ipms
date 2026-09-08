@@ -1071,6 +1071,111 @@ class ManagementSettingsTests(ManagementFixture, TestCase):
             )
 
 
+class LiveSettingsContractTests(ManagementFixture, TestCase):
+    def setUp(self):
+        super().setUp()
+        self.host.agent_version = "0.2.28"
+        self.host.save(update_fields=("agent_version",))
+
+    def snapshot(self):
+        document = super().snapshot()
+        document["schema_version"] = 2
+        document["capabilities"]["settings_update"] = True
+        return document
+
+    def parameters(self, section="general", values=None):
+        return {
+            "section": section,
+            "values": values or {"notes": "Updated online"},
+            "expected_state": "running",
+        }
+
+    def test_online_notes_patch_survives_queue_claim_and_exact_result_without_rename(
+        self,
+    ):
+        self.inspect()
+        parameters = self.parameters()
+        response = self.client.post(
+            self.endpoint("operations/"),
+            {
+                "request_id": str(uuid.uuid4()),
+                "operation": "settings_update",
+                "expected_revision": "a" * 64,
+                "parameters": parameters,
+            },
+            content_type="application/json",
+            **self.headers(),
+        )
+        self.assertEqual(response.status_code, 202, response.content)
+        job = HyperVManagementJob.objects.get(pk=response.json()["id"])
+        self.assertEqual(job.parameters, parameters)
+        self.assertTrue(self.claim(job)["authorized"])
+        document = self.snapshot()
+        document["settings"]["notes"] = "Updated online"
+        self.complete(job, snapshot=document)
+        job.refresh_from_db()
+        self.vm.refresh_from_db()
+        self.assertEqual(job.status, "succeeded")
+        self.assertEqual(self.vm.state, "running")
+        self.assertEqual(self.vm.name, job.vm_name)
+
+    def test_online_memory_patch_cannot_report_success_after_power_change(self):
+        self.inspect()
+        parameters = self.parameters("memory", {"maximum_mib": 8192})
+        job = self.create("settings_update", parameters=parameters)
+        self.claim(job)
+        document = self.snapshot()
+        document["settings"]["memory"]["maximum_mib"] = 8192
+        document["state"] = "stopped"
+        self.assert_denied(
+            "management_snapshot_postcondition_mismatch",
+            self.complete,
+            job,
+            snapshot=document,
+        )
+        job.refresh_from_db()
+        self.assertEqual(job.status, "running")
+        document["state"] = "running"
+        self.complete(job, snapshot=document)
+
+    def test_upgrade_gate_and_forbidden_live_fields_are_enforced_on_server(self):
+        self.inspect()
+        self.host.agent_version = "0.2.27"
+        self.host.save(update_fields=("agent_version",))
+        self.assert_denied(
+            "management_agent_upgrade_required",
+            self.create,
+            "settings_update",
+            parameters=self.parameters(),
+        )
+        self.host.agent_version = "0.2.28"
+        self.host.save(update_fields=("agent_version",))
+        self.assert_denied(
+            "management_setting_not_editable",
+            self.create,
+            "settings_update",
+            parameters=self.parameters("processor", {"count": 8}),
+        )
+
+    def test_revoked_permission_and_changed_state_prevent_delivery(self):
+        self.inspect()
+        job = self.create("settings_update", parameters=self.parameters())
+        self.vm.state = "stopped"
+        self.vm.save(update_fields=("state",))
+        self.assertIsNone(offer_management_job(self.enrollment))
+        job.refresh_from_db()
+        self.assertEqual(job.status, "cancelled")
+        self.vm.state = "running"
+        self.vm.save(update_fields=("state",))
+        self.inspect()
+        job = self.create("settings_update", parameters=self.parameters())
+        self.member.role = "read_only"
+        self.member.save(update_fields=("role",))
+        self.assertIsNone(offer_management_job(self.enrollment))
+        job.refresh_from_db()
+        self.assertEqual(job.status, "cancelled")
+
+
 @skipUnless(connection.vendor == "postgresql", "Requires real PostgreSQL row locks.")
 class ManagementConcurrencyTests(ManagementFixture, TransactionTestCase):
     def parallel(self, first, second):

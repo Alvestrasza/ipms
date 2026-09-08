@@ -77,19 +77,25 @@ prepared_hyperv_settings prepare_hyperv_settings(IWbemServices* services,
       section == "processor" ? current.processor.Get() : current.memory.Get();
   ComPtr<IWbemClassObject> modified;
   if (FAILED(source->Clone(&modified)) || !modified) { prepared.error = "settings_clone_failed"; return prepared; }
-  bool valid = false;
+  bool valid = true;
   if (section == "general") {
-    const auto name = wide(values.at("name").as<std::string>());
-    valid = !name.empty() && name.size() <= 100 &&
-        put_text(modified.Get(), L"ElementName", name) &&
-        put_array(modified.Get(), L"Notes", wide(values.at("notes").as<std::string>()));
+    if (values.contains("name")) {
+      const auto name = wide(values.at("name").as<std::string>());
+      valid = !name.empty() && name.size() <= 100 && put_text(modified.Get(), L"ElementName", name);
+    }
+    if (values.contains("notes")) valid = valid && put_array(modified.Get(), L"Notes", wide(values.at("notes").as<std::string>()));
   } else if (section == "processor") {
     valid = put_text(modified.Get(), L"VirtualQuantity", std::to_wstring(values.at("count").as<std::int64_t>()), CIM_UINT64);
   } else {
-    valid = put_text(modified.Get(), L"VirtualQuantity", std::to_wstring(values.at("startup_mib").as<std::int64_t>()), CIM_UINT64) &&
-        put_text(modified.Get(), L"Reservation", std::to_wstring(values.at("minimum_mib").as<std::int64_t>()), CIM_UINT64) &&
-        put_text(modified.Get(), L"Limit", std::to_wstring(values.at("maximum_mib").as<std::int64_t>()), CIM_UINT64) &&
-        put_boolean(modified.Get(), L"DynamicMemoryEnabled", values.at("dynamic_enabled").as<bool>());
+    // Change only the allowlisted requested properties on the exact local clone.
+    // Offline-only properties are never assigned as part of a live patch.
+    for (const auto& [key, value] : values) {
+      if (key == "dynamic_enabled") valid = valid && put_boolean(modified.Get(), L"DynamicMemoryEnabled", value.as<bool>());
+      else {
+        const auto property = key == "startup_mib" ? L"VirtualQuantity" : key == "minimum_mib" ? L"Reservation" : L"Limit";
+        valid = valid && put_text(modified.Get(), property, std::to_wstring(value.as<std::int64_t>()), CIM_UINT64);
+      }
+    }
   }
   if (!valid) { prepared.error = "settings_property_unsupported"; return prepared; }
   const auto encoded = wmi::object_xml(modified.Get());

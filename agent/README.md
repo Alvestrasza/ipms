@@ -12,6 +12,17 @@ Hyper-V pack accepts only fixed start, graceful shutdown, stop, pause, and
 resume assignments for an exact VM GUID; it never invokes `Win32_Product`,
 PowerShell, or a server-supplied query or method.
 
+## State-aware Hyper-V settings
+
+Windows Agent **0.2.28** adds schema-2, power-state-bound Hyper-V settings patches.
+Running VMs can receive fixed name/notes edits and directional Dynamic Memory
+limits (minimum down, maximum up). CPU count, startup memory and memory mode
+remain stopped-only in IPMS. Static hot-memory prerequisites are not yet attested.
+The backend and native Agent independently validate every changed field; no
+generic command interface is added. Deploy a schema-2-capable control plane
+before upgrading an Agent. See the [field matrix](../docs/architecture/HYPERV-LIVE-SETTINGS-MATRIX.md)
+and [0.2.38 verification boundary](../docs/operations/HYPERV-SETTINGS-0238-ACCEPTANCE.md).
+
 ## Heartbeat and scheduling isolation
 
 Windows and Linux send a dedicated, fixed `heartbeat` message every ten seconds

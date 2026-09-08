@@ -93,6 +93,11 @@ security, device creation/removal and other advanced properties remain read-only
 until individually supported. Apply one typed section at a time: a collection
 of unrelated provider calls is not an atomic transaction.
 
+The state-aware schema-2 extension is specified in the
+[live-settings field matrix](HYPERV-LIVE-SETTINGS-MATRIX.md). It adds changed-field
+patches bound to the inspected power state. It does not qualify all Hyper-V
+properties as hot-editable or replace independent backend/native guards.
+
 ## Checkpoints
 
 Present a tree with name, type and creation time. Bind deletion/application to

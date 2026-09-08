@@ -431,14 +431,14 @@ hyperv_management_inspection inspect_hyperv_virtual_machine(const hyperv_managem
       supports_snapshot_method(schema, "CreateSnapshot");
   const bool delete_supported = checkpoints.complete && stable_state && supports_snapshot_method(schema, "DestroySnapshot");
   const bool apply_supported = checkpoints.complete && state == "stopped" && supports_snapshot_method(schema, "ApplySnapshot");
-  const bool settings_supported = state == "stopped" && supports_settings_methods(schema, current);
+  const bool settings_supported = stable_state && supports_settings_methods(schema, current);
   for (auto& checkpoint : checkpoints.rows) {
     auto& fields = checkpoint.as<json::object>();
     fields.at("can_delete") = fields.at("can_delete").as<bool>() && delete_supported;
     fields.at("can_apply") = fields.at("can_apply").as<bool>() && apply_supported;
   }
   json::object document{
-      {"schema_version", 1}, {"vm_source_id", target.vm_source_id}, {"vm_name", target.expected_name},
+      {"schema_version", 2}, {"vm_source_id", target.vm_source_id}, {"vm_name", target.expected_name},
       {"state", state},
       {"settings", json::object{
           {"name", target.expected_name}, {"notes", notes(settings)},

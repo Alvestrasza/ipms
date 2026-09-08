@@ -27,6 +27,7 @@ from .hyperv_management_schema import (
     document_digest,
     integer,
     validate_parameters,
+    validate_settings_change,
     validate_snapshot,
 )
 
@@ -257,8 +258,13 @@ def _check_snapshot(vm, enrollment, operation, expected_revision, parameters):
     if document["collection_status"]["settings"] != "collected":
         deny("management_snapshot_unavailable")
     if operation == "settings_update":
-        if vm.state != HyperVVirtualMachine.State.STOPPED:
-            deny("management_vm_must_be_stopped")
+        if "expected_state" in parameters and (
+            not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", vm.host.agent_version)
+            or tuple(int(part) for part in vm.host.agent_version.split("."))
+            < (0, 2, 28)
+        ):
+            deny("management_agent_upgrade_required")
+        validate_settings_change(parameters, document)
         return
     if document["collection_status"]["checkpoints"] != "collected":
         deny("management_snapshot_unavailable")
@@ -613,7 +619,7 @@ def record_management_result(
         and job.parameters.get("section") == "general"
     )
     if general_settings and status == "succeeded":
-        expected_name = job.parameters["values"]["name"]
+        expected_name = job.parameters["values"].get("name", job.vm_name)
     if snapshot is not None and (
         snapshot["vm_source_id"] != job.vm_source_id
         or snapshot["vm_name"] != expected_name
@@ -631,7 +637,8 @@ def record_management_result(
         )
         if (
             snapshot["collection_status"]["settings"] != "collected"
-            or snapshot["state"] != "stopped"
+            or snapshot["state"] != job.parameters.get("expected_state", "stopped")
+            or ("expected_state" in job.parameters and snapshot["schema_version"] != 2)
             or any(
                 observed[key] != value
                 for key, value in job.parameters["values"].items()

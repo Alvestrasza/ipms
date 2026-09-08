@@ -28,6 +28,7 @@ import {
   type ManagementSnapshot,
   type SettingsRequest,
   type SettingsSection,
+  settingsFieldRule,
   settingsOperationAllowed,
   settingsRequest,
 } from "@/lib/hyperv-management-types";
@@ -102,8 +103,26 @@ function SettingsEditor({
       : section === "processor"
         ? ["count"]
         : ["startup_mib", "minimum_mib", "maximum_mib", "dynamic_enabled"];
-  const known = keys.every((key) => initial[key] !== null);
+  const known =
+    snapshot.schema_version === 2
+      ? keys.some((key) =>
+          ["editable", "increase_only", "decrease_only"].includes(
+            settingsFieldRule(snapshot, section, key),
+          ),
+        )
+      : keys.every((key) => initial[key] !== null);
   const changed = keys.some((key) => fields[key] !== initial[key]);
+  const editable = (key: string) =>
+    allowed &&
+    ["editable", "increase_only", "decrease_only"].includes(
+      settingsFieldRule(snapshot, section, key),
+    );
+  const hint = (key: string) => {
+    const rule = settingsFieldRule(snapshot, section, key);
+    return rule === "editable" ? null : (
+      <small id={`${formId}-${key}-hint`}>{copy.fieldRules[rule]}</small>
+    );
+  };
   useEffect(() => {
     onDirty(section, known && changed);
   }, [section, known, changed, onDirty]);
@@ -112,19 +131,26 @@ function SettingsEditor({
     setInvalid(false);
   };
   function numeric(key: string, label: string, maximum: number) {
+    const rule = settingsFieldRule(snapshot, section, key);
     return (
       <label key={key}>
-        {label}
+        <span id={`${formId}-${key}-label`}>{label}</span>
         <input
           type="number"
-          min={1}
-          max={maximum}
+          aria-labelledby={`${formId}-${key}-label`}
+          aria-describedby={
+            rule !== "editable" ? `${formId}-${key}-hint` : undefined
+          }
+          disabled={!editable(key)}
+          min={rule === "increase_only" ? Number(initial[key]) : 1}
+          max={rule === "decrease_only" ? Number(initial[key]) : maximum}
           step={1}
           required
           value={typeof fields[key] === "string" ? fields[key] : ""}
           placeholder={copy.unknown}
           onChange={(event) => update(key, event.target.value)}
         />
+        {hint(key)}
       </label>
     );
   }
@@ -136,7 +162,7 @@ function SettingsEditor({
         event.preventDefault();
         if (!allowed || !known || !changed) return;
         try {
-          onSubmit(settingsRequest(section, fields));
+          onSubmit(settingsRequest(section, fields, snapshot));
         } catch {
           setInvalid(true);
         }
@@ -149,6 +175,8 @@ function SettingsEditor({
             <label>
               {copy.settings.name}
               <input
+                disabled={!editable("name")}
+                aria-label={copy.settings.name}
                 required
                 maxLength={100}
                 autoComplete="off"
@@ -156,10 +184,12 @@ function SettingsEditor({
                 placeholder={copy.unknown}
                 onChange={(event) => update("name", event.target.value)}
               />
+              {hint("name")}
             </label>
             <label>
               <span id={`${formId}-notes-label`}>{copy.settings.notes}</span>
               <textarea
+                disabled={!editable("notes")}
                 aria-labelledby={`${formId}-notes-label`}
                 maxLength={4096}
                 rows={3}
@@ -167,6 +197,7 @@ function SettingsEditor({
                 placeholder={copy.unknown}
                 onChange={(event) => update("notes", event.target.value)}
               />
+              {hint("notes")}
             </label>
           </>
         ) : section === "processor" ? (
@@ -179,6 +210,8 @@ function SettingsEditor({
             <label>
               <input
                 type="checkbox"
+                disabled={!editable("dynamic_enabled")}
+                aria-label={copy.settings.dynamic}
                 checked={fields.dynamic_enabled === true}
                 onChange={(event) =>
                   update("dynamic_enabled", event.target.checked)
@@ -186,11 +219,14 @@ function SettingsEditor({
               />{" "}
               {copy.settings.dynamic}
               {fields.dynamic_enabled === null ? ` · ${copy.unknown}` : ""}
+              {hint("dynamic_enabled")}
             </label>
           </>
         )}
       </fieldset>
-      {!known ? <p>{copy.settingsMissing}</p> : null}
+      {keys.some((key) => initial[key] === null) ? (
+        <p>{copy.settingsMissing}</p>
+      ) : null}
       {invalid ? (
         <p className="form-error" role="alert">
           {copy.settingsInvalid}
@@ -946,7 +982,9 @@ export function HyperVManagementDialog({
                     ) : snapshot.state !== "stopped" ? (
                       <p className="hyperv-management-dialog__notice">
                         {snapshot.state === "running"
-                          ? copy.settingsRunning
+                          ? snapshot.schema_version === 2
+                            ? copy.settingsRunning
+                            : copy.settingsLegacy
                           : copy.settingsStopped}
                       </p>
                     ) : !snapshot.capabilities.settings_update ? (

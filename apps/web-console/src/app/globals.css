@@ -2905,6 +2905,12 @@ dialog.hyperv-management-dialog[open] {
   color: var(--color-text-muted);
   font-size: 12px;
 }
+
+/* Preserve the brand hue while meeting AA for the active 14px action label. */
+.hyperv-management-dialog .primary-button {
+  background: #bf3d34;
+  border-color: #bf3d34;
+}
 .hyperv-management-dialog__properties-heading {
   display: flex;
   align-items: center;

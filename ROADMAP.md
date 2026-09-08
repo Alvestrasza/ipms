@@ -356,6 +356,12 @@ Migration from IPMS Appliance to IPMS Scale-Out must remain supported.
 - Production checkpoint creation, host/storage migration and existing-cluster
   VM-role add/remove remain pending. Migration requires an explicitly selected
   target host, approved storage and qualified host-to-host authorization.
+- Application 0.2.38 / Windows Agent 0.2.28 implement state-bound changed-field
+  patches: running name/notes edits and directional Dynamic Memory limits.
+  API and native execution independently reject offline-only fields and changed
+  VM state. Static hot-memory and advanced live setters remain unqualified.
+  Source/testing, not activation: see the [field matrix](docs/architecture/HYPERV-LIVE-SETTINGS-MATRIX.md)
+  and [verification boundary](docs/operations/HYPERV-SETTINGS-0238-ACCEPTANCE.md).
 - See [Issue #24](https://github.com/Alvestrasza/ipms/issues/24),
   [ADR-0013](docs/architecture/ADR-0013-HYPERV-MANAGEMENT-OPERATIONS.md) and
   [deployment and acceptance](docs/operations/HYPERV-MANAGEMENT.md).

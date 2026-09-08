@@ -33,9 +33,7 @@ inline std::string validate_management_command(
     if (!document.at("capabilities").as<json::object>().at(name).as<bool>()) return "management_operation_unsupported";
     const auto& state = document.at("state").as<std::string>();
     if (command.operation == operation::settings_update) {
-      const auto error = validate_settings_parameters(command.parameters);
-      if (!error.empty()) return error;
-      return state == "stopped" ? "" : "invalid_vm_state";
+      return validate_settings_change(command.parameters, snapshot);
     }
     if (command.operation == operation::checkpoint_create) {
       if (parameters.size() != 1 || parameters.at("policy").as<std::string>() != "configured") return "invalid_management_command";

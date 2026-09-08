@@ -5,6 +5,7 @@ import {
   checkpointSubtree,
   isManagementJobActive,
   isManagementSnapshotFresh,
+  settingsFieldRule,
   settingsOperationAllowed,
   settingsRequest,
 } from "../src/lib/hyperv-management-types.ts";
@@ -30,6 +31,166 @@ const payload = () => ({
       checkpoint_delete: true,
     },
   },
+});
+
+const liveSnapshot = () => ({
+  schema_version: 2,
+  state: "running",
+  collection_status: { settings: "collected" },
+  capabilities: { settings_update: true },
+  settings: {
+    name: "Test VM",
+    notes: "Original",
+    processor: { count: 4 },
+    memory: {
+      startup_mib: 2048,
+      minimum_mib: 1024,
+      maximum_mib: 4096,
+      dynamic_enabled: true,
+    },
+  },
+});
+const memoryFields = {
+  startup_mib: "2048",
+  minimum_mib: "1024",
+  maximum_mib: "4096",
+  dynamic_enabled: true,
+};
+
+test("schema 2 patches contain only changed live fields and bind power state", () => {
+  const snapshot = liveSnapshot();
+  assert.deepEqual(
+    settingsRequest("general", { name: "Test VM", notes: "Updated" }, snapshot)
+      .parameters,
+    {
+      section: "general",
+      values: { notes: "Updated" },
+      expected_state: "running",
+    },
+  );
+  assert.deepEqual(
+    settingsRequest(
+      "memory",
+      { ...memoryFields, maximum_mib: "8192" },
+      snapshot,
+    ).parameters,
+    {
+      section: "memory",
+      values: { maximum_mib: 8192 },
+      expected_state: "running",
+    },
+  );
+  assert.deepEqual(
+    settingsRequest("memory", { ...memoryFields, minimum_mib: "512" }, snapshot)
+      .parameters.values,
+    { minimum_mib: 512 },
+  );
+  assert.throws(
+    () => settingsRequest("memory", memoryFields, snapshot),
+    /invalid_request/,
+  );
+  assert.equal(
+    settingsOperationAllowed({ ...payload(), snapshot }, true, now, false),
+    true,
+  );
+});
+
+test("live field directions, offline fields, static memory and unknown states fail closed", () => {
+  for (const changes of [
+    { minimum_mib: "1536" },
+    { maximum_mib: "3072" },
+    { startup_mib: "3072" },
+    { dynamic_enabled: false },
+  ]) {
+    assert.throws(
+      () =>
+        settingsRequest(
+          "memory",
+          { ...memoryFields, ...changes },
+          liveSnapshot(),
+        ),
+      /invalid_request/,
+    );
+  }
+  assert.throws(
+    () => settingsRequest("processor", { count: "8" }, liveSnapshot()),
+    /invalid_request/,
+  );
+  assert.equal(
+    settingsFieldRule(liveSnapshot(), "memory", "minimum_mib"),
+    "decrease_only",
+  );
+  assert.equal(
+    settingsFieldRule(liveSnapshot(), "memory", "maximum_mib"),
+    "increase_only",
+  );
+  for (const state of ["paused", "saved", "unknown"]) {
+    const snapshot = { ...liveSnapshot(), state };
+    assert.equal(
+      settingsOperationAllowed({ ...payload(), snapshot }, true, now, false),
+      false,
+    );
+    assert.throws(
+      () =>
+        settingsRequest(
+          "general",
+          { name: "Test VM", notes: "Updated" },
+          snapshot,
+        ),
+      /invalid_request/,
+    );
+  }
+  for (const mode of [false, null]) {
+    const snapshot = liveSnapshot();
+    snapshot.settings.memory.dynamic_enabled = mode;
+    assert.throws(
+      () =>
+        settingsRequest(
+          "memory",
+          { ...memoryFields, dynamic_enabled: mode, maximum_mib: "8192" },
+          snapshot,
+        ),
+      /invalid_request/,
+    );
+  }
+});
+
+test("sparse patches preserve unreported unrelated fields and validate the merged memory tuple", () => {
+  const snapshot = liveSnapshot();
+  snapshot.settings.name = null;
+  assert.deepEqual(
+    settingsRequest("general", { name: null, notes: "Updated" }, snapshot)
+      .parameters.values,
+    { notes: "Updated" },
+  );
+  snapshot.settings.memory.startup_mib = null;
+  assert.throws(
+    () =>
+      settingsRequest(
+        "memory",
+        { ...memoryFields, startup_mib: null, maximum_mib: "8192" },
+        snapshot,
+      ),
+    /invalid_request/,
+  );
+  const stopped = { ...liveSnapshot(), state: "stopped" };
+  assert.throws(
+    () =>
+      settingsRequest(
+        "memory",
+        { ...memoryFields, startup_mib: "8192" },
+        stopped,
+      ),
+    /invalid_request/,
+  );
+  assert.deepEqual(
+    settingsRequest(
+      "memory",
+      { ...memoryFields, startup_mib: "8192", maximum_mib: "8192" },
+      stopped,
+    ).parameters.values,
+    { startup_mib: 8192, maximum_mib: 8192 },
+  );
 });
 
 test("snapshot freshness requires server attestation, a snapshot and a future valid timestamp", () => {

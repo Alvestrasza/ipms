@@ -396,6 +396,143 @@ test("each settings apply submits only one stopped-VM section", async ({
   ).toEqual(["count"]);
 });
 
+test("schema 2 running VM exposes only safe live fields and submits a sparse state-bound patch", async ({
+  page,
+}) => {
+  const { state, posts } = await setup(page);
+  state.snapshot.schema_version = 2;
+  state.snapshot.state = "running";
+  const dialog = await open(page, "Settings");
+  await expect(dialog.getByLabel("Name", { exact: true })).toBeEnabled();
+  await expect(dialog.getByLabel("Notes", { exact: true })).toBeEnabled();
+  await dialog.getByRole("button", { name: "Processor", exact: true }).click();
+  await expect(
+    dialog.getByLabel("Virtual processors", { exact: true }),
+  ).toBeDisabled();
+  await expect(
+    dialog
+      .getByRole("group", { name: "Processor", exact: true })
+      .getByText("This field can only be changed while the VM is stopped.", {
+        exact: true,
+      }),
+  ).toBeVisible();
+  await dialog.getByRole("button", { name: "Memory", exact: true }).click();
+  await expect(
+    dialog.getByLabel("Startup memory (MiB)", { exact: true }),
+  ).toBeDisabled();
+  await expect(
+    dialog.getByLabel("Dynamic memory", { exact: true }),
+  ).toBeDisabled();
+  const minimum = dialog.getByLabel("Minimum memory (MiB)", { exact: true });
+  const maximum = dialog.getByLabel("Maximum memory (MiB)", { exact: true });
+  await expect(minimum).toBeEnabled();
+  await expect(minimum).toHaveAttribute("max", "1024");
+  await expect(maximum).toBeEnabled();
+  await expect(maximum).toHaveAttribute("min", "8192");
+  await maximum.fill("4096");
+  await dialog
+    .getByRole("button", { name: "Apply this section", exact: true })
+    .click();
+  expect(posts).toEqual([]);
+  await maximum.fill("16384");
+  const axe = await new AxeBuilder({ page })
+    .include(".hyperv-management-dialog")
+    .analyze();
+  expect(axe.violations).toEqual([]);
+  await page.screenshot({
+    path: test.info().outputPath("running-dynamic-memory.png"),
+    fullPage: true,
+  });
+  await dialog
+    .getByRole("button", { name: "Apply this section", exact: true })
+    .click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0].document.parameters).toEqual({
+    section: "memory",
+    values: { maximum_mib: 16384 },
+    expected_state: "running",
+  });
+});
+
+test("schema 2 static memory explains the unqualified hot-memory boundary", async ({
+  page,
+}) => {
+  const { state, posts } = await setup(page);
+  state.snapshot.schema_version = 2;
+  state.snapshot.state = "running";
+  state.snapshot.settings.memory.dynamic_enabled = false;
+  const dialog = await open(page, "Settings");
+  await dialog.getByRole("button", { name: "Memory", exact: true }).click();
+  for (const label of [
+    "Startup memory (MiB)",
+    "Minimum memory (MiB)",
+    "Maximum memory (MiB)",
+    "Dynamic memory",
+  ])
+    await expect(dialog.getByLabel(label, { exact: true })).toBeDisabled();
+  await expect(
+    dialog.getByText(
+      /Static hot-memory changes require verified host\/guest support/,
+    ),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Apply this section", exact: true }),
+  ).toBeDisabled();
+  expect(posts).toEqual([]);
+});
+
+test("schema 2 German live hints and a later paused state lock a pending draft", async ({
+  page,
+}) => {
+  const { state, posts } = await setup(page);
+  state.snapshot.schema_version = 2;
+  state.snapshot.state = "running";
+  await page.goto("/de/virtual/hyper-v");
+  await page
+    .getByRole("button", {
+      name: `Weitere VM-Aktionen: ${vmName}`,
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("menuitem", { name: "Einstellungen", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: vmName, exact: true });
+  await dialog
+    .getByRole("button", { name: "Arbeitsspeicher", exact: true })
+    .click();
+  await expect(
+    dialog.getByText("Im Betrieb: nur senken.", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByText("Im Betrieb: nur erhöhen.", { exact: true }),
+  ).toBeVisible();
+  await dialog
+    .getByLabel("Maximaler Arbeitsspeicher (MiB)", { exact: true })
+    .fill("16384");
+  await expect(
+    dialog.getByRole("button", {
+      name: "Diesen Bereich anwenden",
+      exact: true,
+    }),
+  ).toBeEnabled();
+  state.snapshot.state = "paused";
+  state.snapshot.revision = "b".repeat(64);
+  await dialog
+    .getByRole("button", { name: "Status neu laden", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("button", {
+      name: "Diesen Bereich anwenden",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await expect(
+    dialog.getByLabel("Maximaler Arbeitsspeicher (MiB)", { exact: true }),
+  ).toBeDisabled();
+  expect(posts).toEqual([]);
+});
+
 test("settings stay read-only for running VMs and non-editable subareas", async ({
   page,
 }) => {
