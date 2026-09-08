@@ -348,6 +348,10 @@ Migration from IPMS Appliance to IPMS Scale-Out must remain supported.
 - Centered, localized settings/checkpoint dialogs support visible action menus,
   right-click and Shift+F10, exact destructive-action confirmation, persistent
   job progress and fail-closed uncertain outcomes.
+- Application 0.2.37 prepares a grouped VM settings property view with one active
+  subsection, unduplicated editable values, explicit read-only properties and a
+  fixed single-section action footer. Publication/DEV activation are separate
+  from local UI verification; see the [0.2.37 acceptance record](docs/operations/HYPERV-SETTINGS-0237-ACCEPTANCE.md).
 - Production checkpoint creation, host/storage migration and existing-cluster
   VM-role add/remove remain pending. Migration requires an explicitly selected
   target host, approved storage and qualified host-to-host authorization.

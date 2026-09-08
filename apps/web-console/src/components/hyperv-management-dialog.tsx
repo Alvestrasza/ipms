@@ -1,7 +1,14 @@
 "use client";
 
-import { Camera, ChevronRight, RefreshCw, Settings, X } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import {
+  Camera,
+  ChevronRight,
+  RefreshCw,
+  Settings,
+  TriangleAlert,
+  X,
+} from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import {
   getHyperVManagementCopy,
@@ -65,12 +72,16 @@ function SettingsEditor({
   section,
   allowed,
   copy,
+  formId,
+  onDirty,
   onSubmit,
 }: {
   snapshot: ManagementSnapshot;
   section: SettingsSection;
   allowed: boolean;
   copy: HyperVManagementCopy;
+  formId: string;
+  onDirty: (section: SettingsSection, dirty: boolean) => void;
   onSubmit: (request: SettingsRequest) => void;
 }) {
   const settings = snapshot.settings;
@@ -93,6 +104,9 @@ function SettingsEditor({
         : ["startup_mib", "minimum_mib", "maximum_mib", "dynamic_enabled"];
   const known = keys.every((key) => initial[key] !== null);
   const changed = keys.some((key) => fields[key] !== initial[key]);
+  useEffect(() => {
+    onDirty(section, known && changed);
+  }, [section, known, changed, onDirty]);
   const update = (key: string, value: string | boolean) => {
     setFields((previous) => ({ ...previous, [key]: value }));
     setInvalid(false);
@@ -116,6 +130,7 @@ function SettingsEditor({
   }
   return (
     <form
+      id={formId}
       className="hyperv-management-dialog__settings-form"
       onSubmit={(event) => {
         event.preventDefault();
@@ -128,7 +143,7 @@ function SettingsEditor({
       }}
     >
       <fieldset disabled={!allowed || !known}>
-        <legend>{copy.settings[section]}</legend>
+        <legend className="sr-only">{copy.settings[section]}</legend>
         {section === "general" ? (
           <>
             <label>
@@ -143,8 +158,9 @@ function SettingsEditor({
               />
             </label>
             <label>
-              {copy.settings.notes}
+              <span id={`${formId}-notes-label`}>{copy.settings.notes}</span>
               <textarea
+                aria-labelledby={`${formId}-notes-label`}
                 maxLength={4096}
                 rows={3}
                 value={typeof fields.notes === "string" ? fields.notes : ""}
@@ -173,9 +189,6 @@ function SettingsEditor({
             </label>
           </>
         )}
-        <button className="outline-button" type="submit" disabled={!changed}>
-          {copy.applySettings}
-        </button>
       </fieldset>
       {!known ? <p>{copy.settingsMissing}</p> : null}
       {invalid ? (
@@ -187,15 +200,29 @@ function SettingsEditor({
   );
 }
 
+type SettingsPage = SettingsSection | "automatic" | "devices" | "policy";
+const settingsGroups = [
+  { label: "identity", pages: ["general"] },
+  { label: "hardware", pages: ["processor", "memory", "devices"] },
+  { label: "management", pages: ["automatic", "policy"] },
+] as const;
+const editablePages: SettingsSection[] = ["general", "processor", "memory"];
+
 function SettingsView({
   snapshot,
+  page,
   copy,
   allowed,
+  formId,
+  onDirty,
   onSubmit,
 }: {
   snapshot: ManagementSnapshot;
+  page: SettingsPage;
   copy: HyperVManagementCopy;
   allowed: boolean;
+  formId: string;
+  onDirty: (section: SettingsSection, dirty: boolean) => void;
   onSubmit: (request: SettingsRequest) => void;
 }) {
   const settings = snapshot.settings;
@@ -207,105 +234,92 @@ function SettingsView({
           ? copy.yes
           : copy.no
         : String(value);
-  const mib = (value: number | null) =>
-    value === null ? copy.unknown : `${value} MiB`;
   const percent = (value: number | null, divisor = 1) =>
     value === null ? copy.unknown : `${value / divisor} %`;
-  const groups: {
-    title: string;
-    fields: [string, string][];
-    section?: SettingsSection;
-  }[] = [
-    {
-      title: copy.settings.general,
-      section: "general",
-      fields: [
-        [copy.settings.name, scalar(settings.name)],
-        [copy.settings.notes, scalar(settings.notes)],
-        [copy.settings.version, scalar(settings.configuration_version)],
-        [copy.settings.generation, scalar(settings.generation)],
-        [
-          copy.settings.policy,
-          settings.checkpoint_policy === null
-            ? copy.unknown
-            : copy.policies[settings.checkpoint_policy],
-        ],
+  // Editable values appear only in their form. This list contains additional,
+  // read-only properties, never a second copy of the same setting.
+  const fields: Record<SettingsPage, [string, string][]> = {
+    general: [
+      [copy.settings.version, scalar(settings.configuration_version)],
+      [copy.settings.generation, scalar(settings.generation)],
+    ],
+    processor: [
+      [
+        copy.settings.reservation,
+        percent(settings.processor.reservation_milli_percent, 1000),
       ],
-    },
-    {
-      title: copy.settings.processor,
-      section: "processor",
-      fields: [
-        [copy.settings.count, scalar(settings.processor.count)],
-        [
-          copy.settings.reservation,
-          percent(settings.processor.reservation_milli_percent, 1000),
-        ],
-        [
-          copy.settings.limit,
-          percent(settings.processor.limit_milli_percent, 1000),
-        ],
-        [copy.settings.weight, scalar(settings.processor.weight)],
-        [
-          copy.settings.compatibility,
-          scalar(settings.processor.compatibility_for_migration),
-        ],
+      [
+        copy.settings.limit,
+        percent(settings.processor.limit_milli_percent, 1000),
       ],
-    },
-    {
-      title: copy.settings.memory,
-      section: "memory",
-      fields: [
-        [copy.settings.startup, mib(settings.memory.startup_mib)],
-        [copy.settings.minimum, mib(settings.memory.minimum_mib)],
-        [copy.settings.maximum, mib(settings.memory.maximum_mib)],
-        [copy.settings.dynamic, scalar(settings.memory.dynamic_enabled)],
-        [copy.settings.buffer, percent(settings.memory.buffer_percent)],
-        [copy.settings.weight, scalar(settings.memory.weight)],
+      [copy.settings.weight, scalar(settings.processor.weight)],
+      [
+        copy.settings.compatibility,
+        scalar(settings.processor.compatibility_for_migration),
       ],
-    },
-    {
-      title: copy.settings.automatic,
-      fields: [
-        [copy.settings.startAction, scalar(settings.automatic_start_action)],
-        [copy.settings.startDelay, scalar(settings.automatic_start_delay)],
-        [copy.settings.stopAction, scalar(settings.automatic_stop_action)],
+    ],
+    memory: [
+      [copy.settings.buffer, percent(settings.memory.buffer_percent)],
+      [copy.settings.weight, scalar(settings.memory.weight)],
+    ],
+    automatic: [
+      [copy.settings.startAction, scalar(settings.automatic_start_action)],
+      [copy.settings.startDelay, scalar(settings.automatic_start_delay)],
+      [copy.settings.stopAction, scalar(settings.automatic_stop_action)],
+    ],
+    policy: [
+      [
+        copy.settings.policy,
+        settings.checkpoint_policy === null
+          ? copy.unknown
+          : copy.policies[settings.checkpoint_policy],
       ],
-    },
-  ];
+    ],
+    devices: [],
+  };
+  if (snapshot.collection_status.settings !== "collected")
+    return (
+      <p className="hyperv-management-dialog__muted">{copy.unavailable}</p>
+    );
   return (
     <>
-      {snapshot.collection_status.settings !== "collected" ? (
-        <p className="hyperv-management-dialog__muted">{copy.unavailable}</p>
+      {editablePages.map((item) => (
+        <div key={item} hidden={page !== item}>
+          <SettingsEditor
+            key={`${snapshot.revision}:${item}`}
+            snapshot={snapshot}
+            section={item}
+            allowed={allowed}
+            copy={copy}
+            formId={`${formId}-${item}`}
+            onDirty={onDirty}
+            onSubmit={onSubmit}
+          />
+        </div>
+      ))}
+      {fields[page].length ? (
+        <section
+          aria-label={copy.settings.additional}
+          className="hyperv-management-dialog__properties"
+        >
+          <div className="hyperv-management-dialog__properties-heading">
+            <h5>{copy.settings.additional}</h5>
+            <span>{copy.settings.readOnlyLabel}</span>
+          </div>
+          <dl className="hyperv-management-dialog__details">
+            {fields[page].map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
       ) : (
-        groups.map((group) => (
-          <section key={group.title}>
-            <h4>{group.title}</h4>
-            <dl className="hyperv-management-dialog__details">
-              {group.fields.map(([label, value]) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd>{value}</dd>
-                </div>
-              ))}
-            </dl>
-            {group.section ? (
-              <SettingsEditor
-                key={`${snapshot.revision}:${group.section}`}
-                snapshot={snapshot}
-                section={group.section}
-                allowed={allowed}
-                copy={copy}
-                onSubmit={onSubmit}
-              />
-            ) : null}
-          </section>
-        ))
+        <p className="hyperv-management-dialog__notice">
+          {copy.settings.devicesHint}
+        </p>
       )}
-      <section>
-        <h4>{copy.settings.devices}</h4>
-        <p>{copy.settings.devicesHint}</p>
-      </section>
     </>
   );
 }
@@ -379,6 +393,17 @@ export function HyperVManagementDialog({
   const { locale } = useLocale();
   const copy = getHyperVManagementCopy(locale);
   const headingId = useId();
+  const settingsFormId = useId();
+  const sectionHeadingId = useId();
+  const [settingsPage, setSettingsPage] = useState<SettingsPage>("general");
+  const [dirtySections, setDirtySections] = useState<
+    Partial<Record<SettingsSection, boolean>>
+  >({});
+  const recordDirty = useCallback((item: SettingsSection, dirty: boolean) => {
+    setDirtySections((previous) =>
+      previous[item] === dirty ? previous : { ...previous, [item]: dirty },
+    );
+  }, []);
   const dialog = useRef<HTMLDialogElement>(null);
   const alive = useRef(false);
   const writeInFlight = useRef(false);
@@ -474,8 +499,26 @@ export function HyperVManagementDialog({
     };
   }, [endpoint, tenantId, reload]);
 
+  // Reloading or locking a focused control can move browser focus to <body>.
+  // Keep keyboard orientation inside the open modal without scrolling its pane.
+  useEffect(() => {
+    const element = dialog.current;
+    if (
+      data &&
+      !loading &&
+      element?.open &&
+      !element.contains(document.activeElement)
+    )
+      element
+        .querySelector<HTMLElement>(
+          ".hyperv-management-dialog__section-heading",
+        )
+        ?.focus({ preventScroll: true });
+  }, [data, loading]);
+
   const snapshot = data?.snapshot ?? null;
   const fresh = !needsInspection && isManagementSnapshotFresh(data, now);
+  const poweredOn = (snapshot?.state ?? virtualMachine.state) === "running";
   const active =
     isManagementJobActive(job) ||
     isManagementJobActive(data?.active_operation ?? null);
@@ -647,6 +690,20 @@ export function HyperVManagementDialog({
         vmConfirmation === confirmation.vmName &&
         checkpointConfirmation === confirmation.checkpoint.name);
 
+  const settingsEditable =
+    section === "settings" &&
+    editablePages.includes(settingsPage as SettingsSection);
+  const settingsGroup = settingsGroups.find((group) =>
+    (group.pages as readonly string[]).includes(settingsPage),
+  );
+  function navigate(value: string) {
+    if (value.startsWith("settings:")) {
+      setSection("settings");
+      setSettingsPage(value.slice(9) as SettingsPage);
+    } else setSection(value as ManagementSection);
+    setConfirmation(null);
+  }
+
   return (
     <dialog
       ref={dialog}
@@ -658,7 +715,7 @@ export function HyperVManagementDialog({
       }}
     >
       <header className="modal-card__heading">
-        <div>
+        <div className="hyperv-management-dialog__identity">
           <p className="eyebrow">{copy.title}</p>
           <h3 id={headingId}>{data?.vm_name ?? virtualMachine.name}</h3>
         </div>
@@ -670,39 +727,134 @@ export function HyperVManagementDialog({
         >
           <X aria-hidden="true" size={18} />
         </button>
-      </header>
-      <div className="hyperv-management-dialog__layout">
-        <nav className="hyperv-management-dialog__nav" aria-label={copy.title}>
-          {(Object.keys(copy.sections) as ManagementSection[]).map((item) => (
-            <button
-              key={item}
-              type="button"
-              aria-current={section === item ? "page" : undefined}
-              onClick={() => {
-                setSection(item);
-                setConfirmation(null);
-              }}
-            >
-              {item === "settings" ? (
-                <Settings aria-hidden="true" size={16} />
-              ) : item === "checkpoints" ? (
-                <Camera aria-hidden="true" size={16} />
-              ) : (
-                <ChevronRight aria-hidden="true" size={16} />
-              )}
-              <span>{copy.sections[item]}</span>
-            </button>
-          ))}
-        </nav>
-        <div className="hyperv-management-dialog__body">
-          <h4>{copy.sections[section]}</h4>
-          <p className="hyperv-management-dialog__muted">
+        <div className="hyperv-management-dialog__host-row">
+          <p className="hyperv-management-dialog__host">
+            {copy.host}:{" "}
             {virtualMachine.host_fqdn || virtualMachine.host_hostname}
           </p>
+          {poweredOn ? (
+            <span
+              className="hyperv-management-dialog__power-warning"
+              role="status"
+              aria-label={copy.powerState}
+            >
+              <TriangleAlert aria-hidden="true" size={18} />
+              {fresh ? copy.poweredOn : copy.lastPoweredOn}
+            </span>
+          ) : null}
+        </div>
+      </header>
+      <label className="hyperv-management-dialog__mobile-nav">
+        <span id={`${headingId}-navigation`}>{copy.currentSection}</span>
+        <select
+          aria-labelledby={`${headingId}-navigation`}
+          value={section === "settings" ? `settings:${settingsPage}` : section}
+          onChange={(event) => navigate(event.target.value)}
+        >
+          {settingsGroups.map((group) => (
+            <optgroup
+              key={group.label}
+              label={copy.settings.groups[group.label]}
+            >
+              {group.pages.map((item) => (
+                <option key={item} value={`settings:${item}`}>
+                  {copy.settings[item]}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+          <optgroup label={copy.otherActions}>
+            {(Object.keys(copy.sections) as ManagementSection[])
+              .filter((item) => item !== "settings")
+              .map((item) => (
+                <option key={item} value={item}>
+                  {copy.sections[item]}
+                </option>
+              ))}
+          </optgroup>
+        </select>
+      </label>
+      <div className="hyperv-management-dialog__layout">
+        <nav className="hyperv-management-dialog__nav" aria-label={copy.title}>
+          <button
+            type="button"
+            aria-expanded={section === "settings"}
+            onClick={() => navigate("settings:general")}
+          >
+            <Settings aria-hidden="true" size={16} />
+            <span>{copy.sections.settings}</span>
+          </button>
+          {section === "settings" ? (
+            <div className="hyperv-management-dialog__settings-nav">
+              {settingsGroups.map((group) => (
+                <div key={group.label}>
+                  <p>{copy.settings.groups[group.label]}</p>
+                  {group.pages.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      aria-current={settingsPage === item ? "page" : undefined}
+                      aria-controls={sectionHeadingId}
+                      onClick={() => navigate(`settings:${item}`)}
+                    >
+                      <ChevronRight aria-hidden="true" size={14} />
+                      <span>{copy.settings[item]}</span>
+                      {dirtySections[item as SettingsSection] ? (
+                        <span
+                          className="hyperv-management-dialog__draft-dot"
+                          aria-hidden="true"
+                          title={copy.unsaved}
+                        >
+                          •
+                        </span>
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <p className="hyperv-management-dialog__nav-label">
+            {copy.otherActions}
+          </p>
+          {(Object.keys(copy.sections) as ManagementSection[])
+            .filter((item) => item !== "settings")
+            .map((item) => (
+              <button
+                key={item}
+                type="button"
+                aria-current={section === item ? "page" : undefined}
+                onClick={() => navigate(item)}
+              >
+                {item === "checkpoints" ? (
+                  <Camera aria-hidden="true" size={16} />
+                ) : (
+                  <ChevronRight aria-hidden="true" size={16} />
+                )}
+                <span>{copy.sections[item]}</span>
+              </button>
+            ))}
+        </nav>
+        <div className="hyperv-management-dialog__body">
+          <div
+            className="hyperv-management-dialog__section-heading"
+            id={sectionHeadingId}
+            tabIndex={-1}
+          >
+            {section === "settings" && settingsGroup ? (
+              <p>{copy.settings.groups[settingsGroup.label]}</p>
+            ) : null}
+            <h4>
+              {section === "settings"
+                ? copy.settings[settingsPage]
+                : copy.sections[section]}
+            </h4>
+          </div>
           <div className="hyperv-management-dialog__toolbar">
             <button
               className="outline-button"
               type="button"
+              title={copy.refreshHint}
               disabled={submitting || active || loading}
               onClick={() => void submit(null)}
             >
@@ -722,7 +874,6 @@ export function HyperVManagementDialog({
               {copy.reload}
             </button>
           </div>
-          <p className="hyperv-management-dialog__muted">{copy.refreshHint}</p>
           {loading ? <p role="status">{copy.loading}</p> : null}
           {error ? (
             <p className="form-error" role="alert">
@@ -734,16 +885,22 @@ export function HyperVManagementDialog({
               {copy.uncertainSubmission}
             </p>
           ) : null}
-          {job ? (
-            <section
+          {job &&
+          (job.operation !== "inspect" || job.status !== "succeeded") ? (
+            <details
               className="hyperv-management-dialog__job"
               aria-label={copy.job}
+              open={
+                active ||
+                job.status === "failed" ||
+                job.status === "requires_reconciliation"
+              }
             >
-              <p role="status">
+              <summary aria-live="polite" aria-atomic="true">
                 <strong>{copy.operations[job.operation]}</strong> ·{" "}
                 {copy.statuses[job.status]}
                 {job.progress !== null ? ` · ${job.progress}%` : ""}
-              </p>
+              </summary>
               <p className="hyperv-management-dialog__muted">
                 {copy.jobId}: {job.id}
               </p>
@@ -762,7 +919,7 @@ export function HyperVManagementDialog({
               ) : active ? (
                 <p>{copy.continuing}</p>
               ) : null}
-            </section>
+            </details>
           ) : null}
           {section === "migration" || section === "cluster" ? (
             <section>
@@ -781,19 +938,30 @@ export function HyperVManagementDialog({
               ) : null}
               {section === "settings" ? (
                 <>
-                  <p>{copy.readonly}</p>
-                  <p className="hyperv-management-dialog__muted">
-                    {copy.settingsStopped}
-                  </p>
-                  {!canConfigure ? (
-                    <p className="hyperv-management-dialog__muted">
-                      {copy.permission}
-                    </p>
+                  {settingsEditable && snapshot ? (
+                    !canConfigure ? (
+                      <p className="hyperv-management-dialog__notice">
+                        {copy.permission}
+                      </p>
+                    ) : snapshot.state !== "stopped" ? (
+                      <p className="hyperv-management-dialog__notice">
+                        {snapshot.state === "running"
+                          ? copy.settingsRunning
+                          : copy.settingsStopped}
+                      </p>
+                    ) : !snapshot.capabilities.settings_update ? (
+                      <p className="hyperv-management-dialog__notice">
+                        {copy.unsupported}
+                      </p>
+                    ) : null
                   ) : null}
                   {snapshot ? (
                     <SettingsView
                       snapshot={snapshot}
+                      page={settingsPage}
                       copy={copy}
+                      formId={settingsFormId}
+                      onDirty={recordDirty}
                       allowed={settingsEnabled()}
                       onSubmit={(request) =>
                         void submit(request, snapshot.revision)
@@ -1004,6 +1172,26 @@ export function HyperVManagementDialog({
         </div>
       </div>
       <footer className="hyperv-management-dialog__footer">
+        {settingsEditable ? (
+          <>
+            <p className="hyperv-management-dialog__footer-hint">
+              {dirtySections[settingsPage as SettingsSection]
+                ? copy.unsaved
+                : copy.applyHint}
+            </p>
+            <button
+              className="primary-button"
+              type="submit"
+              form={`${settingsFormId}-${settingsPage}`}
+              disabled={
+                !settingsEnabled() ||
+                !dirtySections[settingsPage as SettingsSection]
+              }
+            >
+              {copy.applySettings}
+            </button>
+          </>
+        ) : null}
         <button className="outline-button" type="button" onClick={onClose}>
           {copy.close}
         </button>

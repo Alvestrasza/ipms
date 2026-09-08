@@ -324,17 +324,66 @@ test("checkpoint apply requires both names verbatim", async ({ page }) => {
   });
 });
 
+test("settings navigation shows one unduplicated section and preserves drafts", async ({
+  page,
+}) => {
+  const { posts } = await setup(page);
+  const dialog = await open(page, "Settings");
+  await expect(
+    dialog.getByRole("heading", { name: "General", exact: true }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "General", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  await expect(dialog.locator("dt").filter({ hasText: /^Name$/ })).toHaveCount(
+    0,
+  );
+  await dialog
+    .getByLabel("Notes", { exact: true })
+    .fill("Unsaved general draft");
+  await dialog.getByRole("button", { name: "Processor", exact: true }).click();
+  await expect(
+    dialog.getByRole("heading", { name: "Processor", exact: true }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Processor", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  await expect(dialog.locator("button[aria-current=page]")).toHaveCount(1);
+  await expect(dialog.getByLabel("Name", { exact: true })).toBeHidden();
+  await expect(
+    dialog.getByLabel("Virtual processors", { exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    dialog.locator("dt").filter({ hasText: /^Virtual processors$/ }),
+  ).toHaveCount(0);
+  await expect(
+    dialog.getByRole("button", { name: "Apply this section", exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    dialog.getByRole("button", { name: "Apply this section", exact: true }),
+  ).toBeDisabled();
+  await dialog.getByRole("button", { name: "General", exact: true }).click();
+  await expect(dialog.getByLabel("Notes", { exact: true })).toHaveValue(
+    "Unsaved general draft",
+  );
+  expect(posts).toEqual([]);
+});
+
 test("each settings apply submits only one stopped-VM section", async ({
   page,
 }) => {
   const { posts } = await setup(page);
   const dialog = await open(page, "Settings");
+  await dialog
+    .getByLabel("Notes", { exact: true })
+    .fill("Do not submit this other draft");
+  await dialog.getByRole("button", { name: "Processor", exact: true }).click();
   const processor = dialog.getByRole("group", {
     name: "Processor",
     exact: true,
   });
   await processor.getByLabel("Virtual processors", { exact: true }).fill("6");
-  await processor
+  await dialog
     .getByRole("button", { name: "Apply this section", exact: true })
     .click();
   await expect.poll(() => posts.length).toBe(1);
@@ -345,6 +394,131 @@ test("each settings apply submits only one stopped-VM section", async ({
   expect(
     Object.keys((posts[0].document.parameters as { values: object }).values),
   ).toEqual(["count"]);
+});
+
+test("settings stay read-only for running VMs and non-editable subareas", async ({
+  page,
+}) => {
+  const { posts, state } = await setup(page);
+  state.snapshot.state = "running";
+  state.snapshot.capabilities.settings_update = false;
+  const dialog = await open(page, "Settings");
+  const warning = dialog.getByRole("status", {
+    name: "Virtual machine power state",
+  });
+  await expect(warning).toHaveText("VM is powered on");
+  await expect(warning.locator("svg")).toHaveCount(1);
+  const host = dialog.locator(".hyperv-management-dialog__host");
+  const hostBounds = await host.boundingBox();
+  const warningBounds = await warning.boundingBox();
+  if (!hostBounds || !warningBounds)
+    throw new Error("Missing host-row geometry");
+  expect(Math.abs(hostBounds.y - warningBounds.y)).toBeLessThan(8);
+  expect(warningBounds.x).toBeGreaterThan(hostBounds.x + hostBounds.width);
+  await expect(dialog.getByLabel("Name", { exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: "Memory", exact: true }).click();
+  await expect(
+    dialog.getByLabel("Startup memory (MiB)", { exact: true }),
+  ).toBeDisabled();
+  await expect(
+    dialog.getByRole("button", { name: "Apply this section", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    dialog.locator("dt").filter({ hasText: /^Startup memory$/ }),
+  ).toHaveCount(0);
+  await dialog
+    .getByRole("button", { name: "Automatic actions", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("button", { name: "Apply this section", exact: true }),
+  ).toHaveCount(0);
+  await expect(dialog.getByText("Read-only", { exact: true })).toBeVisible();
+  expect(posts).toEqual([]);
+});
+
+test("an observed start locks existing settings drafts even with an incorrect capability flag", async ({
+  page,
+}) => {
+  const { posts, state } = await setup(page);
+  const dialog = await open(page, "Settings");
+  await dialog
+    .getByLabel("Notes", { exact: true })
+    .fill("Retained but not submitted while running");
+  const apply = dialog.getByRole("button", {
+    name: "Apply this section",
+    exact: true,
+  });
+  await expect(apply).toBeEnabled();
+  state.snapshot.state = "running";
+  // Deliberately leave settings_update=true: state must independently block writes.
+  await dialog
+    .getByRole("button", { name: "Reload status", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("status", { name: "Virtual machine power state" }),
+  ).toBeVisible();
+  await expect(dialog.getByLabel("Notes", { exact: true })).toBeDisabled();
+  await expect(apply).toBeDisabled();
+  await dialog
+    .locator("form:visible")
+    .evaluate((element) => (element as HTMLFormElement).requestSubmit());
+  expect(posts).toEqual([]);
+  await dialog.getByRole("button", { name: "Processor", exact: true }).click();
+  await expect(
+    dialog.getByLabel("Virtual processors", { exact: true }),
+  ).toBeDisabled();
+  state.snapshot.state = "stopped";
+  await dialog
+    .getByRole("button", { name: "Reload status", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("status", { name: "Virtual machine power state" }),
+  ).toHaveCount(0);
+  await expect(
+    dialog.getByLabel("Virtual processors", { exact: true }),
+  ).toBeEnabled();
+  expect(posts).toEqual([]);
+});
+
+test("German settings subarea is explicit and missing values remain unknown", async ({
+  page,
+}) => {
+  const { posts, state } = await setup(page);
+  state.snapshot.settings.memory.startup_mib = null;
+  await page.goto("/de/virtual/hyper-v");
+  await page
+    .getByRole("button", {
+      name: `Weitere VM-Aktionen: ${vmName}`,
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("menuitem", { name: "Einstellungen", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: vmName, exact: true });
+  const memory = dialog.getByRole("button", {
+    name: "Arbeitsspeicher",
+    exact: true,
+  });
+  await memory.focus();
+  await page.keyboard.press("Enter");
+  await expect(memory).toHaveAttribute("aria-current", "page");
+  await expect(
+    dialog.getByRole("heading", { name: "Arbeitsspeicher", exact: true }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByLabel("Startarbeitsspeicher (MiB)", { exact: true }),
+  ).toHaveValue("");
+  await expect(
+    dialog.getByLabel("Startarbeitsspeicher (MiB)", { exact: true }),
+  ).toBeDisabled();
+  await expect(
+    dialog.getByRole("button", {
+      name: "Diesen Bereich anwenden",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  expect(posts).toEqual([]);
 });
 
 test("uncertain POST is never replayed or unlocked by a GET; an explicit successful inspect is required", async ({
@@ -424,7 +598,7 @@ for (const variant of [
     });
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    const { posts } = await setup(page);
+    const { posts, state } = await setup(page);
     const theme = await page.locator("html").getAttribute("data-theme");
     if (theme !== variant.theme) {
       await page
@@ -443,7 +617,7 @@ for (const variant of [
       "..",
       "..",
       "build",
-      "hyperv-management-0235-e2e",
+      "hyperv-settings-0237-e2e",
     );
     await mkdir(directory, { recursive: true });
     const backgroundLayout = await page.evaluate(() => ({
@@ -530,9 +704,63 @@ for (const variant of [
     }
 
     await verifyAndCapture("settings");
+    for (const [value, label] of [
+      ["processor", "Processor"],
+      ["memory", "Memory"],
+      ["automatic", "Automatic actions"],
+    ]) {
+      if (variant.width < 650)
+        await dialog
+          .getByLabel("Current section", { exact: true })
+          .selectOption(`settings:${value}`);
+      else
+        await dialog.getByRole("button", { name: label, exact: true }).click();
+      await expect(
+        dialog.getByRole("heading", { name: label, exact: true }),
+      ).toBeVisible();
+      if (value === "memory") {
+        const body = dialog.locator(".hyperv-management-dialog__body");
+        await body.evaluate((element) => {
+          element.scrollTop = element.scrollHeight;
+        });
+        const heading = await dialog
+          .getByRole("heading", { name: label, exact: true })
+          .boundingBox();
+        const viewport = await body.boundingBox();
+        expect(heading).not.toBeNull();
+        expect(viewport).not.toBeNull();
+        if (!heading || !viewport)
+          throw new Error("Missing visible settings geometry");
+        expect(heading.y).toBeGreaterThanOrEqual(viewport.y);
+        await body.evaluate((element) => {
+          element.scrollTop = 0;
+        });
+      }
+      await verifyAndCapture(value);
+    }
+    state.snapshot.state = "running";
     await dialog
-      .getByRole("button", { name: "Checkpoints", exact: true })
+      .getByRole("button", { name: "Reload status", exact: true })
       .click();
+    await expect(
+      dialog.getByRole("status", { name: "Virtual machine power state" }),
+    ).toHaveText("VM is powered on");
+    await verifyAndCapture("powered-on");
+    state.snapshot.state = "stopped";
+    await dialog
+      .getByRole("button", { name: "Reload status", exact: true })
+      .click();
+    await expect(
+      dialog.getByRole("status", { name: "Virtual machine power state" }),
+    ).toHaveCount(0);
+    if (variant.width < 650)
+      await dialog
+        .getByLabel("Current section", { exact: true })
+        .selectOption("checkpoints");
+    else
+      await dialog
+        .getByRole("button", { name: "Checkpoints", exact: true })
+        .click();
     await dialog
       .getByRole("button", { name: "Root checkpoint", exact: true })
       .click();

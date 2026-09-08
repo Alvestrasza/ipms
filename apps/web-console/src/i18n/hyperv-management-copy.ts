@@ -12,6 +12,14 @@ const english = {
   hint: "Use the action button, right-click, or Shift+F10 to manage a virtual machine.",
   close: "Close",
   cancel: "Cancel",
+  host: "Host",
+  powerState: "Virtual machine power state",
+  poweredOn: "VM is powered on",
+  lastPoweredOn: "Last observed: VM powered on",
+  currentSection: "Current section",
+  otherActions: "VM actions",
+  unsaved: "Unsaved changes in this section",
+  applyHint: "Only the selected section is applied.",
   refresh: "Refresh from host",
   reload: "Reload status",
   loading: "Loading management data…",
@@ -31,6 +39,8 @@ const english = {
   applySettings: "Apply this section",
   settingsStopped:
     "Settings changes require a stopped VM and a current, complete inspection. IPMS does not stop the VM automatically.",
+  settingsRunning:
+    "This section is read-only while the VM is powered on. Live changes are not yet supported by the current IPMS Agent. IPMS does not stop the VM automatically.",
   settingsMissing:
     "This section contains unreported values and cannot be edited. Unknown values will not be replaced with defaults.",
   settingsInvalid:
@@ -47,6 +57,13 @@ const english = {
   unavailable:
     "This section could not be collected. Missing information is not an empty configuration.",
   settings: {
+    groups: {
+      identity: "Identity",
+      hardware: "Hardware configuration",
+      management: "Management",
+    },
+    additional: "Additional properties",
+    readOnlyLabel: "Read-only",
     general: "General",
     processor: "Processor",
     memory: "Memory",
@@ -207,6 +224,14 @@ const german: HyperVManagementCopy = {
   hint: "Verwalte eine VM über den Aktionsbutton, per Rechtsklick oder mit Umschalt+F10.",
   close: "Schließen",
   cancel: "Abbrechen",
+  host: "Host",
+  powerState: "Betriebszustand der VM",
+  poweredOn: "VM ist eingeschaltet",
+  lastPoweredOn: "Zuletzt erfasst: VM eingeschaltet",
+  currentSection: "Aktueller Bereich",
+  otherActions: "VM-Aktionen",
+  unsaved: "Ungespeicherte Änderungen in diesem Bereich",
+  applyHint: "Nur der ausgewählte Bereich wird angewendet.",
   refresh: "Vom Host aktualisieren",
   reload: "Status neu laden",
   loading: "Verwaltungsdaten werden geladen…",
@@ -226,6 +251,8 @@ const german: HyperVManagementCopy = {
   applySettings: "Diesen Bereich anwenden",
   settingsStopped:
     "Änderungen erfordern eine ausgeschaltete VM und eine aktuelle, vollständige Prüfung. IPMS schaltet die VM nicht automatisch aus.",
+  settingsRunning:
+    "Dieser Bereich ist bei eingeschalteter VM schreibgeschützt. Live-Änderungen werden vom aktuellen IPMS-Agent noch nicht unterstützt. IPMS schaltet die VM nicht automatisch aus.",
   settingsMissing:
     "Dieser Bereich enthält nicht gemeldete Werte und kann nicht bearbeitet werden. Unbekannte Werte werden nicht durch Standardwerte ersetzt.",
   settingsInvalid:
@@ -242,6 +269,13 @@ const german: HyperVManagementCopy = {
   unavailable:
     "Dieser Bereich konnte nicht erfasst werden. Fehlende Informationen bedeuten keine leere Konfiguration.",
   settings: {
+    groups: {
+      identity: "Identität",
+      hardware: "Hardwarekonfiguration",
+      management: "Verwaltung",
+    },
+    additional: "Weitere Eigenschaften",
+    readOnlyLabel: "Schreibgeschützt",
     general: "Allgemein",
     processor: "Prozessor",
     memory: "Arbeitsspeicher",

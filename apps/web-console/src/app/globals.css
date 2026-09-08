@@ -2754,20 +2754,61 @@ dialog.hyperv-management-dialog {
   color: var(--color-text-primary);
   background: var(--surface-panel);
   border: 1px solid var(--border-strong);
-  overflow: auto;
+  height: min(800px, calc(100dvh - 48px));
+  overflow: hidden;
+}
+dialog.hyperv-management-dialog[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 .hyperv-management-dialog::backdrop {
   background: rgba(0, 0, 0, 0.6);
 }
 .hyperv-management-dialog > .modal-card__heading {
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 16px;
   padding: 18px 24px;
   border-bottom: 1px solid var(--border-default);
 }
+.hyperv-management-dialog__identity {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.hyperv-management-dialog__host-row {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+.hyperv-management-dialog__host {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.hyperv-management-dialog__power-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.hyperv-management-dialog__power-warning svg {
+  flex-shrink: 0;
+  fill: #facc15;
+  color: #422006;
+}
+.hyperv-management-dialog__mobile-nav {
+  display: none;
+}
 .hyperv-management-dialog__layout {
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr);
-  min-height: 420px;
+  grid-template-columns: 230px minmax(0, 1fr);
+  min-height: 0;
 }
 .hyperv-management-dialog__nav {
   display: flex;
@@ -2776,6 +2817,7 @@ dialog.hyperv-management-dialog {
   padding: 16px 10px;
   background: var(--surface-navigation);
   border-right: 1px solid var(--border-default);
+  overflow: auto;
 }
 .hyperv-management-dialog__nav button {
   display: flex;
@@ -2789,16 +2831,66 @@ dialog.hyperv-management-dialog {
   background: transparent;
   cursor: pointer;
 }
-.hyperv-management-dialog__nav button:hover,
-.hyperv-management-dialog__nav button[aria-current] {
+.hyperv-management-dialog__nav button:hover {
   color: var(--color-text-primary);
   background: var(--surface-hover);
   border-color: var(--border-default);
+}
+.hyperv-management-dialog__nav button[aria-current] {
+  color: var(--color-accent-blue);
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+  border-left: 3px solid var(--color-accent-blue);
+  font-weight: 700;
+}
+.hyperv-management-dialog__settings-nav button {
+  width: 100%;
+  padding: 9px 10px;
+  margin: 2px 0;
+  gap: 6px;
+}
+.hyperv-management-dialog__settings-nav p,
+.hyperv-management-dialog__nav-label {
+  margin: 16px 10px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.hyperv-management-dialog__draft-dot {
+  margin-left: auto;
+  color: var(--color-warning);
 }
 .hyperv-management-dialog__body {
   min-width: 0;
   padding: 22px 24px;
   overflow-wrap: anywhere;
+  overflow: auto;
+}
+.hyperv-management-dialog__section-heading {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0 0 14px;
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--border-default);
+}
+.hyperv-management-dialog__section-heading p {
+  margin: 0 0 6px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+.hyperv-management-dialog__section-heading h4 {
+  margin: 0;
+  font-size: 20px;
+}
+.hyperv-management-dialog__notice {
+  padding: 12px 14px;
+  background: var(--surface-panel-raised);
+  border-left: 3px solid var(--color-accent-blue);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
 }
 .hyperv-management-dialog__toolbar,
 .hyperv-management-dialog__footer {
@@ -2806,6 +2898,30 @@ dialog.hyperv-management-dialog {
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
+}
+.hyperv-management-dialog__footer-hint {
+  margin: 0 auto 0 0;
+  flex: 1 1 180px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+.hyperv-management-dialog__properties-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+}
+.hyperv-management-dialog__properties-heading h5 {
+  margin: 0;
+  font-size: 13px;
+}
+.hyperv-management-dialog__properties-heading span {
+  padding: 3px 7px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
 }
 .hyperv-management-dialog__toolbar {
   margin: 12px 0;
@@ -2879,13 +2995,21 @@ dialog.hyperv-management-dialog {
   align-items: flex-start;
 }
 .hyperv-management-dialog__settings-form fieldset {
+  position: relative;
   display: grid;
   gap: 12px;
-  margin: 0 0 20px;
-  padding: 16px;
-  border: 1px solid var(--border-default);
-  border-radius: 6px;
+  margin: 20px 0 0;
+  padding: 0;
+  border: 0;
   min-width: 0;
+}
+.hyperv-management-dialog__settings-form input[type="number"] {
+  width: min(100%, 280px);
+}
+.hyperv-management-dialog__settings-form label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .hyperv-management-dialog__settings-form legend {
   padding: 0 8px;
@@ -2910,15 +3034,39 @@ dialog.hyperv-management-dialog {
   dialog.hyperv-management-dialog {
     width: calc(100vw - 16px);
     max-height: calc(100dvh - 16px);
+    height: calc(100dvh - 16px);
+  }
+  dialog.hyperv-management-dialog[open] {
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+  }
+  .hyperv-management-dialog__mobile-nav {
+    display: grid;
+    gap: 6px;
+    padding: 12px 16px;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border-default);
+  }
+  .hyperv-management-dialog__mobile-nav select {
+    width: 100%;
+    min-width: 0;
+    padding: 9px 10px;
+    color: var(--color-text-primary);
+    background: var(--surface-navigation);
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
   }
   .hyperv-management-dialog__layout {
     grid-template-columns: 1fr;
   }
   .hyperv-management-dialog__nav {
-    flex-direction: row;
-    flex-wrap: wrap;
-    border-right: 0;
-    border-bottom: 1px solid var(--border-default);
+    display: none;
+  }
+  .hyperv-management-dialog__body {
+    padding: 16px;
+  }
+  .hyperv-management-dialog > .modal-card__heading,
+  .hyperv-management-dialog__footer {
+    padding: 12px 16px;
   }
   .hyperv-management-dialog__details > div {
     grid-template-columns: 1fr;
