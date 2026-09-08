@@ -10,8 +10,15 @@ class ManagementRefreshSerializer(StrictInputSerializer):
     request_id = serializers.UUIDField()
 
 
+class ManagementDialogSerializer(StrictInputSerializer):
+    dialog_id = serializers.UUIDField()
+    action = serializers.ChoiceField(choices=("open", "renew", "release"))
+    edit = serializers.BooleanField(default=False)
+
+
 class ManagementOperationSerializer(StrictInputSerializer):
     request_id = serializers.UUIDField()
+    settings_dialog_id = serializers.UUIDField(required=False)
     operation = serializers.ChoiceField(
         choices=(
             "checkpoint_create",
@@ -24,6 +31,10 @@ class ManagementOperationSerializer(StrictInputSerializer):
     parameters = serializers.JSONField()
 
     def validate(self, attrs):
+        if (attrs["operation"] == "settings_update") != ("settings_dialog_id" in attrs):
+            raise serializers.ValidationError(
+                "Settings updates require a dialog identity; other operations must omit it."
+            )
         attrs["parameters"] = validate_parameters(
             attrs["operation"], attrs["parameters"]
         )

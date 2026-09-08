@@ -2789,6 +2789,7 @@ dialog.hyperv-management-dialog[open] {
   overflow-wrap: anywhere;
 }
 .hyperv-management-dialog__power-warning {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -2801,6 +2802,37 @@ dialog.hyperv-management-dialog[open] {
   flex-shrink: 0;
   fill: #facc15;
   color: #422006;
+}
+.hyperv-management-dialog__power-warning--locked svg {
+  fill: #ef4444;
+  color: #ffffff;
+}
+.hyperv-management-dialog__warning-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  padding: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: help;
+}
+.hyperv-management-dialog__tooltip {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 5;
+  width: min(440px, calc(100vw - 80px));
+  padding: 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--surface-panel-raised);
+  color: var(--color-text-primary);
+  box-shadow: 0 6px 20px #0005;
+  font-weight: 400;
+  line-height: 1.5;
 }
 .hyperv-management-dialog__mobile-nav {
   display: none;

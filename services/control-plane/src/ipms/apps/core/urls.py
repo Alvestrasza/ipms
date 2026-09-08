@@ -10,6 +10,7 @@ from ipms.apps.discovery.hyperv_management_views import (
     HyperVManagementRefreshView,
     HyperVManagementOperationView,
     HyperVManagementJobView,
+    HyperVManagementDialogView,
 )
 from ipms.apps.agent_pki.service_account_views import (
     ServiceAccountListView,
@@ -66,6 +67,7 @@ from . import views
 app_name = "core"
 
 urlpatterns = [
+    path("hyper-v/virtual-machines/<uuid:pk>/management/dialog/", HyperVManagementDialogView.as_view(), name="hyperv-management-dialog"),
     path("hyper-v/virtual-machines/<uuid:pk>/management/", HyperVManagementView.as_view(), name="hyperv-management"),
     path("hyper-v/virtual-machines/<uuid:pk>/management/refresh/", HyperVManagementRefreshView.as_view(), name="hyperv-management-refresh"),
     path("hyper-v/virtual-machines/<uuid:pk>/management/operations/", HyperVManagementOperationView.as_view(), name="hyperv-management-operation"),

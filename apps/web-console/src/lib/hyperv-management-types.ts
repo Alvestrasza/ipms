@@ -97,6 +97,14 @@ export type ManagementPayload = {
   active_operation: ManagementJob | null;
   latest_operation: ManagementJob | null;
 };
+export type ManagementDialogState = {
+  edit_lock: {
+    owned: boolean;
+    owner_username: string | null;
+    expires_at: string | null;
+  };
+  inspection: ManagementJob | null;
+};
 export type CheckpointRequest =
   | { operation: "checkpoint_create"; parameters: { policy: "configured" } }
   | {

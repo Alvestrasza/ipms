@@ -1,5 +1,10 @@
 # Hyper-V management: DEV rollout and acceptance
 
+For the **0.2.39 dialog inspection and edit-lease implementation**, see the
+[lease contract](../architecture/HYPERV-SETTINGS-DIALOG-LEASE.md) and
+[verification record](HYPERV-SETTINGS-0239-ACCEPTANCE.md). This source change is
+not activated; a fresh DEV check on 2026-09-08 confirmed application 0.2.37.
+
 For the **0.2.38 / Windows Agent 0.2.28 source implementation**, see the
 [state-aware field matrix](../architecture/HYPERV-LIVE-SETTINGS-MATRIX.md) and
 [verification record](HYPERV-SETTINGS-0238-ACCEPTANCE.md). The stopped-only contract

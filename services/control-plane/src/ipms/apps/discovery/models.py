@@ -1124,3 +1124,18 @@ class HyperVManagementSnapshot(models.Model):
     document = models.JSONField(default=dict)
     observed_at = models.DateTimeField()
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class HyperVSettingsLease(models.Model):
+    """A short-lived IPMS dialog lock, not a Hyper-V provider lock."""
+
+    virtual_machine = models.OneToOneField(
+        HyperVVirtualMachine,
+        primary_key=True,
+        on_delete=models.CASCADE,
+        related_name="settings_lease",
+    )
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    dialog_id = models.UUIDField()
+    session_digest = models.CharField(max_length=64)
+    expires_at = models.DateTimeField()

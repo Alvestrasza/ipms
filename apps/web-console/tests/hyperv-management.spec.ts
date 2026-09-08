@@ -85,6 +85,7 @@ function snapshot(): ManagementSnapshot {
 }
 
 async function setup(page: Page, username = "e2e-admin") {
+  const dialogPosts: Record<string, unknown>[] = [];
   const posts: {
     url: string;
     document: Record<string, unknown>;
@@ -97,6 +98,10 @@ async function setup(page: Page, username = "e2e-admin") {
     latest: null as ManagementJob | null,
     abortMutation: false,
     finish: false,
+    openingPending: false,
+    lockOwner: null as string | null,
+    leaseSeconds: 90,
+    failRenew: false,
   };
   await page.route(
     "**/api/v1/hyper-v/virtual-machines/*/management/**",
@@ -123,6 +128,51 @@ async function setup(page: Page, username = "e2e-admin") {
       }
       expect(request.method()).toBe("POST");
       const document = request.postDataJSON();
+      if (url.pathname.endsWith("/dialog/")) {
+        dialogPosts.push(document);
+        expect(request.headers()["x-ipms-tenant-id"]).toBeTruthy();
+        expect(request.headers()["x-csrftoken"]).toBeTruthy();
+        expect(document.dialog_id).toMatch(/^[0-9a-f-]{36}$/);
+        if (document.action === "renew" && state.failRenew) {
+          await route.abort("failed");
+          return;
+        }
+        const inspection: ManagementJob = {
+          id: jobId,
+          request_id: document.dialog_id,
+          virtual_machine_id: url.pathname.split("/")[5],
+          operation: "inspect",
+          status: state.openingPending ? "running" : "succeeded",
+          phase: "completed",
+          progress: 100,
+          result_code: "completed",
+          created_at: new Date().toISOString(),
+          started_at: new Date().toISOString(),
+          completed_at: new Date().toISOString(),
+          can_cancel: false,
+        };
+        if (document.action === "open" && state.openingPending) {
+          state.active = inspection;
+          state.latest = inspection;
+        }
+        await route.fulfill({
+          json: {
+            edit_lock: {
+              owned:
+                document.edit &&
+                !state.lockOwner &&
+                document.action !== "release",
+              owner_username:
+                state.lockOwner ?? (document.edit ? username : null),
+              expires_at: new Date(
+                Date.now() + state.leaseSeconds * 1000,
+              ).toISOString(),
+            },
+            inspection: document.action === "open" ? inspection : null,
+          },
+        });
+        return;
+      }
       posts.push({
         url: url.pathname,
         document,
@@ -172,7 +222,7 @@ async function setup(page: Page, username = "e2e-admin") {
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page).toHaveURL(/\/en$/);
   await page.goto("/en/virtual/hyper-v");
-  return { posts, state };
+  return { posts, state, dialogPosts };
 }
 
 async function open(page: Page, section = "Checkpoints") {
@@ -191,12 +241,123 @@ async function open(page: Page, section = "Checkpoints") {
   return dialog;
 }
 
-test("management opens centered in the native top layer without a host request and supports read-only users", async ({
+test("opening waits for its Agent inspection before showing settings", async ({
   page,
 }) => {
-  const { posts } = await setup(page, "e2e-external-target");
+  const { state, dialogPosts, posts } = await setup(page);
+  state.openingPending = true;
+  const dialog = await open(page, "Settings");
+  await expect(dialog.getByLabel("Name", { exact: true })).toHaveCount(0);
+  await expect(
+    dialog.getByRole("button", { name: "Apply this section", exact: true }),
+  ).toBeDisabled();
+  expect(dialogPosts.filter((item) => item.action === "open")).toHaveLength(1);
+  state.finish = true;
+  await expect(dialog.getByLabel("Name", { exact: true })).toBeEnabled({
+    timeout: 10_000,
+  });
+  expect(posts).toEqual([]);
+});
+
+test("running guidance is a keyboard accessible tooltip, not a section banner", async ({
+  page,
+}) => {
+  const { state } = await setup(page);
+  state.snapshot.schema_version = 2;
+  state.snapshot.state = "running";
+  const dialog = await open(page, "Settings");
+  const trigger = dialog.getByRole("button", {
+    name: "VM is powered on",
+    exact: true,
+  });
+  await expect(dialog.getByRole("tooltip")).toHaveCount(0);
+  await trigger.focus();
+  await expect(dialog.getByRole("tooltip")).toContainText(
+    "Dynamic Memory minimum can only decrease",
+  );
+  await expect(dialog.locator(".hyperv-management-dialog__notice")).toHaveCount(
+    0,
+  );
+  await page.keyboard.press("Escape");
+  await expect(dialog.getByRole("tooltip")).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel("Notes", { exact: true })).toBeEnabled();
+});
+
+test("another editor is shown in red and every settings field remains locked", async ({
+  page,
+}, testInfo) => {
+  const { state, posts, dialogPosts } = await setup(page);
+  state.snapshot.schema_version = 2;
+  state.snapshot.state = "running";
+  state.lockOwner = "another-admin";
+  const dialog = await open(page, "Settings");
+  const lock = dialog.getByRole("button", {
+    name: "Settings locked by another Dialog (another-admin)",
+    exact: true,
+  });
+  await expect(lock).toBeVisible();
+  await expect(lock.locator("svg")).toHaveCSS("fill", "rgb(239, 68, 68)");
+  await expect(dialog.getByLabel("Name", { exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: "Memory", exact: true }).click();
+  await expect(
+    dialog.getByLabel("Maximum memory (MiB)", { exact: true }),
+  ).toBeDisabled();
+  await dialog.screenshot({ path: testInfo.outputPath("settings-locked.png") });
+  await dialog
+    .getByRole("button", { name: "Close", exact: true })
+    .last()
+    .click();
+  await expect
+    .poll(() => dialogPosts.filter((item) => item.action === "release").length)
+    .toBe(1);
+  expect(posts).toEqual([]);
+});
+
+test("expired edit ownership disables existing drafts without submitting", async ({
+  page,
+}) => {
+  const { state, posts } = await setup(page);
+  state.leaseSeconds = 3;
+  const dialog = await open(page, "Settings");
+  await dialog.getByLabel("Notes", { exact: true }).fill("A local draft");
+  await expect(
+    dialog.getByRole("button", { name: "Apply this section", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    dialog.getByRole("button", { name: "Apply this section", exact: true }),
+  ).toBeDisabled({ timeout: 6_000 });
+  expect(posts).toEqual([]);
+});
+
+test("failed lease renewal locks an existing draft without replaying open or writing", async ({
+  page,
+}) => {
+  const { state, posts, dialogPosts } = await setup(page);
+  const dialog = await open(page, "Settings");
+  await dialog
+    .getByLabel("Notes", { exact: true })
+    .fill("Preserved local draft");
+  state.failRenew = true;
+  await expect(dialog.getByLabel("Notes", { exact: true })).toBeDisabled({
+    timeout: 30_000,
+  });
+  await expect(dialog.getByLabel("Notes", { exact: true })).toHaveValue(
+    "Preserved local draft",
+  );
+  expect(dialogPosts.some((item) => item.action === "renew")).toBe(true);
+  expect(dialogPosts.filter((item) => item.action === "open")).toHaveLength(1);
+  expect(posts).toEqual([]);
+});
+
+test("management opens centered, automatically inspects, and supports read-only users", async ({
+  page,
+}) => {
+  const { posts, dialogPosts } = await setup(page, "e2e-external-target");
   const dialog = await open(page, "Settings");
   expect(posts).toEqual([]);
+  expect(dialogPosts.filter((item) => item.action === "open")).toHaveLength(1);
+  expect(dialogPosts[0].edit).toBe(false);
   expect(await dialog.evaluate((element) => element.matches(":modal"))).toBe(
     true,
   );

@@ -22,6 +22,7 @@ import {
   isManagementJobActive,
   isManagementSnapshotFresh,
   type ManagementCheckpoint,
+  type ManagementDialogState,
   type ManagementJob,
   type ManagementPayload,
   type ManagementSection,
@@ -445,6 +446,17 @@ export function HyperVManagementDialog({
   const writeInFlight = useRef(false);
   const writeController = useRef<AbortController | null>(null);
   const jobReference = useRef<ManagementJob | null>(null);
+  const dialogIdentity = useRef<string | null>(null);
+  const opening = useRef<Promise<ManagementDialogState> | null>(null);
+  const opened = useRef(false);
+  const closed = useRef(false);
+  const nextRenewal = useRef(0);
+  const [editLock, setEditLock] = useState<
+    ManagementDialogState["edit_lock"] | null
+  >(null);
+  const [initialInspectionComplete, setInitialInspectionComplete] =
+    useState(false);
+  const [showWarning, setShowWarning] = useState(false);
   const [section, setSection] = useState(initialSection);
   const [data, setData] = useState<ManagementPayload | null>(null);
   const [job, setJob] = useState<ManagementJob | null>(null);
@@ -461,20 +473,61 @@ export function HyperVManagementDialog({
   const [needsInspection, setNeedsInspection] = useState(false);
   const endpoint = `/api/v1/hyper-v/virtual-machines/${virtualMachine.id}/management/`;
 
+  const dialogRequest = useCallback(
+    async (action: "open" | "renew" | "release") => {
+      dialogIdentity.current ??= crypto.randomUUID();
+      return responseDocument<ManagementDialogState>(
+        await fetch(`${endpoint}dialog/`, {
+          method: "POST",
+          cache: "no-store",
+          credentials: "same-origin",
+          keepalive: action === "release",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": csrfToken,
+            "X-IPMS-Tenant-ID": tenantId,
+          },
+          body: JSON.stringify({
+            action,
+            dialog_id: dialogIdentity.current,
+            edit: canConfigure,
+          }),
+        }),
+      );
+    },
+    [endpoint, csrfToken, tenantId, canConfigure],
+  );
+
+  const releaseDialog = useCallback(() => {
+    if (closed.current) return;
+    closed.current = true;
+    // Wait for an in-flight open before releasing. A crashed/navigation-away tab
+    // is covered by the server TTL; effect cleanup never releases on StrictMode replay.
+    void opening.current?.then(() => dialogRequest("release")).catch(() => {});
+  }, [dialogRequest]);
+
+  function closeDialog() {
+    releaseDialog();
+    onClose();
+  }
+
   useEffect(() => {
     alive.current = true;
     const element = dialog.current;
     if (element && !element.open) element.showModal();
     const clock = window.setInterval(() => setNow(Date.now()), 1_000);
+    window.addEventListener("pagehide", releaseDialog);
     return () => {
       alive.current = false;
       writeController.current?.abort();
       window.clearInterval(clock);
+      window.removeEventListener("pagehide", releaseDialog);
       element?.close();
     };
-  }, []);
+  }, [releaseDialog]);
 
-  // GET only resumes observation. Refreshing host data always requires an explicit POST.
+  // One read-only Agent inspection per opening; effect replay reuses its promise.
+  // Observation/lease renewal never resubmits a settings mutation.
   useEffect(() => {
     const controller = new AbortController();
     let timer: number | undefined;
@@ -486,6 +539,25 @@ export function HyperVManagementDialog({
     };
     async function poll() {
       try {
+        opening.current ??= dialogRequest("open");
+        const initial = await opening.current;
+        if (controller.signal.aborted || closed.current) return;
+        if (!opened.current) {
+          opened.current = true;
+          setEditLock(initial.edit_lock);
+          nextRenewal.current = Date.now() + 20_000;
+          jobReference.current = initial.inspection;
+          setJob(initial.inspection);
+          setInitialInspectionComplete(
+            initial.inspection?.status === "succeeded",
+          );
+        }
+        if (Date.now() >= nextRenewal.current) {
+          const lease = await dialogRequest("renew");
+          if (controller.signal.aborted || closed.current) return;
+          setEditLock(lease.edit_lock);
+          nextRenewal.current = Date.now() + 20_000;
+        }
         if (isManagementJobActive(jobReference.current)) {
           const current = await responseDocument<ManagementJob>(
             await fetch(
@@ -496,8 +568,13 @@ export function HyperVManagementDialog({
           if (controller.signal.aborted) return;
           jobReference.current = current;
           setJob(current);
-          if (current.operation === "inspect" && current.status === "succeeded")
+          if (
+            current.operation === "inspect" &&
+            current.status === "succeeded"
+          ) {
             setNeedsInspection(false);
+            setInitialInspectionComplete(true);
+          }
         }
         const next = await responseDocument<ManagementPayload>(
           await fetch(endpoint, options),
@@ -517,13 +594,18 @@ export function HyperVManagementDialog({
           setData((previous) =>
             previous ? { ...previous, fresh: false } : previous,
           );
+          setEditLock(null);
+          if (!opened.current) opening.current = null;
+          nextRenewal.current = 0;
           setError(caught instanceof Error ? caught.message : "unknown");
         }
       } finally {
         if (!controller.signal.aborted) {
           setLoading(false);
-          if (isManagementJobActive(jobReference.current))
-            timer = window.setTimeout(poll, 3_000);
+          timer = window.setTimeout(
+            poll,
+            isManagementJobActive(jobReference.current) ? 3_000 : 10_000,
+          );
         }
       }
     }
@@ -533,7 +615,7 @@ export function HyperVManagementDialog({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [endpoint, tenantId, reload]);
+  }, [endpoint, tenantId, reload, dialogRequest]);
 
   // Reloading or locking a focused control can move browser focus to <body>.
   // Keep keyboard orientation inside the open modal without scrolling its pane.
@@ -552,8 +634,11 @@ export function HyperVManagementDialog({
         ?.focus({ preventScroll: true });
   }, [data, loading]);
 
-  const snapshot = data?.snapshot ?? null;
-  const fresh = !needsInspection && isManagementSnapshotFresh(data, now);
+  const snapshot = initialInspectionComplete ? (data?.snapshot ?? null) : null;
+  const fresh =
+    initialInspectionComplete &&
+    !needsInspection &&
+    isManagementSnapshotFresh(data, now);
   const poweredOn = (snapshot?.state ?? virtualMachine.state) === "running";
   const active =
     isManagementJobActive(job) ||
@@ -569,7 +654,8 @@ export function HyperVManagementDialog({
     checkpointOperationAllowed({
       payload: data,
       operation,
-      permitted: canManageCheckpoints && !needsInspection,
+      permitted:
+        canManageCheckpoints && initialInspectionComplete && !needsInspection,
       now: currentTime,
       active,
       busy: submitting || loading,
@@ -581,7 +667,11 @@ export function HyperVManagementDialog({
   const settingsEnabled = (currentTime = now) =>
     settingsOperationAllowed(
       data,
-      canConfigure && !needsInspection,
+      canConfigure &&
+        initialInspectionComplete &&
+        !needsInspection &&
+        editLock?.owned === true &&
+        Date.parse(editLock.expires_at ?? "") > currentTime,
       currentTime,
       active || submitting || loading,
     );
@@ -624,6 +714,9 @@ export function HyperVManagementDialog({
                   request_id: crypto.randomUUID(),
                   expected_revision: revision,
                   ...request,
+                  ...(request.operation === "settings_update"
+                    ? { settings_dialog_id: dialogIdentity.current }
+                    : {}),
                 }
               : { request_id: crypto.randomUUID() },
           ),
@@ -740,6 +833,17 @@ export function HyperVManagementDialog({
     setConfirmation(null);
   }
 
+  const lockedByOther = Boolean(
+    editLock?.owner_username &&
+      !editLock.owned &&
+      Date.parse(editLock.expires_at ?? "") > now,
+  );
+  const warningText = lockedByOther
+    ? copy.settingsLocked.replace("%USERNAME%", editLock?.owner_username ?? "")
+    : snapshot?.schema_version === 2
+      ? copy.settingsRunning
+      : copy.settingsLegacy;
+
   return (
     <dialog
       ref={dialog}
@@ -747,7 +851,7 @@ export function HyperVManagementDialog({
       aria-labelledby={headingId}
       onCancel={(event) => {
         event.preventDefault();
-        onClose();
+        closeDialog();
       }}
     >
       <header className="modal-card__heading">
@@ -759,7 +863,7 @@ export function HyperVManagementDialog({
           className="icon-button"
           type="button"
           aria-label={copy.close}
-          onClick={onClose}
+          onClick={closeDialog}
         >
           <X aria-hidden="true" size={18} />
         </button>
@@ -768,14 +872,54 @@ export function HyperVManagementDialog({
             {copy.host}:{" "}
             {virtualMachine.host_fqdn || virtualMachine.host_hostname}
           </p>
-          {poweredOn ? (
+          {poweredOn || lockedByOther ? (
             <span
-              className="hyperv-management-dialog__power-warning"
+              className={`hyperv-management-dialog__power-warning${lockedByOther ? " hyperv-management-dialog__power-warning--locked" : ""}`}
               role="status"
               aria-label={copy.powerState}
             >
-              <TriangleAlert aria-hidden="true" size={18} />
-              {fresh ? copy.poweredOn : copy.lastPoweredOn}
+              <button
+                type="button"
+                className="hyperv-management-dialog__warning-trigger"
+                aria-label={
+                  lockedByOther
+                    ? warningText
+                    : fresh
+                      ? copy.poweredOn
+                      : copy.lastPoweredOn
+                }
+                aria-describedby={
+                  showWarning ? `${headingId}-warning` : undefined
+                }
+                onMouseEnter={() => setShowWarning(true)}
+                onMouseLeave={() => setShowWarning(false)}
+                onFocus={() => setShowWarning(true)}
+                onBlur={() => setShowWarning(false)}
+                onClick={() => setShowWarning((value) => !value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && showWarning) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setShowWarning(false);
+                  }
+                }}
+              >
+                <TriangleAlert aria-hidden="true" size={18} />
+                {lockedByOther
+                  ? warningText
+                  : fresh
+                    ? copy.poweredOn
+                    : copy.lastPoweredOn}
+              </button>
+              {showWarning ? (
+                <span
+                  className="hyperv-management-dialog__tooltip"
+                  role="tooltip"
+                  id={`${headingId}-warning`}
+                >
+                  {warningText}
+                </span>
+              ) : null}
             </span>
           ) : null}
         </div>
@@ -910,7 +1054,18 @@ export function HyperVManagementDialog({
               {copy.reload}
             </button>
           </div>
-          {loading ? <p role="status">{copy.loading}</p> : null}
+          {loading || (!initialInspectionComplete && active) ? (
+            <p role="status">{copy.loading}</p>
+          ) : null}
+          {canConfigure &&
+          opened.current &&
+          !loading &&
+          (!editLock?.owned || Date.parse(editLock.expires_at ?? "") <= now) &&
+          !lockedByOther ? (
+            <p className="hyperv-management-dialog__notice">
+              {copy.settingsLeaseLost}
+            </p>
+          ) : null}
           {error ? (
             <p className="form-error" role="alert">
               {errorMessage(error, copy)}
@@ -979,15 +1134,13 @@ export function HyperVManagementDialog({
                       <p className="hyperv-management-dialog__notice">
                         {copy.permission}
                       </p>
-                    ) : snapshot.state !== "stopped" ? (
+                    ) : snapshot.state !== "stopped" &&
+                      snapshot.state !== "running" ? (
                       <p className="hyperv-management-dialog__notice">
-                        {snapshot.state === "running"
-                          ? snapshot.schema_version === 2
-                            ? copy.settingsRunning
-                            : copy.settingsLegacy
-                          : copy.settingsStopped}
+                        {copy.settingsStopped}
                       </p>
-                    ) : !snapshot.capabilities.settings_update ? (
+                    ) : snapshot.state !== "running" &&
+                      !snapshot.capabilities.settings_update ? (
                       <p className="hyperv-management-dialog__notice">
                         {copy.unsupported}
                       </p>
@@ -1230,7 +1383,7 @@ export function HyperVManagementDialog({
             </button>
           </>
         ) : null}
-        <button className="outline-button" type="button" onClick={onClose}>
+        <button className="outline-button" type="button" onClick={closeDialog}>
           {copy.close}
         </button>
       </footer>

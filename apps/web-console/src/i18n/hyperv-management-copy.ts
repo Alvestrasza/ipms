@@ -16,6 +16,9 @@ const english = {
   powerState: "Virtual machine power state",
   poweredOn: "VM is powered on",
   lastPoweredOn: "Last observed: VM powered on",
+  settingsLocked: "Settings locked by another Dialog (%USERNAME%)",
+  settingsLeaseLost:
+    "The edit lock is unavailable or has expired. Close and reopen this dialog to request current settings and a new lock.",
   currentSection: "Current section",
   otherActions: "VM actions",
   unsaved: "Unsaved changes in this section",
@@ -26,7 +29,7 @@ const english = {
   empty:
     "No management snapshot has been collected. Refresh from the host to inspect this virtual machine.",
   refreshHint:
-    "Refreshing requests a new read-only inspection from the Agent. Opening this window does not contact the host.",
+    "Opening this window automatically requests a read-only Agent inspection. Use refresh to request another current snapshot.",
   stale:
     "This snapshot is no longer current. Refresh from the host before making changes.",
   fresh: "Current snapshot",
@@ -201,6 +204,8 @@ const english = {
       "Close the VM console before making this change.",
     management_snapshot_stale:
       "The snapshot has expired. Refresh from the host before making changes.",
+    management_settings_locked:
+      "This dialog does not own the settings lock. Close and reopen it after the other editor finishes.",
     management_revision_changed:
       "The VM configuration has changed. Refresh and review it again.",
     management_operation_unsupported:
@@ -243,6 +248,10 @@ const german: HyperVManagementCopy = {
   powerState: "Betriebszustand der VM",
   poweredOn: "VM ist eingeschaltet",
   lastPoweredOn: "Zuletzt erfasst: VM eingeschaltet",
+  settingsLocked:
+    "Einstellungen durch einen anderen Dialog gesperrt (%USERNAME%)",
+  settingsLeaseLost:
+    "Die Bearbeitungssperre ist nicht verfügbar oder abgelaufen. Schließe und öffne den Dialog erneut, um aktuelle Einstellungen und eine neue Sperre anzufordern.",
   currentSection: "Aktueller Bereich",
   otherActions: "VM-Aktionen",
   unsaved: "Ungespeicherte Änderungen in diesem Bereich",
@@ -253,7 +262,7 @@ const german: HyperVManagementCopy = {
   empty:
     "Es wurden noch keine Verwaltungsdaten erfasst. Aktualisiere vom Host, um diese VM zu prüfen.",
   refreshHint:
-    "Die Aktualisierung fordert eine neue, rein lesende Prüfung durch den Agent an. Das Öffnen dieses Fensters kontaktiert den Host nicht.",
+    "Beim Öffnen fordert dieses Fenster automatisch eine rein lesende Prüfung durch den Agent an. Aktualisieren fordert einen weiteren aktuellen Datenstand an.",
   stale:
     "Dieser Datenstand ist nicht mehr aktuell. Aktualisiere vom Host, bevor du Änderungen ausführst.",
   fresh: "Aktueller Datenstand",
@@ -428,6 +437,8 @@ const german: HyperVManagementCopy = {
     management_console_active: "Schließe die VM-Konsole vor dieser Änderung.",
     management_snapshot_stale:
       "Der Datenstand ist abgelaufen. Aktualisiere vor Änderungen vom Host.",
+    management_settings_locked:
+      "Dieser Dialog besitzt die Bearbeitungssperre nicht. Schließe und öffne ihn erneut, sobald der andere Benutzer fertig ist.",
     management_revision_changed:
       "Die VM-Konfiguration wurde geändert. Aktualisiere und prüfe sie erneut.",
     management_operation_unsupported:

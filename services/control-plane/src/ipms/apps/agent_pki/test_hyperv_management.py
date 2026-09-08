@@ -19,6 +19,7 @@ from ipms.apps.discovery.models import (
     HyperVConsoleSession,
     HyperVManagementJob,
     HyperVManagementSnapshot,
+    HyperVSettingsLease,
     HyperVVirtualMachine,
     WindowsServer,
 )
@@ -32,6 +33,7 @@ from .hyperv_management import (
     offer_management_job,
     record_management_result,
     withdraw_management_jobs,
+    _session_digest,
 )
 from .hyperv_management_schema import validate_snapshot
 from .models import AgentEnrollment, AgentLifecycleJob
@@ -80,6 +82,19 @@ class ManagementFixture:
             observed_at=timezone.now(),
         )
         self.client.force_login(self.actor)
+        self.settings_dialog_id = uuid.uuid4()
+
+    def acquire_settings(self):
+        HyperVSettingsLease.objects.get_or_create(
+            virtual_machine=self.vm,
+            defaults={
+                "actor": self.actor,
+                "dialog_id": self.settings_dialog_id,
+                "session_digest": _session_digest(self.client.session.session_key),
+                "expires_at": timezone.now() + timedelta(seconds=90),
+            },
+        )
+        return str(self.settings_dialog_id)
 
     def endpoint(self, suffix=""):
         return f"/api/v1/hyper-v/virtual-machines/{self.vm.pk}/management/{suffix}"
@@ -136,6 +151,9 @@ class ManagementFixture:
         }
 
     def create(self, operation="inspect", parameters=None, **changes):
+        if operation == "settings_update":
+            changes.setdefault("settings_dialog_id", self.acquire_settings())
+            changes.setdefault("settings_session_key", self.client.session.session_key)
         return create_management_job(
             virtual_machine=self.vm,
             actor=self.actor,
@@ -943,6 +961,7 @@ class ManagementSettingsTests(ManagementFixture, TestCase):
             {
                 "request_id": str(uuid.uuid4()),
                 "operation": "settings_update",
+                "settings_dialog_id": str(self.settings_dialog_id),
                 "expected_revision": "a" * 64,
                 "parameters": self.parameters(),
             },
@@ -1094,12 +1113,14 @@ class LiveSettingsContractTests(ManagementFixture, TestCase):
         self,
     ):
         self.inspect()
+        self.acquire_settings()
         parameters = self.parameters()
         response = self.client.post(
             self.endpoint("operations/"),
             {
                 "request_id": str(uuid.uuid4()),
                 "operation": "settings_update",
+                "settings_dialog_id": str(self.settings_dialog_id),
                 "expected_revision": "a" * 64,
                 "parameters": parameters,
             },

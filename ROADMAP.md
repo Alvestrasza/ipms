@@ -362,6 +362,12 @@ Migration from IPMS Appliance to IPMS Scale-Out must remain supported.
   VM state. Static hot-memory and advanced live setters remain unqualified.
   Source/testing, not activation: see the [field matrix](docs/architecture/HYPERV-LIVE-SETTINGS-MATRIX.md)
   and [verification boundary](docs/operations/HYPERV-SETTINGS-0238-ACCEPTANCE.md).
+- Application 0.2.39 requests an Agent inspection when the management dialog
+  opens, moves powered-on guidance into a tooltip, and enforces a tenant-scoped
+  per-dialog settings lease. Other editors see the owner in a red lock warning;
+  expiry and failed renewal disable editing. Source and isolated verification,
+  not DEV activation: [lease contract](docs/architecture/HYPERV-SETTINGS-DIALOG-LEASE.md)
+  and [0.2.39 verification](docs/operations/HYPERV-SETTINGS-0239-ACCEPTANCE.md).
 - See [Issue #24](https://github.com/Alvestrasza/ipms/issues/24),
   [ADR-0013](docs/architecture/ADR-0013-HYPERV-MANAGEMENT-OPERATIONS.md) and
   [deployment and acceptance](docs/operations/HYPERV-MANAGEMENT.md).

@@ -2,10 +2,12 @@
 
 from datetime import timedelta
 import re
+import uuid
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.utils import timezone
+from django.utils.crypto import salted_hmac
 
 from ipms.apps.audit.models import AuditEvent
 from ipms.apps.core.exceptions import PublicApiError
@@ -13,6 +15,7 @@ from ipms.apps.discovery.models import (
     HyperVConsoleSession,
     HyperVManagementJob,
     HyperVManagementSnapshot,
+    HyperVSettingsLease,
     HyperVVirtualMachine,
     HyperVVirtualMachineActionJob,
     WindowsServer,
@@ -36,6 +39,7 @@ TERMINAL_STATUSES = ("succeeded", "failed", "cancelled")
 OBSERVABLE_STATUSES = ("running", "requires_reconciliation")
 FRESH_SECONDS = 60
 EXECUTION_LEASE_SECONDS = 15
+SETTINGS_LEASE_SECONDS = 90
 OPERATION_PERMISSIONS = {
     "inspect": Permission.INVENTORY_VIEW,
     "checkpoint_create": Permission.VIRTUAL_MACHINES_CHECKPOINTS_MANAGE,
@@ -336,6 +340,119 @@ def job_payload(job):
     }
 
 
+def _session_digest(session_key):
+    if not session_key:
+        deny("forbidden", 403)
+    return salted_hmac(
+        "hyperv-settings-dialog", session_key, algorithm="sha256"
+    ).hexdigest()
+
+
+def _settings_lease(vm, tenant):
+    lease = (
+        HyperVSettingsLease.objects.select_related("actor")
+        .filter(virtual_machine=vm)
+        .first()
+    )
+    if lease and (
+        lease.expires_at <= timezone.now()
+        or not has_tenant_permission(
+            lease.actor, tenant, Permission.VIRTUAL_MACHINES_CONFIGURE
+        )
+    ):
+        lease.delete()
+        return None
+    return lease
+
+
+def _owns_settings_lease(lease, actor, dialog_id, session_key):
+    return bool(
+        lease
+        and dialog_id
+        and session_key
+        and lease.actor_id == actor.pk
+        and str(lease.dialog_id) == str(dialog_id)
+        and lease.session_digest == _session_digest(session_key)
+    )
+
+
+def settings_dialog(
+    *, virtual_machine, actor, session_key, dialog_id, action, edit=False
+):
+    """Tenant -> enrollment/VM -> lease order matches management submission.
+
+    Only open may acquire ownership or request inspection. Renew cannot revive an
+    expired lease. Closing a dialog does not cancel a previously accepted job.
+    """
+    dialog_id = canonical_uuid(str(dialog_id))
+    session_digest = _session_digest(session_key)
+    if action not in ("open", "renew", "release"):
+        deny("invalid_request", 400)
+    with transaction.atomic():
+        tenant = _tenant(virtual_machine.tenant_id)
+        actor = _fresh_actor(actor.pk, tenant, "inspect")
+        if action == "open":
+            vm, enrollment = _locked_vm(tenant.pk, virtual_machine.pk)
+        else:
+            vm = HyperVVirtualMachine.objects.select_for_update().get(
+                pk=virtual_machine.pk, tenant=tenant
+            )
+        lease = _settings_lease(vm, tenant)
+        owned = _owns_settings_lease(lease, actor, dialog_id, session_key)
+        if action == "release" and owned:
+            lease.delete()
+            lease = None
+        elif (
+            action == "open"
+            and edit
+            and lease is None
+            and has_tenant_permission(
+                actor, tenant, Permission.VIRTUAL_MACHINES_CONFIGURE
+            )
+        ):
+            lease = HyperVSettingsLease.objects.create(
+                virtual_machine=vm,
+                actor=actor,
+                dialog_id=dialog_id,
+                session_digest=session_digest,
+                expires_at=timezone.now() + timedelta(seconds=SETTINGS_LEASE_SECONDS),
+            )
+        elif owned and action in ("open", "renew"):
+            lease.expires_at = timezone.now() + timedelta(
+                seconds=SETTINGS_LEASE_SECONDS
+            )
+            lease.save(update_fields=("expires_at",))
+        inspection = None
+        if action == "open":
+            active = active_management_jobs(
+                tenant.pk, enrollment_id=enrollment.pk, vm_source_id=vm.source_id
+            ).first()
+            if active and active.operation == "inspect":
+                inspection = active
+            else:
+                # A concurrent write is rejected by the normal conflict guard.
+                # Replaying this dialog's open request never creates a second job.
+                inspection = create_management_job(
+                    virtual_machine=vm,
+                    actor=actor,
+                    # Job request IDs are public; never expose the dialog token
+                    # through management history (including to a sibling tab).
+                    request_id=uuid.uuid5(
+                        uuid.NAMESPACE_URL,
+                        f"ipms:settings-inspection:{vm.pk}:{actor.pk}:{session_digest}:{dialog_id}",
+                    ),
+                    operation="inspect",
+                )
+        return {
+            "edit_lock": {
+                "owned": _owns_settings_lease(lease, actor, dialog_id, session_key),
+                "owner_username": lease.actor.username if lease else None,
+                "expires_at": lease.expires_at.isoformat() if lease else None,
+            },
+            "inspection": job_payload(inspection) if inspection else None,
+        }
+
+
 def create_management_job(
     *,
     virtual_machine,
@@ -344,6 +461,8 @@ def create_management_job(
     operation,
     expected_revision="",
     parameters=None,
+    settings_dialog_id=None,
+    settings_session_key=None,
 ):
     request_id = canonical_uuid(str(request_id))
     parameters = validate_parameters(
@@ -364,6 +483,10 @@ def create_management_job(
             "operation": operation,
             "expected_revision": expected_revision,
             "parameters": parameters,
+            **({
+                "settings_dialog_id": str(settings_dialog_id),
+                "settings_session": _session_digest(settings_session_key),
+            } if settings_dialog_id else {}),
         }
     )
     try:
@@ -380,6 +503,12 @@ def create_management_job(
                     deny("management_request_conflict")
                 return prior
             vm, enrollment = _locked_vm(tenant.pk, virtual_machine.pk)
+            if operation == "settings_update":
+                lease = _settings_lease(vm, tenant)
+                if not _owns_settings_lease(
+                    lease, actor, settings_dialog_id, settings_session_key
+                ):
+                    deny("management_settings_locked")
             _check_conflicts(vm, enrollment, operation)
             _check_snapshot(vm, enrollment, operation, expected_revision, parameters)
             input_digest = document_digest(

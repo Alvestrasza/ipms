@@ -9,12 +9,14 @@ from ipms.apps.agent_pki.hyperv_management import (
     create_management_job,
     job_payload,
     management_payload,
+    settings_dialog,
 )
 from ipms.apps.tenancy.permissions import HasSelectedTenantAccess, HasTenantPermission
 from ipms.apps.tenancy.rbac import Permission
 from .hyperv_management_serializers import (
     ManagementOperationSerializer,
     ManagementRefreshSerializer,
+    ManagementDialogSerializer,
 )
 from .models import HyperVManagementJob, HyperVVirtualMachine
 
@@ -59,9 +61,24 @@ class HyperVManagementOperationView(ManagementView):
         job = create_management_job(
             virtual_machine=self.virtual_machine(request, pk),
             actor=request.user,
+            settings_session_key=request.session.session_key,
             **serializer.validated_data,
         )
         return Response(job_payload(job), status=202)
+
+
+class HyperVManagementDialogView(ManagementView):
+    def post(self, request, pk):
+        serializer = ManagementDialogSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response(
+            settings_dialog(
+                virtual_machine=self.virtual_machine(request, pk),
+                actor=request.user,
+                session_key=request.session.session_key,
+                **serializer.validated_data,
+            )
+        )
 
 
 class HyperVManagementJobView(ManagementView):
