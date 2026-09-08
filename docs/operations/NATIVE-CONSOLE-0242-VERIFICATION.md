@@ -1,10 +1,11 @@
 # Native console event-driven relay and measurements: 0.2.42
 
 Date: 2026-09-08. Related issue: #23.
-Status: locally prepared and verified; not committed, published or activated.
-Application candidate: **0.2.42**. Windows Agent candidate: **0.2.29**.
-Last verified DEV application: **0.2.41**. No live activation was performed for
-this candidate and no installed Agent was changed.
+Status: published; application **0.2.42** activated on DEV; Windows Agent
+**0.2.29** successfully updated on one authorized Hyper-V canary host.
+Source and both immutable release tags:
+`cfb317e23966c88e33698cf363120860a7447579`.
+Real-host rendering, input-latency and 15 FPS acceptance remain open.
 
 ## Changes
 
@@ -82,10 +83,72 @@ or performance under an actual Hyper-V desktop workload.
    [vendor and implementation assessment](../architecture/HYPERV-CONSOLE-IMPLEMENTATION-COMPARISON.md).
    Confirm idle resource use, moving-window updates, input responsiveness, lease
    expiry, cancellation, reconnect cleanup and sustained session stability.
-5. If regressions occur, end the canary session and restore the previous Agent
-   via the existing verified lifecycle workflow. Application rollback remains
-   independent; no schema rollback is required by this candidate.
+5. If regressions occur, end the canary session and use the retained previous
+   Agent artifact with an explicitly reviewed recovery procedure. The ordinary
+   portal update action rejects downgrades; do not claim it provides a manual
+   version rollback. Application rollback remains independent; no schema rollback
+   is required by this candidate.
 
 No live FPS improvement, guest input-latency reduction or 15 FPS acceptance is
 claimed yet. No firewall, authentication, certificate, port exposure, host
 policy, guest configuration or external console session was changed.
+
+## Publication and DEV activation evidence
+
+- Published [application 0.2.42](https://github.com/Alvestrasza/ipms/releases/tag/v0.2.42)
+  and [Windows Agent 0.2.29](https://github.com/Alvestrasza/ipms/releases/tag/windows-agent-v0.2.29)
+  as development pre-releases. Both tags and `main` were read back at the exact
+  feature commit before deployment; no existing tag or asset was overwritten.
+- Uploaded the credential-free six-file Windows x64 ZIP and `SHA256SUMS`.
+  GitHub's asset digest matched the locally verified ZIP:
+  `a8633632e5a2717a0c32091bd37f786621525af9320fabd2f6a8dede3d56ad5f`.
+  The embedded Agent executable matched:
+  `ddb6d1573aa6d7de7052b16e621cca38b9835abd4ac49394d3fda95cc184be10`.
+- Repeated five measurement tests and the native suite before publication:
+  12 native passes, one explicitly reported protected-journal skip.
+- Built the immutable published source on Linux, preserving the prior Python
+  dependency versions and frozen web lockfile. Production build and TypeScript
+  passed, with 44 generated static pages.
+- All **73 focused PostgreSQL tests passed without skips** against the staged
+  published source. The separate test database was removed; the operational
+  database schema was not migrated.
+- The coordinated portal cutover retained the previous immutable application
+  and protected configuration/database backups. API version, English and German
+  login routes, anonymous authorization rejection, six application services,
+  all-interface Agent ingress and loopback-only console services were verified.
+  The pre-existing DEV HSTS warning remains unchanged.
+- The workstation PowerShell HTTPS probe rejected the existing internal CA
+  chain as untrusted. No trust store or validation policy was changed. HTTPS
+  API verification used the appliance's existing explicit certificate trust,
+  and the existing authenticated browser session rendered the current version.
+
+### Artifact activation interruption and recovery
+
+The separate Agent-package activation initially stopped the Control Plane and
+Gateway but omitted the Web Console from its restart list. The Web Console has
+`Requires=ipms-control-plane.service`; stopping the dependency also stops the
+web service. The final all-service check correctly failed and re-fenced the
+affected application services. No Agent update had been queued at that point.
+
+Read-only diagnosis confirmed successful service stop results, the exact active
+release and the intended package-only configuration delta. Recovery explicitly
+included the dependent Web Console and waited for both API readiness and the
+Agent listener. All six services and the pinned-certificate HTTPS API then
+passed. No database restore, privilege change or certificate-validation bypass
+was used. The previous environments remain in protected recovery storage.
+
+This dependency-aware restart requirement applies even to package-only
+configuration changes; a single-service restart list is insufficient.
+
+### Single-host canary boundary
+
+With no occupied console or active management operation, exactly one existing
+Hyper-V host was updated through the authorized tenant user's ordinary portal
+lifecycle action. The durable job reached `succeeded` in approximately nine
+seconds. Fresh inventory and subsequent authenticated heartbeats report Agent
+**0.2.29**; the refreshed portal shows that host as **Current**. No other Agent
+update was queued by this workflow, and no guest input or VM action was sent.
+
+This proves package delivery, Agent restart and reconnect/version acceptance,
+not the full console performance claim. A controlled real-host comparison and
+sustained native console acceptance remain tracked in issue #23.
