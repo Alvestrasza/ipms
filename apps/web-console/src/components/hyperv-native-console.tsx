@@ -4,10 +4,7 @@ import { Monitor, ShieldAlert, X } from "lucide-react";
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 import { createNativeTunnel } from "@/lib/guacamole-runtime";
-import type {
-  NativeCertificate,
-  NativeFailureCode,
-} from "@/lib/native-console-channel";
+import type { NativeFailureCode } from "@/lib/native-console-channel";
 import type { ConsoleCopy } from "./hyperv-console-dialog";
 
 export function HyperVNativeConsole({
@@ -22,15 +19,10 @@ export function HyperVNativeConsole({
   onClose: () => void;
 }) {
   const [loaded, setLoaded] = useState(false);
-  const [certificate, setCertificate] = useState<NativeCertificate | null>(
-    null,
-  );
   const [active, setActive] = useState(false);
   const [failure, setFailure] = useState<NativeFailureCode | null>(null);
   const container = useRef<HTMLDivElement | null>(null);
-  const trustDialog = useRef<HTMLDivElement | null>(null);
   const actions = useRef<{
-    trust: (sha256: string) => void;
     secureAttention: () => void;
     release: () => void;
     disconnect: () => void;
@@ -59,12 +51,8 @@ export function HyperVNativeConsole({
         url: endpoint.href,
         width: host.clientWidth,
         height: host.clientHeight,
-        onCertificate: (value) => {
-          if (!stopped) setCertificate(value);
-        },
         onReady: () => {
           if (!stopped) {
-            setCertificate(null);
             setActive(true);
           }
         },
@@ -79,32 +67,40 @@ export function HyperVNativeConsole({
       host.appendChild(element);
       const keyboard = new runtime.Keyboard(element);
       keyboard.onkeydown = (keysym) => {
-        client.sendKeyEvent(true, keysym);
+        client.sendKeyEvent(1, keysym);
         return false;
       };
-      keyboard.onkeyup = (keysym) => client.sendKeyEvent(false, keysym);
+      keyboard.onkeyup = (keysym) => client.sendKeyEvent(0, keysym);
       const mouse = new runtime.Mouse(element);
       const mouseEvents = ["mousedown", "mouseup", "mousemove"];
+      const focusInput = () => element.focus({ preventScroll: true });
+      const sendMouse = (state: typeof mouse.currentState) => {
+        client.sendMouseState(
+          {
+            ...state,
+            x: Math.max(0, Math.min(element.clientWidth - 1, state.x)),
+            y: Math.max(0, Math.min(element.clientHeight - 1, state.y)),
+          },
+          true,
+        );
+      };
       const onMouse = (event: { state: typeof mouse.currentState }) => {
         if (event.state.left || event.state.middle || event.state.right)
-          element.focus({ preventScroll: true });
-        client.sendMouseState(event.state, true);
+          focusInput();
+        sendMouse(event.state);
       };
       mouse.onEach(mouseEvents, onMouse);
       const release = () => {
         keyboard.reset();
         mouse.reset();
-        client.sendMouseState(
-          {
-            ...mouse.currentState,
-            left: false,
-            middle: false,
-            right: false,
-            up: false,
-            down: false,
-          },
-          true,
-        );
+        sendMouse({
+          ...mouse.currentState,
+          left: false,
+          middle: false,
+          right: false,
+          up: false,
+          down: false,
+        });
       };
       const resize = () => {
         const width = display.getWidth(),
@@ -118,16 +114,13 @@ export function HyperVNativeConsole({
       const observer = new ResizeObserver(resize);
       observer.observe(host);
       element.addEventListener("blur", release);
+      element.addEventListener("mouseenter", focusInput);
       window.addEventListener("blur", release);
       client.onerror = () => {
         tunnel.disconnect();
         fail("native_stream_failed");
       };
       actions.current = {
-        trust: (sha256) => {
-          setCertificate(null);
-          channel.trust(sha256);
-        },
         secureAttention: () => {
           release();
           channel.secureAttention();
@@ -152,6 +145,7 @@ export function HyperVNativeConsole({
         tunnel.disconnect();
         observer.disconnect();
         element.removeEventListener("blur", release);
+        element.removeEventListener("mouseenter", focusInput);
         window.removeEventListener("blur", release);
         element.remove();
         actions.current = null;
@@ -162,27 +156,6 @@ export function HyperVNativeConsole({
       cleanup();
     };
   }, [loaded, sessionId, copy.directInput]);
-
-  useEffect(() => {
-    const dialog = trustDialog.current;
-    if (!certificate || !dialog) return;
-    const buttons = Array.from(dialog.querySelectorAll("button"));
-    buttons[0]?.focus();
-    const trapFocus = (event: KeyboardEvent) => {
-      if (event.key !== "Tab") return;
-      const first = buttons[0],
-        last = buttons.at(-1);
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
-      }
-    };
-    dialog.addEventListener("keydown", trapFocus);
-    return () => dialog.removeEventListener("keydown", trapFocus);
-  }, [certificate]);
 
   const close = () => {
     actions.current?.disconnect();
@@ -248,56 +221,6 @@ export function HyperVNativeConsole({
             <button type="button" className="outline-button" onClick={close}>
               {copy.close}
             </button>
-          </div>
-        ) : certificate ? (
-          <div
-            ref={trustDialog}
-            className="native-console-overlay native-certificate"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="native-certificate-title"
-            aria-describedby="native-certificate-description"
-          >
-            <div className="native-console-card">
-              <h2 id="native-certificate-title">
-                {copy.native.certificateTitle}
-              </h2>
-              <p id="native-certificate-description">
-                {copy.native.certificateDescription}
-              </p>
-              <dl>
-                {(
-                  [
-                    [copy.native.subject, certificate.subject],
-                    [copy.native.issuer, certificate.issuer],
-                    [copy.native.validFrom, certificate.not_before],
-                    [copy.native.validUntil, certificate.not_after],
-                    [copy.native.fingerprint, certificate.sha256],
-                  ] as const
-                ).map(([label, value]) => (
-                  <div key={label}>
-                    <dt>{label}</dt>
-                    <dd>{value}</dd>
-                  </div>
-                ))}
-              </dl>
-              <div className="native-console-buttons">
-                <button
-                  type="button"
-                  className="outline-button"
-                  onClick={close}
-                >
-                  {copy.native.cancel}
-                </button>
-                <button
-                  type="button"
-                  className="primary-button"
-                  onClick={() => actions.current?.trust(certificate.sha256)}
-                >
-                  {copy.native.trust}
-                </button>
-              </div>
-            </div>
           </div>
         ) : !active ? (
           <div

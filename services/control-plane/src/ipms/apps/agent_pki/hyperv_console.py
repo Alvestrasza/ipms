@@ -65,8 +65,10 @@ def create_console_session(*, virtual_machine, actor: str, transport="thumbnail"
     require_active_tenant(virtual_machine.tenant_id, lock=True)
     if transport not in ("thumbnail", "vmconnect"):
         raise ValidationError("The console transport is invalid.")
-    if transport == "vmconnect" and (owner is None or external_session_acknowledged is not True):
-        raise ValidationError("External console occupancy must be acknowledged.")
+    # Retain the obsolete argument for older clients, but do not fabricate an
+    # operator acknowledgement. Native sessions still require an actual owner.
+    if transport == "vmconnect" and owner is None:
+        raise ValidationError("Native console sessions require an owner.")
     # Read the routing identity without locks, then use the same lock order as
     # Agent removal: enrollment -> VM/host -> console session. Recheck the host
     # binding after locking, since inventory may move a VM in the meantime.

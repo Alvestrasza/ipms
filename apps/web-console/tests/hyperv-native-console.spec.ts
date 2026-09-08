@@ -10,7 +10,7 @@ for (const mode of [
   "configure",
   "failure",
 ] as const) {
-  test(`native console ${mode}: scoped setup, explicit trust and cleanup`, async ({
+  test(`native console ${mode}: prompt-free binding, input and cleanup`, async ({
     page,
     context,
   }) => {
@@ -19,6 +19,15 @@ for (const mode of [
     const errors: string[] = [];
     let socketClosed = false;
     let configured = mode !== "configure" && mode !== "operator";
+    const png = await page.evaluate(() => {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 64;
+      const drawing = canvas.getContext("2d");
+      if (!drawing) throw new Error("The fixture browser needs a 2D canvas.");
+      drawing.fillStyle = "#ff0000";
+      drawing.fillRect(0, 0, 64, 64);
+      return canvas.toDataURL("image/png").split(",")[1];
+    });
     context.on("page", (opened) =>
       opened.on("pageerror", (error) => errors.push(error.message)),
     );
@@ -89,7 +98,7 @@ for (const mode of [
           socket.send('{"type":"ready"}');
           socket.send(`0.,36.${nativeSession};`);
           socket.send(
-            "4.size,1.0,3.640,3.480;4.rect,1.0,1.0,1.0,3.640,3.480;5.cfill,2.14,1.0,3.255,1.0,1.0,3.255;4.sync,1.1;",
+            `4.size,1.0,3.640,3.480;3.img,1.0,2.14,1.0,9.image/png,1.0,1.0;4.blob,1.0,${png.length}.${png};3.end,1.0;4.sync,1.1;`,
           );
         }
       });
@@ -111,8 +120,9 @@ for (const mode of [
       popup.getByLabel("Native console", { exact: true }),
     ).toBeChecked();
     const connect = popup.getByRole("button", { name: "Connect", exact: true });
-    await expect(connect).toBeDisabled();
+    await expect(popup.getByRole("checkbox")).toHaveCount(0);
     if (mode === "operator" || mode === "configure") {
+      await expect(connect).toBeDisabled();
       await expect(
         popup.getByText(
           "An administrator must assign a host account under Administration → Service Accounts. Reopen this console after the assignment.",
@@ -141,7 +151,7 @@ for (const mode of [
             { exact: true },
           ),
         ).toBeVisible();
-        await expect(connect).toBeDisabled();
+        await expect(connect).toBeEnabled();
         expect(creates).toEqual([]);
       } else {
         await expect(adminLink).toHaveCount(0);
@@ -152,55 +162,25 @@ for (const mode of [
       expect(creates).toEqual([]);
       return;
     }
-    await popup
-      .getByLabel(
-        "I understand that an external console session may be interrupted.",
-      )
-      .check();
-    await connect.click();
-    const certificate = popup.getByRole("alertdialog");
-    await expect(certificate)
-      .toBeVisible()
-      .catch(async (error) => {
-        await test.info().attach("native-setup-diagnostic", {
-          contentType: "application/json",
-          body: JSON.stringify({
-            errors,
-            messageCount: messages.length,
-            runtime: await popup.evaluate(() => ({
-              present: !!window.Guacamole,
-              scripts: Array.from(document.scripts)
-                .map((script) => script.src)
-                .filter(Boolean),
-            })),
-          }),
-        });
-        throw error;
-      });
-    await expect(
-      certificate.getByText(fingerprint, { exact: true }),
-    ).toBeVisible();
-    expect(messages.map((value) => JSON.parse(value).type)).toEqual([
-      "connect",
-    ]);
-    expect(creates).toEqual([
-      { transport: "vmconnect", external_session_acknowledged: true },
-    ]);
+    await expect(connect).toBeEnabled();
     if (mode === "cancel") {
-      await certificate
-        .getByRole("button", { name: "Cancel", exact: true })
-        .click();
+      await popup.getByRole("button", { name: "Cancel", exact: true }).click();
       await expect.poll(() => popup.isClosed()).toBe(true);
-      await expect.poll(() => socketClosed).toBe(true);
-      expect(messages).toHaveLength(1);
+      expect(messages).toHaveLength(0);
+      expect(creates).toEqual([]);
       return;
     }
-    await certificate
-      .getByRole("button", {
-        name: "Trust this certificate and connect",
-        exact: true,
-      })
-      .click();
+    await connect.click();
+    await expect(popup.getByRole("alertdialog")).toHaveCount(0);
+    await expect
+      .poll(() =>
+        messages.some(
+          (value) =>
+            value === JSON.stringify({ type: "trust", sha256: fingerprint }),
+        ),
+      )
+      .toBe(true);
+    expect(creates).toEqual([{ transport: "vmconnect" }]);
     if (mode === "failure") {
       await expect(
         popup.getByText(
@@ -212,6 +192,7 @@ for (const mode of [
     } else {
       const surface = popup.getByRole("application");
       await expect(surface).toBeVisible();
+      await expect.poll(() => messages.includes("4.sync,1.1;")).toBe(true);
       await expect
         .poll(async () =>
           popup
@@ -232,9 +213,29 @@ for (const mode of [
             ),
         )
         .toBe(true);
-      await surface.click();
+      const bounds = await surface.boundingBox();
+      if (!bounds)
+        throw new Error("The console surface has no visible bounds.");
+      const beforeHover = messages.length;
+      await popup.mouse.move(bounds.x + 100, bounds.y + 100);
+      await popup.mouse.move(bounds.x + 120, bounds.y + 110);
+      await expect
+        .poll(() =>
+          messages
+            .slice(beforeHover)
+            .some((value) => /^5\.mouse,\d+\.\d+,\d+\.\d+,1\.0;$/.test(value)),
+        )
+        .toBe(true);
+      await expect(surface).toBeFocused();
       await popup.keyboard.down("Shift");
       await popup.keyboard.up("Shift");
+      const keyMessages = messages.filter((value) =>
+        value.startsWith("3.key,"),
+      );
+      expect(keyMessages).toContain("3.key,5.65505,1.1;");
+      expect(keyMessages).toContain("3.key,5.65505,1.0;");
+      await popup.mouse.down();
+      await popup.mouse.up();
       await popup.mouse.wheel(0, 100);
       await popup
         .getByRole("button", { name: "Ctrl+Alt+Delete", exact: true })
@@ -248,6 +249,17 @@ for (const mode of [
       expect(messages.some((value) => value.startsWith("5.mouse,"))).toBe(true);
       await popup.setViewportSize({ width: 900, height: 600 });
       await expect(surface).toBeVisible();
+      // Genuine browser timers, not accelerated time. Keep an idle rendered
+      // PNG connected beyond the old disconnect window without typing/clicks.
+      await expect
+        .poll(
+          () =>
+            messages.filter((value) => value.startsWith("0.,4.ping,")).length,
+          { timeout: 50_000, intervals: [1000] },
+        )
+        .toBeGreaterThanOrEqual(45);
+      await expect(surface).toBeVisible();
+      expect(socketClosed).toBe(false);
       await popup.screenshot({
         path: test.info().outputPath(`native-${mode}.png`),
       });

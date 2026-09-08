@@ -1,5 +1,4 @@
 import {
-  type NativeCertificate,
   NativeConsoleChannel,
   type NativeFailureCode,
 } from "./native-console-channel";
@@ -34,7 +33,7 @@ export type GuacClient = {
   getDisplay: () => Display;
   connect: () => void;
   disconnect: () => void;
-  sendKeyEvent: (pressed: boolean, keysym: number) => void;
+  sendKeyEvent: (pressed: 0 | 1, keysym: number) => void;
   sendMouseState: (state: MouseState, applyDisplayScale?: boolean) => void;
   onerror: ((status: GuacStatus) => void) | null;
 };
@@ -79,7 +78,6 @@ export function createNativeTunnel(
     url: string;
     width: number;
     height: number;
-    onCertificate: (certificate: NativeCertificate) => void;
     onReady: () => void;
     onFailure: (code: NativeFailureCode) => void;
   },

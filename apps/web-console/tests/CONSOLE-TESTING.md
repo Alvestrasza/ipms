@@ -46,10 +46,13 @@ Run the input buffering tests with `node --test tests/console-input-queue.test.m
 The native tests use the same real fixture login and server-rendered inventory,
 but mock only the native configuration, session creation/deletion, and WebSocket
 broker. The official pinned renderer must draw actual synthetic pixel data.
-Assertions cover the default native choice, explicit external-session warning,
-admin-only central configuration link (no popup credential form), certificate approval/cancellation, no automatic
-fallback after authentication failure, keyboard/mouse/secure attention, resize,
-and socket cleanup. This is browser integration evidence, not proof of host
+Assertions cover the default native choice, an informational external-session
+warning without a checkbox, admin-only central configuration link (no popup
+credential form), automatic exact certificate binding without a dialog,
+cancel-before-connect, no fallback after authentication failure, numeric key
+states, hover focus/mouse without a click, secure attention, PNG stream decoding,
+45 genuine browser heartbeat intervals, resize and socket cleanup. This is
+browser integration evidence, not proof of host
 authentication, backend authorization, TLS pinning, relay behavior, or FPS.
 Those require their own backend tests and separately authorized live acceptance.
 

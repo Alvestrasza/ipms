@@ -318,11 +318,31 @@ async def browser_socket(websocket):
         approval = json.loads(await asyncio.wait_for(websocket.recv(), 60))
         if set(approval) != {"type", "sha256"} or approval != {"type": "trust", "sha256": certificate["sha256"]}:
             raise NativeProtocolError("native_certificate_rejected")
-        await db(audit_native, session, "certificate.accept", {"sha256": certificate["sha256"]})
+        # This is an automatic binding to the certificate observed through the
+        # authenticated Agent, not a claim of manual operator approval.
+        await db(audit_native, session, "certificate.bind", {"sha256": certificate["sha256"]})
         guacd_reader, guacd_writer, listener = await guacd_connect(bridge, viewport, certificate["sha256"])
         await db(mark_native_ready, str(session.id), session.browser_claim)
         await websocket.send(json.dumps({"type": "ready"}))
         await websocket.send(guac("", str(uuid.uuid4())))
+        loop = asyncio.get_running_loop()
+        last_browser_activity = loop.time()
+
+        async def keep_renderer_alive():
+            nonlocal last_browser_activity
+            while True:
+                await asyncio.sleep(max(0.05, 5 - (loop.time() - last_browser_activity)))
+                if loop.time() - last_browser_activity < 5:
+                    continue
+                # A browser can throttle page timers while its native WebSocket
+                # still responds. Only a real PONG, followed by authorization
+                # revalidation, permits this renderer no-op. Never synthesize
+                # rendering acknowledgements or extend an authorization lease.
+                pong = await websocket.ping()
+                await asyncio.wait_for(pong, 5)
+                await db(authorize_browser, str(session.id), bridge.cookie, claim=session.browser_claim)
+                await write(guacd_writer, guac("nop").encode())
+                last_browser_activity = loop.time()
 
         async def to_browser():
             import codecs
@@ -337,7 +357,9 @@ async def browser_socket(websocket):
             framer.finish()
 
         async def to_guacd():
+            nonlocal last_browser_activity
             async for message in websocket:
+                last_browser_activity = loop.time()
                 if not isinstance(message, str):
                     raise NativeProtocolError()
                 if message.startswith("{"):
@@ -363,7 +385,7 @@ async def browser_socket(websocket):
                     validate_browser_instruction(instruction)
                     await write(guacd_writer, guac(*instruction).encode())
 
-        transfers = [asyncio.create_task(to_browser()), asyncio.create_task(to_guacd())]
+        transfers = [asyncio.create_task(operation()) for operation in (to_browser, to_guacd, keep_renderer_alive)]
         try:
             done, _ = await asyncio.wait(transfers, return_when=asyncio.FIRST_COMPLETED)
             for task in done:
@@ -429,7 +451,9 @@ async def run():
             browser_socket, "127.0.0.1", 9420, subprotocols=["guacamole"],
             process_request=process_request, compression=None, max_size=CHUNK_BYTES,
             max_queue=4, write_limit=CHUNK_BYTES, open_timeout=10, close_timeout=5,
-            ping_interval=10, ping_timeout=10, server_header=None,
+            # Post-handshake liveness explicitly awaits PONG before forwarding
+            # a renderer no-op; handshake reads already have bounded deadlines.
+            ping_interval=None, server_header=None,
         ):
             await asyncio.Future()
     finally:

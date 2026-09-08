@@ -44,7 +44,6 @@ export function HyperVConsoleWindow({
   const [transport, setTransport] = useState<"vmconnect" | "thumbnail">(
     "vmconnect",
   );
-  const [acknowledged, setAcknowledged] = useState(false);
   const [checkingConfiguration, setCheckingConfiguration] = useState(false);
   const checking = useRef(false);
   const mounted = useRef(false);
@@ -154,9 +153,7 @@ export function HyperVConsoleWindow({
       creating.current ||
       !configuration ||
       (transport === "vmconnect" &&
-        (!configuration.native_supported ||
-          !configuration.configured ||
-          !acknowledged))
+        (!configuration.native_supported || !configuration.configured))
     )
       return;
     creating.current = true;
@@ -172,11 +169,7 @@ export function HyperVConsoleWindow({
             "X-CSRFToken": csrfToken,
             "X-IPMS-Tenant-ID": tenantId,
           },
-          body: JSON.stringify(
-            transport === "vmconnect"
-              ? { transport, external_session_acknowledged: true }
-              : { transport },
-          ),
+          body: JSON.stringify({ transport }),
         },
       );
       const result = await response.json();
@@ -289,16 +282,6 @@ export function HyperVConsoleWindow({
               {transport === "vmconnect" ? (
                 <>
                   <p>{copy.native.externalWarning}</p>
-                  <label className="native-console-ack">
-                    <input
-                      type="checkbox"
-                      checked={acknowledged}
-                      onChange={(event) =>
-                        setAcknowledged(event.target.checked)
-                      }
-                    />
-                    {copy.native.externalAcknowledgement}
-                  </label>
                   {configuration.configured ? (
                     <p role="status">{copy.native.saved}</p>
                   ) : (
@@ -341,7 +324,8 @@ export function HyperVConsoleWindow({
                   className="primary-button"
                   disabled={
                     transport === "vmconnect" &&
-                    (!acknowledged || !configuration.configured)
+                    (!configuration.native_supported ||
+                      !configuration.configured)
                   }
                   onClick={() => void connect()}
                 >

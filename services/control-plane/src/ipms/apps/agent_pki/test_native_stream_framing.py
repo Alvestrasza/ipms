@@ -9,6 +9,8 @@ from django.test import SimpleTestCase, TransactionTestCase
 from django.utils import timezone
 from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
+from websockets.exceptions import ConnectionClosed
+from websockets.frames import Opcode
 
 from ipms.apps.discovery.models import HyperVConsoleSession
 
@@ -91,6 +93,15 @@ class RendererFramerTests(SimpleTestCase):
 
 class NativeStreamFramingTests(NativeFixture, TransactionTestCase):
     def test_keepalive_cannot_interrupt_a_partial_renderer_instruction(self):
+        self.exercise_stream(application_heartbeats=True)
+
+    def test_native_browser_pongs_keep_renderer_alive_without_javascript_messages(self):
+        self.exercise_stream(application_heartbeats=False)
+
+    def test_missing_native_pong_closes_without_manufacturing_renderer_input(self):
+        self.exercise_stream(application_heartbeats=False, native_pongs=False)
+
+    def exercise_stream(self, *, application_heartbeats, native_pongs=True):
         session = self.native_session()
 
         async def exercise():
@@ -180,15 +191,33 @@ class NativeStreamFramingTests(NativeFixture, TransactionTestCase):
                                 # 15-second input timeout and the 30-second lease.
                                 # The screen is idle; only genuine browser pings
                                 # and independent authorization checks continue.
-                                for pulse in range(2, 47):
-                                    await asyncio.sleep(1)
-                                    heartbeat = guac("", "ping", pulse)
-                                    await ws.send(heartbeat)
-                                    self.assertEqual(await asyncio.wait_for(ws.recv(), 2), heartbeat)
-                                    self.assertEqual(await asyncio.wait_for(forwarded.get(), 2), guac("nop").encode())
+                                if application_heartbeats:
+                                    for pulse in range(2, 47):
+                                        await asyncio.sleep(1)
+                                        heartbeat = guac("", "ping", pulse)
+                                        await ws.send(heartbeat)
+                                        self.assertEqual(await asyncio.wait_for(ws.recv(), 2), heartbeat)
+                                        self.assertEqual(await asyncio.wait_for(forwarded.get(), 2), guac("nop").encode())
+                                elif native_pongs:
+                                    # Native WebSocket PONGs are handled without
+                                    # application messages or JavaScript timers.
+                                    for _ in range(8):
+                                        self.assertEqual(await asyncio.wait_for(forwarded.get(), 7), guac("nop").encode())
+                                else:
+                                    # Suppress only this fixture peer's native
+                                    # PONG at the actual protocol boundary.
+                                    receive_frame = ws.protocol.recv_frame
+                                    ws.protocol.recv_frame = lambda frame: None if frame.opcode == Opcode.PING else receive_frame(frame)
+                                    self.assertEqual(json.loads(await asyncio.wait_for(ws.recv(), 12)), {
+                                        "type": "error", "code": "native_connection_failed",
+                                    })
+                                    with self.assertRaises(ConnectionClosed):
+                                        await asyncio.wait_for(ws.recv(), 2)
+                                    self.assertTrue(forwarded.empty())
                                 current = await console_broker.db(lambda: HyperVConsoleSession.objects.get(pk=session.pk))
-                                self.assertEqual(current.status, "active")
-                                self.assertGreater(current.lease_expires_at, timezone.now())
+                                self.assertEqual(current.status, "active" if native_pongs else "failed")
+                                if native_pongs:
+                                    self.assertGreater(current.lease_expires_at, timezone.now())
                             finally:
                                 release_tail.set()
             self.assertFalse(console_broker._bridges)

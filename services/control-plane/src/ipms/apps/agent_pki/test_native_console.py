@@ -105,9 +105,11 @@ class NativeConsoleTests(NativeFixture, TestCase):
         foreign = Tenant.objects.create(slug="native-foreign", display_name="Foreign")
         self.assertEqual(self.client.get(endpoint, HTTP_X_IPMS_TENANT_ID=str(foreign.id)).status_code, 404)
 
-    def test_native_create_requires_acknowledgement_version_and_credentials(self):
+    def test_native_create_needs_no_extra_acknowledgement_but_requires_version_and_credentials(self):
         endpoint = reverse("core:hyperv-console-session-create", args=(self.vm.id,))
-        self.assertEqual(self.client.post(endpoint, {"transport": "vmconnect"}, content_type="application/json", **self.headers).status_code, 400)
+        response = self.client.post(endpoint, {"transport": "vmconnect"}, content_type="application/json", **self.headers)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(HyperVConsoleSession.objects.get(pk=response.json()["id"]).owner, self.user)
         self.host.agent_version = "0.2.25"
         self.host.save(update_fields=("agent_version",))
         with self.assertRaises(ValidationError):
@@ -250,7 +252,7 @@ class NativeProtocolTests(SimpleTestCase):
 
     def test_browser_guac_input_rejects_configuration_and_oversized_payload(self):
         self.assertEqual(guac_instructions(guac("key", 65, 1)), [["key", "65", "1"]])
-        for instruction in (["select", "rdp"], ["key", "1", "2"], ["mouse", "0", "0", "256"], ["size", "99999", "100"]):
+        for instruction in (["select", "rdp"], ["key", "1", "2"], ["key", "65505", "true"], ["key", "65505", "false"], ["mouse", "0", "0", "256"], ["size", "99999", "100"]):
             with self.assertRaises(NativeProtocolError):
                 console_broker.validate_browser_instruction(instruction)
         with self.assertRaises(NativeProtocolError):

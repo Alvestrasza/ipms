@@ -47,7 +47,6 @@ type Options = {
   height: number;
   socketFactory?: (url: string, protocol: string) => Socket;
   schedule?: (callback: () => void, milliseconds: number) => () => void;
-  onCertificate: (certificate: NativeCertificate) => void;
   onReady: () => void;
   onProtocol: (data: string) => void;
   onFailure: (code: NativeFailureCode) => void;
@@ -174,7 +173,9 @@ export class NativeConsoleChannel {
         };
         this.phase = "trust";
         this.deadline(60_000);
-        this.options.onCertificate(this.certificate);
+        // The authenticated Agent observes its fixed local VM endpoint. Bind
+        // this connection to that exact observation without another UI prompt.
+        this.trust(this.certificate.sha256);
         return;
       }
       if (message.type === "ready" && this.phase === "connecting") {
@@ -189,7 +190,7 @@ export class NativeConsoleChannel {
     }
   }
 
-  trust(sha256: string) {
+  private trust(sha256: string) {
     if (this.phase !== "trust" || sha256 !== this.certificate?.sha256) return;
     this.phase = "connecting";
     this.deadline(30_000);

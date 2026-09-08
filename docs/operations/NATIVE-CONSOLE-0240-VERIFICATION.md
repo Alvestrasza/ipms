@@ -1,6 +1,11 @@
 # Native console stream reliability: 0.2.40
 
-Status: **published and activated on DEV; real-host console acceptance pending**.
+Status: **published and activated on DEV; real-host acceptance reported a
+further disconnect. See the 0.2.41 follow-up below**.
+
+The operator subsequently reported another short-lived connection and input
+problems. The isolated 0.2.40 results remain valid for their stated scope but do
+not establish a complete fix. See [0.2.41](NATIVE-CONSOLE-0241-VERIFICATION.md).
 
 ## Reproduced defect
 

@@ -1,11 +1,13 @@
 # Native Hyper-V Console
 
-Application target: **0.2.40**. Windows Agent minimum: **0.2.26**.
+Application target: **0.2.41**. Windows Agent minimum: **0.2.26**.
 Linux Agent remains **0.2.13**. This document distinguishes implementation,
 isolated verification, DEV deployment and real-host acceptance.
 
 For the 0.2.40 stream-framing and keepalive correction, see the
 [reproduction and verification record](NATIVE-CONSOLE-0240-VERIFICATION.md).
+For the follow-up input, native PONG liveness and prompt-free workflow, see
+the [0.2.41 verification record](NATIVE-CONSOLE-0241-VERIFICATION.md).
 
 ## Existing account configuration
 
@@ -34,11 +36,15 @@ never returns the password or encrypted value. Re-enrollment under a new Agent
 identity deliberately does not inherit old credentials. Back up the protected
 credential key separately from the database, using the appliance backup policy.
 
-Before connecting, explicitly acknowledge that IPMS cannot reliably discover
-an independently opened MMC/VMConnect session. IPMS still permits only one of
-its own sessions per VM. Review the observed certificate and approve its exact
-SHA-256 fingerprint. A changed, expired or not-yet-valid certificate fails
-closed. Native failure never silently switches to the legacy thumbnail path.
+Starting with 0.2.41, click **Connect** without an additional acknowledgement
+checkbox or certificate dialog. IPMS still warns that it cannot reliably
+discover independently opened MMC/VMConnect sessions and permits only one of
+its own sessions per VM. The authenticated Agent provides a certificate
+observation from its fixed local VM endpoint; the renderer connection is
+automatically bound to that exact leaf. Expired/not-yet-valid certificates and
+a change between observation and connection still fail closed. This is a
+per-connection binding, not a persistent cross-session host pin or a claim of
+manual operator approval. Native failure never silently selects thumbnails.
 
 The console stays in a detached, resizable browser window with keyboard,
 mouse and a secure-attention button. Closing it releases the exclusive lease.
@@ -75,7 +81,7 @@ release signer before applying any patch.
 
 The adaptation requires an explicit capability marker, basic VMConnect mode,
 loopback target and exactly one certificate pin. It uses FreeRDP external
-certificate management, accepting only the approved leaf with a valid time
+certificate management, accepting only the bound leaf with a valid time
 window, independent of CA and known-host caches. Redirects are rejected.
 Wake-on-LAN is compiled out. Small current-libc compatibility changes are
 tracked alongside the certificate patch. The reviewed compatibility fixes move
@@ -116,8 +122,9 @@ Required gates before live use:
 3. Actual adapter TLS tests: approved certificate reaches authentication;
    mismatched self-signed or CA-trusted certificate does not. Expired/future
    certificates, redirects, wildcard/list pins and stale trust are rejected.
-4. Detached-window browser tests with the actual vendored runtime; explicit
-   certificate approval, input cleanup, keyboard/mouse and failure handling.
+4. Detached-window browser tests with the actual vendored runtime; automatic
+   certificate binding, numeric key states, hover focus, input cleanup and
+   failure handling. Exercise PNG streams and idle native WebSocket liveness.
 5. Known DEV runtime backup, additive migrations, protected key permissions,
    service isolation, loopback listeners and the unchanged 9419 firewall policy.
 6. Real authorized host: account configured by the administrator, native screen,

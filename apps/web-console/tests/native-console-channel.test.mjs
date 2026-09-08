@@ -33,7 +33,6 @@ function setup(viewport = { width: 900, height: 600 }) {
       timers.add(callback);
       return () => timers.delete(callback);
     },
-    onCertificate: (value) => events.push(["certificate", value]),
     onReady: () => events.push(["ready"]),
     onProtocol: (value) => events.push(["protocol", value]),
     onFailure: (code) => events.push(["failure", code]),
@@ -75,7 +74,7 @@ test("small or collapsed windows respect the broker's 200-pixel viewport minimum
   }
 });
 
-test("sends only viewport setup and waits for explicit exact certificate approval", () => {
+test("automatically binds only the certificate observed for this authenticated connection", () => {
   const h = setup();
   assert.deepEqual(JSON.parse(h.sent[0]), {
     type: "connect",
@@ -83,10 +82,7 @@ test("sends only viewport setup and waits for explicit exact certificate approva
     height: 600,
   });
   h.certificate();
-  assert.equal(h.sent.length, 1);
-  h.channel.trust("b".repeat(64));
-  assert.equal(h.sent.length, 1);
-  h.channel.trust(fingerprint);
+  assert.equal(h.sent.length, 2);
   assert.deepEqual(JSON.parse(h.sent[1]), {
     type: "trust",
     sha256: fingerprint,
@@ -109,11 +105,10 @@ for (const early of [{ type: "ready" }, "4.sync,1.1;"]) {
   });
 }
 
-test("cancel during certificate review closes socket and clears timers without trust", () => {
+test("cancel while observing closes the socket without sending a certificate binding", () => {
   const h = setup();
-  h.certificate();
   h.channel.dispose();
-  h.channel.trust(fingerprint);
+  h.certificate();
   assert.equal(h.sent.length, 1);
   assert.equal(h.socket.readyState, 3);
   assert.equal(h.timers.size, 0);
@@ -122,7 +117,6 @@ test("cancel during certificate review closes socket and clears timers without t
 test("ready input is ordered and secure attention uses a separate audited control message", () => {
   const h = setup();
   h.certificate();
-  h.channel.trust(fingerprint);
   h.receive({ type: "ready" });
   h.channel.sendProtocol("3.key,2.65,1.1;");
   h.channel.sendProtocol("3.key,2.65,1.0;");
@@ -138,7 +132,6 @@ test("ready input is ordered and secure attention uses a separate audited contro
 test("backpressure fails closed without replaying ambiguous input", () => {
   const h = setup();
   h.certificate();
-  h.channel.trust(fingerprint);
   h.receive({ type: "ready" });
   h.socket.bufferedAmount = 300_000;
   h.channel.sendProtocol("3.key,2.65,1.1;");
@@ -154,7 +147,7 @@ test("unrecognized server errors never render arbitrary diagnostic text", () => 
   assert.deepEqual(h.events.at(-1), ["failure", "native_stream_failed"]);
 });
 
-test("malformed certificate, duplicate trust and post-close messages fail or are ignored", () => {
+test("malformed or repeated certificate messages fail closed and post-close messages are ignored", () => {
   const h = setup();
   h.receive({ type: "certificate", sha256: "invalid" });
   assert.deepEqual(h.events.at(-1), ["failure", "native_protocol_error"]);
@@ -163,9 +156,9 @@ test("malformed certificate, duplicate trust and post-close messages fail or are
   assert.equal(h.events.length, count);
   const valid = setup();
   valid.certificate();
-  valid.channel.trust(fingerprint);
-  valid.channel.trust(fingerprint);
+  valid.certificate();
   assert.equal(valid.sent.length, 2);
+  assert.deepEqual(valid.events.at(-1), ["failure", "native_protocol_error"]);
   valid.channel.dispose();
 });
 
