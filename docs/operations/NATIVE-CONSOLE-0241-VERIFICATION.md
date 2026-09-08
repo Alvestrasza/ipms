@@ -1,6 +1,6 @@
 # Native console input and liveness: 0.2.41
 
-Status: **implemented; owner-authorized publication and DEV activation pending**.
+Status: **published and activated on DEV; real-host acceptance pending**.
 
 ## Findings and acceptance boundary
 
@@ -94,9 +94,26 @@ passed against DEV. The owner subsequently authorized publication to `main` and
 activation on the existing DEV appliance. A fresh preflight reconfirmed the
 expected source/runtime baseline and no active work before publication.
 
-The candidate is not yet published or activated. Real-host acceptance must still
-cover opening without prompts, idle/focused/background windows, mouse movement,
-typing and close/reopen. Do not equate isolated tests with a confirmed resolution
-of the operator's remaining timeout.
+## Completed activation summary
+
+The owner-authorized release was published to `main` at
+`45b893e13d7c93e36a617cabf6b73b2e22e6bf3c` and activated on DEV. The immutable
+Linux production build and TypeScript checks passed. All **73 focused PostgreSQL
+tests passed without skips against this published release** before cutover;
+the isolated test database was removed afterward. All 14 Node regressions were
+also rerun successfully for publication.
+
+Post-cutover checks confirmed the runtime source, API version, both localized
+visible version labels, service readiness and anonymous native-stream rejection.
+The application, web console, Agent Gateway, console broker, renderer and reverse
+proxy were active without automatic restarts. The previous 0.2.40 immutable
+release and protected recovery material remain available. No Agent rollout,
+schema change, VM action, privilege change or environment/network-policy change
+was performed. The pre-existing DEV HSTS warning remains unchanged.
+
+Real-host acceptance must still cover opening without prompts,
+idle/focused/background windows, mouse movement, typing and close/reopen. No live
+guest rendering or input acceptance is claimed for this deployment. Do not equate
+isolated tests with a confirmed resolution of the operator's remaining timeout.
 
 Protocol reference: [Apache Guacamole Client 1.6.0](https://github.com/apache/guacamole-client/blob/1.6.0/guacamole-common-js/src/main/webapp/modules/Client.js).
