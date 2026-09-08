@@ -1,7 +1,7 @@
 # Hyper-V settings dialog: 0.2.37 acceptance
 
-Date: 2026-09-08. Status: locally verified; publication and DEV activation
-authorized, with live acceptance recorded separately below. No managed VM or Agent has been changed in this
+Date: 2026-09-08. Status: published and activated on the approved DEV appliance,
+with live acceptance recorded below. No managed VM or Agent has been changed in this
 UI work. The application version is prepared as 0.2.37; the Agent version and
 management API contract remain unchanged.
 
@@ -92,7 +92,28 @@ The script retains the exact previous release and restores it on activation
 failure, provided the preserved configuration still matches. Failed recovery or
 configuration drift leaves the portal fenced for explicit review. Bash syntax and
 five isolated Linux rollback tests passed; these tests use inert command stubs,
-not a forced failure of the running appliance. Live cutover acceptance is pending.
+not a forced failure of the running appliance.
+
+Live activation completed on 2026-09-08 at 06:44 UTC using application commit
+`a1e02948b50cab5f182bdbb2a6360f7e4ff430e2`. The Control Plane and Web Console were
+both active/running with their process working directories resolved to that exact
+immutable release. The TLS-verified API returned `application_version: 0.2.37`,
+both localized login routes returned HTTP 200, configuration/ingress hashes were
+preserved, the cutover fence was absent, and the Agent listener remained bound to
+all IPv4 networks on TCP 9419. No failed systemd units were reported. Source was
+clean; previous application commit `c4676e58e8ef2283dd44d2bf154c1155199528ca`
+(0.2.36) remains intact. No rollback was needed.
+
+The existing Django HSTS warning remained unchanged. Systemd requested a daemon
+reload; the two on-disk unit files were first compared byte-for-byte with the
+release, then reloaded without another service restart. Both reported
+`NeedDaemonReload=no` afterward with unchanged PIDs and API version.
+
+A newly isolated workstation browser profile rejected the internal portal
+certificate with `ERR_CERT_AUTHORITY_INVALID`. Certificate checks were not
+disabled and no trust-store change was made. Live HTTPS acceptance used the
+explicit appliance certificate; authenticated production-like browser behavior
+remains covered by the isolated fixture, not a new login to tenant infrastructure.
 
 See [the management acceptance record](HYPERV-MANAGEMENT.md) for the separate
 native settings evidence and remaining provider/recovery qualification gaps.
