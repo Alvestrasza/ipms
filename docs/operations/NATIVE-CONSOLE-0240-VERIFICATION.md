@@ -1,7 +1,6 @@
 # Native console stream reliability: 0.2.40
 
-Status: **implemented and verified on Windows and isolated Linux/PostgreSQL;
-publication and DEV activation authorized, cutover pending**.
+Status: **published and activated on DEV; real-host console acceptance pending**.
 
 ## Reproduced defect
 
@@ -89,9 +88,23 @@ The owner subsequently explicitly authorized publishing 0.2.40 to the default
 branch and activating it on DEV. Runtime cutover and real-host acceptance must
 still be verified independently; authorization alone is not activation evidence.
 
-Source publication, Linux release staging/build, DEV activation and real-host
-operator acceptance remain pending and are separate from the completed tests
-above. DEV remains on 0.2.39. The isolated transport regression does not prove
-that a real Hyper-V console session is stable after deployment. Detailed
+## Completed activation summary
+
+The owner-authorized 0.2.40 release was published at
+`eb4df10a0a675a405c3c16b2f6a175f557346dcd` and activated on DEV. The immutable
+Linux production build and TypeScript checks passed. **All 71 focused
+PostgreSQL tests passed without skips against this published candidate** before
+activation; its isolated test database was removed afterward.
+
+Deployment readiness, source identity, public API version, both localized page
+versions and unauthenticated native-console access rejection passed after
+cutover. No Agent rollout, schema change or VM action was performed. The previous
+immutable release and protected recovery material remain available. The
+pre-existing, documented DEV HSTS warning was not changed by this release.
+
+The isolated transport regression does not establish real-host acceptance.
+A real Hyper-V console session, including an idle period and interactive input,
+still requires operator verification after reopening the console. No live guest
+rendering, input or end-to-end latency acceptance is claimed here. Detailed
 operational evidence stays local; public updates contain only sanitized
 release/acceptance summaries.
