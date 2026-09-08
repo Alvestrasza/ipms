@@ -21,7 +21,7 @@ from django.utils import timezone
 from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosedOK
 
-from .native_protocol import CHUNK_BYTES, NativeProtocolError, guac, guac_instructions, preconnection_pdu, read_guac, write
+from .native_protocol import CHUNK_BYTES, GuacStreamFramer, NativeProtocolError, guac, guac_instructions, preconnection_pdu, read_guac, write
 
 ROUTE = re.compile(r"^/api/v1/hyper-v/console-sessions/([0-9a-f-]{36})/native-stream/$")
 _bridges = {}
@@ -327,10 +327,14 @@ async def browser_socket(websocket):
         async def to_browser():
             import codecs
             decoder = codecs.getincrementaldecoder("utf-8")()
+            framer = GuacStreamFramer()
             while data := await guacd_reader.read(CHUNK_BYTES):
-                text = decoder.decode(data)
-                if text:
+                # Keepalive replies must never land inside a partial image or
+                # other length-prefixed instruction from a separate TCP read.
+                for text in framer.feed(decoder.decode(data)):
                     await asyncio.wait_for(websocket.send(text), 5)
+            decoder.decode(b"", final=True)
+            framer.finish()
 
         async def to_guacd():
             async for message in websocket:
@@ -348,7 +352,11 @@ async def browser_socket(websocket):
                     if opcode == "":
                         if len(instruction) != 3 or instruction[1] != "ping" or not instruction[2].isdigit():
                             raise NativeProtocolError()
-                        await websocket.send(guac(*instruction))
+                        # Only a real, authorized browser heartbeat keeps the
+                        # renderer alive. Never manufacture sync acknowledgments
+                        # or renew an Agent/authorization lease from this path.
+                        await write(guacd_writer, guac("nop").encode())
+                        await asyncio.wait_for(websocket.send(guac(*instruction)), 5)
                         continue
                     if opcode not in {"key", "mouse", "size", "sync", "ack", "nop", "disconnect"}:
                         raise NativeProtocolError()

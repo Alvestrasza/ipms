@@ -1,8 +1,11 @@
 # Native Hyper-V Console
 
-Application target: **0.2.33**. Windows Agent minimum: **0.2.26**.
+Application target: **0.2.40**. Windows Agent minimum: **0.2.26**.
 Linux Agent remains **0.2.13**. This document distinguishes implementation,
 isolated verification, DEV deployment and real-host acceptance.
+
+For the 0.2.40 stream-framing and keepalive correction, see the
+[reproduction and verification record](NATIVE-CONSOLE-0240-VERIFICATION.md).
 
 ## Existing account configuration
 

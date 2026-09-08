@@ -478,6 +478,9 @@ class NativeBrowserBoundaryTests(NativeFixture, TransactionTestCase):
                             self.assertEqual(await ws.recv(), guac("sync", 1))
                             await ws.send(guac("key", 65, 1))
                             self.assertEqual(await asyncio.wait_for(forwarded.get(), 2), guac("key", 65, 1).encode())
+                            await ws.send(guac("", "ping", 123))
+                            self.assertEqual(await asyncio.wait_for(ws.recv(), 2), guac("", "ping", 123))
+                            self.assertEqual(await asyncio.wait_for(forwarded.get(), 2), guac("nop").encode())
                             await console_broker.db(lambda: TenantMembership.objects.filter(user_id=self.user.pk, tenant_id=self.tenant.pk).update(is_active=False))
                             with self.assertRaises(ConnectionClosed):
                                 await asyncio.wait_for(ws.recv(), 2)
@@ -485,6 +488,8 @@ class NativeBrowserBoundaryTests(NativeFixture, TransactionTestCase):
                             await asyncio.wait_for(guacd_closed.wait(), 2)
                             with self.assertRaises(ConnectionClosed):
                                 await ws.send(guac("key", 66, 1))
+                            with self.assertRaises(ConnectionClosed):
+                                await ws.send(guac("", "ping", 124))
                             self.assertTrue(forwarded.empty())
                         for _ in range(20):
                             if not console_broker._bridges:
