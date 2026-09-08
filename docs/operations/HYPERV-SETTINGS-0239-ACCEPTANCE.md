@@ -1,8 +1,9 @@
 # IPMS 0.2.39 VM settings dialog verification
 
-Date: 2026-09-08. Status: **implemented and tested locally; not published or
-activated**. The known DEV appliance was freshly checked: application 0.2.37
-remains active. No installed Agent was upgraded and no live VM setting changed.
+Date: 2026-09-08. Status: **published; corrected activation candidate prepared**.
+The first cutover failed its API version check and the exact previous 0.2.37
+runtime was restored and verified healthy. No installed Agent was upgraded and
+no live VM setting changed. See the recovery record below.
 
 The [dialog lease contract](../architecture/HYPERV-SETTINGS-DIALOG-LEASE.md)
 documents automatic Agent inspection, tooltip-only powered-on guidance, owner
@@ -101,7 +102,30 @@ commit; never substitute a production or customer environment.
   leases. Do not automatically restore the database, erase jobs, or drop the
   table. Recheck the old version and health before ending recovery.
 
-The script's Linux Bash syntax and exact-target read-only preflight passed.
-At this checkpoint no publication, staging, migration, or activation has occurred.
+The script's Linux Bash syntax, exact-target read-only preflight, and wrong-host
+rejection passed. The initial source and procedure were published at
+`24e9132c7748f22005e9ec1bbb511bebb4edaa05`; that candidate did not complete activation.
 A separately selected Windows Agent 0.2.28 canary remains necessary for live-field
 provider acceptance; this approval does not include a fleet rollout.
+
+## First cutover and recovery
+
+The immutable Linux build passed. A protected database/configuration backup was
+created and migration 0023 applied successfully. On restart, the health check
+detected that the API information view still returned a hard-coded `0.2.37` even
+though the candidate code, manifests and frontend were `0.2.39`. The cutover
+correctly failed closed and fenced the application services.
+
+Before rollback, all application services were confirmed stopped, all operation
+queues and settings leases were checked for active work, and the protected
+configuration archive was compared to the unchanged live files. The exact prior
+immutable 0.2.37 release was restored and readiness, API version and services
+passed. The new empty lease table was retained; no database restore, table drop,
+job deletion, credential change, or VM action occurred.
+
+The API constant and its regression expectation are corrected in the forward
+candidate. Staging now exercises the actual API view to verify the public version
+before an outage. Explicit `--resume-additive-schema` is required to proceed from
+the reviewed rollback state: it requires migration 0023 already applied and an
+empty lease table, accepts no pending migrations, and never repeats that DDL.
+Without this explicit option, an already applied migration still blocks cutover.

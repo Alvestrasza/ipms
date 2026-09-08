@@ -6,7 +6,7 @@ shopt -s inherit_errexit
 umask 027
 trap 'echo "Deployment stopped at line $LINENO; inspect the reported phase before retrying." >&2' ERR
 
-[[ $EUID == 0 && $# == 6 ]] || { echo 'Usage: deploy-settings-dialog-dev.sh HOST MACHINE_ID PUBLIC_HOST PREVIOUS_SHA RELEASE_SHA --preflight|--stage|--activate' >&2; exit 2; }
+[[ $EUID == 0 && ( $# == 6 || ( $# == 7 && ${7:-} == --resume-additive-schema ) ) ]] || { echo 'Usage: deploy-settings-dialog-dev.sh HOST MACHINE_ID PUBLIC_HOST PREVIOUS_SHA RELEASE_SHA --preflight|--stage|--activate [--resume-additive-schema]' >&2; exit 2; }
 expected_host=$1
 expected_machine=$2
 public_host=$3
@@ -93,7 +93,14 @@ broker_acl() {
 assert_quiescent
 assert_administrators
 [[ $(psql_read "SELECT count(*) FROM django_migrations WHERE app='discovery' AND name='0022_hyperv_management'") == 1 ]]
-[[ $(psql_read "SELECT count(*) FROM django_migrations WHERE app='discovery' AND name='0023_hypervsettingslease'") == 0 ]]
+schema_applied=$(psql_read "SELECT count(*) FROM django_migrations WHERE app='discovery' AND name='0023_hypervsettingslease'")
+if [[ ${7:-} == --resume-additive-schema ]]; then
+    # Explicit recovery after a reviewed rollback to 0.2.37. The previous
+    # attempt's additive table stays in place; never repeat DDL or restore data.
+    [[ $schema_applied == 1 && $(psql_read 'SELECT count(*) FROM discovery_hypervsettingslease') == 0 ]]
+else
+    [[ $schema_applied == 0 ]]
+fi
 [[ $(psql_read "SELECT count(*) FROM pg_roles r JOIN pg_database d ON d.datdba=r.oid WHERE r.rolname='ipms' AND d.datname='ipms' AND NOT r.rolsuper AND NOT r.rolcreaterole AND NOT r.rolbypassrls") == 1 ]]
 before_broker_acl=$(broker_acl)
 [[ $before_broker_acl =~ ^[0-9a-f]{32}$ ]]
@@ -156,7 +163,10 @@ set +a
 export PYTHONPATH="$release/services/control-plane/src"
 [[ $IPMS_DATABASE_NAME == ipms && $IPMS_DATABASE_USER == ipms && $IPMS_DATABASE_HOST == 127.0.0.1 && $IPMS_DATABASE_PORT == 5432 ]]
 # Only the reviewed additive migration may be pending. This performs no DDL.
-"$python" "$manage" shell -c "from django.db import connection; from django.db.migrations.executor import MigrationExecutor; e=MigrationExecutor(connection); p=e.migration_plan(e.loader.graph.leaf_nodes()); assert [(m.app_label,m.name,backwards) for m,backwards in p] == [('discovery','0023_hypervsettingslease',False)]"
+"$python" "$manage" shell -c "from django.db import connection; from django.db.migrations.executor import MigrationExecutor; e=MigrationExecutor(connection); p=e.migration_plan(e.loader.graph.leaf_nodes()); expected=[] if $schema_applied else [('discovery','0023_hypervsettingslease',False)]; assert [(m.app_label,m.name,backwards) for m,backwards in p] == expected"
+# Exercise the real API view before any outage. Manifest/footer version checks
+# alone do not detect an accidentally stale API information constant.
+"$python" "$manage" shell -c "from rest_framework.test import APIRequestFactory; from ipms.apps.core.views import api_information; r=api_information(APIRequestFactory().get('/api/v1/')); assert r.status_code == 200 and r.data['application_version'] == '0.2.39'"
 "$python" "$manage" check --deploy
 sudo -n -u ipms-control-plane test -x "$python"
 sudo -n -u ipms-web test -r "$release/apps/web-console/.next/standalone/server.js"
@@ -209,7 +219,11 @@ assert_administrators
 sudo -n -u postgres pg_dump --format=custom --dbname=ipms > "$backup/ipms.dump"
 [[ -s $backup/ipms.dump ]]
 pg_restore --list "$backup/ipms.dump" >/dev/null
-"$python" "$manage" migrate discovery 0023_hypervsettingslease --noinput
+if [[ $schema_applied == 0 ]]; then
+    "$python" "$manage" migrate discovery 0023_hypervsettingslease --noinput
+else
+    echo 'Reviewed additive migration 0023 already applied; no DDL repeated.'
+fi
 "$python" "$manage" migrate --check
 [[ $(psql_read "SELECT count(*) FROM django_migrations WHERE app='discovery' AND name='0023_hypervsettingslease'") == 1 ]]
 [[ $(psql_read "SELECT count(*) FROM pg_class c JOIN pg_roles r ON r.oid=c.relowner JOIN pg_namespace n ON n.oid=c.relnamespace
