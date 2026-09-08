@@ -2,8 +2,10 @@
 
 For the **0.2.39 dialog inspection and edit-lease implementation**, see the
 [lease contract](../architecture/HYPERV-SETTINGS-DIALOG-LEASE.md) and
-[verification record](HYPERV-SETTINGS-0239-ACCEPTANCE.md). This source change is
-not activated; a fresh DEV check on 2026-09-08 confirmed application 0.2.37.
+[verification record](HYPERV-SETTINGS-0239-ACCEPTANCE.md). Application 0.2.39 was
+published and activated on DEV on 2026-09-08 at immutable commit
+`dc026849232086c9100be84eef4e26dc4786d075`. Installed Agents remain unchanged;
+Windows Agent 0.2.28 canary/live-field acceptance is still separate.
 
 For the **0.2.38 / Windows Agent 0.2.28 source implementation**, see the
 [state-aware field matrix](../architecture/HYPERV-LIVE-SETTINGS-MATRIX.md) and

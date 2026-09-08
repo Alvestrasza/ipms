@@ -1,9 +1,9 @@
 # IPMS 0.2.39 VM settings dialog verification
 
-Date: 2026-09-08. Status: **published; corrected activation candidate prepared**.
-The first cutover failed its API version check and the exact previous 0.2.37
-runtime was restored and verified healthy. No installed Agent was upgraded and
-no live VM setting changed. See the recovery record below.
+Date: 2026-09-08. Status: **published and activated on DEV** at immutable commit
+`dc026849232086c9100be84eef4e26dc4786d075`. The first candidate failed its API version
+check and was safely rolled back before this successful forward activation.
+No installed Agent was upgraded and no live VM setting changed.
 
 The [dialog lease contract](../architecture/HYPERV-SETTINGS-DIALOG-LEASE.md)
 documents automatic Agent inspection, tooltip-only powered-on guidance, owner
@@ -129,3 +129,16 @@ before an outage. Explicit `--resume-additive-schema` is required to proceed fro
 the reviewed rollback state: it requires migration 0023 already applied and an
 empty lease table, accepts no pending migrations, and never repeats that DDL.
 Without this explicit option, an already applied migration still blocks cutover.
+
+## Completed activation summary
+
+The corrected 0.2.39 release was published and activated on DEV. The production
+build, TypeScript checks, public version assertion, and **62 focused PostgreSQL
+tests without skips against the published candidate** passed. Deployment health
+and DE/EN page-version checks passed. Detailed operational evidence is retained
+locally, not reproduced in this public record.
+
+The 22 isolated browser tests are separate from live acceptance. No authenticated
+live-browser or real-provider acceptance is claimed. Windows Agent 0.2.28 canary
+acceptance remains a separate step; no installed Agent upgrade or VM action was
+included. This release does not include a native-console disconnect fix.
