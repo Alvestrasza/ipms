@@ -1,68 +1,40 @@
-"use client";
-
-import { Download, LoaderCircle } from "lucide-react";
-import { useState } from "react";
-
+/**
+ * File Name: bmc-event-log-export.tsx
+ * Version: v0.1.0 | Created: 2026-09-14 | Modified: 2026-09-14
+ * Author: Alice Endelgard | Organization: Alvestrasza Corporation
+ * Purpose: Export BMC metadata with shared bounded-log feedback.
+ */
+import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
+import { getJobLogsCopy } from "@/i18n/job-logs-copy";
+import { LogsExport } from "./logs-export";
 
 export function BmcEventLogExport({
   tenantId,
   queryString,
   copy,
+  locale,
+  disabled,
 }: {
   tenantId: string;
   queryString: string;
   copy: Dictionary["bmcEvents"];
+  locale: Locale;
+  disabled?: boolean;
 }) {
-  const [exporting, setExporting] = useState(false);
-  const [error, setError] = useState("");
-
-  async function exportCsv() {
-    setExporting(true);
-    setError("");
-    try {
-      const suffix = queryString ? `?${queryString}` : "";
-      const response = await fetch(`/api/v1/bmc-event-logs/export/${suffix}`, {
-        credentials: "same-origin",
-        headers: { "X-IPMS-Tenant-ID": tenantId },
-      });
-      if (!response.ok) {
-        setError(copy.exportError);
-        return;
-      }
-      const url = URL.createObjectURL(await response.blob());
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "ipms-bmc-event-logs.csv";
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      setError(copy.exportError);
-    } finally {
-      setExporting(false);
-    }
-  }
-
   return (
-    <div className="log-export">
-      <button
-        className="outline-button"
-        type="button"
-        onClick={exportCsv}
-        disabled={exporting}
-      >
-        {exporting ? (
-          <LoaderCircle className="spin" aria-hidden="true" size={15} />
-        ) : (
-          <Download aria-hidden="true" size={15} />
-        )}
-        {exporting ? copy.exporting : copy.exportCsv}
-      </button>
-      {error ? (
-        <span className="form-error" role="alert">
-          {error}
-        </span>
-      ) : null}
-    </div>
+    <LogsExport
+      key={`${tenantId}:${queryString}`}
+      tenantId={tenantId}
+      queryString={queryString}
+      scope="bmc-events"
+      disabled={disabled}
+      copy={{
+        ...getJobLogsCopy(locale),
+        exportCsv: copy.exportCsv,
+        exporting: copy.exporting,
+        exportError: copy.exportError,
+      }}
+    />
   );
 }

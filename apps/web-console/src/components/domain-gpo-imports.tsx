@@ -6,7 +6,9 @@
  */
 "use client";
 
-import { Copy, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
+import type { Route } from "next";
+import Link from "next/link";
 import {
   type FormEvent,
   useCallback,
@@ -14,7 +16,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { documentLocale, type Locale } from "@/i18n/config";
+import type { Locale } from "@/i18n/config";
 import type { DomainSecurityCopy } from "@/i18n/domain-security-copy";
 import {
   type DomainSecurityCatalog,
@@ -36,6 +38,7 @@ export function DomainGpoImports({
   csrfToken,
   canImport,
   configurationDirty,
+  preferredBaselineId,
   locale,
   copy,
 }: {
@@ -45,6 +48,7 @@ export function DomainGpoImports({
   csrfToken: string;
   canImport: boolean;
   configurationDirty: boolean;
+  preferredBaselineId?: string;
   locale: Locale;
   copy: DomainSecurityCopy;
 }) {
@@ -55,8 +59,13 @@ export function DomainGpoImports({
   const [stale, setStale] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [receiptId, setReceiptId] = useState<string | null>(null);
   const [systemId, setSystemId] = useState("");
-  const [baselineId, setBaselineId] = useState("");
+  const [baselineId, setBaselineId] = useState(
+    settings.baseline_order.includes(preferredBaselineId ?? "")
+      ? (preferredBaselineId ?? "")
+      : "",
+  );
   const [backupId, setBackupId] = useState("");
   const [tier, setTier] = useState<SecurityTier>("0");
   const [target, setTarget] = useState("ALL");
@@ -191,6 +200,7 @@ export function DomainGpoImports({
     setSubmitting(true);
     setError("");
     setNotice("");
+    setReceiptId(null);
     const current = () =>
       mounted.current && activeRequest.current === controller;
     try {
@@ -250,6 +260,7 @@ export function DomainGpoImports({
           : previous,
       );
       setNotice(copy.importReceived);
+      setReceiptId(payload.id);
     } catch {
       if (current()) {
         setUncertain(true);
@@ -263,21 +274,11 @@ export function DomainGpoImports({
     }
   }
 
-  async function copyApproval(document: Record<string, unknown>) {
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(document, null, 2));
-      if (mounted.current) setNotice(copy.copied);
-    } catch {
-      if (mounted.current) setError(copy.copyFailed);
-    }
-  }
-
-  const date = (value: string) =>
-    new Intl.DateTimeFormat(documentLocale(locale), {
-      dateStyle: "medium",
-      timeStyle: "short",
-      timeZone: "UTC",
-    }).format(new Date(value));
+  const logsQuery = new URLSearchParams({
+    kind: "gpo_import",
+    domain: settings.domain_name,
+    ...(baseline ? { baseline: baseline.id } : {}),
+  });
 
   return (
     <section
@@ -307,9 +308,18 @@ export function DomainGpoImports({
         </p>
       ) : null}
       {notice ? (
-        <p className={styles.success} role="status">
-          {notice}
-        </p>
+        <div className={styles.success} role="status">
+          <p>{notice}</p>
+          {receiptId ? (
+            <Link
+              href={
+                `/${locale}/logs/baselines?job=${encodeURIComponent(receiptId)}` as Route
+              }
+            >
+              {copy.openImportLog}
+            </Link>
+          ) : null}
+        </div>
       ) : null}
       {canImport && imports ? (
         <form className={styles.importForm} onSubmit={submit}>
@@ -428,69 +438,11 @@ export function DomainGpoImports({
           </button>
         </form>
       ) : null}
-      {imports ? (
-        <section
-          className={styles.jobs}
-          aria-labelledby="gpo-import-jobs-heading"
-        >
-          <h3 id="gpo-import-jobs-heading">{copy.jobs}</h3>
-          {imports.results.length ? (
-            <ul className={styles.jobList}>
-              {imports.results.map((job) => (
-                <li key={job.id}>
-                  <div className={styles.header}>
-                    <strong>{job.pilot_display_name}</strong>
-                    <span className={styles.badge} data-status={job.status}>
-                      {copy.states[job.status]}
-                    </span>
-                  </div>
-                  <p className={styles.hint}>
-                    {copy.agent}: {job.hostname} · Tier {job.tier}
-                  </p>
-                  <p className={styles.hint}>
-                    {copy.requested}: {date(job.requested_at)}
-                  </p>
-                  {job.status === "staged" ? (
-                    <p className={styles.notice}>{copy.staged}</p>
-                  ) : null}
-                  {job.error_code ? (
-                    <p className={styles.hint}>
-                      {copy.errorCode}: <code>{job.error_code}</code>
-                    </p>
-                  ) : null}
-                  {job.gpo_guid ? (
-                    <p className={styles.hint}>
-                      GPO GUID: <code>{job.gpo_guid}</code>
-                    </p>
-                  ) : null}
-                  {job.approval_document ? (
-                    <details className={styles.approval}>
-                      <summary>{copy.approval}</summary>
-                      <p className={styles.hint}>{copy.approvalHint}</p>
-                      <pre>
-                        {JSON.stringify(job.approval_document, null, 2)}
-                      </pre>
-                      <button
-                        className={styles.button}
-                        type="button"
-                        onClick={() => {
-                          if (job.approval_document)
-                            void copyApproval(job.approval_document);
-                        }}
-                      >
-                        <Copy size={15} aria-hidden="true" />
-                        {copy.copyApproval}
-                      </button>
-                    </details>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className={styles.hint}>{copy.noJobs}</p>
-          )}
-        </section>
-      ) : null}
+      <p className={styles.hint}>
+        <Link href={`/${locale}/logs/baselines?${logsQuery}` as Route}>
+          {copy.importLogs}
+        </Link>
+      </p>
     </section>
   );
 }

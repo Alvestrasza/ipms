@@ -300,7 +300,14 @@ test("read-only scan request reaches the real API and complete native-shaped evi
   ).toBeVisible();
   await expect(
     page.getByRole("table", { name: "Recent scan jobs", exact: true }),
-  ).toContainText("Queued");
+  ).toHaveCount(0);
+  await page.getByRole("link", { name: "View scan logs", exact: true }).click();
+  await expect(page).toHaveURL(/\/logs\/baselines\?/);
+  const scanRow = page
+    .getByRole("table", { name: "Baseline logs", exact: true })
+    .getByRole("row")
+    .filter({ hasText: "baseline-unknown" });
+  await expect(scanRow).toContainText("Queued");
   const python =
     process.env.IPMS_TEST_PYTHON ||
     path.resolve("../../services/control-plane/.venv/Scripts/python.exe");
@@ -315,15 +322,11 @@ test("read-only scan request reaches the real API and complete native-shaped evi
   expect(receipt.controls).toBeGreaterThan(300);
   expect(receipt.failed).toBeGreaterThan(0);
   expect(receipt.unknown).toBeGreaterThan(0);
-  await page
-    .getByRole("button", { name: "Refresh job status", exact: true })
-    .click();
-  await expect(
-    page.getByRole("table", { name: "Recent scan jobs", exact: true }),
-  ).toContainText("Completed");
-  await page
-    .getByRole("link", { name: "Load latest results", exact: true })
-    .click();
+  await page.reload();
+  await expect(scanRow).toContainText("Completed");
+  await page.goto(
+    "/en/security/baseline?baseline=microsoft-windows-server-2025",
+  );
   const host = page
     .getByRole("row")
     .filter({ hasText: "baseline-unknown.example.invalid" });

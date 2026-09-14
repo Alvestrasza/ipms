@@ -63,10 +63,16 @@ from ipms.apps.discovery.views import (
 )
 
 from . import views
+from .job_logs import GpoImportLogDetailView, JobLogView
 
 app_name = "core"
 
 urlpatterns = [
+    path("logs/agents/", JobLogView.as_view(), name="agent-job-logs"),
+    path("logs/agents/export/", JobLogView.as_view(export=True), name="agent-job-log-export"),
+    path("logs/baselines/", JobLogView.as_view(scope="baselines"), name="baseline-job-logs"),
+    path("logs/baselines/export/", JobLogView.as_view(scope="baselines", export=True), name="baseline-job-log-export"),
+    path("logs/gpo-imports/<uuid:pk>/", GpoImportLogDetailView.as_view(), name="gpo-import-log-detail"),
     path("security/", include("ipms.apps.security.urls")),
     path("", include("ipms.apps.updates.urls")),
     path("hyper-v/virtual-machines/<uuid:pk>/management/dialog/", HyperVManagementDialogView.as_view(), name="hyperv-management-dialog"),

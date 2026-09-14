@@ -3,7 +3,7 @@
  * Version: v0.1.0
  * Created: 2026-08-30 | Modified: 2026-09-14
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
- * Purpose: Present tenant console navigation and the security baseline category.
+ * Purpose: Present tenant inventory, security, administration and read-only log navigation.
  */
 import {
   Activity,
@@ -28,6 +28,7 @@ import Link from "next/link";
 
 import { getDictionary } from "@/i18n/dictionaries";
 import { getDomainSecurityCopy } from "@/i18n/domain-security-copy";
+import { getJobLogsCopy } from "@/i18n/job-logs-copy";
 import { getSecurityCopy } from "@/i18n/security-copy";
 import { resolveLocale } from "@/i18n/server";
 import { getWsusCopy } from "@/i18n/wsus-copy";
@@ -47,8 +48,10 @@ export type ActiveSection =
   | "physical-clients"
   | "physical-linux"
   | "bmc"
-  | "bmc-logs"
-  | "bmc-events"
+  | "logs-agents"
+  | "logs-baselines"
+  | "logs-bmc-communication"
+  | "logs-bmc-events"
   | "virtual"
   | "virtual-clients"
   | "virtual-linux"
@@ -73,6 +76,7 @@ export async function Sidebar({
   canManageServiceAccounts,
   canManageSecurityBaselines,
   canManageSecurityDomains,
+  canViewLogs,
   windowsRoles,
   windowsClientFamilies,
 }: {
@@ -85,20 +89,21 @@ export async function Sidebar({
   canManageServiceAccounts: boolean;
   canManageSecurityBaselines: boolean;
   canManageSecurityDomains: boolean;
+  canViewLogs: boolean;
   windowsRoles: WindowsServerRoleSummary[];
   windowsClientFamilies: WindowsClientFamilySummary[];
 }) {
   const locale = await resolveLocale();
   const dictionary = getDictionary(locale);
   const securityCopy = getSecurityCopy(locale);
+  const logsCopy = getJobLogsCopy(locale);
+  const logsExpanded = activeSection.startsWith("logs-");
   const physicalExpanded = [
     "physical",
     "physical-servers",
     "physical-clients",
     "physical-linux",
     "bmc",
-    "bmc-logs",
-    "bmc-events",
   ].includes(activeSection);
   const virtualExpanded = [
     "virtual",
@@ -298,38 +303,6 @@ export async function Sidebar({
                       <ServerCog aria-hidden="true" size={15} />
                       <span>{dictionary.navigation.bmc}</span>
                     </Link>
-                    {["bmc", "bmc-logs", "bmc-events"].includes(
-                      activeSection,
-                    ) ? (
-                      <ul className="nav-tree nav-tree--nested">
-                        <li>
-                          <Link
-                            className={`nav-subitem ${activeSection === "bmc-logs" ? "nav-subitem--active" : ""}`}
-                            href={`/${locale}/physical/bmc/logs` as Route}
-                            aria-current={
-                              activeSection === "bmc-logs" ? "page" : undefined
-                            }
-                          >
-                            <ScrollText aria-hidden="true" size={14} />
-                            <span>{dictionary.navigation.bmcLogs}</span>
-                          </Link>
-                        </li>
-                        <li>
-                          <Link
-                            className={`nav-subitem ${activeSection === "bmc-events" ? "nav-subitem--active" : ""}`}
-                            href={`/${locale}/physical/bmc/events` as Route}
-                            aria-current={
-                              activeSection === "bmc-events"
-                                ? "page"
-                                : undefined
-                            }
-                          >
-                            <ListTree aria-hidden="true" size={14} />
-                            <span>{dictionary.navigation.bmcEvents}</span>
-                          </Link>
-                        </li>
-                      </ul>
-                    ) : null}
                   </li>
                 </ul>
               ) : null}
@@ -396,6 +369,60 @@ export async function Sidebar({
       </nav>
 
       <div className="sidebar__footer">
+        {canViewLogs ? (
+          <>
+            <Link
+              className={`nav-item ${logsExpanded ? "nav-item--active" : ""}`}
+              href={`/${locale}/logs/agents` as Route}
+            >
+              <ScrollText aria-hidden="true" size={18} />
+              <span>{logsCopy.navigation}</span>
+            </Link>
+            {logsExpanded ? (
+              <ul className="nav-tree">
+                {[
+                  {
+                    section: "logs-agents",
+                    path: "agents",
+                    label: logsCopy.agents,
+                    icon: MonitorCog,
+                  },
+                  {
+                    section: "logs-baselines",
+                    path: "baselines",
+                    label: logsCopy.baselines,
+                    icon: ShieldCheck,
+                  },
+                  {
+                    section: "logs-bmc-communication",
+                    path: "bmc/communication",
+                    label: logsCopy.bmcCommunication,
+                    icon: ScrollText,
+                  },
+                  {
+                    section: "logs-bmc-events",
+                    path: "bmc/events",
+                    label: logsCopy.bmcEvents,
+                    icon: ListTree,
+                  },
+                ].map(({ section, path, label, icon: Icon }) => (
+                  <li key={section}>
+                    <Link
+                      className={`nav-subitem ${activeSection === section ? "nav-subitem--active" : ""}`}
+                      href={`/${locale}/logs/${path}` as Route}
+                      aria-current={
+                        activeSection === section ? "page" : undefined
+                      }
+                    >
+                      <Icon aria-hidden="true" size={15} />
+                      <span>{label}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </>
+        ) : null}
         {canAdmin ? (
           <Link
             className={`nav-item ${administrationExpanded ? "nav-item--active" : ""}`}

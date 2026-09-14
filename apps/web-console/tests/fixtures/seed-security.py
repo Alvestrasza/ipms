@@ -13,11 +13,13 @@ if os.environ.get("DJANGO_SETTINGS_MODULE") != "ipms_control_plane.settings.e2e"
 runpy.run_path(str(Path(__file__).with_name("seed-console.py")), run_name="__main__")
 
 from django.utils import timezone
-from ipms.apps.agent_pki.models import AgentEnrollment
+from django.contrib.auth import get_user_model
+from ipms.apps.agent_pki.models import AgentEnrollment, AgentLifecycleJob, WindowsAgentDeployment
 from ipms.apps.discovery.models import WindowsServer
 from ipms.apps.security.catalog import CATALOG_REVISION
 from ipms.apps.security.content import MANIFESTS
-from ipms.apps.security.models import BaselineAssessment, GpoExecutorReport
+from ipms.apps.security.models import BaselineAssessment, BaselineScanJob, DomainSecuritySettings, GpoExecutorReport, GpoImportJob
+from ipms.apps.security.catalog import BASELINES
 from ipms.apps.tenancy.models import Tenant
 
 tenant = Tenant.objects.get(slug="console-e2e")
@@ -95,5 +97,36 @@ GpoExecutorReport.objects.create(
     domain_guid="e99d4445-1d3b-4a30-92ca-77c04e725eab", forest_dns_name=gpo_dc.domain_name,
     dc_fqdn=gpo_dc.fqdn, role="writable-domain-controller", gpmc_available=True,
     result_code="ready_for_approval", observed_at=timezone.now(),
+)
+# History fixtures never change assessment coverage and are never delivered to an Agent.
+log_actor = get_user_model().objects.get(username="e2e-admin")
+host_agent = AgentEnrollment.objects.get(device_uri=host.source_id)
+for index in range(30):
+    logged_at = timezone.now() - timedelta(days=2, minutes=index)
+    BaselineScanJob.objects.create(
+        tenant=tenant, enrollment=host_agent, system=host, requested_by=log_actor,
+        baseline_id="microsoft-windows-server-2025", status="completed", requested_at=logged_at,
+        expires_at=logged_at + timedelta(minutes=10), completed_at=logged_at + timedelta(minutes=1),
+        error_code="logs-fixture-complete",
+    )
+AgentLifecycleJob.objects.create(
+    tenant=tenant, enrollment=host_agent, action="update", status="succeeded", target_version="0.2.32",
+    requested_by="logs-fixture-admin", completed_at=timezone.now(), result_code="logs-fixture-updated",
+)
+WindowsAgentDeployment.objects.create(
+    tenant=tenant, enrollment=host_agent, display_name="logs-fixture-deployment", target_address="logs.example.invalid",
+    requested_by="logs-fixture-admin", status="succeeded", completed_at=timezone.now(),
+)
+logs_domain = DomainSecuritySettings.objects.create(
+    tenant=tenant, domain_name="logs.example.invalid", tier_ous={"0": [], "1": [], "2": []},
+    gpo_name_template="{tier}-{scope}-{target}-{purpose}_V{version}", baseline_order=[item.id for item in BASELINES],
+)
+GpoImportJob.objects.create(
+    id=uuid.UUID("75555555-5555-4555-8555-555555555555"), tenant=tenant, enrollment=gpo_agent, system=gpo_dc,
+    domain=logs_domain, requested_by=log_actor, domain_guid="76666666-6666-4666-8666-666666666666",
+    pilot_display_name="0-C-ALL-LogsFixture_V1.0.0-Pilot", pilot_name_key="logs-fixture-pilot",
+    status="awaiting_approval", expires_at=timezone.now() + timedelta(hours=1),
+    assignment={"baseline_id": "microsoft-windows-server-2025", "backup_id": "fixture-backup", "target_tier": "0",
+                "approval_test_marker": "logs-fixture-approval"},
 )
 print("Synthetic security fixture ready: 25% compliance / 50% coverage for Server 2025.")

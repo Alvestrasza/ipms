@@ -56,7 +56,6 @@ export default async function DomainSecurityAdministrationPage() {
         initialCatalog={result.data}
         tenantId={tenant.id}
         csrfToken={session.csrf_token}
-        canImport={hasPermission(tenant, "security.gpo_imports.run")}
         locale={locale}
         copy={copy}
       />

@@ -65,6 +65,7 @@ export async function ConsoleShell({
         canManageAgents={hasPermission(tenant, "agents.manage")}
         canManageConnectors={hasPermission(tenant, "connectors.manage")}
         canViewUsers={hasPermission(tenant, "users.view")}
+        canViewLogs={hasPermission(tenant, "inventory.view")}
         canManageServiceAccounts={hasPermission(
           tenant,
           "service_accounts.manage",

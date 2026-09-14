@@ -81,7 +81,22 @@ async function selectDomain(page: Page, domain: string) {
   );
 }
 
-test("domain plans persist OU lists, names and accessible order without importing policy", async ({
+async function selectPolicyDomain(
+  page: Page,
+  settings: DomainSecuritySettings,
+  locale = "en",
+  baseline = "microsoft-windows-server-2025",
+) {
+  await page.goto(`/${locale}/security/baseline?baseline=${baseline}`);
+  await page
+    .getByRole("combobox", {
+      name: locale === "de" ? "Konfigurierte Domäne" : "Configured domain",
+      exact: true,
+    })
+    .selectOption(settings.id);
+}
+
+test("domain setup and baseline policy configuration preserve each other's fields without importing", async ({
   page,
 }) => {
   const { headers } = await login(page);
@@ -92,9 +107,12 @@ test("domain plans persist OU lists, names and accessible order without importin
   const domain = `gpo-form-${randomUUID().slice(0, 8)}.example.invalid`;
   const mappings = paths(domain);
   const imports: string[] = [];
+  const executorReads: string[] = [];
   page.on("request", (request) => {
     if (request.method() === "POST" && request.url().includes("/gpo-imports/"))
       imports.push(request.url());
+    if (request.method() === "GET" && request.url().includes("/gpo-imports/"))
+      executorReads.push(request.url());
   });
   await page.goto(route);
   await page.getByRole("button", { name: "Add domain", exact: true }).click();
@@ -108,6 +126,40 @@ test("domain plans persist OU lists, names and accessible order without importin
   await page
     .getByLabel("Tier 2 OUs", { exact: true })
     .fill(mappings["2"].join("\n"));
+  await expect(
+    page.getByLabel("GPO naming template", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("list", { name: "Baseline composition order", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Unlinked pilot GPOs", exact: true }),
+  ).toHaveCount(0);
+  const createdResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(api) && response.request().method() === "POST",
+  );
+  await page
+    .getByRole("button", { name: "Save domain settings", exact: true })
+    .click();
+  const created = await createdResponse;
+  expect(created.status()).toBe(201);
+  const domainSettings: DomainSecuritySettings = await created.json();
+  expect(domainSettings.tier_ous).toEqual(mappings);
+  expect(domainSettings.gpo_name_template).toBe(catalog.default_name_template);
+  expect(domainSettings.baseline_order).toEqual(
+    catalog.baseline_options.map((item) => item.id),
+  );
+  await selectDomain(page, domain);
+  await expect(page.getByLabel("Tier 1 OUs", { exact: true })).toHaveValue(
+    mappings["1"].join("\n"),
+  );
+  expect(executorReads).toEqual([]);
+  await selectPolicyDomain(page, domainSettings);
+  await expect(page.getByLabel("Domain DNS name", { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(page.getByLabel("Tier 1 OUs", { exact: true })).toHaveCount(0);
   const template = "Corp-{tier}-{scope}-{target}-{purpose}_V{version}";
   await page.getByLabel("GPO naming template", { exact: true }).fill(template);
   await expect(
@@ -158,13 +210,17 @@ test("domain plans persist OU lists, names and accessible order without importin
   expect(imports).toEqual([]);
   const savedResponse = page.waitForResponse(
     (response) =>
-      response.url().endsWith(api) && response.request().method() === "POST",
+      response.url().endsWith(`${api}${domainSettings.id}/`) &&
+      response.request().method() === "PUT",
   );
   await page
-    .getByRole("button", { name: "Save domain settings", exact: true })
+    .getByRole("button", { name: "Save GPO configuration", exact: true })
     .click();
   const response = await savedResponse;
-  expect(response.status()).toBe(201);
+  expect(response.status()).toBe(200);
+  expect(response.request().postDataJSON().expected_revision).toBe(
+    domainSettings.revision,
+  );
   expect(response.request().headers()["x-csrftoken"]).toBeTruthy();
   expect(response.request().headers()["x-ipms-tenant-id"]).toBe(
     headers["X-IPMS-Tenant-ID"],
@@ -176,15 +232,14 @@ test("domain plans persist OU lists, names and accessible order without importin
   expect(saved.verification_status).toBe("unverified");
   await expect(
     page.getByText(
-      "Domain settings saved. No directory policies were applied.",
+      "GPO configuration saved. No directory policies were applied.",
       { exact: true },
     ),
   ).toBeVisible();
   await page.reload();
-  await page.getByRole("button").filter({ hasText: domain }).click();
-  await expect(page.getByLabel("Tier 1 OUs", { exact: true })).toHaveValue(
-    mappings["1"].join("\n"),
-  );
+  await page
+    .getByRole("combobox", { name: "Configured domain", exact: true })
+    .selectOption(saved.id);
   await expect(
     page.getByLabel("GPO naming template", { exact: true }),
   ).toHaveValue(template);
@@ -200,6 +255,84 @@ test("domain plans persist OU lists, names and accessible order without importin
       ).json()
     ).results,
   ).toEqual([]);
+  await selectDomain(page, domain);
+  const updatedTier1 = [
+    `OU=ManagedServers,${domain
+      .split(".")
+      .map((part) => `DC=${part}`)
+      .join(",")}`,
+  ];
+  await page
+    .getByLabel("Tier 1 OUs", { exact: true })
+    .fill(updatedTier1.join("\n"));
+  const updatedResponse = page.waitForResponse(
+    (reply) =>
+      reply.url().endsWith(`${api}${saved.id}/`) &&
+      reply.request().method() === "PUT",
+  );
+  await page
+    .getByRole("button", { name: "Save domain settings", exact: true })
+    .click();
+  const updated = await updatedResponse;
+  expect(updated.status()).toBe(200);
+  const actual = await updated.json();
+  expect(actual.gpo_name_template).toBe(template);
+  expect(actual.baseline_order).toEqual(expectedOrder);
+  expect(actual.tier_ous["1"]).toEqual(updatedTier1);
+  expect(updated.request().postDataJSON().expected_revision).toBe(
+    saved.revision,
+  );
+  expect(imports).toEqual([]);
+});
+
+test("switching baselines keeps the second domain and its policy draft while updating the pilot package", async ({
+  page,
+}) => {
+  const { headers } = await login(page);
+  const { catalog } = await createDomain(page, headers);
+  await createDomain(page, headers);
+  const initialBaseline = "microsoft-windows-server-2025";
+  const nextBaseline = catalog.baseline_options.find(
+    (item) => item.id === "microsoft-windows-server-2022",
+  );
+  if (!nextBaseline)
+    throw new Error(
+      "The fixture requires the Microsoft Windows Server 2022 catalog.",
+    );
+  await page.goto(`/en/security/baseline?baseline=${initialBaseline}`);
+  const domains = page.getByRole("combobox", {
+    name: "Configured domain",
+    exact: true,
+  });
+  const firstId = await domains.locator("option").first().getAttribute("value");
+  const secondId = await domains.locator("option").nth(1).getAttribute("value");
+  if (!secondId)
+    throw new Error("The fixture requires a second configured domain.");
+  expect(secondId).not.toBe(firstId);
+  await domains.selectOption(secondId);
+  const pilotPackage = page.getByRole("combobox", {
+    name: "Baseline package",
+    exact: true,
+  });
+  await expect(pilotPackage).toHaveValue(initialBaseline);
+  const template = page.getByLabel("GPO naming template", { exact: true });
+  const draft = "Draft-{tier}-{scope}-{target}-{purpose}_V{version}";
+  await template.fill(draft);
+  await expect(domains).toBeDisabled();
+  await page
+    .getByRole("link", { name: nextBaseline.name, exact: true })
+    .click();
+  await expect(page).toHaveURL(
+    (url) => url.searchParams.get("baseline") === nextBaseline.id,
+  );
+  await expect(pilotPackage).toHaveValue(nextBaseline.id);
+  await expect(domains).toHaveValue(secondId);
+  await expect(template).toHaveValue(draft);
+  await expect(domains).toBeDisabled();
+  await expect(pilotPackage).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Save GPO configuration", exact: true }),
+  ).toBeEnabled();
 });
 
 test("German form explains invalid fields and saves short root OU names as full paths", async ({
@@ -245,18 +378,6 @@ test("German form explains invalid fields and saves short root OU names as full 
     "_T0",
   );
   await page.getByLabel("Tier 1 OUs", { exact: true }).fill("_T1");
-  await page
-    .getByLabel("Vorlage für GPO-Namen", { exact: true })
-    .fill("{unknown}");
-  receipt = post();
-  await save.click();
-  expect((await receipt).status()).toBe(400);
-  await expect(page.getByRole("main").getByRole("alert")).toContainText(
-    "GPO-Namensschema:",
-  );
-  await page
-    .getByLabel("Vorlage für GPO-Namen", { exact: true })
-    .fill("{tier}-{scope}-{target}-{purpose}_V{version}");
   receipt = post();
   await save.click();
   const response = await receipt;
@@ -280,6 +401,25 @@ test("German form explains invalid fields and saves short root OU names as full 
       page.getByLabel(`Tier ${tier} OUs`, { exact: true }),
     ).toHaveValue(`OU=_T${tier},${suffix}`);
   }
+  await selectPolicyDomain(page, saved, "de");
+  await page
+    .getByLabel("Vorlage für GPO-Namen", { exact: true })
+    .fill("{unknown}");
+  const invalidPolicy = page.waitForResponse(
+    (reply) =>
+      reply.url().endsWith(`${api}${saved.id}/`) &&
+      reply.request().method() === "PUT",
+  );
+  await page
+    .getByRole("button", { name: "GPO-Konfiguration speichern", exact: true })
+    .click();
+  expect((await invalidPolicy).status()).toBe(400);
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "GPO-Namensschema:",
+  );
+  await expect(
+    page.getByLabel("Vorlage für GPO-Namen", { exact: true }),
+  ).toHaveValue("{unknown}");
   expect(imports).toEqual([]);
 });
 
@@ -288,9 +428,15 @@ test("a stale revision preserves the draft and cannot overwrite another administ
 }) => {
   const { headers } = await login(page);
   const { settings, document } = await createDomain(page, headers);
-  await selectDomain(page, settings.domain_name);
+  await selectPolicyDomain(page, settings);
   const draft = "Draft-{tier}-{scope}-{target}-{purpose}_V{version}";
   const concurrent = "Saved-{tier}-{scope}-{target}-{purpose}_V{version}";
+  const concurrentOus = {
+    ...settings.tier_ous,
+    "1": [
+      settings.tier_ous["1"][0].replace("OU=Servers", "OU=ConcurrentServers"),
+    ],
+  };
   await page.getByLabel("GPO naming template", { exact: true }).fill(draft);
   const update = await page.request.put(`${api}${settings.id}/`, {
     headers,
@@ -298,6 +444,7 @@ test("a stale revision preserves the draft and cannot overwrite another administ
       ...document,
       expected_revision: settings.revision,
       gpo_name_template: concurrent,
+      tier_ous: concurrentOus,
     },
   });
   expect(update.status()).toBe(200);
@@ -307,7 +454,7 @@ test("a stale revision preserves the draft and cannot overwrite another administ
       response.request().method() === "PUT",
   );
   await page
-    .getByRole("button", { name: "Save domain settings", exact: true })
+    .getByRole("button", { name: "Save GPO configuration", exact: true })
     .click();
   expect((await conflict).status()).toBe(409);
   await expect(page.getByRole("main").getByRole("alert")).toContainText(
@@ -317,23 +464,77 @@ test("a stale revision preserves the draft and cannot overwrite another administ
     page.getByLabel("GPO naming template", { exact: true }),
   ).toHaveValue(draft);
   await expect(
-    page.getByRole("button", { name: "Save domain settings", exact: true }),
+    page.getByRole("button", { name: "Save GPO configuration", exact: true }),
   ).toBeDisabled();
   const actual = await (
     await page.request.get(`${api}${settings.id}/`, { headers })
   ).json();
   expect(actual.gpo_name_template).toBe(concurrent);
+  expect(actual.tier_ous).toEqual(concurrentOus);
+});
+
+test("stale OU edits cannot overwrite a concurrent policy configuration", async ({
+  page,
+}) => {
+  const { headers } = await login(page);
+  const { settings, document } = await createDomain(page, headers);
+  await selectDomain(page, settings.domain_name);
+  const draftOu = settings.tier_ous["1"][0].replace(
+    "OU=Servers",
+    "OU=DraftServers",
+  );
+  await page.getByLabel("Tier 1 OUs", { exact: true }).fill(draftOu);
+  const template = "Updated-{tier}-{scope}-{target}-{purpose}_V{version}";
+  const concurrent = await page.request.put(`${api}${settings.id}/`, {
+    headers,
+    data: {
+      ...document,
+      expected_revision: settings.revision,
+      gpo_name_template: template,
+    },
+  });
+  expect(concurrent.status()).toBe(200);
+  const conflict = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`${api}${settings.id}/`) &&
+      response.request().method() === "PUT",
+  );
+  await page
+    .getByRole("button", { name: "Save domain settings", exact: true })
+    .click();
+  expect((await conflict).status()).toBe(409);
+  await expect(page.getByLabel("Tier 1 OUs", { exact: true })).toHaveValue(
+    draftOu,
+  );
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "Your draft is retained",
+  );
+  const actual = await (
+    await page.request.get(`${api}${settings.id}/`, { headers })
+  ).json();
+  expect(actual.gpo_name_template).toBe(template);
+  expect(actual.tier_ous).toEqual(settings.tier_ous);
 });
 
 test("pilot import is an explicit separate request and reports local approval without application", async ({
   page,
 }) => {
   const { headers } = await login(page);
-  const { settings, catalog } = await createDomain(
-    page,
+  const {
+    settings: initialSettings,
+    catalog,
+    document,
+  } = await createDomain(page, headers, "gpo-ui.example.invalid");
+  const configured = await page.request.put(`${api}${initialSettings.id}/`, {
     headers,
-    "gpo-ui.example.invalid",
-  );
+    data: {
+      ...document,
+      expected_revision: initialSettings.revision,
+      baseline_order: [...initialSettings.baseline_order].reverse(),
+    },
+  });
+  expect(configured.status()).toBe(200);
+  const settings: DomainSecuritySettings = await configured.json();
   const baseline = catalog.baseline_options.find(
     (item) => item.id === "microsoft-windows-server-2025",
   );
@@ -346,7 +547,7 @@ test("pilot import is an explicit separate request and reports local approval wi
     throw new Error(
       "The fixture requires one staged, verified Microsoft GPO backup component.",
     );
-  await selectDomain(page, settings.domain_name);
+  await selectPolicyDomain(page, settings);
   const posts: unknown[] = [];
   page.on("request", (request) => {
     if (request.method() === "POST" && request.url().endsWith("/gpo-imports/"))
@@ -357,9 +558,9 @@ test("pilot import is an explicit separate request and reports local approval wi
     exact: true,
   });
   await expect(executor).toContainText("gpo-ui-dc");
-  await page
-    .getByRole("combobox", { name: "Baseline package", exact: true })
-    .selectOption(baseline.id);
+  await expect(
+    page.getByRole("combobox", { name: "Baseline package", exact: true }),
+  ).toHaveValue(baseline.id);
   await page
     .getByRole("combobox", { name: "GPO component", exact: true })
     .selectOption(component.id);
@@ -393,23 +594,42 @@ test("pilot import is an explicit separate request and reports local approval wi
     target: "ALL",
     version: "1.0.0",
   });
-  await expect(
-    page.getByText(job.pilot_display_name, { exact: true }),
-  ).toBeVisible();
+  const logLink = page.getByRole("link", {
+    name: "Open request and local approval in Logs",
+    exact: true,
+  });
+  await expect(logLink).toHaveAttribute(
+    "href",
+    `/en/logs/baselines?job=${job.id}`,
+  );
   await expect(
     page.getByText(
       "Pilot import request recorded. Local approval is required before the Agent can create the GPO.",
       { exact: true },
     ),
   ).toBeVisible();
-  await page.getByText("Local approval document", { exact: true }).click();
-  await expect(page.locator("pre")).toContainText(job.id);
-  await page
-    .getByRole("button", { name: "Refresh pilot jobs", exact: true })
-    .click();
   await expect(
-    page.getByText(job.pilot_display_name, { exact: true }),
-  ).toBeVisible();
+    page.getByText("Local approval document", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Pilot import jobs", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("table", { name: "Recent scan jobs", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "View scan logs", exact: true }),
+  ).toHaveAttribute(
+    "href",
+    `/en/logs/baselines?baseline=${baseline.id}&kind=baseline_scan`,
+  );
+  await page
+    .getByRole("button", {
+      name: "Refresh Agents and request state",
+      exact: true,
+    })
+    .click();
+  await expect(logLink).toBeVisible();
   expect(posts).toHaveLength(1);
 });
 
@@ -441,7 +661,16 @@ test("tenant scope and reader permissions protect domain settings", async ({
   await page.goto(route);
   await expect(page).toHaveURL(/\/en\/security\/baseline$/);
   await expect(
-    page.getByRole("link", { name: "Domains & GPOs", exact: true }),
+    page.getByRole("link", { name: "Domains & tiers", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Save GPO configuration", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", {
+      name: "Request unlinked pilot import",
+      exact: true,
+    }),
   ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Save domain settings", exact: true }),
@@ -452,7 +681,7 @@ test("German domain planning remains accessible in a narrow viewport", async ({
   page,
 }) => {
   const { headers } = await login(page);
-  await createDomain(page, headers);
+  const { settings } = await createDomain(page, headers);
   await page.setViewportSize({ width: 1700, height: 1100 });
   await page.goto("/de/administration/security/domains");
   await expect(
@@ -462,7 +691,7 @@ test("German domain planning remains accessible in a narrow viewport", async ({
     }),
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Domänen & GPOs", exact: true }),
+    page.getByRole("link", { name: "Domänen & Tiers", exact: true }),
   ).toHaveAttribute("aria-current", "page");
   await page.setViewportSize({ width: 390, height: 844 });
   expect(
@@ -479,6 +708,27 @@ test("German domain planning remains accessible in a narrow viewport", async ({
   ).toEqual([]);
   await page.screenshot({
     path: test.info().outputPath("domain-security-de-mobile-synthetic.png"),
+    fullPage: true,
+  });
+  await selectPolicyDomain(page, settings, "de");
+  await expect(
+    page.getByLabel("Vorlage für GPO-Namen", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Tier 1 OUs", { exact: true })).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+        .analyze()
+    ).violations,
+  ).toEqual([]);
+  await page.screenshot({
+    path: test.info().outputPath("baseline-policy-de-mobile-synthetic.png"),
     fullPage: true,
   });
 });

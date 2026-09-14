@@ -1,13 +1,14 @@
 import csv
 import io
 import time
+import unicodedata
 import uuid
 from datetime import timezone as datetime_timezone
 
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Case, Count, F, IntegerField, Q, Value, When
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -20,6 +21,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ipms.apps.audit.models import AuditEvent
+from ipms.apps.core.exceptions import PublicApiError
 from ipms.apps.tenancy.permissions import HasSelectedTenantAccess
 from ipms.apps.tenancy.operations import require_active_tenant
 
@@ -970,6 +972,32 @@ class WindowsServerTelemetryView(RetrieveAPIView):
         ).select_related("server")
 
 
+def _ordered_bmc_logs(request, queryset, *, time_field, severity_order):
+    sort = request.query_params.get("sort", time_field)
+    direction = request.query_params.get("direction", "desc")
+    if sort not in (time_field, "severity", "bmc"):
+        raise ValidationError({"sort": ["invalid_sort"]})
+    if direction not in ("asc", "desc"):
+        raise ValidationError({"direction": ["invalid_direction"]})
+    if sort == "severity":
+        expression = Case(
+            *(
+                When(severity=severity, then=Value(rank))
+                for rank, severity in enumerate(severity_order)
+            ),
+            default=Value(-1),
+            output_field=IntegerField(),
+        )
+    else:
+        expression = F("bmc_name" if sort == "bmc" else time_field)
+    ordering = (
+        expression.asc(nulls_last=True)
+        if direction == "asc"
+        else expression.desc(nulls_last=True)
+    )
+    return queryset.order_by(ordering, "id")
+
+
 def _filtered_bmc_logs(request):
     queryset = BmcCommunicationLog.objects.filter(tenant=request.tenant)
     severities = []
@@ -1006,7 +1034,12 @@ def _filtered_bmc_logs(request):
             | Q(redfish_error_code__icontains=query)
             | Q(redfish_message_id__icontains=query)
         )
-    return queryset
+    return _ordered_bmc_logs(
+        request,
+        queryset,
+        time_field="occurred_at",
+        severity_order=("debug", "info", "warning", "error"),
+    )
 
 
 class BmcCommunicationLogListView(ListAPIView):
@@ -1062,7 +1095,12 @@ def _filtered_bmc_event_logs(request):
             | Q(source_record_id__icontains=query)
             | Q(record_format__icontains=query)
         )
-    return queryset
+    return _ordered_bmc_logs(
+        request,
+        queryset,
+        time_field="source_created_at",
+        severity_order=("unknown", "info", "warning", "critical"),
+    )
 
 
 class BmcEventLogEntryListView(ListAPIView):
@@ -1075,13 +1113,27 @@ class BmcEventLogEntryListView(ListAPIView):
 
 def _csv_safe(value) -> str:
     text = "" if value is None else str(value)
-    return f"'{text}" if text.startswith(("=", "+", "-", "@")) else text
+    for character in text:
+        if character.isspace() or unicodedata.category(character) in ("Cc", "Cf"):
+            continue
+        if character in "=+-@":
+            return f"'{text}"
+        break
+    return text
+
+
+def _bmc_export_entries(queryset):
+    entries = list(queryset[:10001])
+    if len(entries) > 10000:
+        raise PublicApiError("log_export_limit_exceeded")
+    return entries
 
 
 class BmcCommunicationLogExportView(APIView):
     permission_classes = (IsAuthenticated, HasSelectedTenantAccess)
 
     def get(self, request):
+        entries = _bmc_export_entries(_filtered_bmc_logs(request))
         output = io.StringIO(newline="")
         writer = csv.writer(output)
         writer.writerow(
@@ -1101,7 +1153,7 @@ class BmcCommunicationLogExportView(APIView):
                 "correlation_id",
             )
         )
-        for entry in _filtered_bmc_logs(request)[:10000]:
+        for entry in entries:
             writer.writerow(
                 _csv_safe(value)
                 for value in (
@@ -1120,7 +1172,9 @@ class BmcCommunicationLogExportView(APIView):
                     entry.correlation_id,
                 )
             )
-        response = HttpResponse(output.getvalue(), content_type="text/csv; charset=utf-8")
+        response = HttpResponse(
+            "\ufeff" + output.getvalue(), content_type="text/csv; charset=utf-8",
+        )
         response["Content-Disposition"] = 'attachment; filename="ipms-bmc-logs.csv"'
         response["Cache-Control"] = "private, no-store"
         return response
@@ -1130,6 +1184,7 @@ class BmcEventLogEntryExportView(APIView):
     permission_classes = (IsAuthenticated, HasSelectedTenantAccess)
 
     def get(self, request):
+        entries = _bmc_export_entries(_filtered_bmc_event_logs(request))
         output = io.StringIO(newline="")
         writer = csv.writer(output)
         writer.writerow(
@@ -1148,7 +1203,7 @@ class BmcEventLogEntryExportView(APIView):
                 "record_format",
             )
         )
-        for entry in _filtered_bmc_event_logs(request)[:10000]:
+        for entry in entries:
             writer.writerow(
                 _csv_safe(value)
                 for value in (
@@ -1168,7 +1223,9 @@ class BmcEventLogEntryExportView(APIView):
                     neutralize_public_protocol_text(entry.record_format),
                 )
             )
-        response = HttpResponse(output.getvalue(), content_type="text/csv; charset=utf-8")
+        response = HttpResponse(
+            "\ufeff" + output.getvalue(), content_type="text/csv; charset=utf-8",
+        )
         response["Content-Disposition"] = (
             'attachment; filename="ipms-bmc-event-logs.csv"'
         )

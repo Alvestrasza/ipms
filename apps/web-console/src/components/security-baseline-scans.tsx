@@ -8,9 +8,10 @@
 "use client";
 
 import { RefreshCw, ScanLine } from "lucide-react";
+import type { Route } from "next";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { documentLocale, type Locale } from "@/i18n/config";
-import type { SecurityCopy } from "@/i18n/security-copy";
+import type { Locale } from "@/i18n/config";
 import type { SecurityScanCopy } from "@/i18n/security-scan-copy";
 import {
   isSecurityScanReceipt,
@@ -34,7 +35,7 @@ export function SecurityBaselineScansPanel({
   csrfToken,
   canRun,
   locale,
-  copy,
+  logsLabel,
   scanCopy,
 }: {
   baselineId: string;
@@ -45,7 +46,7 @@ export function SecurityBaselineScansPanel({
   csrfToken: string;
   canRun: boolean;
   locale: Locale;
-  copy: SecurityCopy;
+  logsLabel: string;
   scanCopy: SecurityScanCopy;
 }) {
   const [jobs, setJobs] = useState(initialJobs);
@@ -249,14 +250,6 @@ export function SecurityBaselineScansPanel({
     }
   }
 
-  const date = (value: string | null) =>
-    value
-      ? new Intl.DateTimeFormat(documentLocale(locale), {
-          dateStyle: "medium",
-          timeStyle: "short",
-          timeZone: "UTC",
-        }).format(new Date(value))
-      : "—";
   return (
     <section className={styles.panel} aria-labelledby="baseline-scans-heading">
       <header className={styles.header}>
@@ -335,8 +328,6 @@ export function SecurityBaselineScansPanel({
       ) : null}
       <div className={styles.jobHeading}>
         <div>
-          <h4>{scanCopy.jobs}</h4>
-          <p>{scanCopy.recent}</p>
           {jobs ? (
             <p>
               {scanCopy.active}: {jobs.active}
@@ -344,6 +335,14 @@ export function SecurityBaselineScansPanel({
           ) : null}
         </div>
         <div className={styles.actions}>
+          <Link
+            className={styles.button}
+            href={
+              `/${locale}/logs/baselines?baseline=${encodeURIComponent(baselineId)}&kind=baseline_scan` as Route
+            }
+          >
+            {logsLabel}
+          </Link>
           <button
             className={styles.button}
             type="button"
@@ -369,43 +368,6 @@ export function SecurityBaselineScansPanel({
         <p className={styles.hint}>
           {paused ? scanCopy.paused : scanCopy.polling}
         </p>
-      ) : null}
-      {jobs && jobs.results.length === 0 ? (
-        <p className={styles.empty}>{scanCopy.noJobs}</p>
-      ) : null}
-      {jobs && jobs.results.length > 0 ? (
-        <div className={styles.tableScroll}>
-          <table>
-            <caption className="sr-only">{scanCopy.jobs}</caption>
-            <thead>
-              <tr>
-                <th scope="col">{copy.system}</th>
-                <th scope="col">{copy.status}</th>
-                <th scope="col">{scanCopy.requested}</th>
-                <th scope="col">{scanCopy.completed}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {jobs.results.map((job) => (
-                <tr key={job.id}>
-                  <td>{job.hostname || job.system_id}</td>
-                  <td>
-                    <span>{scanCopy.statuses[job.status]}</span>
-                    {job.error_code ? (
-                      <small>
-                        {scanCopy.jobErrors[
-                          job.error_code as keyof typeof scanCopy.jobErrors
-                        ] ?? job.error_code}
-                      </small>
-                    ) : null}
-                  </td>
-                  <td>{date(job.requested_at)}</td>
-                  <td>{date(job.completed_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       ) : null}
     </section>
   );

@@ -7,14 +7,30 @@
 import type { Locale } from "./config";
 
 const en = {
-  navigation: "Domains & GPOs",
+  navigation: "Domains & tiers",
   title: "Domain security settings",
   eyebrow: "Tenant administration / Security",
   description:
-    "Map existing OUs to security tiers, name GPOs and arrange baseline layers for each domain.",
+    "Configure domain DNS names and map existing OUs to security tiers.",
   boundary:
     "Saving these settings records a plan. It does not create or move OUs, modify GPOs, or apply policy.",
   domains: "Configured domains",
+  policyTitle: "Domain GPO configuration",
+  policyDomain: "Configured domain",
+  policyDescription:
+    "Set GPO names and arrange baseline layers for the selected domain. OU mappings are maintained in tenant administration.",
+  policyBoundary:
+    "Saving GPO configuration records the naming and composition plan. A pilot import is a separate action and does not apply policy.",
+  policySave: "Save GPO configuration",
+  policySaved: "GPO configuration saved. No directory policies were applied.",
+  policyUnavailable:
+    "GPO configuration could not be loaded. Reload to try again.",
+  policyEmpty:
+    "Configure a domain and its tier OUs in tenant administration before preparing GPOs.",
+  configureDomains: "Configure domains & tiers",
+  scanLogs: "View scan logs",
+  importLogs: "View GPO import logs",
+  openImportLog: "Open request and local approval in Logs",
   add: "Add domain",
   edit: "Edit domain",
   empty: "No domain settings have been saved for this tenant.",
@@ -83,9 +99,10 @@ const en = {
   importsTitle: "Unlinked pilot GPOs",
   importBoundary:
     "Prepare a separate pilot GPO on a domain controller. The Agent requires local approval for this exact job. The pilot remains unlinked with Computer and User settings disabled; this does not apply the baseline.",
-  saveFirst: "Save the domain settings before requesting a pilot import.",
-  importsUnavailable: "Pilot jobs and eligible Agents could not be loaded.",
-  importsRefresh: "Refresh pilot jobs",
+  saveFirst: "Save the GPO configuration before requesting a pilot import.",
+  importsUnavailable:
+    "Eligible Agents and the request state could not be loaded.",
+  importsRefresh: "Refresh Agents and request state",
   executor: "Domain controller Agent",
   noExecutor: "No eligible Agent in this domain",
   executorHint:
@@ -103,7 +120,7 @@ const en = {
   importInvalid:
     "The pilot request was rejected. Check the saved domain revision, Agent and package selection.",
   importUncertain:
-    "The request result is uncertain. Refresh pilot jobs before retrying. No new request will be created automatically.",
+    "The request result is uncertain. Refresh the request state and check Logs before retrying. No new request will be created automatically.",
   noJobs: "No pilot imports have been requested for this domain.",
   jobs: "Pilot import jobs",
   status: "Status",
@@ -133,14 +150,31 @@ const en = {
 
 export type DomainSecurityCopy = typeof en;
 const de: DomainSecurityCopy = {
-  navigation: "Domänen & GPOs",
+  navigation: "Domänen & Tiers",
   title: "Domänen-Sicherheitseinstellungen",
   eyebrow: "Tenant-Administration / Security",
   description:
-    "Vorhandene OUs den Sicherheits-Tiers zuordnen, GPOs benennen und Baselines je Domäne anordnen.",
+    "DNS-Namen der Domänen konfigurieren und vorhandene OUs den Sicherheits-Tiers zuordnen.",
   boundary:
     "Das Speichern hält die Planung fest. Es erstellt oder verschiebt keine OUs, ändert keine GPOs und wendet keine Richtlinien an.",
   domains: "Konfigurierte Domänen",
+  policyTitle: "GPO-Konfiguration der Domäne",
+  policyDomain: "Konfigurierte Domäne",
+  policyDescription:
+    "GPO-Namen und Baseline-Reihenfolge für die gewählte Domäne festlegen. Die OU-Zuordnung wird in der Tenant-Administration gepflegt.",
+  policyBoundary:
+    "Das Speichern hält Namensschema und Baseline-Zusammenstellung fest. Ein Pilot-Import wird separat angefordert und wendet keine Richtlinien an.",
+  policySave: "GPO-Konfiguration speichern",
+  policySaved:
+    "GPO-Konfiguration gespeichert. Es wurden keine Verzeichnisrichtlinien angewendet.",
+  policyUnavailable:
+    "Die GPO-Konfiguration konnte nicht geladen werden. Bitte erneut laden.",
+  policyEmpty:
+    "Vor der GPO-Vorbereitung eine Domäne mit ihren Tier-OUs in der Tenant-Administration konfigurieren.",
+  configureDomains: "Domänen & Tiers konfigurieren",
+  scanLogs: "Scan-Protokolle öffnen",
+  importLogs: "GPO-Importprotokolle öffnen",
+  openImportLog: "Auftrag und lokale Freigabe in Logs öffnen",
   add: "Domäne hinzufügen",
   edit: "Domäne bearbeiten",
   empty:
@@ -213,10 +247,10 @@ const de: DomainSecurityCopy = {
   importsTitle: "Unverknüpfte Pilot-GPOs",
   importBoundary:
     "Eine separate Pilot-GPO auf einem Domain Controller vorbereiten. Der Agent benötigt eine lokale Freigabe für genau diesen Auftrag. Die GPO bleibt unverknüpft; Computer- und Benutzereinstellungen sind deaktiviert. Die Baseline wird dadurch nicht angewendet.",
-  saveFirst: "Vor einem Pilot-Import die Domäneneinstellungen speichern.",
+  saveFirst: "Vor einem Pilot-Import die GPO-Konfiguration speichern.",
   importsUnavailable:
-    "Pilot-Aufträge und geeignete Agents konnten nicht geladen werden.",
-  importsRefresh: "Pilot-Aufträge aktualisieren",
+    "Geeignete Agents und der Auftragsstand konnten nicht geladen werden.",
+  importsRefresh: "Agents und Auftragsstand aktualisieren",
   executor: "Domain-Controller-Agent",
   noExecutor: "Kein geeigneter Agent in dieser Domäne",
   executorHint:
@@ -234,7 +268,7 @@ const de: DomainSecurityCopy = {
   importInvalid:
     "Der Pilot-Auftrag wurde abgelehnt. Bitte gespeicherte Domänenrevision, Agent und Paket prüfen.",
   importUncertain:
-    "Das Auftragsergebnis ist unklar. Vor einem erneuten Versuch die Pilot-Aufträge aktualisieren. Es wird kein neuer Auftrag automatisch erstellt.",
+    "Das Auftragsergebnis ist unklar. Vor einem erneuten Versuch den Auftragsstand aktualisieren und Logs prüfen. Es wird kein neuer Auftrag automatisch erstellt.",
   noJobs: "Für diese Domäne wurden noch keine Pilot-Importe angefordert.",
   jobs: "Pilot-Import-Aufträge",
   status: "Status",

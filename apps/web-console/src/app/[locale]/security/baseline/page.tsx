@@ -23,8 +23,10 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ConsoleShell } from "@/components/console-shell";
+import { BaselinePolicyConfiguration } from "@/components/domain-security-administration";
 import { SecurityBaselineScansPanel } from "@/components/security-baseline-scans";
 import { documentLocale, type Locale } from "@/i18n/config";
+import { getDomainSecurityCopy } from "@/i18n/domain-security-copy";
 import { getSecurityCopy, type SecurityCopy } from "@/i18n/security-copy";
 import {
   getSecurityScanCopy,
@@ -39,6 +41,7 @@ import type {
   SecurityBaselineTarget,
 } from "@/lib/security-types";
 import { getServerSession } from "@/lib/server-auth";
+import { getDomainSecuritySettings } from "@/lib/server-domain-security";
 import { requireTenantScope } from "@/lib/server-portal-scope";
 import {
   getSecurityBaselineCatalog,
@@ -264,12 +267,14 @@ export default async function SecurityBaselinePage({
   const locale = await resolveLocale();
   const copy = getSecurityCopy(locale);
   const scanCopy = getSecurityScanCopy(locale);
+  const domainCopy = getDomainSecurityCopy(locale);
   const session = await getServerSession();
   requireTenantScope(session, locale);
   const tenant = selectedTenant(session, await cookies());
   if (!tenant) redirect(`/${locale}/access-unavailable`);
   if (!hasPermission(tenant, "inventory.view")) redirect(`/${locale}`);
   const canManageBaselines = hasPermission(tenant, "security.baselines.manage");
+  const canManageDomains = hasPermission(tenant, "security.domains.manage");
 
   const query = await searchParams;
   const target: SecurityBaselineTarget =
@@ -282,9 +287,17 @@ export default async function SecurityBaselinePage({
     typeof query.page === "string" && /^[1-9]\d{0,6}$/.test(query.page)
       ? Number(query.page)
       : 1;
-  const response = await getSecurityBaselineCatalog(tenant.id, target);
+  const [response, domainResponse] = await Promise.all([
+    getSecurityBaselineCatalog(tenant.id, target),
+    canManageDomains
+      ? getDomainSecuritySettings(tenant.id)
+      : Promise.resolve(null),
+  ]);
   if (!response.sessionValid) redirect(`/${locale}/login`);
   if (response.forbidden) redirect(`/${locale}/access-unavailable`);
+  if (domainResponse && !domainResponse.sessionValid)
+    redirect(`/${locale}/login`);
+  if (domainResponse?.forbidden) redirect(`/${locale}/access-unavailable`);
   const catalog = response.data;
   const selection = requestedBaseline
     ? catalog?.results.find((baseline) => baseline.id === requestedBaseline)
@@ -609,7 +622,7 @@ export default async function SecurityBaselinePage({
                   csrfToken={session.csrf_token}
                   canRun={hasPermission(tenant, "security.scans.run")}
                   locale={locale}
-                  copy={copy}
+                  logsLabel={domainCopy.scanLogs}
                   scanCopy={scanCopy}
                 />
               ) : null}
@@ -657,6 +670,19 @@ export default async function SecurityBaselinePage({
                 />
               )}
             </section>
+          ) : null}
+
+          {canManageDomains && baseline ? (
+            <BaselinePolicyConfiguration
+              key={tenant.id}
+              initialCatalog={domainResponse?.data ?? null}
+              tenantId={tenant.id}
+              csrfToken={session.csrf_token}
+              canImport={hasPermission(tenant, "security.gpo_imports.run")}
+              preferredBaselineId={baseline.id}
+              locale={locale}
+              copy={domainCopy}
+            />
           ) : null}
 
           <section
