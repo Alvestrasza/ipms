@@ -1,3 +1,7 @@
+# File Name: gateway.py
+# Version: v0.2.47 | Last Modified: 2026-09-14
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Minimal settings for authenticated native Agent gateway services.
 import os
 import re
 
@@ -23,6 +27,7 @@ INSTALLED_APPS = [
     "ipms.apps.audit",
     "ipms.apps.agent_pki",
     "ipms.apps.discovery",
+    "ipms.apps.security",
 ]
 DATABASES = {
     "default": {
