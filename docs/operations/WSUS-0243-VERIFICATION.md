@@ -53,12 +53,14 @@ and delivered a complete software inventory. The remaining server wave then
 completed: all 25 Windows servers reported 0.2.30, successful update jobs, fresh
 heartbeats and complete software inventories.
 
-One older Windows client remained at 0.1.36 after an `update_failed` result.
-Its downloaded replacement executable matched the published build. A bounded
-local administrator repair was prepared with old-executable backup, hash and
-service checks, enrollment/settings preservation and rollback. Its execution
-and subsequent Portal acceptance remain open; the failed lifecycle result is
-retained as history rather than rewritten.
+One older Windows client initially remained at 0.1.36 after an `update_failed`
+result. Its downloaded replacement executable matched the published build. The
+operator executed a reviewed local administrator repair with old-executable
+backup, hash and service checks, enrollment/settings preservation and rollback.
+The new service process, installed version and executable hash were verified;
+fresh inventory arrived after that process started under the same enrollment.
+All 26 Windows Agents therefore report 0.2.30. The original failed lifecycle
+result remains history rather than being rewritten as a successful job.
 
 ## Linux appliance Agent acceptance
 
@@ -78,10 +80,11 @@ Protected backups retain the previous executable and unit.
 ## Acceptance limits
 
 Three Windows servers reported collected local Windows Update evidence with
-zero identities; 22 reported that evidence as unavailable. This verifies
-schema-2 inventory transport and conservative handling of absent evidence. It
-does not demonstrate a positive installed-update GUID/revision match or patch
-applicability against a live WSUS catalog.
+zero identities; the repaired client supplied 17 identities; 22 servers
+reported that evidence as unavailable. This verifies schema-2 inventory
+transport, real local update evidence and conservative handling of absent
+evidence. It does not demonstrate a positive installed-update GUID/revision
+match or patch applicability against a live WSUS catalog.
 
 No WSUS publisher or catalog was configured during this deployment. Real WSUS
 metadata ingestion remains a separate acceptance step. Saving WSUS server
