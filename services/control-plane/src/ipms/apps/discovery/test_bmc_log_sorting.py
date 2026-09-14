@@ -189,7 +189,8 @@ class BmcLogSortingTests(TestCase):
                     self.assertEqual(forbidden.status_code, 404)
 
     def test_csv_neutralizes_formula_cells_but_preserves_list_values(self):
-        name = " \t\x00=SUM(1,2)"
+        # PostgreSQL text cannot store NUL; the pure CSV test covers that input.
+        name = " \t\x1f=SUM(1,2)"
         message = "\r\n@SUM(1,2)"
         for kind in ("communication", "event"):
             changes = {"message": message} if kind == "event" else {"resource_path": message}

@@ -80,6 +80,13 @@ These local results do not establish supported Python 3.14/PostgreSQL or live
 appliance acceptance; those checks and deployment receipts are recorded below
 once completed.
 
+The first supported PostgreSQL run executed all 545 tests and found one test
+fixture error: a BMC integration case attempted to store NUL in a text column,
+which PostgreSQL rejects. That fixture now uses a representable control
+character; the pure CSV safety tests continue to cover NUL. No application
+behavior was changed by this correction. The failed isolated test database
+was removed normally; a successful complete rerun remains required.
+
 Private evidence: `build/logs-0250-backend-before.log`,
 `build/logs-0250-backend.log`, `build/logs-0250-full-backend.log`,
 `build/logs-0250-core-final.log`, `build/logs-0250-web-build-final.log`,
