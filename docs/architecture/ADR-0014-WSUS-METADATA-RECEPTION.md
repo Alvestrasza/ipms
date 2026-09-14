@@ -1,15 +1,15 @@
 <!--
 File Name: ADR-0014-WSUS-METADATA-RECEPTION.md
-Version: v0.2.0
+Version: v0.2.1
 Created: 2026-09-13
-Last Modified: 2026-09-13
+Last Modified: 2026-09-14
 Author: Alice Endelgard
 Organization: Alvestrasza Corporation
 Description: First read-only WSUS ingestion and inventory comparison boundary.
 -->
 # ADR-0014: WSUS metadata reception and server comparison
 
-Status: local candidate for the first read-only integration slice; live WSUS and deployment acceptance pending.
+Status: first read-only integration slice deployed to DEV in Portal 0.2.43 and Windows Agent 0.2.30; live WSUS publisher/catalog acceptance remains pending. See the [dated deployment verification](../operations/WSUS-0243-VERIFICATION.md).
 
 ## Context
 

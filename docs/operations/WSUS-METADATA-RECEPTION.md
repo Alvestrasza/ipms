@@ -1,15 +1,15 @@
 <!--
 File Name: WSUS-METADATA-RECEPTION.md
-Version: v0.2.0
+Version: v0.2.1
 Created: 2026-09-13
-Last Modified: 2026-09-13
+Last Modified: 2026-09-14
 Author: Alice Endelgard
 Organization: Alvestrasza Corporation
 Description: Operate and connect the first bounded, read-only WSUS receiver.
 -->
 # WSUS metadata reception
 
-The local candidate adds **Windows updates** to the tenant sidebar at `/en/updates/wsus` and `/de/updates/wsus`. It prepares the IPMS Appliance to receive a WSUS catalog and compare it with authenticated Agent observations. The existing DMZ WSUS has no clients: catalog-only reception works without registering any managed server with WSUS. Exporter installation and Appliance/Agent deployment remain separate from the prepared source.
+Portal 0.2.43 adds **Windows updates** to the tenant sidebar at `/en/updates/wsus` and `/de/updates/wsus`. It prepares the IPMS Appliance to receive a WSUS catalog and compare it with authenticated Agent observations. The existing DMZ WSUS has no clients: catalog-only reception works without registering any managed server with WSUS. Portal and Agent deployment was accepted in DEV on 2026-09-14; configuring and validating the real WSUS publisher remains a separate step.
 
 ## Operator flow
 
@@ -193,6 +193,22 @@ python manage.py makemigrations --check --dry-run --settings=ipms_control_plane.
 Run the native tests with `ctest --test-dir <configured-agent-build> --output-on-failure`
 after building the Agent with the repository CMake setup. These checks do not
 establish live WSUS, real target WUA, PostgreSQL or deployed Appliance acceptance.
+
+### DEV deployment acceptance on 2026-09-14
+
+Portal 0.2.43 and all 26 Windows Agents at 0.2.30 were verified after deployment.
+All 443 backend tests passed on PostgreSQL with zero skips, including separate
+disposable forward/reverse/reapply migration checks. Fresh Agent inventories,
+service health and authenticated Administration settings were confirmed. The
+existing Linux appliance Agent was separately updated to transport 0.2.13; this
+does not implement phase-2 Linux patch management.
+
+Three Windows servers collected zero local WUA identities, one client supplied
+17 identities and 22 servers reported evidence unavailable. A real WSUS catalog
+has not yet been received. These observations do not establish live update
+applicability or complete server compliance. See the [deployment verification
+record](WSUS-0243-VERIFICATION.md) for the exact source, recovery, client repair
+and acceptance boundaries. The workstation-only results above remain historical.
 
 ## Primary references
 
