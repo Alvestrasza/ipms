@@ -1,6 +1,6 @@
 /**
  * File Name: domain-security.spec.ts
- * Version: v0.1.0 | Created: 2026-09-14 | Modified: 2026-09-14
+ * Version: v0.1.1 | Created: 2026-09-14 | Modified: 2026-09-14
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Exercise real tenant domain settings and bounded pilot requests in isolated fixtures.
  */
@@ -200,6 +200,87 @@ test("domain plans persist OU lists, names and accessible order without importin
       ).json()
     ).results,
   ).toEqual([]);
+});
+
+test("German form explains invalid fields and saves short root OU names as full paths", async ({
+  page,
+}) => {
+  await login(page);
+  const domain = `gpo-short-${randomUUID().slice(0, 8)}.example.invalid`;
+  const suffix = domain
+    .split(".")
+    .map((label) => `DC=${label}`)
+    .join(",");
+  const imports: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().includes("/gpo-imports/"))
+      imports.push(request.url());
+  });
+  await page.goto("/de/administration/security/domains");
+  await page
+    .getByRole("button", { name: "Domäne hinzufügen", exact: true })
+    .click();
+  await page.getByLabel("DNS-Name der Domäne", { exact: true }).fill(domain);
+  await page.getByLabel("Tier 0 OUs", { exact: true }).fill("_T0");
+  await page
+    .getByLabel("Tier 1 OUs", { exact: true })
+    .fill("OU=_T1,DC=other,DC=invalid");
+  await page.getByLabel("Tier 2 OUs", { exact: true }).fill("_T2");
+  const save = page.getByRole("button", {
+    name: "Domäneneinstellungen speichern",
+    exact: true,
+  });
+  const post = () =>
+    page.waitForResponse(
+      (response) =>
+        response.url().endsWith(api) && response.request().method() === "POST",
+    );
+  let receipt = post();
+  await save.click();
+  expect((await receipt).status()).toBe(400);
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "Tier 1 OUs:",
+  );
+  await expect(page.getByLabel("Tier 0 OUs", { exact: true })).toHaveValue(
+    "_T0",
+  );
+  await page.getByLabel("Tier 1 OUs", { exact: true }).fill("_T1");
+  await page
+    .getByLabel("Vorlage für GPO-Namen", { exact: true })
+    .fill("{unknown}");
+  receipt = post();
+  await save.click();
+  expect((await receipt).status()).toBe(400);
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "GPO-Namensschema:",
+  );
+  await page
+    .getByLabel("Vorlage für GPO-Namen", { exact: true })
+    .fill("{tier}-{scope}-{target}-{purpose}_V{version}");
+  receipt = post();
+  await save.click();
+  const response = await receipt;
+  expect(response.status()).toBe(201);
+  const saved: DomainSecuritySettings = await response.json();
+  expect(saved.tier_ous).toEqual({
+    "0": [`OU=_T0,${suffix}`],
+    "1": [`OU=_T1,${suffix}`],
+    "2": [`OU=_T2,${suffix}`],
+  });
+  await expect(
+    page.getByText(
+      "Domäneneinstellungen gespeichert. Es wurden keine Verzeichnisrichtlinien angewendet.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await page.reload();
+  await page.getByRole("button").filter({ hasText: domain }).click();
+  for (const tier of ["0", "1", "2"]) {
+    await expect(
+      page.getByLabel(`Tier ${tier} OUs`, { exact: true }),
+    ).toHaveValue(`OU=_T${tier},${suffix}`);
+  }
+  expect(imports).toEqual([]);
 });
 
 test("a stale revision preserves the draft and cannot overwrite another administrator", async ({

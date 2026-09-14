@@ -1,5 +1,5 @@
 # File Name: domains.py
-# Version: v0.1.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
+# Version: v0.1.1 | Created: 2026-09-14 | Last Modified: 2026-09-14
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
 # Description: Bounded domain/OU bindings, GPO names and draft composition order.
 import re
@@ -151,7 +151,10 @@ def validate_settings(data, *, updating=False):
         fields.add('expected_revision')
     if not isinstance(data, dict) or set(data) != fields:
         raise ParseError('Supply exactly the documented domain settings.')
-    name = domain_name(data['domain_name'])
+    try:
+        name = domain_name(data['domain_name'])
+    except ParseError as exc:
+        raise PublicApiError('security_domain_name_invalid') from exc
     tiers = data['tier_ous']
     if not isinstance(tiers, dict) or set(tiers) != {'0', '1', '2'}:
         raise ParseError('Specify OU lists for tiers 0, 1 and 2.')
@@ -160,24 +163,35 @@ def validate_settings(data, *, updating=False):
     for tier in ('0', '1', '2'):
         values = tiers[tier]
         if not isinstance(values, list) or len(values) > 32:
-            raise ParseError('Each tier permits at most 32 OU bindings.')
+            raise PublicApiError(f'security_domain_tier_{tier}_ou_invalid')
         cleaned[tier] = []
         for value in values:
-            identity = ou_identity(value, name)
+            # A simple name always means an immediate child of this domain.
+            # Explicit DNs retain strict containment/escaping validation below.
+            if isinstance(value, str) and re.fullmatch(r'\w[\w .-]{0,63}', value):
+                value = 'OU=' + value.strip() + ',' + ','.join('DC=' + label for label in name.split('.'))
+            try:
+                identity = ou_identity(value, name)
+            except ParseError as exc:
+                raise PublicApiError(f'security_domain_tier_{tier}_ou_invalid') from exc
             for other_tier, other in identities:
                 overlaps = (len(identity) >= len(other) and identity[-len(other):] == other) or (
                     len(other) >= len(identity) and other[-len(identity):] == identity)
                 if identity == other or (tier != other_tier and overlaps):
-                    raise ParseError('Duplicate or overlapping cross-tier OU bindings are ambiguous.')
+                    raise PublicApiError('security_domain_ou_overlap')
             identities.append((tier, identity))
             cleaned[tier].append(value.strip())
     order = data['baseline_order']
     if (not isinstance(order, list) or any(not isinstance(item, str) for item in order)
             or len(order) != len(BY_ID) or set(order) != set(BY_ID)):
-        raise ParseError('Order every available baseline exactly once; reload when the catalog changes.')
+        raise PublicApiError('security_domain_order_invalid')
     if updating and (type(data['expected_revision']) is not int or not 1 <= data['expected_revision'] <= 2**31 - 1):
         raise ParseError('Supply the expected settings revision.')
-    return {'domain_name': name, 'tier_ous': cleaned, 'gpo_name_template': validate_template(data['gpo_name_template']),
+    try:
+        template = validate_template(data['gpo_name_template'])
+    except ParseError as exc:
+        raise PublicApiError('security_domain_template_invalid') from exc
+    return {'domain_name': name, 'tier_ous': cleaned, 'gpo_name_template': template,
             'baseline_order': order}
 
 

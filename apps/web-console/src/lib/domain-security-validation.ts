@@ -1,6 +1,6 @@
 /**
  * File Name: domain-security-validation.ts
- * Version: v0.1.0 | Created: 2026-09-14 | Modified: 2026-09-14
+ * Version: v0.1.1 | Created: 2026-09-14 | Modified: 2026-09-14
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Validate domain settings and import receipts before presenting confirmed state.
  */
@@ -28,6 +28,29 @@ function nullableString(value: unknown): boolean {
 }
 function tier(value: unknown): value is SecurityTier {
   return value === "0" || value === "1" || value === "2";
+}
+
+/** Display only locally translated allowlisted codes, never raw server text. */
+export function domainSettingsErrorKey(value: unknown) {
+  if (!record(value) || !record(value.error)) return null;
+  switch (value.error.code) {
+    case "security_domain_name_invalid":
+      return "domain";
+    case "security_domain_tier_0_ou_invalid":
+      return "tier0";
+    case "security_domain_tier_1_ou_invalid":
+      return "tier1";
+    case "security_domain_tier_2_ou_invalid":
+      return "tier2";
+    case "security_domain_ou_overlap":
+      return "overlap";
+    case "security_domain_template_invalid":
+      return "template";
+    case "security_domain_order_invalid":
+      return "order";
+    default:
+      return null;
+  }
 }
 
 export function isDomainSettings(

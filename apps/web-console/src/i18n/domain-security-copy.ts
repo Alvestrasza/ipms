@@ -1,6 +1,6 @@
 /**
  * File Name: domain-security-copy.ts
- * Version: v0.1.0 | Created: 2026-09-14 | Modified: 2026-09-14
+ * Version: v0.1.1 | Created: 2026-09-14 | Modified: 2026-09-14
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Localize domain mapping, GPO names, baseline order and unlinked pilot imports.
  */
@@ -26,7 +26,7 @@ const en = {
     "Use the complete DNS name. The domain identity cannot be changed after saving.",
   mappings: "Tier OU mappings",
   mappingHint:
-    "Enter one existing OU distinguished name per line. Several OUs may belong to a tier. Leave a tier empty if it is not used here.",
+    "Enter one existing OU per line: a simple name such as _T0 means an OU directly below the selected domain and is saved as its full distinguished name. For nested OUs, use the complete path, e.g. OU=Servers,OU=_T1,DC=example,DC=invalid. Several OUs per tier are allowed; unused tiers stay empty.",
   unverified: "Directory verification pending",
   verificationHint:
     "Saved OU paths have not been checked against Active Directory. No existing directory objects have been adopted or moved.",
@@ -58,6 +58,22 @@ const en = {
   discardHint: "Save or discard the current changes before switching domains.",
   invalid:
     "The settings were rejected. Check the domain, OU paths and naming template.",
+  validation: {
+    domain:
+      "Domain DNS name: enter a complete name such as example.invalid, without a URL or path.",
+    tier0:
+      "Tier 0 OUs: use simple names such as _T0 or complete OU distinguished names within the selected domain. Maximum 32 OUs; simple names allow up to 64 letters, digits, spaces, underscores, dots or hyphens. Nested OUs require their full path.",
+    tier1:
+      "Tier 1 OUs: use simple names such as _T1 or complete OU distinguished names within the selected domain. Maximum 32 OUs; simple names allow up to 64 letters, digits, spaces, underscores, dots or hyphens. Nested OUs require their full path.",
+    tier2:
+      "Tier 2 OUs: use simple names such as _T2 or complete OU distinguished names within the selected domain. Maximum 32 OUs; simple names allow up to 64 letters, digits, spaces, underscores, dots or hyphens. Nested OUs require their full path.",
+    overlap:
+      "OU mappings: an OU may occur only once. Parent and child OUs cannot belong to different tiers.",
+    template:
+      "GPO naming template: use each token {tier}, {scope}, {target}, {purpose}, {version} exactly once. Use only letters, digits, spaces, dots, underscores or hyphens around the tokens; maximum 160 characters.",
+    order:
+      "Baseline order: include every available baseline exactly once. Reload the saved data if the catalog has changed.",
+  },
   conflict:
     "The saved settings changed in another session. Your draft is retained. Reload the saved version before making another change.",
   uncertain:
@@ -137,7 +153,7 @@ const de: DomainSecurityCopy = {
     "Vollständigen DNS-Namen verwenden. Die Domänenidentität kann nach dem Speichern nicht geändert werden.",
   mappings: "OU-Zuordnung je Tier",
   mappingHint:
-    "Pro Zeile den Distinguished Name einer vorhandenen OU eintragen. Mehrere OUs pro Tier sind möglich. Nicht verwendete Tiers bleiben leer.",
+    "Pro Zeile eine vorhandene OU eintragen: Ein einfacher Name wie _T0 bezeichnet eine OU direkt unter der gewählten Domäne und wird als vollständiger Distinguished Name gespeichert. Für verschachtelte OUs den vollständigen Pfad verwenden, z. B. OU=Servers,OU=_T1,DC=example,DC=invalid. Mehrere OUs pro Tier sind möglich; nicht verwendete Tiers bleiben leer.",
   unverified: "Prüfung im Verzeichnis ausstehend",
   verificationHint:
     "Die gespeicherten OU-Pfade wurden noch nicht mit Active Directory abgeglichen. Bestehende Verzeichnisobjekte wurden weder übernommen noch verschoben.",
@@ -171,6 +187,22 @@ const de: DomainSecurityCopy = {
     "Die aktuellen Änderungen vor einem Domänenwechsel speichern oder verwerfen.",
   invalid:
     "Die Einstellungen wurden abgelehnt. Bitte Domäne, OU-Pfade und Namensschema prüfen.",
+  validation: {
+    domain:
+      "DNS-Name der Domäne: Einen vollständigen Namen wie example.invalid eintragen, ohne URL oder Pfad.",
+    tier0:
+      "Tier 0 OUs: Einfache Namen wie _T0 oder vollständige OU-Distinguished-Names innerhalb der gewählten Domäne verwenden. Maximal 32 OUs; einfache Namen erlauben bis zu 64 Buchstaben, Ziffern, Leerzeichen, Unterstriche, Punkte oder Bindestriche. Verschachtelte OUs benötigen den vollständigen Pfad.",
+    tier1:
+      "Tier 1 OUs: Einfache Namen wie _T1 oder vollständige OU-Distinguished-Names innerhalb der gewählten Domäne verwenden. Maximal 32 OUs; einfache Namen erlauben bis zu 64 Buchstaben, Ziffern, Leerzeichen, Unterstriche, Punkte oder Bindestriche. Verschachtelte OUs benötigen den vollständigen Pfad.",
+    tier2:
+      "Tier 2 OUs: Einfache Namen wie _T2 oder vollständige OU-Distinguished-Names innerhalb der gewählten Domäne verwenden. Maximal 32 OUs; einfache Namen erlauben bis zu 64 Buchstaben, Ziffern, Leerzeichen, Unterstriche, Punkte oder Bindestriche. Verschachtelte OUs benötigen den vollständigen Pfad.",
+    overlap:
+      "OU-Zuordnung: Eine OU darf nur einmal vorkommen. Über- und untergeordnete OUs dürfen nicht unterschiedlichen Tiers zugeordnet sein.",
+    template:
+      "GPO-Namensschema: Jeden Platzhalter {tier}, {scope}, {target}, {purpose}, {version} genau einmal verwenden. Dazwischen sind nur Buchstaben, Ziffern, Leerzeichen, Punkte, Unterstriche oder Bindestriche erlaubt; maximal 160 Zeichen.",
+    order:
+      "Baseline-Reihenfolge: Jede verfügbare Baseline genau einmal einordnen. Bei geändertem Katalog die gespeicherten Daten neu laden.",
+  },
   conflict:
     "Die gespeicherten Einstellungen wurden zwischenzeitlich geändert. Der Entwurf bleibt erhalten. Vor einer weiteren Änderung die gespeicherte Version neu laden.",
   uncertain:

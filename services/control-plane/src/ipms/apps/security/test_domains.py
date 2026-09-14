@@ -1,5 +1,5 @@
 # File Name: test_domains.py
-# Version: v0.1.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
+# Version: v0.1.1 | Created: 2026-09-14 | Last Modified: 2026-09-14
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
 # Description: Public tenant domain configuration, naming and ordering behavior.
 from django.contrib.auth import get_user_model
@@ -106,6 +106,49 @@ class DomainSettingsTests(TestCase):
         result = self.create(tier_ous={'0': [], '1': [r'OU=Servers\, Europe,OU=Équipe,DC=example,DC=invalid', r'OU=Trailing\ ,DC=example,DC=invalid'], '2': []})
         self.assertEqual(result.status_code, 201, result.data)
         self.assertEqual(self.create(tier_ous={'0': [], '1': ['OU=Trailing ,DC=example,DC=invalid'], '2': []}).status_code, 400)
+
+    def test_short_root_ou_names_are_saved_as_domain_bound_dns(self):
+        short = {'0': ['_T0'], '1': ['_T1'], '2': ['_T2']}
+        expected = {'0': ['OU=_T0,DC=example,DC=invalid'],
+                    '1': ['OU=_T1,DC=example,DC=invalid'],
+                    '2': ['OU=_T2,DC=example,DC=invalid']}
+        created = self.create(tier_ous=short)
+        self.assertEqual(created.status_code, 201, created.data)
+        url = URL + created.data['id'] + '/'
+        self.assertEqual(self.client.get(url).data['tier_ous'], expected)
+        updated = self.client.put(url, {**self.draft(tier_ous={**short, '1': ['Application Servers']}),
+                                       'expected_revision': 1}, format='json')
+        self.assertEqual(updated.status_code, 200, updated.data)
+        self.assertEqual(updated.data['tier_ous']['1'], ['OU=Application Servers,DC=example,DC=invalid'])
+        from .models import GpoImportJob
+        self.assertFalse(GpoImportJob.objects.exists())
+
+    def test_normalized_short_names_cannot_bypass_tier_overlap_checks(self):
+        for mappings in [
+            {'0': ['_T0'], '1': ['OU=Child,OU=_T0,DC=example,DC=invalid'], '2': []},
+            {'0': ['_T0', 'OU=_T0,DC=example,DC=invalid'], '1': [], '2': []},
+        ]:
+            with self.subTest(mappings=mappings):
+                result = self.create(tier_ous=mappings)
+                self.assertEqual(result.status_code, 400)
+                self.assertEqual(result.data['error']['code'], 'security_domain_ou_overlap')
+
+    def test_invalid_fields_return_safe_actionable_codes(self):
+        for changes, code in [
+            ({'domain_name': 'example.invalid/path'}, 'security_domain_name_invalid'),
+            ({'gpo_name_template': '{unknown}'}, 'security_domain_template_invalid'),
+            ({'baseline_order': []}, 'security_domain_order_invalid'),
+        ]:
+            result = self.create(**changes)
+            self.assertEqual(result.status_code, 400)
+            self.assertEqual(result.data['error']['code'], code)
+        for tier in ('0', '1', '2'):
+            for invalid in ['OU=_T1', '_T1/Servers', '../Servers', 'OU=_T1,DC=other,DC=invalid', '_T\x001', '_T1\n', '']:
+                with self.subTest(tier=tier, invalid=invalid):
+                    result = self.create(tier_ous={**{'0': [], '1': [], '2': []}, tier: [invalid]})
+                    self.assertEqual(result.status_code, 400)
+                    self.assertEqual(result.data['error']['code'], f'security_domain_tier_{tier}_ou_invalid')
+                    self.assertNotIn(invalid or 'OU=', result.data['error']['message'])
 
     def test_strict_naming_and_known_complete_order(self):
         for template in ['{tier.__class__}', '{tier!r}', '{tier:04}', '{unknown}', TEMPLATE + '\n', TEMPLATE + '/x']:

@@ -1,6 +1,6 @@
 /**
  * File Name: domain-security-administration.tsx
- * Version: v0.1.0 | Created: 2026-09-14 | Modified: 2026-09-14
+ * Version: v0.1.1 | Created: 2026-09-14 | Modified: 2026-09-14
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Edit tenant domain plans with accessible ordering and explicit persistence.
  */
@@ -23,6 +23,7 @@ import {
   type SecurityTier,
 } from "@/lib/domain-security-types";
 import {
+  domainSettingsErrorKey,
   isDomainSettings,
   previewGpoName,
 } from "@/lib/domain-security-validation";
@@ -322,6 +323,11 @@ function DomainSettingsEditor({
       );
       if (!current()) return;
       if (!response.ok) {
+        const detail =
+          response.status === 400
+            ? domainSettingsErrorKey(await response.json().catch(() => null))
+            : null;
+        if (!current()) return;
         const message =
           response.status === 409
             ? copy.conflict
@@ -330,7 +336,9 @@ function DomainSettingsEditor({
               : response.status === 403
                 ? copy.permission
                 : response.status === 400
-                  ? copy.invalid
+                  ? detail
+                    ? copy.validation[detail]
+                    : copy.invalid
                   : copy.uncertain;
         setUncertain(response.status === 409 || response.status >= 500);
         setError(message);
