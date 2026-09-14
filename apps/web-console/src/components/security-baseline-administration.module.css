@@ -1,0 +1,179 @@
+/*
+ * File Name: security-baseline-administration.module.css
+ * Version: v0.1.0
+ * Created: 2026-09-14 | Modified: 2026-09-14
+ * Author: Alice Endelgard | Organization: Alvestrasza Corporation
+ * Purpose: Scope responsive baseline visibility controls and confirmed state feedback.
+ */
+.content {
+  display: grid;
+  gap: 18px;
+}
+.toolbar,
+.actions,
+.button,
+.toolbar > p,
+.baseline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.toolbar {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+.toolbar > p {
+  margin: 0;
+  max-width: 550px;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+.toolbar > p > svg,
+.baseline > svg {
+  flex-shrink: 0;
+  color: var(--color-accent-blue);
+}
+.actions {
+  flex-wrap: wrap;
+}
+.button {
+  justify-content: center;
+  width: fit-content;
+  min-height: 38px;
+  padding: 8px 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface-panel);
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  font-size: 0.77rem;
+  white-space: nowrap;
+}
+.button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--color-text-primary);
+}
+.button:disabled,
+.button[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.error,
+.notice {
+  margin: 0;
+  padding: 15px 18px;
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--color-critical);
+  border-radius: 4px;
+  background: var(--surface-panel);
+  color: var(--color-text-secondary);
+  font-size: 0.81rem;
+  line-height: 1.65;
+}
+.notice {
+  border-left-color: var(--color-success);
+}
+.panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  background: var(--surface-panel);
+}
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 15px;
+  padding: 20px 22px;
+}
+.header h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.header p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 0.76rem;
+}
+.tableScroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.tableScroll table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.79rem;
+}
+.tableScroll th,
+.tableScroll td {
+  padding: 17px 22px;
+  border-top: 1px solid var(--border-default);
+  vertical-align: middle;
+}
+.tableScroll thead th {
+  background: var(--surface-panel-raised);
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.tableScroll tbody th {
+  width: 32%;
+  min-width: 265px;
+  max-width: 440px;
+  font-weight: 500;
+}
+.tableScroll tbody tr:hover {
+  background: var(--surface-hover);
+}
+.tableScroll small {
+  display: block;
+  margin-top: 7px;
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  font-weight: 400;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.baseline {
+  line-height: 1.5;
+}
+.visibility {
+  display: inline-flex;
+  padding: 5px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--color-text-secondary);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+.visibility[data-hidden="false"] {
+  color: var(--color-accent-blue);
+}
+.empty {
+  padding: 25px 22px;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  text-align: center;
+}
+.meta {
+  margin: 0;
+  padding: 14px 22px;
+  border-top: 1px solid var(--border-default);
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+}
+@media (max-width: 700px) {
+  .header {
+    padding: 18px;
+  }
+  .actions {
+    width: 100%;
+  }
+}

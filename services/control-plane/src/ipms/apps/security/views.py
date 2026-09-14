@@ -11,6 +11,7 @@ from ipms.apps.tenancy.permissions import HasSelectedTenantAccess, HasTenantPerm
 from ipms.apps.tenancy.rbac import Permission
 from .catalog import BY_ID
 from .services import BaselineOverview
+from .models import BaselinePreference
 
 
 class CanReadSecurity(HasTenantPermission):
@@ -45,7 +46,7 @@ class BaselineSystemListView(SecurityReadView):
     def get(self, request, baseline_id):
         query(request, {"page"})
         baseline = BY_ID.get(baseline_id)
-        if baseline is None:
+        if baseline is None or BaselinePreference.objects.filter(tenant=request.tenant, baseline_id=baseline_id, hidden=True).exists():
             raise NotFound("Baseline not found.")
         raw_page = request.query_params.get("page", "1")
         if not raw_page.isascii() or not raw_page.isdecimal() or len(raw_page) > 7 or int(raw_page) < 1:

@@ -12,6 +12,8 @@ class Permission:
     AGENTS_VIEW = "agents.view"
     AGENTS_MANAGE = "agents.manage"
     SERVICE_ACCOUNTS_MANAGE = "service_accounts.manage"
+    SECURITY_BASELINES_MANAGE = "security.baselines.manage"
+    SECURITY_SCANS_RUN = "security.scans.run"
     VIRTUAL_MACHINES_OPERATE = "virtual_machines.operate"
     VIRTUAL_MACHINES_CONFIGURE = "virtual_machines.configure"
     VIRTUAL_MACHINES_CHECKPOINTS_MANAGE = "virtual_machines.checkpoints.manage"
@@ -38,6 +40,7 @@ ROLE_PERMISSIONS = {
             Permission.CONNECTORS_MANAGE,
             Permission.AGENTS_VIEW,
             Permission.AGENTS_MANAGE,
+            Permission.SECURITY_SCANS_RUN,
             Permission.VIRTUAL_MACHINES_OPERATE,
             Permission.VIRTUAL_MACHINES_CONSOLE_CONTROL,
         }

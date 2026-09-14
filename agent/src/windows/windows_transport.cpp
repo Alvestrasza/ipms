@@ -11,6 +11,7 @@
 #include "ipms/agent/windows_core_pack.hpp"
 #include "ipms/agent/windows_telemetry.hpp"
 #include "ipms/agent/windows_software_pack.hpp"
+#include "ipms/agent/windows_security_scan.hpp"
 
 #include <windows.h>
 #include <bcrypt.h>
@@ -40,10 +41,11 @@
 namespace {
 using Microsoft::WRL::ComPtr;
 constexpr std::size_t k_max_document_bytes = 65'536;
-constexpr wchar_t k_agent_version[] = L"0.2.30";
+constexpr wchar_t k_agent_version[] = L"0.2.31";
 constexpr std::size_t k_max_artifact_bytes = 64 * 1024 * 1024;
 std::mutex identity_mutex;
 std::mutex management_cycle_mutex;
+std::mutex security_cycle_mutex;
 std::atomic<ipms::agent::native_identity_worker*> active_native_validation{nullptr};
 
 ipms::agent::native_identity_worker& native_identity_validation() {
@@ -457,7 +459,14 @@ struct http_transport {
 
 http_response post_json(const std::wstring& hostname, std::uint16_t port, const std::wstring& path,
                         const std::string& body, const std::string* pin, PCCERT_CONTEXT client_certificate,
-                        bool input_channel = false) {
+                        bool input_channel = false, const std::function<bool()>& cancelled = {}) {
+  const bool security_channel = path == L"/v1/security-scan";
+  const auto security_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  const auto check_security_deadline = [&] {
+    if (security_channel && ((cancelled && cancelled()) || std::chrono::steady_clock::now() >= security_deadline))
+      throw std::runtime_error("The security transport stopped or exceeded its deadline.");
+  };
+  check_security_deadline();
   const bool reusable = path == L"/v1/hyperv-console" && client_certificate && !pin;
   static thread_local std::unique_ptr<http_transport> console_transport;
   const auto certificate_identity = reusable ? certificate_sha256(client_certificate) : "";
@@ -476,10 +485,10 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
     ~failure_reset() { if (cache && !succeeded) cache->reset(); }
   } guard{reusable ? &console_transport : nullptr};
   if (!transport->session) {
-    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.30", WINHTTP_ACCESS_TYPE_NO_PROXY,
+    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.31", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
     if (!transport->session) throw std::runtime_error("The Agent HTTP session could not be created.");
-    if (input_channel || path == L"/v1/heartbeat" || path == L"/v1/hyperv-management") {
+    if (input_channel || security_channel || path == L"/v1/heartbeat" || path == L"/v1/hyperv-management") {
       // These are per-phase limits, not a two-second end-to-end deadline.
       // Small liveness/input messages do not inherit image-transfer timeouts.
       WinHttpSetTimeouts(transport->session.get(), 2'000, 2'000, 2'000, 2'000);
@@ -517,6 +526,7 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
       : L"Content-Type: application/json\r\n";
   // Send the authenticated console envelope with its headers to avoid a second
   // tiny TLS record. Bootstrap still verifies the pin before sending its body.
+  check_security_deadline();
   if (!WinHttpSendRequest(request.get(), headers, static_cast<DWORD>(-1),
                           reusable ? const_cast<char*>(body.data()) : WINHTTP_NO_REQUEST_DATA,
                           reusable ? static_cast<DWORD>(body.size()) : 0,
@@ -532,15 +542,19 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
       throw std::runtime_error("The Agent Gateway certificate pin does not match.");
   }
   DWORD written = 0;
+  check_security_deadline();
   if (!reusable && (!WinHttpWriteData(request.get(), body.data(), static_cast<DWORD>(body.size()), &written) || written != body.size()))
     throw std::runtime_error("The Agent Gateway request body could not be sent.");
+  check_security_deadline();
   if (!WinHttpReceiveResponse(request.get(), nullptr)) throw std::runtime_error("The Agent Gateway response could not be received.");
+  check_security_deadline();
   DWORD status = 0; DWORD status_size = sizeof(status);
   if (!WinHttpQueryHeaders(request.get(), WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
                            WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size, WINHTTP_NO_HEADER_INDEX))
     throw std::runtime_error("The Agent Gateway response status is unavailable.");
   std::string response;
   for (;;) {
+    check_security_deadline();
     DWORD available = 0;
     if (!WinHttpQueryDataAvailable(request.get(), &available)) throw std::runtime_error("The Agent Gateway response is invalid.");
     if (available == 0) break;
@@ -550,13 +564,14 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
     if (!WinHttpReadData(request.get(), response.data() + offset, available, &read)) throw std::runtime_error("The Agent Gateway response is invalid.");
     response.resize(offset + read);
   }
+  check_security_deadline();
   transport->last_used = GetTickCount64();
   guard.succeeded = true;
   return {status, response};
 }
 
 http_response post_binary(const state& identity, const std::string& body, PCCERT_CONTEXT certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.30", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.31", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent artifact session could not be created.");
   WinHttpSetTimeouts(session.get(), 10'000, 10'000, 60'000, 60'000);
@@ -1392,6 +1407,84 @@ TransportResult run_management_cycle(const std::function<bool()>& cancelled) {
     // Do not disclose raw provider object paths or remote exception text.
     return {false, L"The management cycle failed; its journal is retained."};
   }
+}
+
+TransportResult run_security_cycle(const std::function<bool()>& cancelled) {
+  namespace security = ipms::agent::security;
+  namespace json = ipms::agent::management_json;
+  struct pending_scan {
+    state identity;
+    security::scan_job job;
+    security_scan_result result;
+    std::size_t next_page{};
+    std::chrono::steady_clock::time_point deadline;
+  };
+  // One bounded in-memory observation set. Restart deliberately drops it;
+  // the next poll leases a new attempt instead of merging fresh measurements.
+  static std::optional<pending_scan> pending;
+  std::unique_lock cycle_lock(security_cycle_mutex, std::try_to_lock);
+  if (!cycle_lock.owns_lock()) return {true, L"Security worker is already active."};
+  const auto stopping = [&] { return cancelled && cancelled(); };
+  try {
+    if (stopping()) return {true, L"Security worker stopped."};
+    const auto cycle_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(45);
+    const auto state_path = data_directory() / L"agent-state.json";
+    if (!std::filesystem::is_regular_file(state_path)) { pending.reset(); return {true, L"Security awaits enrollment."}; }
+    const state identity = load_state(state_path);
+    const auto same_identity = [&](const state& item) {
+      return item.device_uri == identity.device_uri && item.gateway == identity.gateway &&
+          item.port == identity.port && item.certificate_sha256 == identity.certificate_sha256;
+    };
+    if (pending && (!same_identity(pending->identity) || !security::job_unexpired(pending->job) ||
+                    std::chrono::steady_clock::now() >= pending->deadline)) pending.reset();
+    cert_context certificate(find_agent_certificate(identity.certificate_sha256));
+    if (!certificate) return {true, L"Security awaits credentials."};
+    const auto exchange = [&](json::object message) {
+      if (stopping() || !same_identity(load_state(state_path))) throw std::runtime_error("Security identity changed or stopped.");
+      message.emplace("type", "security_scan"); message.emplace("schema_version", "1");
+      message.emplace("device_uri", identity.device_uri);
+      message.emplace("correlation_id", "security-" + std::to_string(GetTickCount64()));
+      const auto response = post_json(identity.gateway, identity.port, L"/v1/security-scan",
+          json::serialize(message), nullptr, certificate.get(), false, stopping);
+      if (response.status != 200) throw std::runtime_error("The security message was rejected.");
+      const auto body = json::parse(response.body).as<json::object>();
+      if (body.at("status").as<std::string>() != "accepted") throw std::runtime_error("The security reply was invalid.");
+      return body;
+    };
+    if (!pending) {
+      const auto response = exchange({{"action", "poll"}, {"agent_version", utf8(k_agent_version)},
+          {"catalog_sha256", security::compiled_catalog_sha256()}});
+      if (response.size() != 2) throw std::runtime_error("The security poll reply was invalid.");
+      const auto& offered = response.at("security_scan");
+      if (offered.get_if<std::nullptr_t>()) return {true, L"No security scan is pending."};
+      auto job = security::parse_job(offered);
+      if (!security::job_unexpired(job)) throw std::runtime_error("The security assignment expired.");
+      pending = pending_scan{identity, std::move(job), {}, 0, std::chrono::steady_clock::now() + std::chrono::minutes(20)};
+      pending->result = collect_security_baseline(pending->job, stopping);
+    }
+    if (!pending->result.error_code.empty()) {
+      const auto reply = exchange({{"action", "failed"}, {"job_id", pending->job.job_id},
+          {"attempt_id", pending->job.attempt_id}, {"manifest_sha256", pending->job.manifest_sha256},
+          {"error_code", pending->result.error_code}});
+      if (reply.size() != 2 || !reply.at("complete").as<bool>()) throw std::runtime_error("The security failure acknowledgement was invalid.");
+      pending.reset();
+      return {true, L"The bounded security scan failure was recorded."};
+    }
+    // At most four short pages per cycle; normal inventory and management DB
+    // traffic retains opportunities between upload bursts.
+    for (unsigned sent = 0; pending && sent < 4 && pending->next_page < pending->result.pages.size(); ++sent) {
+      if (stopping() || std::chrono::steady_clock::now() >= cycle_deadline) break;
+      if (!security::job_unexpired(pending->job) || std::chrono::steady_clock::now() >= pending->deadline) { pending.reset(); break; }
+      auto page = pending->result.pages[pending->next_page]; page.emplace("action", "result");
+      const auto reply = exchange(std::move(page));
+      const bool final_page = pending->next_page + 1 == pending->result.pages.size();
+      if (reply.size() != 2 || reply.at("complete").as<bool>() != final_page)
+        throw std::runtime_error("The security page acknowledgement was invalid.");
+      ++pending->next_page;
+      if (final_page) pending.reset();
+    }
+    return {true, pending ? L"Security results await the next bounded upload cycle." : L"Security results were delivered."};
+  } catch (...) { return {false, L"The security cycle failed; pending measurements remain bounded for retry."}; }
 }
 
 TransportResult run_heartbeat_cycle(const std::function<bool()>& cancelled) {

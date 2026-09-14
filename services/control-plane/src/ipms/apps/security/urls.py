@@ -4,8 +4,14 @@
 # Description: Modular Security API routes.
 from django.urls import path
 from .views import BaselineListView, BaselineSystemListView
+from .administration import BaselineSettingsView, BaselineSettingView
+from .scan_views import BaselineScansView, BaselineFindingsView
 
 urlpatterns = [
+    path("baseline-settings/", BaselineSettingsView.as_view(), name="security-baseline-settings"),
+    path("baseline-settings/<slug:baseline_id>/", BaselineSettingView.as_view(), name="security-baseline-setting"),
     path("baselines/", BaselineListView.as_view(), name="security-baselines"),
     path("baselines/<slug:baseline_id>/systems/", BaselineSystemListView.as_view(), name="security-baseline-systems"),
+    path("baselines/<slug:baseline_id>/scans/", BaselineScansView.as_view(), name="security-baseline-scans"),
+    path("baselines/<slug:baseline_id>/systems/<uuid:system_id>/findings/", BaselineFindingsView.as_view(), name="security-baseline-findings"),
 ]

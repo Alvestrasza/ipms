@@ -1,13 +1,13 @@
 # File Name: CMakeLists.txt
-# Version: v0.2.30
+# Version: v0.2.31
 # Created: 2026-08-31
-# Last Modified: 2026-09-13
+# Last Modified: 2026-09-14
 # Author: Alice Endelgard
 # Organization: Alvestrasza Corporation
-# Description: Native Agent build and contract tests, including offline update evidence.
+# Description: Native Agent build and contract tests, including bounded read-only security scans.
 cmake_minimum_required(VERSION 3.24)
 
-project(ipms_agent VERSION 0.2.30 LANGUAGES CXX)
+project(ipms_agent VERSION 0.2.31 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,7 +20,7 @@ if(MSVC)
   add_compile_options(/EHsc)
 endif()
 
-add_library(ipms_agent_core STATIC src/configuration.cpp src/gateway_contract.cpp src/management_pack.cpp src/management_json.cpp src/hyperv_management_journal.cpp)
+add_library(ipms_agent_core STATIC src/configuration.cpp src/gateway_contract.cpp src/management_pack.cpp src/management_json.cpp src/hyperv_management_journal.cpp src/security_baseline.cpp)
 target_include_directories(ipms_agent_core PUBLIC include)
 target_compile_features(ipms_agent_core PUBLIC cxx_std_20)
 
@@ -36,8 +36,9 @@ if(WIN32)
   target_sources(ipms-agent PRIVATE src/windows/hyperv_management.cpp src/windows/windows_management_journal.cpp)
   target_sources(ipms-agent PRIVATE src/windows/hyperv_management_operations.cpp src/windows/hyperv_management_settings.cpp)
   target_sources(ipms-agent PRIVATE src/windows/windows_update_evidence.cpp)
+  target_sources(ipms-agent PRIVATE src/windows/windows_security_scan.cpp)
   target_link_libraries(ipms-agent PRIVATE advapi32 bcrypt crypt32 iphlpapi ncrypt ole32 oleaut32 shell32 wbemuuid windowscodecs winhttp ws2_32)
-  target_link_libraries(ipms-agent PRIVATE wuguid)
+  target_link_libraries(ipms-agent PRIVATE wuguid netapi32)
   target_compile_definitions(ipms-agent PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
   target_compile_options(ipms-agent PRIVATE /W4 /permissive-)
   add_executable(ipms-agent-config WIN32
@@ -67,6 +68,9 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(ipms-agent-security-contract-tests tests/security_scan_contract_tests.cpp)
+  target_link_libraries(ipms-agent-security-contract-tests PRIVATE ipms_agent_core)
+  add_test(NAME security-scan-contract COMMAND ipms-agent-security-contract-tests)
   add_executable(ipms-agent-hyperv-management-contract-tests tests/hyperv_management_contract_tests.cpp)
   target_link_libraries(ipms-agent-hyperv-management-contract-tests PRIVATE ipms_agent_core)
   add_test(NAME hyperv-management-contract COMMAND ipms-agent-hyperv-management-contract-tests)
@@ -104,6 +108,12 @@ if(BUILD_TESTING)
   endif()
   add_test(NAME native-console-guards COMMAND ipms-agent-native-console-tests)
   if(WIN32)
+    add_executable(ipms-agent-windows-security-scan-tests
+      tests/windows_security_scan_tests.cpp src/windows/windows_security_scan.cpp)
+    target_link_libraries(ipms-agent-windows-security-scan-tests PRIVATE ipms_agent_core advapi32 ole32 netapi32)
+    target_compile_definitions(ipms-agent-windows-security-scan-tests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
+    target_compile_options(ipms-agent-windows-security-scan-tests PRIVATE /W4 /permissive-)
+    add_test(NAME windows-security-scan-boundaries COMMAND ipms-agent-windows-security-scan-tests)
     add_executable(ipms-agent-windows-update-evidence-tests
       tests/windows_update_evidence_tests.cpp src/windows/windows_update_evidence.cpp)
     target_link_libraries(ipms-agent-windows-update-evidence-tests PRIVATE ipms_agent_core ole32 oleaut32 wuguid)

@@ -12,9 +12,14 @@ import {
   CONTROL_PLANE_URL,
   controlPlaneHeaders,
 } from "./control-plane-request";
+import {
+  isSecurityFindings,
+  isSecurityScans,
+} from "./security-scan-validation";
 import type {
   SecurityBaseline,
   SecurityBaselineCatalog,
+  SecurityBaselineSettings,
   SecurityBaselineSystems,
   SecurityBaselineTarget,
 } from "./security-types";
@@ -79,7 +84,9 @@ function isBaseline(value: unknown): value is SecurityBaseline {
     value.provider === "microsoft" &&
     value.platform === "windows" &&
     ["server", "client"].includes(value.target as string) &&
-    value.assessment_state === "catalog-only" &&
+    ["catalog-only", "native-read-only"].includes(
+      value.assessment_state as string,
+    ) &&
     Array.isArray(value.profiles) &&
     value.profiles.every((profile) => typeof profile === "string") &&
     [
@@ -109,6 +116,7 @@ function isCatalog(value: unknown): value is SecurityBaselineCatalog {
   return (
     typeof value.catalog_revision === "string" &&
     typeof value.generated_at === "string" &&
+    isCount(value.hidden_count) &&
     isOptionalDate(value.generated_at) &&
     ["total", "servers", "clients", "unclassified", "unmatched"].every((key) =>
       isCount(inventory[key]),
@@ -118,6 +126,21 @@ function isCatalog(value: unknown): value is SecurityBaselineCatalog {
     ) &&
     Array.isArray(value.results) &&
     value.results.every(isBaseline)
+  );
+}
+
+function isSettings(value: unknown): value is SecurityBaselineSettings {
+  return (
+    isRecord(value) &&
+    typeof value.catalog_revision === "string" &&
+    Array.isArray(value.results) &&
+    value.results.every(
+      (entry) =>
+        isRecord(entry) &&
+        typeof entry.hidden === "boolean" &&
+        isOptionalDate(entry.updated_at) &&
+        isBaseline(entry),
+    )
   );
 }
 
@@ -156,7 +179,14 @@ function isSystems(value: unknown): value is SecurityBaselineSystems {
           "agent_unavailable",
           "complete",
         ].includes(system.reason as string) &&
-        isOptionalDate(system.assessed_at),
+        isOptionalDate(system.assessed_at) &&
+        (system.assessment_id === null ||
+          typeof system.assessment_id === "string") &&
+        (system.controls === null ||
+          (isRecord(system.controls) &&
+            ["total", "passed", "failed", "unknown"].every((key) =>
+              isCount((system.controls as Record<string, unknown>)[key]),
+            ))),
     )
   );
 }
@@ -218,5 +248,35 @@ export function getSecurityBaselineSystems(
     tenantId,
     `/api/v1/security/baselines/${encodeURIComponent(baselineId)}/systems/?${query}`,
     isSystems,
+  );
+}
+
+export function getSecurityBaselineSettings(tenantId: string) {
+  return readSecurity(
+    tenantId,
+    "/api/v1/security/baseline-settings/",
+    isSettings,
+  );
+}
+
+export function getSecurityBaselineScans(tenantId: string, baselineId: string) {
+  return readSecurity(
+    tenantId,
+    `/api/v1/security/baselines/${encodeURIComponent(baselineId)}/scans/`,
+    isSecurityScans,
+  );
+}
+
+export function getSecurityBaselineFindings(
+  tenantId: string,
+  baselineId: string,
+  systemId: string,
+  page = 1,
+) {
+  const query = new URLSearchParams({ page: String(page) });
+  return readSecurity(
+    tenantId,
+    `/api/v1/security/baselines/${encodeURIComponent(baselineId)}/systems/${encodeURIComponent(systemId)}/findings/?${query}`,
+    isSecurityFindings,
   );
 }

@@ -16,6 +16,7 @@ from django.utils import timezone
 from ipms.apps.agent_pki.models import AgentEnrollment
 from ipms.apps.discovery.models import WindowsServer
 from ipms.apps.security.catalog import CATALOG_REVISION
+from ipms.apps.security.content import MANIFESTS
 from ipms.apps.security.models import BaselineAssessment
 from ipms.apps.tenancy.models import Tenant
 
@@ -42,21 +43,32 @@ def system(name, *, role="server", build="26100", os_name="Microsoft Windows Ser
 
 
 def result(target, **changes):
+    manifest = MANIFESTS[("microsoft-windows-server-2025", target.operating_system_role)]
     fields = dict(
         system=target, enrollment=AgentEnrollment.objects.get(device_uri=target.source_id),
         baseline_id="microsoft-windows-server-2025", baseline_revision="2602",
         catalog_revision=CATALOG_REVISION, profile=target.operating_system_role,
+        content_sha256=manifest["manifest_sha256"],
         os_build=target.os_build, operating_system=target.operating_system,
         scope_verified=True, total_controls=10, passed_controls=10,
         observed_at=timezone.now() - timedelta(minutes=5),
     )
     fields.update(changes)
+    fields["passed_controls"] += len(manifest["controls"]) - fields["total_controls"]
+    fields["total_controls"] = len(manifest["controls"])
     BaselineAssessment.objects.create(**fields)
 
 
 result(host)
 result(system("baseline-failed", role="domain-controller"), passed_controls=8, failed_controls=2)
-system("baseline-unknown")
+scan_host = system("baseline-unknown")
+scan_host.agent_version = "0.2.31"
+scan_host.save()
+AgentEnrollment.objects.filter(device_uri=scan_host.source_id).update(
+    last_heartbeat_at=timezone.now(), certificate_fingerprint_sha256="a" * 64,
+    certificate_not_before=timezone.now() - timedelta(days=1),
+    certificate_not_after=timezone.now() + timedelta(days=1),
+)
 result(system("baseline-stale"), observed_at=timezone.now() - timedelta(hours=25))
 for index in range(26):
     system(f"baseline-2022-{index:02}", build="20348", os_name="Microsoft Windows Server 2022 Datacenter")

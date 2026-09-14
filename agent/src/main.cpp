@@ -11,6 +11,7 @@
 #include "ipms/agent/windows_transport.hpp"
 #include "ipms/agent/windows_updater.hpp"
 #include "ipms/agent/windows_update_evidence.hpp"
+#include "ipms/agent/windows_security_scan.hpp"
 namespace ipms::agent::windows { int run_windows_service(); }
 #else
 #include "ipms/agent/linux_inventory.hpp"
@@ -25,6 +26,9 @@ int main(int argc, char** argv) {
   const bool run_once = argc == 2 && std::string_view(argv[1]) == "--run-once";
   for (const auto& pack : ipms::agent::builtin_management_packs()) if (!ipms::agent::is_valid_pack_assignment(pack)) return 2;
 #ifdef _WIN32
+  if (argc == 2 && std::string_view(argv[1]) == "--collect-security-baseline") {
+    return ipms::agent::windows::run_security_baseline_worker();
+  }
   if (argc == 2 && std::string_view(argv[1]) == "--collect-windows-update-evidence") {
     return ipms::agent::windows::run_windows_update_evidence_worker();
   }

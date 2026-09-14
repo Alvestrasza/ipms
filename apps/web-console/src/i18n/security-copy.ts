@@ -22,6 +22,42 @@ const en = {
   catalogHint:
     "Select a baseline to see its package details and the systems that match its Windows release.",
   catalogEmpty: "No baselines are available for this selection.",
+  hiddenCount: "Hidden baselines in this selection",
+  hiddenHint:
+    "A tenant administrator can show them again in Administration → Security → Baseline.",
+  allHidden: "All baselines in this selection are hidden.",
+  manageVisibility: "Manage baseline visibility",
+  admin: {
+    title: "Baseline visibility",
+    eyebrow: "Administration / Security",
+    description:
+      "Choose which baselines appear in this tenant's Security overview.",
+    boundary: "Hide from Security > Baseline; existing results are retained.",
+    table: "Baseline visibility settings",
+    overview: "Open Security overview",
+    visible: "Visible",
+    hidden: "Hidden",
+    visibility: "Overview visibility",
+    hide: "Hide",
+    show: "Show",
+    saving: "Saving…",
+    action: "Action",
+    updated: "Changed (UTC)",
+    default: "Default visibility",
+    empty: "No baseline visibility settings are available.",
+    unavailable:
+      "Baseline visibility settings could not be loaded. Reload to try again.",
+    uncertain: "Not confirmed",
+    actionFailed:
+      "The change could not be confirmed. Reload the settings before trying again.",
+    permission:
+      "Your tenant role no longer permits this action. Reload to check your access.",
+    sessionExpired: "Your session has expired. Sign in again to continue.",
+    invalid:
+      "The visibility setting was rejected. Reload the settings before trying again.",
+    hiddenNotice: "{name} is now hidden from Security > Baseline.",
+    shownNotice: "{name} is now visible in Security > Baseline.",
+  },
   catalogRevision: "Catalog revision",
   generatedAt: "Data loaded (UTC)",
   inventoried: "Inventoried Windows systems",
@@ -127,6 +163,43 @@ const de: SecurityCopy = {
   catalogHint:
     "Wähle eine Baseline aus, um Paketdetails und die Systeme mit passender Windows-Version zu sehen.",
   catalogEmpty: "Für diese Auswahl sind keine Baselines verfügbar.",
+  hiddenCount: "Ausgeblendete Baselines in dieser Auswahl",
+  hiddenHint:
+    "Ein Mandantenadministrator kann sie unter Administration → Security → Baseline wieder einblenden.",
+  allHidden: "Alle Baselines in dieser Auswahl sind ausgeblendet.",
+  manageVisibility: "Baseline-Sichtbarkeit verwalten",
+  admin: {
+    title: "Baseline-Sichtbarkeit",
+    eyebrow: "Administration / Security",
+    description:
+      "Lege fest, welche Baselines in der Security-Übersicht dieses Mandanten erscheinen.",
+    boundary:
+      "Aus Security > Baseline ausblenden; vorhandene Ergebnisse bleiben erhalten.",
+    table: "Baseline-Sichtbarkeit verwalten",
+    overview: "Security-Übersicht öffnen",
+    visible: "Sichtbar",
+    hidden: "Ausgeblendet",
+    visibility: "Sichtbarkeit in der Übersicht",
+    hide: "Ausblenden",
+    show: "Einblenden",
+    saving: "Wird gespeichert…",
+    action: "Aktion",
+    updated: "Geändert (UTC)",
+    default: "Standardsichtbarkeit",
+    empty: "Es sind keine Baseline-Sichtbarkeitseinstellungen verfügbar.",
+    unavailable:
+      "Die Baseline-Sichtbarkeit konnte nicht geladen werden. Lade die Daten erneut.",
+    uncertain: "Nicht bestätigt",
+    actionFailed:
+      "Die Änderung konnte nicht bestätigt werden. Lade die Einstellungen vor einem weiteren Versuch erneut.",
+    permission:
+      "Deine Mandantenrolle erlaubt diese Aktion nicht mehr. Lade die Seite zur erneuten Zugriffsprüfung.",
+    sessionExpired: "Deine Sitzung ist abgelaufen. Melde dich erneut an.",
+    invalid:
+      "Die Sichtbarkeitseinstellung wurde abgelehnt. Lade die Einstellungen vor einem weiteren Versuch erneut.",
+    hiddenNotice: "{name} ist jetzt unter Security > Baseline ausgeblendet.",
+    shownNotice: "{name} ist jetzt unter Security > Baseline sichtbar.",
+  },
   catalogRevision: "Katalogrevision",
   generatedAt: "Datenstand (UTC)",
   inventoried: "Inventarisierte Windows-Systeme",

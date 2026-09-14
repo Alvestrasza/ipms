@@ -32,13 +32,14 @@ export type SecurityBaseline = {
   source_url: string;
   package_name: string;
   verified_at: string;
-  assessment_state: "catalog-only";
+  assessment_state: "catalog-only" | "native-read-only";
   summary: SecurityBaselineSummary;
 };
 
 export type SecurityBaselineCatalog = {
   catalog_revision: string;
   generated_at: string;
+  hidden_count: number;
   capabilities: {
     assessment: boolean;
     deployment: boolean;
@@ -52,6 +53,22 @@ export type SecurityBaselineCatalog = {
     unmatched: number;
   };
   results: SecurityBaseline[];
+};
+
+export type SecurityBaselineSetting = SecurityBaseline & {
+  hidden: boolean;
+  updated_at: string | null;
+};
+
+export type SecurityBaselineSettings = {
+  catalog_revision: string;
+  results: SecurityBaselineSetting[];
+};
+
+export type SecurityBaselineVisibility = {
+  id: string;
+  hidden: boolean;
+  updated_at: string | null;
 };
 
 export type SecurityBaselineStatus =
@@ -82,6 +99,13 @@ export type SecurityBaselineSystem = {
   status: SecurityBaselineStatus;
   reason: SecurityBaselineReason;
   assessed_at: string | null;
+  assessment_id: string | null;
+  controls: {
+    total: number;
+    passed: number;
+    failed: number;
+    unknown: number;
+  } | null;
 };
 
 export type SecurityBaselineSystems = {
@@ -90,4 +114,68 @@ export type SecurityBaselineSystems = {
   page: number;
   page_size: number;
   results: SecurityBaselineSystem[];
+};
+
+export type SecurityBaselineScanStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "expired";
+
+export type SecurityBaselineScanJob = {
+  id: string;
+  system_id: string;
+  hostname: string;
+  status: SecurityBaselineScanStatus;
+  requested_at: string;
+  completed_at: string | null;
+  error_code: string;
+};
+
+export type SecurityBaselineScans = {
+  count: number;
+  active: number;
+  results: SecurityBaselineScanJob[];
+};
+
+export type SecurityBaselineScanReceipt = {
+  queued: number;
+  existing: number;
+  unavailable: number;
+  results: SecurityBaselineScanJob[];
+};
+
+export type SecurityFindingValue =
+  | string
+  | number
+  | boolean
+  | null
+  | (string | number | boolean | null)[];
+
+export type SecurityBaselineFinding = {
+  control_id: string;
+  label: string;
+  scope: string;
+  kind: string;
+  status: "passed" | "failed" | "unknown";
+  reason: string;
+  expected: SecurityFindingValue;
+  observed: SecurityFindingValue;
+};
+
+export type SecurityBaselineFindings = {
+  assessment_id: string | null;
+  assessed_at: string | null;
+  scope_verified: boolean;
+  status: SecurityBaselineStatus;
+  reason: SecurityBaselineReason;
+  total_controls: number;
+  passed_controls: number;
+  failed_controls: number;
+  unknown_controls: number;
+  page: number;
+  page_size: number;
+  count: number;
+  results: SecurityBaselineFinding[];
 };

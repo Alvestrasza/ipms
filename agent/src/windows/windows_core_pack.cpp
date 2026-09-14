@@ -955,6 +955,15 @@ std::string operating_system_family(const windows_identity& identity) {
 }  // namespace
 
 namespace ipms::agent::windows {
+std::string collect_windows_os_identity_json() {
+  const auto identity = read_windows_identity();
+  const auto name = normalized_operating_system_name(
+      identity.os_name, registry_string(L"ProductName"), identity.product_type);
+  return "{\"operating_system\":\"" + json_escape(utf8(name)) +
+      "\",\"os_build\":\"" + json_escape(utf8(registry_string(L"CurrentBuildNumber"))) +
+      "\",\"product_type\":" + std::to_string(identity.product_type) + "}";
+}
+
 std::string collect_windows_server_core_inventory_json() {
   SYSTEM_INFO system_info{};
   GetNativeSystemInfo(&system_info);

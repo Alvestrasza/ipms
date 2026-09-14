@@ -45,7 +45,7 @@ class Baseline:
             "platform": "windows", "target": self.target, "release": self.release,
             "revision": self.revision, "profiles": list(self.profiles),
             "source_url": SOURCE_URL, "package_name": self.package_name,
-            "verified_at": CATALOG_REVISION, "assessment_state": "catalog-only",
+            "verified_at": CATALOG_REVISION, "assessment_state": "native-read-only",
         }
 
 

@@ -1,3 +1,10 @@
+/**
+ * File Name: console-shell.tsx
+ * Version: v0.1.0
+ * Created: 2026-08-30 | Modified: 2026-09-14
+ * Author: Alice Endelgard | Organization: Alvestrasza Corporation
+ * Purpose: Render tenant portal navigation from the authenticated permission scope.
+ */
 import { Bell, CircleUserRound, Search } from "lucide-react";
 import Link from "next/link";
 
@@ -61,6 +68,10 @@ export async function ConsoleShell({
         canManageServiceAccounts={hasPermission(
           tenant,
           "service_accounts.manage",
+        )}
+        canManageSecurityBaselines={hasPermission(
+          tenant,
+          "security.baselines.manage",
         )}
         windowsRoles={windowsRoles}
         windowsClientFamilies={windowsClientFamilies}

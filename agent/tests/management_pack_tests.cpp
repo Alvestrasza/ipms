@@ -19,6 +19,7 @@ int main() {
   if (!ipms::agent::is_allowed_server_message(ipms::agent::ServerMessageType::hyperv_virtual_machine_action)) return 17;
   if (!ipms::agent::is_allowed_server_message(ipms::agent::ServerMessageType::hyperv_console_session)) return 20;
   if (!ipms::agent::is_allowed_server_message(ipms::agent::ServerMessageType::hyperv_management_operation)) return 22;
+  if (!ipms::agent::is_allowed_server_message(ipms::agent::ServerMessageType::security_baseline_scan)) return 23;
   const auto& packs = ipms::agent::builtin_management_packs();
   if (packs.size() != 4) return 10;
   const auto hyperv = std::find_if(

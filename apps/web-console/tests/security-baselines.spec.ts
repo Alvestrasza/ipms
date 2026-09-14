@@ -4,6 +4,9 @@
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Verify the Security baseline flow against real isolated Django fixture data.
  */
+
+import { execFileSync } from "node:child_process";
+import path from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
 
@@ -48,7 +51,10 @@ test("catalog navigation, true percentages, scope, tenant isolation and accessib
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize({ width: 1700, height: 1100 });
   await login(page);
-  await page.getByRole("link", { name: "Security", exact: true }).click();
+  await page
+    .getByRole("link", { name: "Security", exact: true })
+    .first()
+    .click();
   await expect(
     page.getByRole("heading", {
       name: "Microsoft security baselines",
@@ -202,4 +208,145 @@ test("anonymous and platform accounts cannot see tenant baselines", async ({
   await expect(
     page.getByRole("link", { name: "Security", exact: true }),
   ).toHaveCount(0);
+});
+
+test("administrator hides and restores a baseline with persistent tenant settings", async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto("/en/administration/security/baselines");
+  await expect(
+    page.getByRole("heading", { name: "Baseline visibility", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", {
+      name: "Hide: Microsoft Windows Server 2019",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("button", {
+      name: "Show: Microsoft Windows Server 2019",
+      exact: true,
+    }),
+  ).toBeEnabled();
+  await page.reload();
+  await expect(
+    page.getByRole("button", {
+      name: "Show: Microsoft Windows Server 2019",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page
+    .getByRole("link", { name: "Open Security overview", exact: true })
+    .click();
+  await expect(
+    page.getByRole("row").filter({ hasText: "Microsoft Windows Server 2019" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Hidden baselines in this selection: 1", { exact: true }),
+  ).toBeVisible();
+  await page.goto("/de/administration/security/baselines");
+  await page
+    .getByRole("button", {
+      name: "Einblenden: Microsoft Windows Server 2019",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("button", {
+      name: "Ausblenden: Microsoft Windows Server 2019",
+      exact: true,
+    }),
+  ).toBeEnabled();
+  const violations = (
+    await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+      .analyze()
+  ).violations;
+  expect(violations).toEqual([]);
+});
+
+test("reader sees findings but cannot manage visibility or start scans", async ({
+  page,
+}) => {
+  await login(page, "e2e-self-tenant");
+  await page.goto("/en/security/baseline");
+  await expect(
+    page.getByRole("button", { name: "Request read-only scan", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "Manage baseline visibility", exact: true }),
+  ).toHaveCount(0);
+  await page.goto("/en/administration/security/baselines");
+  await expect(
+    page.getByRole("button", { name: /Hide: Microsoft/ }),
+  ).toHaveCount(0);
+});
+
+test("read-only scan request reaches the real API and complete native-shaped evidence yields findings", async ({
+  page,
+}) => {
+  await login(page, "e2e-operator");
+  await page.goto("/en/security/baseline");
+  await page
+    .getByRole("combobox", { name: "Scan target", exact: true })
+    .selectOption({ label: "baseline-unknown" });
+  await page
+    .getByRole("button", { name: "Request read-only scan", exact: true })
+    .click();
+  await expect(
+    page.getByText("Scan request received", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("table", { name: "Recent scan jobs", exact: true }),
+  ).toContainText("Queued");
+  const python =
+    process.env.IPMS_TEST_PYTHON ||
+    path.resolve("../../services/control-plane/.venv/Scripts/python.exe");
+  const receipt = JSON.parse(
+    execFileSync(
+      python,
+      [path.resolve("tests/fixtures/complete-security-scan.py")],
+      { encoding: "utf8" },
+    ),
+  );
+  expect(receipt.status).toBe("completed");
+  expect(receipt.controls).toBeGreaterThan(300);
+  expect(receipt.failed).toBeGreaterThan(0);
+  expect(receipt.unknown).toBeGreaterThan(0);
+  await page
+    .getByRole("button", { name: "Refresh job status", exact: true })
+    .click();
+  await expect(
+    page.getByRole("table", { name: "Recent scan jobs", exact: true }),
+  ).toContainText("Completed");
+  await page
+    .getByRole("link", { name: "Load latest results", exact: true })
+    .click();
+  const host = page
+    .getByRole("row")
+    .filter({ hasText: "baseline-unknown.example.invalid" });
+  await expect(host).toContainText("Incomplete assessment");
+  await host.getByRole("link", { name: "View findings", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Control findings", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Assessment scope incomplete", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("table")).toContainText("Expected");
+  await page.getByRole("link", { name: "Next", exact: true }).click();
+  await expect(page).toHaveURL(/page=2/);
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+        .analyze()
+    ).violations,
+  ).toEqual([]);
+  await page.screenshot({
+    path: test.info().outputPath("security-scan-findings-synthetic.png"),
+    fullPage: true,
+  });
 });

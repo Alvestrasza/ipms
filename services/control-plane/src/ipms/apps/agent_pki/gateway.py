@@ -80,7 +80,7 @@ def _bounded_json(line: bytes, maximum_bytes: int = MAX_MESSAGE_BYTES) -> dict:
         raise ValidationError("The Gateway message size is invalid.")
     try:
         document = json.loads(line)
-    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError) as exc:
         raise ValidationError("The Gateway message is invalid.") from exc
     if not isinstance(document, dict) or not isinstance(document.get("type"), str):
         raise ValidationError("The Gateway message envelope is invalid.")
@@ -145,6 +145,7 @@ def _parse_http_request(header: bytes) -> tuple[str, dict[str, str], int]:
         "/v1/hyperv-action-result",
         "/v1/hyperv-management",
         "/v1/hyperv-console",
+        "/v1/security-scan",
     }:
         raise ValidationError("The Agent Gateway HTTP route is invalid.")
     headers: dict[str, str] = {}
@@ -334,7 +335,7 @@ async def _handle_http_connection(
         if path == "/v1/hyperv-console"
         else MAX_MESSAGE_BYTES,
     )
-    if path == "/v1/hyperv-management":
+    if path in {"/v1/hyperv-management", "/v1/security-scan"}:
         document = _unique_management_json(body)
     if path == "/v1/enroll":
         if peer_certificate:
@@ -373,6 +374,11 @@ async def _handle_http_connection(
     )
     if document.get("device_uri") != enrollment.device_uri:
         raise ValidationError("The Agent message identity is invalid.")
+    if path == "/v1/security-scan":
+        from ipms.apps.security.scans import security_exchange
+        response = await _database_call_async(security_exchange, enrollment, document)
+        await _http_reply(writer, 200, response)
+        return
     if path == "/v1/hyperv-management":
         response = await _database_call_async(
             _management_exchange, enrollment, document,

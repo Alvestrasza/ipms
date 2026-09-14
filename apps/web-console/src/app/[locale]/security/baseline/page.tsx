@@ -10,6 +10,7 @@ import {
   ArrowRight,
   CircleHelp,
   ExternalLink,
+  EyeOff,
   Layers,
   Monitor,
   RefreshCw,
@@ -22,8 +23,13 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ConsoleShell } from "@/components/console-shell";
+import { SecurityBaselineScansPanel } from "@/components/security-baseline-scans";
 import { documentLocale, type Locale } from "@/i18n/config";
 import { getSecurityCopy, type SecurityCopy } from "@/i18n/security-copy";
+import {
+  getSecurityScanCopy,
+  type SecurityScanCopy,
+} from "@/i18n/security-scan-copy";
 import { resolveLocale } from "@/i18n/server";
 import { hasPermission } from "@/lib/auth-types";
 import type {
@@ -36,6 +42,7 @@ import { getServerSession } from "@/lib/server-auth";
 import { requireTenantScope } from "@/lib/server-portal-scope";
 import {
   getSecurityBaselineCatalog,
+  getSecurityBaselineScans,
   getSecurityBaselineSystems,
 } from "@/lib/server-security";
 import { selectedTenant } from "@/lib/tenant-selection";
@@ -110,11 +117,13 @@ function SystemsTable({
   locale,
   copy,
   target,
+  scanCopy,
 }: {
   data: SecurityBaselineSystems;
   locale: Locale;
   copy: SecurityCopy;
   target: SecurityBaselineTarget;
+  scanCopy: SecurityScanCopy;
 }) {
   const pages = Math.max(1, Math.ceil(data.count / data.page_size));
   return (
@@ -131,6 +140,7 @@ function SystemsTable({
               <th scope="col">{copy.role}</th>
               <th scope="col">{copy.status}</th>
               <th scope="col">{copy.assessmentTime}</th>
+              <th scope="col">{scanCopy.findings}</th>
             </tr>
           </thead>
           <tbody>
@@ -175,6 +185,23 @@ function SystemsTable({
                   ) : (
                     copy.notAssessed
                   )}
+                </td>
+                <td>
+                  <Link
+                    href={
+                      `/${locale}/security/baseline/${encodeURIComponent(data.baseline.id)}/systems/${encodeURIComponent(system.id)}/findings` as Route
+                    }
+                    className={styles.sourceLink}
+                  >
+                    {scanCopy.openFindings}
+                  </Link>
+                  {system.controls ? (
+                    <small>
+                      {system.controls.passed} {scanCopy.passed} ·{" "}
+                      {system.controls.failed} {scanCopy.failed} ·{" "}
+                      {system.controls.unknown} {scanCopy.unknown}
+                    </small>
+                  ) : null}
                 </td>
               </tr>
             ))}
@@ -236,11 +263,13 @@ export default async function SecurityBaselinePage({
 }) {
   const locale = await resolveLocale();
   const copy = getSecurityCopy(locale);
+  const scanCopy = getSecurityScanCopy(locale);
   const session = await getServerSession();
   requireTenantScope(session, locale);
   const tenant = selectedTenant(session, await cookies());
   if (!tenant) redirect(`/${locale}/access-unavailable`);
   if (!hasPermission(tenant, "inventory.view")) redirect(`/${locale}`);
+  const canManageBaselines = hasPermission(tenant, "security.baselines.manage");
 
   const query = await searchParams;
   const target: SecurityBaselineTarget =
@@ -260,12 +289,20 @@ export default async function SecurityBaselinePage({
   const selection = requestedBaseline
     ? catalog?.results.find((baseline) => baseline.id === requestedBaseline)
     : catalog?.results[0];
-  const systemsResponse = selection
-    ? await getSecurityBaselineSystems(tenant.id, selection.id, requestedPage)
-    : null;
+  const [systemsResponse, scansResponse] = selection
+    ? await Promise.all([
+        getSecurityBaselineSystems(tenant.id, selection.id, requestedPage),
+        catalog?.capabilities.assessment
+          ? getSecurityBaselineScans(tenant.id, selection.id)
+          : Promise.resolve(null),
+      ])
+    : [null, null];
   if (systemsResponse && !systemsResponse.sessionValid)
     redirect(`/${locale}/login`);
   if (systemsResponse?.forbidden) redirect(`/${locale}/access-unavailable`);
+  if (scansResponse && !scansResponse.sessionValid)
+    redirect(`/${locale}/login`);
+  if (scansResponse?.forbidden) redirect(`/${locale}/access-unavailable`);
   const systems = systemsResponse?.data;
   const baseline = systems?.baseline ?? selection;
   const currentHref = baselineHref(
@@ -297,7 +334,19 @@ export default async function SecurityBaselinePage({
           <p>{copy.description}</p>
         </div>
         <div className={styles.headingActions}>
-          <span className="read-only-badge">{copy.readOnly}</span>
+          <span className="read-only-badge">
+            {catalog?.capabilities.assessment
+              ? scanCopy.readOnly
+              : copy.readOnly}
+          </span>
+          {canManageBaselines ? (
+            <Link
+              className={styles.button}
+              href={`/${locale}/administration/security/baselines` as Route}
+            >
+              {copy.manageVisibility}
+            </Link>
+          ) : null}
           <a className={styles.button} href={currentHref}>
             <RefreshCw size={15} aria-hidden="true" />
             {copy.reload}
@@ -381,9 +430,26 @@ export default async function SecurityBaselinePage({
                 </Link>
               ))}
             </nav>
+            {catalog.hidden_count > 0 ? (
+              <div className={styles.explanation}>
+                <EyeOff size={18} aria-hidden="true" />
+                <div>
+                  <p>
+                    <strong>
+                      {copy.hiddenCount}: {catalog.hidden_count}
+                    </strong>
+                  </p>
+                  <p>{copy.hiddenHint}</p>
+                </div>
+              </div>
+            ) : null}
             {catalog.results.length === 0 ? (
               <div className={styles.empty}>
-                <p>{copy.catalogEmpty}</p>
+                <p>
+                  {catalog.hidden_count > 0
+                    ? copy.allHidden
+                    : copy.catalogEmpty}
+                </p>
               </div>
             ) : (
               <div className={styles.tableScroll}>
@@ -532,6 +598,21 @@ export default async function SecurityBaselinePage({
                   </dd>
                 </div>
               </dl>
+              {catalog.capabilities.assessment ? (
+                <SecurityBaselineScansPanel
+                  key={`${tenant.id}:${baseline.id}:${requestedPage}`}
+                  baselineId={baseline.id}
+                  applicable={baseline.summary.applicable}
+                  systems={systems?.results ?? []}
+                  initialJobs={scansResponse?.data ?? null}
+                  tenantId={tenant.id}
+                  csrfToken={session.csrf_token}
+                  canRun={hasPermission(tenant, "security.scans.run")}
+                  locale={locale}
+                  copy={copy}
+                  scanCopy={scanCopy}
+                />
+              ) : null}
               <dl className={styles.statusSummary}>
                 {statuses.map((status) => (
                   <div key={status}>
@@ -572,6 +653,7 @@ export default async function SecurityBaselinePage({
                   locale={locale}
                   copy={copy}
                   target={target}
+                  scanCopy={scanCopy}
                 />
               )}
             </section>

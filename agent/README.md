@@ -1,10 +1,34 @@
 # IPMS Agent
 
-Windows candidate **0.2.30** adds bounded local WUA-cache installed-update
+Windows candidate **0.2.31** adds an independently scheduled read-only baseline
+scan worker. The Portal may select only compiled Microsoft profiles and their
+immutable content hashes. A fixed child process reads approved native Windows
+settings with a 30-second deadline, 128-MiB memory limit and bounded paged
+results. The Agent reports observations; the Control Plane evaluates them.
+User/domain scope and unsupported controls remain unknown. No GPO, registry,
+service or account policy is changed. Deploy the compatible receiver first.
+
+Windows **0.2.30** added bounded local WUA-cache installed-update
 identity evidence for the IPMS WSUS catalog comparison. It uses a fixed offline
 query in an isolated subprocess; it does not register the server with WSUS,
 change update policies or install updates. Deploy the schema-2 receiver first.
 See [WSUS reception](../docs/operations/WSUS-METADATA-RECEPTION.md).
+
+The Security scan uses its own authenticated `/v1/security-scan` channel.
+Result pages bind the enrollment, job, attempt and manifest; failed transfers
+retain one bounded observation set in memory and resend identical pages. A
+restart causes a fresh server attempt. At most four pages are sent per worker
+cycle; inventory, heartbeat, updates and Hyper-V retain their separate workers.
+The executable accepts no external scan program, script, path, registry query,
+expected value or remediation instruction. Package content is generated in
+`include/ipms/agent/security_baseline_content.hpp` from the complete admitted
+source manifests and remains traceable even when a reader is unsupported.
+
+The native scan tests use synthetic observations and a dedicated fixture
+executable; they do not read customer policy. They exercise typed registry
+decoding, exact page completion, malformed/oversized/partial subprocess output,
+termination, cancellation and heartbeat progress. Real SYSTEM/service-account
+and customer-system scan acceptance is a separate deployment check.
 
 The IPMS Agent is a native C++20 service for customer-managed Windows and Linux systems. It will establish an outbound, mutually authenticated connection to the IPMS Control Plane and collect only capabilities explicitly assigned to the enrolled device.
 

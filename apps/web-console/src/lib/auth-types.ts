@@ -1,3 +1,10 @@
+/**
+ * File Name: auth-types.ts
+ * Version: v0.1.0
+ * Created: 2026-08-30 | Modified: 2026-09-14
+ * Author: Alice Endelgard | Organization: Alvestrasza Corporation
+ * Purpose: Define tenant sessions and server-issued portal permission codes.
+ */
 export type TenantRole =
   | "tenant_admin"
   | "operator"
@@ -11,6 +18,8 @@ export type PermissionCode =
   | "agents.view"
   | "agents.manage"
   | "service_accounts.manage"
+  | "security.baselines.manage"
+  | "security.scans.run"
   | "virtual_machines.operate"
   | "virtual_machines.console.control"
   | "virtual_machines.configure"

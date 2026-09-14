@@ -20,6 +20,7 @@ enum class ServerMessageType {
   hyperv_virtual_machine_action,
   hyperv_console_session,
   hyperv_management_operation,
+  security_baseline_scan,
 };
 
 struct AgentGatewayConfig {

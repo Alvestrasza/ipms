@@ -1,0 +1,237 @@
+/*
+ * File Name: security-baseline-scans.module.css
+ * Version: v0.1.0
+ * Created: 2026-09-14 | Modified: 2026-09-14
+ * Author: Alice Endelgard | Organization: Alvestrasza Corporation
+ * Purpose: Scope scan requests, queue receipts and readable control findings.
+ */
+.panel {
+  border-top: 1px solid var(--border-default);
+}
+.header,
+.queue,
+.jobHeading {
+  padding: 20px 22px;
+}
+.header h3,
+.jobHeading h4 {
+  margin: 0;
+  font-size: 0.88rem;
+}
+.header p,
+.jobHeading p,
+.hint,
+.receipt p {
+  margin: 8px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.65;
+}
+.queue,
+.actions,
+.button,
+.jobHeading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.queue {
+  padding-top: 0;
+  align-items: end;
+}
+.jobHeading {
+  justify-content: space-between;
+  border-top: 1px solid var(--border-default);
+}
+.field {
+  display: grid;
+  gap: 7px;
+  min-width: min(100%, 270px);
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+}
+.field select {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface-panel-raised);
+}
+.button {
+  justify-content: center;
+  width: fit-content;
+  min-height: 38px;
+  padding: 8px 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface-panel);
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  font-size: 0.76rem;
+}
+.button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+.button:disabled,
+.button[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.hint {
+  padding: 0 22px 17px;
+}
+.queue .hint {
+  width: 100%;
+  padding: 0;
+}
+.receipt {
+  margin: 0 22px 18px;
+  padding: 16px 18px;
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--color-accent-blue);
+  border-radius: 5px;
+  background: var(--surface-panel-raised);
+  font-size: 0.8rem;
+}
+.receipt dl,
+.counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin: 14px 0 0;
+}
+.receipt dt,
+.counts dt {
+  color: var(--color-text-secondary);
+  font-size: 0.72rem;
+}
+.receipt dd,
+.counts dd {
+  margin: 8px 0 0;
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+}
+.error {
+  margin: 0 22px 18px;
+  padding: 14px;
+  border-left: 3px solid var(--color-critical);
+  color: var(--color-text-secondary);
+  background: var(--surface-panel-raised);
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+.empty {
+  margin: 0;
+  padding: 25px 22px;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  text-align: center;
+}
+.tableScroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.tableScroll:focus-visible {
+  outline: 2px solid var(--color-accent-blue);
+  outline-offset: -2px;
+}
+.tableScroll table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.77rem;
+}
+.tableScroll th,
+.tableScroll td {
+  padding: 15px 22px;
+  border-top: 1px solid var(--border-default);
+  vertical-align: top;
+}
+.tableScroll thead th {
+  color: var(--color-text-muted);
+  background: var(--surface-panel-raised);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.tableScroll small {
+  display: block;
+  margin-top: 6px;
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+.findings {
+  display: grid;
+  gap: 18px;
+}
+.findingsPanel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  background: var(--surface-panel);
+}
+.findings .counts {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  padding: 20px 22px;
+}
+.findingMetadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+  margin: 0;
+  padding: 18px 22px;
+  border-top: 1px solid var(--border-default);
+  color: var(--color-text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.6;
+}
+.findingsTable {
+  min-width: 960px;
+}
+.findingsTable td:first-child {
+  min-width: 240px;
+  max-width: 370px;
+}
+.findingsTable code {
+  display: block;
+  min-width: 90px;
+  max-width: 300px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.73rem;
+  line-height: 1.55;
+}
+.findingStatus {
+  color: var(--color-text-secondary);
+}
+.findingStatus[data-status="passed"] {
+  color: var(--color-success);
+}
+.findingStatus[data-status="failed"] {
+  color: var(--color-critical);
+}
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 16px 22px;
+  border-top: 1px solid var(--border-default);
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+}
+@media (max-width: 700px) {
+  .receipt dl,
+  .findings .counts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .field {
+    width: 100%;
+  }
+}

@@ -46,15 +46,26 @@ class SecurityBaselineTests(TestCase):
 
     def assessment(self, system, **changes):
         from .models import BaselineAssessment
+        from .content import MANIFESTS
+        manifest = MANIFESTS[(SERVER, system.operating_system_role)]
         fields = dict(
             system=system,
             enrollment=AgentEnrollment.objects.get(device_uri=system.source_id),
             baseline_id=SERVER, baseline_revision="2602", catalog_revision="2026-09-14", profile=system.operating_system_role,
+            content_sha256=manifest["manifest_sha256"],
             os_build=system.os_build, operating_system=system.operating_system,
             scope_verified=True, total_controls=10, passed_controls=10,
             observed_at=timezone.now() - timedelta(minutes=1),
         )
         fields.update(changes)
+        # Scale the synthetic ten-control outcome cases to the actual pinned
+        # profile census. Count inconsistencies remain inconsistencies.
+        extra = len(manifest["controls"]) - fields["total_controls"]
+        fields["total_controls"] += extra
+        for key in ("passed_controls", "not_applicable_controls", "failed_controls", "unknown_controls"):
+            if fields.get(key, 0):
+                fields[key] += extra
+                break
         return BaselineAssessment.objects.create(**fields)
 
     def catalog(self, query=""):
@@ -70,7 +81,7 @@ class SecurityBaselineTests(TestCase):
         data = self.catalog()
         self.assertEqual(len(data["results"]), 8)
         self.assertEqual({row["target"] for row in data["results"]}, {"client", "server"})
-        self.assertEqual(data["capabilities"], {"assessment": False, "deployment": False, "collections": False})
+        self.assertEqual(data["capabilities"], {"assessment": True, "deployment": False, "collections": False})
         for row in data["results"]:
             self.assertTrue(row["source_url"].startswith("https://www.microsoft.com/"))
             self.assertEqual(row["provider"], "microsoft")
@@ -154,6 +165,13 @@ class SecurityBaselineTests(TestCase):
         self.assessment(system, scope_verified=False)
         self.assertIsNone(self.row()["summary"]["compliance_percent"])
 
+    def test_known_failure_disproves_compliance_without_claiming_full_coverage(self):
+        self.assessment(self.system(), passed_controls=8, failed_controls=1, unknown_controls=1, scope_verified=False)
+        summary = self.row()["summary"]
+        self.assertEqual((summary["non_compliant"], summary["assessed"], summary["unknown"]), (1, 0, 0))
+        self.assertEqual(summary["compliance_percent"], 0)
+        self.assertEqual(summary["coverage_percent"], 0)
+
     def test_revision_profile_build_and_identity_changes_invalidate_evidence(self):
         for index, change in enumerate((
             {"baseline_revision": "old"}, {"profile": "domain-controller"},
@@ -168,6 +186,14 @@ class SecurityBaselineTests(TestCase):
         assessment.enrollment.status = "revoked"
         assessment.enrollment.save()
         self.assertEqual(self.row()["summary"]["unknown"], 1)
+
+    def test_legacy_empty_content_hash_and_incomplete_census_never_pass(self):
+        from .models import BaselineAssessment
+        first = self.assessment(self.system(name="legacy"), content_sha256="")
+        second = self.assessment(self.system(name="small"))
+        BaselineAssessment.objects.filter(pk=second.id).update(total_controls=1, passed_controls=1)
+        self.assertEqual(self.row()["summary"]["unknown"], 2)
+        self.assertIsNone(self.row()["summary"]["compliance_percent"])
 
     def test_heartbeat_does_not_refresh_expired_assessment(self):
         system = self.system()

@@ -58,6 +58,7 @@ export type ActiveSection =
   | "admin-users"
   | "admin-service-accounts"
   | "admin-wsus"
+  | "admin-security-baselines"
   | "admin-agents";
 
 export async function Sidebar({
@@ -68,6 +69,7 @@ export async function Sidebar({
   canManageConnectors,
   canViewUsers,
   canManageServiceAccounts,
+  canManageSecurityBaselines,
   windowsRoles,
   windowsClientFamilies,
 }: {
@@ -78,6 +80,7 @@ export async function Sidebar({
   canManageConnectors: boolean;
   canViewUsers: boolean;
   canManageServiceAccounts: boolean;
+  canManageSecurityBaselines: boolean;
   windowsRoles: WindowsServerRoleSummary[];
   windowsClientFamilies: WindowsClientFamilySummary[];
 }) {
@@ -110,19 +113,23 @@ export async function Sidebar({
     "admin-agents",
     "admin-service-accounts",
     "admin-wsus",
+    "admin-security-baselines",
   ].includes(activeSection);
   const canAdmin =
     canManageAgents ||
     canViewUsers ||
     canManageServiceAccounts ||
-    canManageConnectors;
+    canManageConnectors ||
+    canManageSecurityBaselines;
   const administrationHref = canViewUsers
     ? `/${locale}/administration/users`
     : canManageAgents
       ? `/${locale}/administration/infrastructure/agents`
       : canManageServiceAccounts
         ? `/${locale}/administration/service-accounts`
-        : `/${locale}/administration/updates/wsus`;
+        : canManageConnectors
+          ? `/${locale}/administration/updates/wsus`
+          : `/${locale}/administration/security/baselines`;
   const navigation = [
     {
       label: dictionary.navigation.overview,
@@ -398,6 +405,32 @@ export async function Sidebar({
         )}
         {canAdmin && administrationExpanded ? (
           <ul className="nav-tree">
+            {canManageSecurityBaselines ? (
+              <li>
+                <span className="nav-subitem nav-subitem--branch">
+                  <Shield aria-hidden="true" size={15} />
+                  <span>{securityCopy.navigation}</span>
+                </span>
+                <ul className="nav-tree nav-tree--nested">
+                  <li>
+                    <Link
+                      className={`nav-subitem ${activeSection === "admin-security-baselines" ? "nav-subitem--active" : ""}`}
+                      href={
+                        `/${locale}/administration/security/baselines` as Route
+                      }
+                      aria-current={
+                        activeSection === "admin-security-baselines"
+                          ? "page"
+                          : undefined
+                      }
+                    >
+                      <ShieldCheck aria-hidden="true" size={14} />
+                      <span>{securityCopy.baselineNavigation}</span>
+                    </Link>
+                  </li>
+                </ul>
+              </li>
+            ) : null}
             {canManageConnectors ? (
               <li>
                 <Link
