@@ -1,6 +1,6 @@
 <!--
 File Name: DOMAIN-SETTINGS-0249-VERIFICATION.md
-Version: v0.1.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
+Version: v0.1.1 | Created: 2026-09-14 | Last Modified: 2026-09-14
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
 Description: Verify root OU name normalization and actionable domain-settings errors.
 -->
@@ -47,9 +47,27 @@ Private evidence: `build/domain-save-0249-regression-before.log`,
 
 ## Deployment and acceptance boundary
 
-At this source checkpoint the correction is prepared for the previously
-authorized DEV rollout. Actual deployed identity and successful live saving
-will be recorded separately after verification.
+The authorized DEV rollout completed on **2026-09-14 at 20:56 UTC**, using
+immutable source `7b86cd05bb37d2c49b5268d71c9b115aed0efdf0`. On the appliance,
+all 44 focused tests also passed under Python 3.14 and the actual Control Plane
+OS account with a disposable in-memory SQLite database and no production
+configuration. The production build and minimal Agent Gateway registry checks
+passed. The code switch preserved all existing rows, schema, privileges,
+configuration, Agent artifacts and the 64 GPO content files. A verified backup
+and the previous release remain available for code-only recovery.
+
+The administrator's existing draft was then saved through the authenticated
+German portal. The success receipt showed revision 1; reloading under 0.2.49
+retained all three complete OU DNs. At **20:58:38 UTC**, an independent read-only
+PostgreSQL receipt confirmed one matching saved plan, zero GPO import jobs and
+51 retained baseline assessments. All seven checked services were active, and
+the existing Linux Agent process was unchanged. This establishes actual live
+saving acceptance in addition to the isolated regression tests.
+
+Additional private evidence: `build/domain-save-0249-preflight.log`,
+`build/domain-save-0249-stage.log`, `build/domain-save-0249-activate.log`, and
+`build/domain-save-0249-live-receipt.json.txt`. No source push, tag or GitHub
+release was performed as part of this correction.
 
 This patch has no schema migration or Agent update. Saving records an
 unverified domain plan and neither creates OUs nor imports, links or applies
