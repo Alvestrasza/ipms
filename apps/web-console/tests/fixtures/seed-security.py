@@ -124,7 +124,7 @@ logs_domain = DomainSecuritySettings.objects.create(
 GpoImportJob.objects.create(
     id=uuid.UUID("75555555-5555-4555-8555-555555555555"), tenant=tenant, enrollment=gpo_agent, system=gpo_dc,
     domain=logs_domain, requested_by=log_actor, domain_guid="76666666-6666-4666-8666-666666666666",
-    pilot_display_name="0-C-ALL-LogsFixture_V1.0.0-Pilot", pilot_name_key="logs-fixture-pilot",
+    pilot_display_name="0-C-ALL-LogsFixtureVeryLongWindowsServerBaselineComponentWithExtendedCustomerNamingAndAdditionalPolicyScope-Pilot-75555555_V1.0.0", pilot_name_key="logs-fixture-pilot",
     status="awaiting_approval", expires_at=timezone.now() + timedelta(hours=1),
     assignment={"baseline_id": "microsoft-windows-server-2025", "backup_id": "fixture-backup", "target_tier": "0",
                 "approval_test_marker": "logs-fixture-approval"},

@@ -111,6 +111,7 @@
 }
 .table td {
   max-width: 280px;
+  white-space: normal;
   overflow-wrap: anywhere;
 }
 .table small {

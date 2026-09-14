@@ -11,7 +11,8 @@ import { expect, type Page, test } from "@playwright/test";
 const baseline = "microsoft-windows-server-2025";
 const scanMarker = "logs-fixture-complete";
 const pilotId = "75555555-5555-4555-8555-555555555555";
-const pilotName = "0-C-ALL-LogsFixture_V1.0.0-Pilot";
+const pilotName =
+  "0-C-ALL-LogsFixtureVeryLongWindowsServerBaselineComponentWithExtendedCustomerNamingAndAdditionalPolicyScope-Pilot-75555555_V1.0.0";
 
 async function login(page: Page, username = "e2e-admin") {
   await page.goto("/en/login");
@@ -238,6 +239,46 @@ test("pilot receipt and exact local approval can be inspected and copied without
       url.searchParams.get("domain") === "logs.example.invalid",
   );
   await expect(page.locator("pre")).toHaveCount(0);
+});
+
+test("long pilot names remain inside their column at desktop and mobile widths", async ({
+  page,
+}, testInfo) => {
+  await login(page);
+  await page.goto(
+    `/en/logs/baselines?kind=gpo_import&domain=logs.example.invalid`,
+  );
+  const target = page
+    .getByRole("row")
+    .filter({ hasText: pilotName })
+    .getByRole("cell")
+    .nth(5);
+  await expect(target).toContainText(pilotName);
+  for (const width of [1600, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    const bounds = await target.evaluate((cell) => {
+      const box = cell.getBoundingClientRect();
+      const text = document.createRange();
+      text.selectNodeContents(cell);
+      const rects = [...text.getClientRects()];
+      return {
+        overflowRight: Math.max(...rects.map((rect) => rect.right)) - box.right,
+        overflowLeft: box.left - Math.min(...rects.map((rect) => rect.left)),
+      };
+    });
+    expect(
+      bounds.overflowRight,
+      `Long GPO name at ${width}px`,
+    ).toBeLessThanOrEqual(1);
+    expect(
+      bounds.overflowLeft,
+      `Long GPO name at ${width}px`,
+    ).toBeLessThanOrEqual(1);
+    await page.screenshot({
+      path: testInfo.outputPath(`long-gpo-name-${width}.png`),
+      fullPage: true,
+    });
+  }
 });
 
 test("reader sees scans but no GPO approval or restricted Agent maintenance", async ({

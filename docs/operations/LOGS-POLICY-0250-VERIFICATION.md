@@ -1,10 +1,10 @@
 <!--
 File Name: LOGS-POLICY-0250-VERIFICATION.md
-Version: v0.1.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
+Version: v0.2.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
 Description: Tenant policy workspace separation and centralized history acceptance.
 -->
-# Policy workspaces and Logs, Portal 0.2.50
+# Policy workspaces and Logs, Portal 0.2.50 and 0.2.51
 
 The domain administration page now contains domain DNS names and Tier 0/1/2
 OU mappings. The Security Baseline page owns the configured-domain selector,
@@ -76,16 +76,16 @@ details and clipboard copy, BMC redirects and export limits. German mobile
 accessibility passed after correcting the filter button contrast. Desktop and
 mobile screenshots were inspected. Synthetic jobs never reached a live Agent.
 
-These local results do not establish supported Python 3.14/PostgreSQL or live
-appliance acceptance; those checks and deployment receipts are recorded below
-once completed.
-
 The first supported PostgreSQL run executed all 545 tests and found one test
 fixture error: a BMC integration case attempted to store NUL in a text column,
 which PostgreSQL rejects. That fixture now uses a representable control
 character; the pure CSV safety tests continue to cover NUL. No application
 behavior was changed by this correction. The failed isolated test database
-was removed normally; a successful complete rerun remains required.
+was removed normally. The corrected complete rerun passed all 545 tests in
+171.440 seconds on Python 3.14.4/PostgreSQL 18.6 with zero skips. It ran as the
+actual Control Plane OS account in an isolated PostgreSQL cluster, using only
+synthetic data. Its test database was removed and its cluster stopped before
+the source-bound acceptance receipt was issued.
 
 Private evidence: `build/logs-0250-backend-before.log`,
 `build/logs-0250-backend.log`, `build/logs-0250-full-backend.log`,
@@ -106,4 +106,39 @@ and independently trusted, domain- and tier-scoped execution service is under
 discussion. This UI/log release does not implement that replacement or remove
 the existing approval safeguard.
 
-Deployment and functional appliance acceptance are pending for this candidate.
+Portal 0.2.50 was activated on the authorized DEV appliance from immutable
+commit `347f330857a99f56430fbc5342fed49d55e4bed8`. All seven services were healthy
+at the 2026-09-14 22:26 UTC read-only evidence cutoff. Existing rows, schema,
+privileges, configuration, policy content and Agent packages were preserved.
+All 26 Windows Agents remained on 0.2.32; the Linux Agent remained on 0.2.13
+with the same process and executable. No directory operation was performed.
+
+Authenticated browser acceptance confirmed both policy workspaces, 550 combined
+Agent history entries and 52 Baseline entries. A system filter returned the
+expected three records and ascending request-time ordering. The filtered CSV
+requests returned HTTP 200 and 1,060 bytes. Browser download-file inspection
+was unavailable; actual CSV content and full-filter parity were verified by
+the isolated browser suite. The existing pending GPO request had naturally
+expired without being claimed before the release; the rollout did not cancel,
+expire or execute it.
+
+Private delivery evidence: `build/logs-0250-r2-stage.log`,
+`build/logs-0250-r2-postgresql.log`,
+`build/logs-0250-r2-supported-receipt.json.txt`,
+`build/logs-0250-r2-activate.log`, `build/logs-0250-final-runtime.json.txt`,
+`build/logs-0250-live-csv-response.json.txt`.
+
+## Long-name correction, Portal 0.2.51
+
+Live inspection found that an unusually long pilot GPO name overlapped the
+adjacent result column. The global table no-wrap rule prevented the Logs
+cell's existing word-break behavior. Logs data cells now explicitly allow
+wrapping. A synthetic long-name fixture and a real DOM geometry assertion
+cover column containment at desktop and mobile widths. This changes no API,
+database, Agent or GPO execution behavior. Production build, seven core
+version checks and all 28 real browser cases passed (1.8 minutes). The new
+desktop and mobile screenshots were inspected. Evidence:
+`build/logs-0251-web-build.log`, `build/logs-0251-core.log`,
+`build/logs-0251-browser.log`,
+`build/security-baseline-e2e/2026-09-14T22-38-17-777Z`.
+Supported service-account and DEV acceptance remain pending for 0.2.51.
