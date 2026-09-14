@@ -1,5 +1,32 @@
 # Detached console browser acceptance
 
+## Security baseline acceptance
+
+After building the Web Console, run `node scripts/test-security-baselines.cjs`
+from the repository root. The helper uses the local Control Plane virtual
+environment (override with `IPMS_TEST_PYTHON`) and installed Playwright browser
+(override with `IPMS_TEST_BROWSER_EXECUTABLE`). It requires free loopback ports
+3116, 3117 and 8117, creates a fresh database under
+`build/security-baseline-e2e/<UTC timestamp>/`, starts the actual Next.js
+standalone output plus the isolated Django server, and stops its helpers after
+the suite. Static/public assets are copied into the local standalone output.
+
+Six cases exercise real session authentication, Security/Baseline navigation,
+25% compliance versus 50% coverage, no-results and no-matching states, target
+filters, pagination, German/English layout, narrow viewport containment,
+tenant/platform exclusion and axe WCAG checks. The transport-failure case uses
+only the local test proxy's explicit fault cookie to return one service's 503;
+it verifies a distinct unavailable state and recovery on reload. No product
+middleware or externally supplied compliance percentage is used for that fault.
+
+`tests/fixtures/seed-security.py` creates synthetic internal assessment records
+with explicit E2E settings. A passing fixture assessment is **not** evidence of
+a native Windows scan, imported complete GPO controls, or fleet compliance.
+The ordinary product has no enabled assessment producer. Screenshots are named
+`*-synthetic.png` and must be labeled as test data when shown outside the suite.
+
+## Existing console suites
+
 Use a dedicated local SQLite database, never a deployed IPMS database. This
 suite seeds one synthetic Hyper-V host and VM, so it is separate from the
 empty-inventory portal suite. No Agent or real hypervisor is contacted.

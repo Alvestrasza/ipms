@@ -1,0 +1,473 @@
+/*
+ * File Name: security-baseline.module.css
+ * Version: v0.1.0
+ * Created: 2026-09-14 | Modified: 2026-09-14
+ * Author: Alice Endelgard | Organization: Alvestrasza Corporation
+ * Purpose: Scope the responsive security catalog and compliance detail layout.
+ */
+.content {
+  display: grid;
+  gap: 20px;
+}
+.headingActions,
+.button,
+.sourceLink,
+.baselineLink {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.headingActions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.button {
+  justify-content: center;
+  width: fit-content;
+  min-height: 38px;
+  padding: 8px 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface-panel);
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.button:hover,
+.filter:hover {
+  background: var(--surface-hover);
+  color: var(--color-text-primary);
+}
+.inventory {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: 0;
+}
+.inventory > div {
+  padding: 20px 22px;
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  background: var(--surface-panel);
+}
+.inventory dt {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+}
+.inventory dt svg {
+  flex-shrink: 0;
+  color: var(--color-accent-blue);
+}
+.inventory dd {
+  margin: 14px 0 0;
+  font-size: 2rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.mappingNote,
+.explanation,
+.assessmentNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  color: var(--color-text-secondary);
+  font-size: 0.79rem;
+  line-height: 1.65;
+}
+.mappingNote > svg,
+.explanation > svg,
+.assessmentNotice > svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--color-accent-blue);
+}
+.mappingNote p,
+.explanation p,
+.assessmentNotice p {
+  margin: 0;
+}
+.mappingNote p + p {
+  margin-top: 4px;
+}
+.mappingNote {
+  padding: 0 4px;
+}
+.panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  background: var(--surface-panel);
+}
+.panelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 22px;
+}
+.panelHeader h2,
+.modules h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+.panelHeader p,
+.systemsHeading p,
+.modules p {
+  margin: 8px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+.panelHeader > div > p:first-child {
+  margin: 0 0 6px;
+  font-size: 0.68rem;
+}
+.provider {
+  color: var(--color-text-muted);
+  font-size: 0.74rem;
+}
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 22px 18px;
+}
+.filter {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 7px 13px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  text-decoration: none;
+}
+.filterActive {
+  border-color: var(--border-strong);
+  background: var(--surface-panel-raised);
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+.tableScroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.catalogTable,
+.systemsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.79rem;
+  text-align: left;
+}
+.catalogTable {
+  min-width: 820px;
+}
+.systemsTable {
+  min-width: 780px;
+}
+.catalogTable th,
+.catalogTable td,
+.systemsTable th,
+.systemsTable td {
+  padding: 17px 22px;
+  border-top: 1px solid var(--border-default);
+  vertical-align: middle;
+}
+.catalogTable thead th,
+.systemsTable thead th {
+  padding-top: 12px;
+  padding-bottom: 12px;
+  background: var(--surface-panel-raised);
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.catalogTable tbody th {
+  width: 34%;
+  font-weight: 500;
+}
+.catalogTable small,
+.systemsTable small {
+  display: block;
+  margin-top: 6px;
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  font-weight: 400;
+  line-height: 1.45;
+}
+.catalogTable tbody tr:hover,
+.systemsTable tbody tr:hover {
+  background: var(--surface-hover);
+}
+.selectedRow {
+  background: var(--surface-panel-raised);
+}
+.selectedRow > th {
+  box-shadow: inset 3px 0 var(--color-accent-crimson);
+}
+.baselineLink {
+  width: fit-content;
+  text-decoration: none;
+  line-height: 1.5;
+}
+.baselineLink svg {
+  flex-shrink: 0;
+  color: var(--color-accent-blue);
+}
+.baselineLink:hover span {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.sourceLink {
+  color: var(--color-accent-blue);
+  font-size: 0.77rem;
+  text-decoration: none;
+}
+.sourceLink:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.compliance {
+  display: grid;
+  gap: 2px;
+  min-width: 122px;
+  font-variant-numeric: tabular-nums;
+}
+.compliance > strong {
+  font-size: 1.06rem;
+}
+.compliance meter {
+  width: 100%;
+  max-width: 135px;
+  height: 6px;
+  margin-top: 5px;
+}
+.compliance meter::-webkit-meter-bar {
+  border: 0;
+  border-radius: 3px;
+  background: var(--border-default);
+}
+.compliance meter::-webkit-meter-optimum-value {
+  border-radius: 3px;
+  background: var(--color-success);
+}
+.compliance meter::-moz-meter-bar {
+  background: var(--color-success);
+}
+.explanation {
+  padding: 17px 22px;
+  border-top: 1px solid var(--border-default);
+  background: var(--surface-panel-raised);
+}
+.assessmentNotice {
+  padding: 15px 20px;
+  border-left: 3px solid var(--color-accent-blue);
+  border-radius: 3px;
+  background: var(--surface-panel);
+}
+.packageDetails {
+  display: grid;
+  grid-template-columns: minmax(230px, 2fr) minmax(150px, 1fr) minmax(
+      200px,
+      2fr
+    );
+  gap: 20px;
+  margin: 0;
+  padding: 0 22px 22px;
+}
+.packageDetails dt {
+  margin-bottom: 6px;
+  color: var(--color-text-muted);
+  font-size: 0.71rem;
+}
+.packageDetails dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.79rem;
+  line-height: 1.6;
+}
+.statusSummary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin: 0;
+  padding: 18px 22px;
+  gap: 18px;
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--surface-panel-raised);
+}
+.statusSummary dd {
+  margin: 10px 0 0;
+  font-size: 1.3rem;
+  font-variant-numeric: tabular-nums;
+}
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--color-text-secondary);
+  font-size: 0.73rem;
+  line-height: 1.45;
+}
+.status > span {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-unknown);
+}
+.status[data-state="compliant"] > span {
+  background: var(--color-success);
+}
+.status[data-state="non_compliant"] > span,
+.status[data-state="error"] > span {
+  background: var(--color-critical);
+}
+.status[data-state="stale"] > span {
+  background: var(--color-warning);
+}
+.systemsHeading {
+  padding: 20px 22px;
+}
+.systemsHeading h3 {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+.systemsTable td:first-child {
+  min-width: 170px;
+  max-width: 280px;
+  overflow-wrap: anywhere;
+}
+.pagination,
+.pagination > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.pagination {
+  justify-content: space-between;
+  padding: 15px 22px;
+  border-top: 1px solid var(--border-default);
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+.empty {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 34px 22px;
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  background: var(--surface-panel);
+  text-align: center;
+}
+.panel .empty {
+  border: 0;
+  border-radius: 0;
+}
+.empty > svg {
+  color: var(--color-accent-blue);
+}
+.empty p {
+  max-width: 650px;
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.65;
+}
+.modules {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  align-items: start;
+  gap: 36px;
+  padding: 22px;
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+}
+.modules h2 {
+  font-size: 0.9rem;
+}
+.modules ul {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.modules li {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.77rem;
+}
+.modules li svg {
+  color: var(--color-text-muted);
+}
+.modules li small {
+  padding: 4px 7px;
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  color: var(--color-text-muted);
+  font-size: 0.66rem;
+}
+.catalogMeta {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.69rem;
+  line-height: 1.6;
+}
+@media (max-width: 1100px) {
+  .packageDetails {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .modules {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+}
+@media (max-width: 700px) {
+  .headingActions {
+    justify-content: flex-start;
+  }
+  .inventory {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .inventory > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 16px;
+  }
+  .inventory dd {
+    margin: 0;
+    font-size: 1.5rem;
+  }
+  .packageDetails {
+    grid-template-columns: 1fr;
+  }
+  .statusSummary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .panelHeader,
+  .modules {
+    padding: 18px;
+  }
+  .filters {
+    padding: 0 18px 14px;
+  }
+}

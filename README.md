@@ -9,6 +9,12 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
+Local application candidate `0.2.44` prepares **Security → Baseline** with eight
+Microsoft Windows GPO baseline packages, tenant-scoped matching inventory,
+compliance percentages and separate assessment coverage. The native baseline
+scanner and collection deployment are follow-up modules; missing measurements
+display **Not assessed**. See [Security baselines](docs/operations/SECURITY-BASELINES.md).
+
 Local application candidate `0.2.43` adds WSUS catalog reception and server/DC
 comparison, including a download-only WSUS with no registered clients.
 Windows Agent candidate `0.2.30` adds bounded local installed-update evidence

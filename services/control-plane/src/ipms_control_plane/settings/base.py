@@ -107,6 +107,7 @@ INSTALLED_APPS = [
     "ipms.apps.agent_pki",
     "ipms.apps.discovery",
     "ipms.apps.updates",
+    "ipms.apps.security",
 ]
 
 MIDDLEWARE = [

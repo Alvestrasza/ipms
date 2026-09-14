@@ -67,6 +67,7 @@ from . import views
 app_name = "core"
 
 urlpatterns = [
+    path("security/", include("ipms.apps.security.urls")),
     path("", include("ipms.apps.updates.urls")),
     path("hyper-v/virtual-machines/<uuid:pk>/management/dialog/", HyperVManagementDialogView.as_view(), name="hyperv-management-dialog"),
     path("hyper-v/virtual-machines/<uuid:pk>/management/", HyperVManagementView.as_view(), name="hyperv-management"),

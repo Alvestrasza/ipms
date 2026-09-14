@@ -27,6 +27,28 @@ commitment, release schedule, or customer contract.
 - Keep proprietary product code closed. Publish only intentionally separated
   extension contracts, SDKs, or examples under their own licenses.
 
+## Modular Security
+
+The first source preparation, `0.2.44`, adds **Security → Baseline**: a verified
+Microsoft Windows GPO package catalog, matching tenant inventory and an
+assessment read model with separate compliance and coverage percentages.
+No complete native baseline scanner or policy deployment is enabled yet.
+
+Next increments:
+
+- Import and pin full control definitions and role profiles; add read-only,
+  compiled native Windows evaluators and authenticated per-control evidence.
+- Define tenant policy overlays and assign immutable revisions to Collections,
+  with a preview of target membership, applicability and conflicting settings.
+- Add authorized, audited, staged GPO/local-policy deployment with maintenance
+  windows, rollback and post-deployment verification.
+- Add separately versioned CIS/other benchmark providers after content/license
+  review, then Linux, switches and firewalls through platform-specific adapters.
+
+Windows Update posture remains its own evidence family. See
+[ADR-0015](docs/architecture/ADR-0015-SECURITY-BASELINES.md) for the shared design
+and [Security baselines](docs/operations/SECURITY-BASELINES.md) for current scope.
+
 ## Deployment Models
 
 ### IPMS Appliance

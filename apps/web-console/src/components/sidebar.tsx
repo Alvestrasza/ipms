@@ -1,3 +1,10 @@
+/**
+ * File Name: sidebar.tsx
+ * Version: v0.1.0
+ * Created: 2026-08-30 | Modified: 2026-09-14
+ * Author: Alice Endelgard | Organization: Alvestrasza Corporation
+ * Purpose: Present tenant console navigation and the security baseline category.
+ */
 import {
   Activity,
   ArchiveRestore,
@@ -12,12 +19,15 @@ import {
   Server,
   ServerCog,
   Settings,
+  Shield,
+  ShieldCheck,
   UsersRound,
 } from "lucide-react";
 import type { Route } from "next";
 import Link from "next/link";
 
 import { getDictionary } from "@/i18n/dictionaries";
+import { getSecurityCopy } from "@/i18n/security-copy";
 import { resolveLocale } from "@/i18n/server";
 import { getWsusCopy } from "@/i18n/wsus-copy";
 import type {
@@ -44,6 +54,7 @@ export type ActiveSection =
   | "hyper-v-vms"
   | "network"
   | "updates-wsus"
+  | "security-baseline"
   | "admin-users"
   | "admin-service-accounts"
   | "admin-wsus"
@@ -72,6 +83,7 @@ export async function Sidebar({
 }) {
   const locale = await resolveLocale();
   const dictionary = getDictionary(locale);
+  const securityCopy = getSecurityCopy(locale);
   const physicalExpanded = [
     "physical",
     "physical-servers",
@@ -153,6 +165,13 @@ export async function Sidebar({
       enabled: true as const,
     },
     {
+      label: securityCopy.navigation,
+      icon: Shield,
+      href: `/${locale}/security/baseline`,
+      section: "security-baseline" as const,
+      enabled: true as const,
+    },
+    {
       label: dictionary.navigation.storage,
       icon: Database,
       enabled: false as const,
@@ -199,6 +218,21 @@ export async function Sidebar({
                   </span>
                 </span>
               )}
+              {item.section === "security-baseline" &&
+              activeSection === "security-baseline" ? (
+                <ul className="nav-tree">
+                  <li>
+                    <Link
+                      className="nav-subitem nav-subitem--active"
+                      href={`/${locale}/security/baseline` as Route}
+                      aria-current="page"
+                    >
+                      <ShieldCheck aria-hidden="true" size={15} />
+                      <span>{securityCopy.baselineNavigation}</span>
+                    </Link>
+                  </li>
+                </ul>
+              ) : null}
               {item.section === "physical" && physicalExpanded ? (
                 <ul className="nav-tree">
                   <li>
