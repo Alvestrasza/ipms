@@ -1,12 +1,12 @@
 <!--
 File Name: SECURITY-BASELINES.md
-Version: v0.1.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
+Version: v0.1.1 | Created: 2026-09-14 | Last Modified: 2026-09-14
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
 Description: Baseline catalog scope, percentages, source evidence and rollout acceptance.
 -->
 # Security baselines
 
-Source candidate: IPMS **0.2.44**. Open **Security → Baseline** at
+DEV release: IPMS **0.2.44**. Open **Security → Baseline** at
 `/[locale]/security/baseline` as an authorized tenant reader or administrator.
 The page supports English/German, server/client filters, matching-system
 details, pagination, Microsoft source links, compliance and assessment coverage.
@@ -98,14 +98,34 @@ On 2026-09-14, the complete local backend suite ran 461 cases: 450 passed and
 browser cases passed against the actual standalone Web Console and an isolated
 Django/SQLite fixture, including axe checks and EN/DE screenshots. Production
 build, TypeScript, affected-file Biome and migration drift checks passed.
-The available local Python was 3.12.14 with Django 6.1; these results do not
-replace acceptance under the declared supported Python 3.14/PostgreSQL runtime.
+The initial local Python was 3.12.14 with Django 6.1. Subsequent supported-runtime
+verification on the DEV appliance used Python 3.14.4 and PostgreSQL: all **461
+backend tests passed**, zero skips, in 148.344 seconds. Forward migration,
+reversal and reapplication passed in separate disposable databases while the
+previous WSUS schema and migration history remained intact. Those test databases
+were removed after acceptance. The appliance production build and TypeScript
+checks also passed with the existing dependency versions.
 
 See [ADR-0015](../architecture/ADR-0015-SECURITY-BASELINES.md) for the future
 evaluator's full-scope evidence requirements and collection enforcement design.
 
-No deployment is performed by this source preparation. Before a separately
-authorized rollout, verify supported Python 3.14/PostgreSQL behavior, migration
+On 2026-09-14 at 09:37 UTC, immutable local commit
+`c15ebb765afc583490d3d32aa21db65d7e555ab5` was activated on the established DEV
+appliance from a checksum-verified Git bundle. This deployment did not publish
+the new source to GitHub. The single `security.0001_initial` migration was
+applied as the existing application database owner after protected configuration
+and database backups. Existing ownership, grants, service configuration,
+Windows Agent package and WSUS integration were preserved.
+
+Fresh live API and authenticated browser acceptance confirmed version 0.2.44,
+eight catalog entries, server/client inventory and unknown assessment states.
+The table remained empty. Both health endpoints, seven service states, WSUS API
+access and all 26 Windows Agent heartbeats were verified after activation.
+Windows Agents remain 0.2.30; the Linux appliance Agent remains 0.2.13 with its
+process and executable unchanged. Backup digests and the active release link
+were independently read back. Real baseline conformance was not measured.
+
+For another rollout, verify supported Python 3.14/PostgreSQL behavior, migration
 and tenant database permissions, exact release/target and rollback. Deploy the
 Control Plane schema/API before the Web Console. An application rollback can
 leave the unused additive table in place after confirming it is empty. If

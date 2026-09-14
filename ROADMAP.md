@@ -29,8 +29,8 @@ commitment, release schedule, or customer contract.
 
 ## Modular Security
 
-The first source preparation, `0.2.44`, adds **Security → Baseline**: a verified
-Microsoft Windows GPO package catalog, matching tenant inventory and an
+The first increment, `0.2.44`, is verified on DEV and adds **Security → Baseline**:
+a verified Microsoft Windows GPO package catalog, matching tenant inventory and an
 assessment read model with separate compliance and coverage percentages.
 No complete native baseline scanner or policy deployment is enabled yet.
 

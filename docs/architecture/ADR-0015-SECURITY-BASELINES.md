@@ -1,12 +1,13 @@
 <!--
 File Name: ADR-0015-SECURITY-BASELINES.md
-Version: v0.1.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
+Version: v0.1.1 | Created: 2026-09-14 | Last Modified: 2026-09-14
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
 Description: Modular security baseline catalog, evidence and future enforcement boundaries.
 -->
 # ADR-0015: Security baseline catalog and evidence
 
-Status: accepted for the local 0.2.44 preparation; production acceptance pending.
+Status: accepted; the 0.2.44 catalog/reporting foundation is verified on DEV.
+Native assessment, remediation and production acceptance remain future work.
 
 ## Context
 

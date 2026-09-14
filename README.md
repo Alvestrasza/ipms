@@ -9,18 +9,18 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-Local application candidate `0.2.44` prepares **Security → Baseline** with eight
-Microsoft Windows GPO baseline packages, tenant-scoped matching inventory,
+Application `0.2.44`, verified on the DEV appliance, prepares **Security → Baseline**
+with eight Microsoft Windows GPO baseline packages, tenant-scoped matching inventory,
 compliance percentages and separate assessment coverage. The native baseline
 scanner and collection deployment are follow-up modules; missing measurements
 display **Not assessed**. See [Security baselines](docs/operations/SECURITY-BASELINES.md).
 
-Local application candidate `0.2.43` adds WSUS catalog reception and server/DC
+Application `0.2.43` introduced WSUS catalog reception and server/DC
 comparison, including a download-only WSUS with no registered clients.
-Windows Agent candidate `0.2.30` adds bounded local installed-update evidence
+The deployed Windows Agent `0.2.30` adds bounded local installed-update evidence
 without changing update sources or running an online scan. See
 [WSUS reception](docs/operations/WSUS-METADATA-RECEPTION.md) for the exporter,
-limits and separate deployment/WSUS acceptance requirements.
+limits and the remaining live WSUS publisher/catalog acceptance requirements.
 Tenant **Administration → WSUS server** stores the host, port and HTTPS
 settings for each reception source; **Windows updates** displays its comparison.
 
