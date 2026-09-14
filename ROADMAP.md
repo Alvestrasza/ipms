@@ -32,12 +32,16 @@ commitment, release schedule, or customer contract.
 The first increment, `0.2.44`, is verified on DEV and adds **Security → Baseline**:
 a verified Microsoft Windows GPO package catalog, matching tenant inventory and an
 assessment read model with separate compliance and coverage percentages.
-No complete native baseline scanner or policy deployment is enabled yet.
+Candidate `0.2.45` adds tenant visibility management, explicit read-only scan
+requests and per-control findings. Windows Agent candidate `0.2.31` implements
+bounded native readers using pinned control definitions and authenticated
+observations. User, domain and unsupported checks remain unknown; policy
+deployment is still a future module.
 
 Next increments:
 
-- Import and pin full control definitions and role profiles; add read-only,
-  compiled native Windows evaluators and authenticated per-control evidence.
+- Verify the new native readers in the actual Agent service context and extend
+  coverage for effective user/domain policy and currently unsupported controls.
 - Define tenant policy overlays and assign immutable revisions to Collections,
   with a preview of target membership, applicability and conflicting settings.
 - Add authorized, audited, staged GPO/local-policy deployment with maintenance

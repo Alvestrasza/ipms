@@ -246,6 +246,8 @@ assert len(changes) % 2 == 0, 'Invalid source change list'
 changed = {changes[index + 1] for index in range(0, len(changes), 2)}
 assert all(changes[index] in ('A', 'M') for index in range(0, len(changes), 2)), 'Source deletions or renames require review'
 allowed = {
+    'README.md',
+    'ROADMAP.md',
     'VERSION',
     'agent/CMakeLists.txt',
     'agent/README.md',

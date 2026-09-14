@@ -9,11 +9,14 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-Application `0.2.44`, verified on the DEV appliance, prepares **Security → Baseline**
-with eight Microsoft Windows GPO baseline packages, tenant-scoped matching inventory,
-compliance percentages and separate assessment coverage. The native baseline
-scanner and collection deployment are follow-up modules; missing measurements
-display **Not assessed**. See [Security baselines](docs/operations/SECURITY-BASELINES.md).
+Application candidate `0.2.45` extends **Security → Baseline** with reversible
+tenant baseline visibility settings, read-only scan requests and per-control
+findings. Windows Agent candidate `0.2.31` reads compiled Microsoft controls
+without applying policies. Eight baseline packages cover clients and servers;
+compliance and assessment coverage remain separate. Incomplete evidence never
+passes a baseline. The DEV appliance currently runs `0.2.44`; see
+[Security baselines](docs/operations/SECURITY-BASELINES.md) and
+[scan verification](docs/operations/SECURITY-SCAN-0245-VERIFICATION.md).
 
 Application `0.2.43` introduced WSUS catalog reception and server/DC
 comparison, including a download-only WSUS with no registered clients.
