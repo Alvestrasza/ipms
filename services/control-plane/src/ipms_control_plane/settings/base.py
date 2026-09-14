@@ -6,6 +6,7 @@ from django.core.exceptions import ImproperlyConfigured
 
 
 BASE_DIR = Path(__file__).resolve().parents[3]
+IPMS_SECURITY_GPO_ARTIFACT_DIR = os.environ.get('IPMS_SECURITY_GPO_ARTIFACT_DIR', '')
 
 
 def required_environment(name: str) -> str:

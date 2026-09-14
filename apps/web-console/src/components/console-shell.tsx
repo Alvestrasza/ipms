@@ -73,6 +73,10 @@ export async function ConsoleShell({
           tenant,
           "security.baselines.manage",
         )}
+        canManageSecurityDomains={hasPermission(
+          tenant,
+          "security.domains.manage",
+        )}
         windowsRoles={windowsRoles}
         windowsClientFamilies={windowsClientFamilies}
       />

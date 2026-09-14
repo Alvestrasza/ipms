@@ -1,3 +1,7 @@
+// File Name: main.cpp
+// Version: v0.2.32 | Created: 2026-08-31 | Last Modified: 2026-09-14
+// Author: Alice Endelgard | Organization: Alvestrasza Corporation
+// Description: Native Agent entry points and fixed internal workers; no arbitrary command execution.
 #include "ipms/agent/management_pack.hpp"
 
 #include <iostream>
@@ -12,6 +16,7 @@
 #include "ipms/agent/windows_updater.hpp"
 #include "ipms/agent/windows_update_evidence.hpp"
 #include "ipms/agent/windows_security_scan.hpp"
+#include "ipms/agent/windows_gpo_management.hpp"
 namespace ipms::agent::windows { int run_windows_service(); }
 #else
 #include "ipms/agent/linux_inventory.hpp"
@@ -26,6 +31,12 @@ int main(int argc, char** argv) {
   const bool run_once = argc == 2 && std::string_view(argv[1]) == "--run-once";
   for (const auto& pack : ipms::agent::builtin_management_packs()) if (!ipms::agent::is_valid_pack_assignment(pack)) return 2;
 #ifdef _WIN32
+  if (argc == 2 && std::string_view(argv[1]) == "--gpo-worker") {
+    return ipms::agent::windows::run_gpo_worker();
+  }
+  if (argc == 3 && std::string_view(argv[1]) == "--approve-gpo-pilot") {
+    return ipms::agent::windows::approve_gpo_pilot(argv[2]);
+  }
   if (argc == 2 && std::string_view(argv[1]) == "--collect-security-baseline") {
     return ipms::agent::windows::run_security_baseline_worker();
   }

@@ -7,6 +7,8 @@ from .models import PlatformAdministrator, Tenant, TenantMembership
 
 
 class Permission:
+    SECURITY_DOMAINS_MANAGE = 'security.domains.manage'
+    SECURITY_GPO_IMPORTS_RUN = 'security.gpo_imports.run'
     INVENTORY_VIEW = "inventory.view"
     CONNECTORS_MANAGE = "connectors.manage"
     AGENTS_VIEW = "agents.view"

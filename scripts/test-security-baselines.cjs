@@ -22,6 +22,7 @@ const env = {
   IPMS_CSRF_TRUSTED_ORIGINS: "http://127.0.0.1:3116",
   IPMS_CONTROL_PLANE_URL: "http://127.0.0.1:3116",
   IPMS_NATIVE_CONSOLE_KEY_FILE: "",
+  IPMS_SECURITY_GPO_ARTIFACT_DIR: path.join(root, "build/security-gpo-packages"),
   HOSTNAME: "127.0.0.1", PORT: "3117", TZ: "UTC",
 };
 const children = [];

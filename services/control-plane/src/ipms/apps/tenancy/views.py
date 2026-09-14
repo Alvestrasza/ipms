@@ -331,6 +331,15 @@ class TenantUserDetailView(APIView):
             for field, value in changes.items():
                 setattr(membership, field, value)
             membership.save(update_fields=(*changes.keys(), "updated_at"))
+            # Any authority change invalidates the previous pilot approval,
+            # including reactivation or extending an expired membership.
+            current_authority = {
+                "role": membership.role, "is_active": membership.is_active,
+                "expires_at": membership.expires_at.isoformat() if membership.expires_at else None,
+            }
+            if previous != current_authority:
+                from ipms.apps.security.gpo_jobs import withdraw_gpo_jobs
+                withdraw_gpo_jobs(tenant_id=request.tenant.pk, actor_id=membership.user_id, reason="membership_changed")
             _audit_user_change(
                 request,
                 action="identity.membership.update",

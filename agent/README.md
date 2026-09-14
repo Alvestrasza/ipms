@@ -1,5 +1,34 @@
 # IPMS Agent
 
+Windows candidate **0.2.32** adds a separate native GPMC worker for creating a
+new **disabled, unlinked pilot GPO** from one checksum-pinned Microsoft backup
+component. The Portal first sends an immutable domain/DC-bound job. An elevated
+administrator on that controller reviews its complete JSON and approves exactly
+that job with `ipms-agent.exe --approve-gpo-pilot <reviewed-job.json>`. Approval
+binds the current enrollment, domain, complete input digest and expiry and is
+consumed before creation. It is not a permanent permission or a script channel.
+
+The fixed child uses native GPMC COM interfaces with a 120-second deadline and
+256-MiB limit. GPMC must already be installed and the local server must be a
+writable domain controller. No feature, service account or permission is installed
+automatically. The executor report proves prerequisites, not effective AD write
+permission. Missing rights and GPMC failures are reported explicitly.
+
+No existing GPO, default policy, ACL or policy link is selected for modification.
+Both computer and user settings remain disabled after import. Delivery uses the
+same outbound TLS gateway through fixed `/v1/security-gpo` and
+`/v1/security-gpo-artifact` paths; the Agent exposes no new listener. The binary
+package format contains only an exact compiled sequence of pinned data files.
+It accepts no received path, program, command, script, archive or URL.
+
+Protected journals under `%ProgramData%\Alvestrasza\IPMS Agent\gpo-management`
+fence uncertain claim/create/import windows. A crash or timeout with an uncertain
+write outcome produces `requires_reconciliation` and no automatic AD retry,
+deletion or rollback. Immutable final receipts are flushed before the current
+journal is replaced and replayed with their exact original outcome. Staging does
+not apply policy, establish baseline compliance or validate domain replication.
+Real domain acceptance remains separate from local build/contract verification.
+
 Windows candidate **0.2.31** adds an independently scheduled read-only baseline
 scan worker. The Portal may select only compiled Microsoft profiles and their
 immutable content hashes. A fixed child process reads approved native Windows

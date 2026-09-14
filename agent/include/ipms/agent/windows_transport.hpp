@@ -1,3 +1,7 @@
+// File Name: windows_transport.hpp
+// Version: v0.2.32 | Created: 2026-08-31 | Last Modified: 2026-09-14
+// Author: Alice Endelgard | Organization: Alvestrasza Corporation
+// Description: Native Windows transport cycles with independent cancellation boundaries.
 #pragma once
 
 #include <string>
@@ -19,6 +23,7 @@ bool run_console_input_cycle(const std::function<bool()>& cancelled);
 TransportResult run_heartbeat_cycle(const std::function<bool()>& cancelled);
 TransportResult run_management_cycle(const std::function<bool()>& cancelled);
 TransportResult run_security_cycle(const std::function<bool()>& cancelled);
+TransportResult run_gpo_cycle(const std::function<bool()>& cancelled);
 TransportResult report_lifecycle_result(
     const std::string& job_id,
     const std::string& result,

@@ -133,6 +133,9 @@ def _guard_deployment_management(deployment, *, expected_enrollment=None):
         .exists()
     ):
         raise RemoteDeploymentStepError("agent_management_operation_pending")
+    from ipms.apps.security.gpo_jobs import active_gpo_jobs
+    if active_gpo_jobs(current.tenant_id).filter(enrollment_id__in=protected_enrollments).exists():
+        raise RemoteDeploymentStepError("agent_management_operation_pending")
     return enrollment
 
 

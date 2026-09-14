@@ -1,13 +1,81 @@
 # File Name: models.py
 # Version: v0.1.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
-# Description: Tenant visibility, leased native read-only scans and evaluated evidence.
+# Description: Tenant baseline evidence, domain plans and bounded pilot GPO jobs.
 import uuid
 
 from django.core.exceptions import ValidationError
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
+
+
+class DomainSecuritySettings(models.Model):
+    """Draft directory bindings; saving never resolves or mutates AD objects."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey('tenancy.Tenant', on_delete=models.CASCADE)
+    domain_name = models.CharField(max_length=253)
+    revision = models.PositiveIntegerField(default=1)
+    tier_ous = models.JSONField(default=dict)
+    gpo_name_template = models.CharField(max_length=160)
+    baseline_order = models.JSONField(default=list)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ('domain_name', 'id')
+        constraints = [models.UniqueConstraint(fields=('tenant', 'domain_name'), name='security_tenant_domain')]
+
+
+class GpoExecutorReport(models.Model):
+    """Authenticated local DC observations, not a delegation or approval."""
+
+    enrollment = models.OneToOneField('agent_pki.AgentEnrollment', on_delete=models.CASCADE, primary_key=True)
+    agent_version = models.CharField(max_length=32)
+    domain_dns_name = models.CharField(max_length=253, blank=True)
+    domain_guid = models.CharField(max_length=36, blank=True)
+    forest_dns_name = models.CharField(max_length=253, blank=True)
+    dc_fqdn = models.CharField(max_length=253, blank=True)
+    role = models.CharField(max_length=40)
+    gpmc_available = models.BooleanField(default=False)
+    result_code = models.CharField(max_length=48)
+    observed_at = models.DateTimeField(default=timezone.now)
+
+
+class GpoImportJob(models.Model):
+    """Immutable single-component pilot intent and durable mutation fence."""
+
+    id = models.UUIDField(primary_key=True, editable=False)
+    tenant = models.ForeignKey('tenancy.Tenant', on_delete=models.CASCADE)
+    domain = models.ForeignKey(DomainSecuritySettings, on_delete=models.PROTECT)
+    enrollment = models.ForeignKey('agent_pki.AgentEnrollment', on_delete=models.PROTECT)
+    system = models.ForeignKey('discovery.WindowsServer', on_delete=models.PROTECT)
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    domain_guid = models.CharField(max_length=36)
+    request_sha256 = models.CharField(max_length=64)
+    input_digest = models.CharField(max_length=64)
+    assignment = models.JSONField()
+    pilot_display_name = models.CharField(max_length=240)
+    pilot_name_key = models.CharField(max_length=240)
+    status = models.CharField(max_length=32, default='queued')
+    error_code = models.CharField(max_length=48, blank=True)
+    requested_at = models.DateTimeField(default=timezone.now)
+    expires_at = models.DateTimeField()
+    claimed_at = models.DateTimeField(null=True)
+    completed_at = models.DateTimeField(null=True)
+    gpo_guid = models.CharField(max_length=36, blank=True)
+    result_digest = models.CharField(max_length=64, blank=True)
+    result_evidence = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ('-requested_at', '-id')
+        constraints = [
+            models.UniqueConstraint(fields=('tenant', 'domain_guid'), condition=models.Q(status__in=(
+                'queued', 'awaiting_approval', 'running', 'reconciliation_required',
+            )), name='security_gpo_domain_fence'),
+            models.UniqueConstraint(fields=('tenant', 'domain_guid', 'pilot_name_key'), name='security_gpo_pilot_identity'),
+        ]
+        indexes = [models.Index(fields=('enrollment', 'status'), name='security_gpo_agent_status')]
 
 
 class BaselinePreference(models.Model):

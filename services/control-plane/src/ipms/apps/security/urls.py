@@ -6,8 +6,13 @@ from django.urls import path
 from .views import BaselineListView, BaselineSystemListView
 from .administration import BaselineSettingsView, BaselineSettingView
 from .scan_views import BaselineScansView, BaselineFindingsView
+from .domains import DomainSettingsView, DomainSettingView
+from .gpo_views import DomainGpoImportsView
 
 urlpatterns = [
+    path('domain-settings/', DomainSettingsView.as_view(), name='security-domain-settings'),
+    path('domain-settings/<uuid:domain_id>/', DomainSettingView.as_view(), name='security-domain-setting'),
+    path('domain-settings/<uuid:domain_id>/gpo-imports/', DomainGpoImportsView.as_view(), name='security-domain-gpo-imports'),
     path("baseline-settings/", BaselineSettingsView.as_view(), name="security-baseline-settings"),
     path("baseline-settings/<slug:baseline_id>/", BaselineSettingView.as_view(), name="security-baseline-setting"),
     path("baselines/", BaselineListView.as_view(), name="security-baselines"),

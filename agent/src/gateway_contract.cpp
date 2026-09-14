@@ -1,3 +1,7 @@
+// File Name: gateway_contract.cpp
+// Version: v0.2.32 | Created: 2026-08-31 | Last Modified: 2026-09-14
+// Author: Alice Endelgard | Organization: Alvestrasza Corporation
+// Description: Reject gateway directions and message types outside compiled Agent capabilities.
 #include "ipms/agent/gateway_contract.hpp"
 
 namespace ipms::agent {
@@ -17,6 +21,7 @@ bool is_allowed_server_message(ServerMessageType message_type) {
     case ServerMessageType::hyperv_console_session:
     case ServerMessageType::hyperv_management_operation:
     case ServerMessageType::security_baseline_scan:
+    case ServerMessageType::security_gpo_pilot:
       return true;
   }
   return false;

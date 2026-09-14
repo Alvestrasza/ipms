@@ -7,7 +7,9 @@ Description: Modular security baseline catalog, evidence and future enforcement 
 # ADR-0015: Security baseline catalog and evidence
 
 Status: accepted; 0.2.45 extends the verified 0.2.44 foundation with tenant
-visibility and bounded native read-only evidence. Remediation remains future work.
+visibility and bounded native read-only evidence. Portal 0.2.48 adds domain plans
+and disabled/unlinked pilots under [ADR-0016](ADR-0016-TIER-DOMAIN-GPO-PILOTS.md).
+Effective policy activation and remediation remain future work.
 
 ## Context
 

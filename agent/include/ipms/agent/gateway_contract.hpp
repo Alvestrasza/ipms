@@ -1,3 +1,7 @@
+// File Name: gateway_contract.hpp
+// Version: v0.2.32 | Created: 2026-08-31 | Last Modified: 2026-09-14
+// Author: Alice Endelgard | Organization: Alvestrasza Corporation
+// Description: Fixed Agent gateway directions and purpose-bound server message types.
 #pragma once
 
 #include <cstdint>
@@ -21,6 +25,7 @@ enum class ServerMessageType {
   hyperv_console_session,
   hyperv_management_operation,
   security_baseline_scan,
+  security_gpo_pilot,
 };
 
 struct AgentGatewayConfig {

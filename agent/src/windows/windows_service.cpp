@@ -1,3 +1,7 @@
+// File Name: windows_service.cpp
+// Version: v0.2.32 | Created: 2026-08-31 | Last Modified: 2026-09-14
+// Author: Alice Endelgard | Organization: Alvestrasza Corporation
+// Description: Independent service workers preserve heartbeat during bounded management operations.
 #include <windows.h>
 
 #include "ipms/agent/windows_core_pack.hpp"
@@ -74,6 +78,12 @@ void WINAPI service_main(DWORD, LPWSTR*) {
           return cancelled() || WaitForSingleObject(stop_event, 0) == WAIT_OBJECT_0;
         });
       });
+  ipms::agent::periodic_worker gpo(std::chrono::seconds(15),
+      [](const auto& cancelled) {
+        ipms::agent::windows::run_gpo_cycle([&] {
+          return cancelled() || WaitForSingleObject(stop_event, 0) == WAIT_OBJECT_0;
+        });
+      });
   do {
     if (WaitForSingleObject(stop_event, 0) != WAIT_TIMEOUT) break;
     const ULONGLONG now = GetTickCount64();
@@ -99,6 +109,7 @@ void WINAPI service_main(DWORD, LPWSTR*) {
   heartbeat.stop();
   management.stop();
   security.stop();
+  gpo.stop();
   console_frames.stop();
   console_inputs.stop();
   ipms::agent::windows::stop_native_console_identity_validation();

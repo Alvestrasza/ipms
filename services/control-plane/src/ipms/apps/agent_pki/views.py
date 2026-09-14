@@ -515,6 +515,9 @@ class AgentAdministrationDetailView(APIView):
             )
             if active_management_jobs(request.tenant.pk, enrollment_id=enrollment.pk).exists():
                 raise PublicApiError("agent_removal_operation_pending")
+            from ipms.apps.security.gpo_jobs import active_gpo_jobs
+            if active_gpo_jobs(request.tenant.pk, enrollment_id=enrollment.pk).exists():
+                raise PublicApiError("agent_removal_operation_pending")
             server = WindowsServer.objects.select_for_update().filter(
                 tenant=request.tenant,
                 inventory_source=WindowsServer.InventorySource.AGENT,

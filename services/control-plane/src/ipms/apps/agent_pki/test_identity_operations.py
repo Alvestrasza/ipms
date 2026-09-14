@@ -161,6 +161,7 @@ class IdentityOperationWithdrawalTests(TestCase):
                 "console_sessions": 0,
                 "console_inputs": 0,
                 "management_jobs": 0,
+                "gpo_imports": 0,
             },
         )
         self.assertFalse(any(self.withdraw().values()))

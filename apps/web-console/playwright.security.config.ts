@@ -8,7 +8,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests",
-  testMatch: "security-baselines.spec.ts",
+  testMatch: ["security-baselines.spec.ts", "domain-security.spec.ts"],
   timeout: 60_000,
   workers: 1,
   retries: 0,

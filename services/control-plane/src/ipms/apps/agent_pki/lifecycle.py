@@ -67,6 +67,9 @@ def create_lifecycle_job(*, enrollment, action: str, actor: str) -> AgentLifecyc
     from .hyperv_management import active_management_jobs
     if active_management_jobs(enrollment.tenant_id, enrollment_id=enrollment.id).exists():
         raise ValidationError("A Hyper-V management operation must finish before Agent maintenance.")
+    from ipms.apps.security.gpo_jobs import active_gpo_jobs
+    if active_gpo_jobs(enrollment.tenant_id, enrollment_id=enrollment.id).exists():
+        raise ValidationError("A GPO pilot operation must settle before Agent maintenance.")
     if enrollment.status != AgentEnrollment.Status.ACTIVE:
         raise ValidationError("The Agent enrollment is not active.")
     if action not in AgentLifecycleJob.Action.values:
@@ -93,6 +96,9 @@ def create_lifecycle_job(*, enrollment, action: str, actor: str) -> AgentLifecyc
 @transaction.atomic
 def offer_lifecycle_job(enrollment) -> dict | None:
     Tenant.objects.select_for_update(no_key=True).get(pk=enrollment.tenant_id)
+    from ipms.apps.security.gpo_jobs import active_gpo_jobs
+    if active_gpo_jobs(enrollment.tenant_id, enrollment_id=enrollment.id).exists():
+        return None
     job = (
         AgentLifecycleJob.objects.select_for_update()
         .filter(

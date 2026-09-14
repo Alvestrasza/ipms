@@ -9,15 +9,23 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-Application `0.2.45`, verified on the DEV appliance, extends **Security → Baseline** with reversible
+Candidate `0.2.48` adds tenant domain plans with multiple Tier 0/1/2 OU mappings,
+configurable GPO naming and ordered baseline composition. Windows Agent `0.2.32`
+adds independently approved native import into new disabled, unlinked pilot
+GPOs. Saving or rearranging settings never applies policies. See
+[domain plans and pilot workflow](docs/operations/SECURITY-GPO-PILOTS.md) and
+[epic #34](https://github.com/Alvestrasza/ipms/issues/34). This candidate has not
+been deployed or accepted against a live domain.
+
+Application `0.2.45` extended **Security → Baseline** with reversible
 tenant baseline visibility settings, read-only scan requests and per-control
 findings. Windows Agent `0.2.31` is available as an update and reads compiled Microsoft controls
 without applying policies. Eight baseline packages cover clients and servers;
 compliance and assessment coverage remain separate. Incomplete evidence never
-passes a baseline. The existing Windows fleet still requires the Agent update
-before actual service-context scan acceptance; see
+passes a baseline. The `0.2.47` gateway correction subsequently verified server
+scan delivery; complete baseline coverage remains separate. See
 [Security baselines](docs/operations/SECURITY-BASELINES.md) and
-[scan verification](docs/operations/SECURITY-SCAN-0245-VERIFICATION.md).
+[gateway verification](docs/operations/SECURITY-GATEWAY-0247-VERIFICATION.md).
 
 Application `0.2.43` introduced WSUS catalog reception and server/DC
 comparison, including a download-only WSUS with no registered clients.

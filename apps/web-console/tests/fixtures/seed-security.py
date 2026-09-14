@@ -17,7 +17,7 @@ from ipms.apps.agent_pki.models import AgentEnrollment
 from ipms.apps.discovery.models import WindowsServer
 from ipms.apps.security.catalog import CATALOG_REVISION
 from ipms.apps.security.content import MANIFESTS
-from ipms.apps.security.models import BaselineAssessment
+from ipms.apps.security.models import BaselineAssessment, GpoExecutorReport
 from ipms.apps.tenancy.models import Tenant
 
 tenant = Tenant.objects.get(slug="console-e2e")
@@ -77,4 +77,23 @@ system("baseline-unmatched", role="client", build="28000", os_name="Microsoft Wi
 system("baseline-unclassified", role="unknown", build="", os_name="")
 other = Tenant.objects.get(slug="service-accounts-e2e")
 result(system("hidden-other-tenant", owner=other))
+# This synthetic executor reports no known OS/build, keeping the existing
+# baseline coverage fixture unchanged. No real Agent or AD operation runs.
+gpo_dc = system("gpo-ui-dc", role="domain-controller", build="", os_name="")
+gpo_dc.domain_name = "gpo-ui.example.invalid"
+gpo_dc.fqdn = "gpo-ui-dc.gpo-ui.example.invalid"
+gpo_dc.agent_version = "0.2.32"
+gpo_dc.save()
+gpo_agent = AgentEnrollment.objects.get(device_uri=gpo_dc.source_id)
+gpo_agent.last_heartbeat_at = timezone.now()
+gpo_agent.certificate_fingerprint_sha256 = "a" * 64
+gpo_agent.certificate_not_before = timezone.now() - timedelta(days=1)
+gpo_agent.certificate_not_after = timezone.now() + timedelta(days=1)
+gpo_agent.save()
+GpoExecutorReport.objects.create(
+    enrollment=gpo_agent, agent_version="0.2.32", domain_dns_name=gpo_dc.domain_name,
+    domain_guid="e99d4445-1d3b-4a30-92ca-77c04e725eab", forest_dns_name=gpo_dc.domain_name,
+    dc_fqdn=gpo_dc.fqdn, role="writable-domain-controller", gpmc_available=True,
+    result_code="ready_for_approval", observed_at=timezone.now(),
+)
 print("Synthetic security fixture ready: 25% compliance / 50% coverage for Server 2025.")

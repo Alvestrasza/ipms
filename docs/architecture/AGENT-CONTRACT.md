@@ -4,6 +4,13 @@
 
 This contract defines the boundary between IPMS Control Plane and an enrolled IPMS Agent. It supplements the read-only connector contract; it does not turn agents into connector endpoints or generic management channels.
 
+Windows Agent 0.2.32 adds the separate typed GPO pilot channel described in
+[ADR-0016](ADR-0016-TIER-DOMAIN-GPO-PILOTS.md). An exact locally approved job can
+create one new disabled, unlinked GPO on its selected writable domain controller.
+This narrow management capability does not accept arbitrary scripts, paths,
+links, destination GUIDs or commands, and does not change read-only scanner
+semantics. Native/domain acceptance is separate from source and build checks.
+
 ## Device identity and transport
 
 - Each agent has a unique device identity, tenant association, and short-lived client certificate issued during a guided enrollment ceremony.

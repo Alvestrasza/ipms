@@ -1,3 +1,7 @@
+// File Name: windows_transport.cpp
+// Version: v0.2.32 | Created: 2026-08-31 | Last Modified: 2026-09-14
+// Author: Alice Endelgard | Organization: Alvestrasza Corporation
+// Description: Authenticated fixed Agent channels with durable, exact-job GPO execution grants.
 #include "ipms/agent/windows_transport.hpp"
 
 #include "ipms/agent/configuration.hpp"
@@ -12,6 +16,7 @@
 #include "ipms/agent/windows_telemetry.hpp"
 #include "ipms/agent/windows_software_pack.hpp"
 #include "ipms/agent/windows_security_scan.hpp"
+#include "ipms/agent/windows_gpo_management.hpp"
 
 #include <windows.h>
 #include <bcrypt.h>
@@ -41,11 +46,12 @@
 namespace {
 using Microsoft::WRL::ComPtr;
 constexpr std::size_t k_max_document_bytes = 65'536;
-constexpr wchar_t k_agent_version[] = L"0.2.31";
+constexpr wchar_t k_agent_version[] = L"0.2.32";
 constexpr std::size_t k_max_artifact_bytes = 64 * 1024 * 1024;
 std::mutex identity_mutex;
 std::mutex management_cycle_mutex;
 std::mutex security_cycle_mutex;
+std::mutex gpo_cycle_mutex;
 std::atomic<ipms::agent::native_identity_worker*> active_native_validation{nullptr};
 
 ipms::agent::native_identity_worker& native_identity_validation() {
@@ -460,7 +466,7 @@ struct http_transport {
 http_response post_json(const std::wstring& hostname, std::uint16_t port, const std::wstring& path,
                         const std::string& body, const std::string* pin, PCCERT_CONTEXT client_certificate,
                         bool input_channel = false, const std::function<bool()>& cancelled = {}) {
-  const bool security_channel = path == L"/v1/security-scan";
+  const bool security_channel = path == L"/v1/security-scan" || path == L"/v1/security-gpo";
   const auto security_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
   const auto check_security_deadline = [&] {
     if (security_channel && ((cancelled && cancelled()) || std::chrono::steady_clock::now() >= security_deadline))
@@ -485,7 +491,7 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
     ~failure_reset() { if (cache && !succeeded) cache->reset(); }
   } guard{reusable ? &console_transport : nullptr};
   if (!transport->session) {
-    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.31", WINHTTP_ACCESS_TYPE_NO_PROXY,
+    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.32", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
     if (!transport->session) throw std::runtime_error("The Agent HTTP session could not be created.");
     if (input_channel || security_channel || path == L"/v1/heartbeat" || path == L"/v1/hyperv-management") {
@@ -570,17 +576,23 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
   return {status, response};
 }
 
-http_response post_binary(const state& identity, const std::string& body, PCCERT_CONTEXT certificate) {
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.31", WINHTTP_ACCESS_TYPE_NO_PROXY,
+http_response post_binary(const state& identity, const std::string& body, PCCERT_CONTEXT certificate,
+    bool gpo_artifact = false, const std::function<bool()>& cancelled = {}) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+  const auto check_deadline = [&] { if (gpo_artifact && ((cancelled && cancelled()) || std::chrono::steady_clock::now() >= deadline))
+    throw std::runtime_error("The GPO artifact transfer stopped."); };
+  check_deadline();
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.32", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent artifact session could not be created.");
-  WinHttpSetTimeouts(session.get(), 10'000, 10'000, 60'000, 60'000);
+  if (gpo_artifact) WinHttpSetTimeouts(session.get(), 2'000, 2'000, 2'000, 2'000);
+  else WinHttpSetTimeouts(session.get(), 10'000, 10'000, 60'000, 60'000);
   DWORD protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
   if (!WinHttpSetOption(session.get(), WINHTTP_OPTION_SECURE_PROTOCOLS, &protocols, sizeof(protocols)))
     throw std::runtime_error("TLS 1.3 could not be required.");
   internet_handle connection(WinHttpConnect(session.get(), identity.gateway.c_str(), identity.port, 0));
   if (!connection) throw std::runtime_error("The Agent artifact connection could not be created.");
-  internet_handle request(WinHttpOpenRequest(connection.get(), L"POST", L"/v1/lifecycle-artifact", nullptr,
+  internet_handle request(WinHttpOpenRequest(connection.get(), L"POST", gpo_artifact ? L"/v1/security-gpo-artifact" : L"/v1/lifecycle-artifact", nullptr,
                                              WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE));
   if (!request) throw std::runtime_error("The Agent artifact request could not be created.");
   DWORD redirect = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
@@ -596,16 +608,19 @@ http_response post_binary(const state& identity, const std::string& body, PCCERT
   if (!WinHttpWriteData(request.get(), body.data(), static_cast<DWORD>(body.size()), &written) || written != body.size())
     throw std::runtime_error("The Agent artifact request body could not be sent.");
   if (!WinHttpReceiveResponse(request.get(), nullptr)) throw std::runtime_error("The Agent artifact response could not be received.");
+  check_deadline();
   DWORD status = 0; DWORD status_size = sizeof(status);
   if (!WinHttpQueryHeaders(request.get(), WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
                            WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size, WINHTTP_NO_HEADER_INDEX))
     throw std::runtime_error("The Agent artifact response status is unavailable.");
   std::string response;
   for (;;) {
+    check_deadline();
     DWORD available = 0;
     if (!WinHttpQueryDataAvailable(request.get(), &available)) throw std::runtime_error("The Agent artifact response is invalid.");
     if (available == 0) break;
-    if (response.size() + available > k_max_artifact_bytes) throw std::runtime_error("The Agent artifact is too large.");
+    const auto maximum = gpo_artifact ? ipms::agent::gpo::maximum_artifact_bytes : k_max_artifact_bytes;
+    if (response.size() + available > maximum) throw std::runtime_error("The Agent artifact is too large.");
     const auto offset = response.size(); response.resize(offset + available);
     DWORD read = 0;
     if (!WinHttpReadData(request.get(), response.data() + offset, available, &read)) throw std::runtime_error("The Agent artifact response is invalid.");
@@ -1406,6 +1421,128 @@ TransportResult run_management_cycle(const std::function<bool()>& cancelled) {
   } catch (...) {
     // Do not disclose raw provider object paths or remote exception text.
     return {false, L"The management cycle failed; its journal is retained."};
+  }
+}
+
+TransportResult run_gpo_cycle(const std::function<bool()>& cancelled) {
+  namespace json = ipms::agent::management_json;
+  std::unique_lock mutex(gpo_cycle_mutex, std::try_to_lock);
+  if (!mutex.owns_lock()) return {true, L"GPO worker is already active."};
+  const auto stopping = [&] { return cancelled && cancelled(); };
+  try {
+    if (stopping()) return {true, L"GPO worker stopped."};
+    const auto state_path = data_directory() / L"agent-state.json";
+    if (!std::filesystem::is_regular_file(state_path)) return {true, L"GPO worker awaits enrollment."};
+    const state identity = load_state(state_path);
+    cert_context certificate(find_agent_certificate(identity.certificate_sha256));
+    if (!certificate) return {true, L"GPO worker awaits credentials."};
+    const auto same_identity = [&] {
+      const auto current = load_state(state_path);
+      return current.device_uri == identity.device_uri && current.gateway == identity.gateway &&
+          current.port == identity.port && current.certificate_sha256 == identity.certificate_sha256;
+    };
+    const auto close_lock = [](void* value) { if (value) CloseHandle(value); };
+    std::unique_ptr<void, decltype(close_lock)> local_lock(acquire_gpo_cycle_lock(), close_lock);
+    if (!local_lock) return {true, L"Another local GPO operation is active."};
+    const auto envelope = [&](json::object message) {
+      message.emplace("type", "security_gpo"); message.emplace("schema_version", "1");
+      message.emplace("device_uri", identity.device_uri);
+      message.emplace("correlation_id", "gpo-" + std::to_string(GetTickCount64()));
+      return message;
+    };
+    const auto exchange = [&](json::object message) {
+      if (stopping() || !same_identity()) throw gpo::operation_error("gpo_enrollment_changed");
+      const auto document = envelope(std::move(message));
+      const auto response = post_json(identity.gateway, identity.port, L"/v1/security-gpo", json::serialize(document),
+          nullptr, certificate.get(), false, stopping);
+      if (response.status != 200) throw std::runtime_error("The GPO message was rejected.");
+      const auto body = json::parse(response.body).as<json::object>();
+      if (body.at("status").as<std::string>() != "accepted" || body.at("correlation_id") != document.at("correlation_id"))
+        throw std::runtime_error("The GPO reply binding is invalid.");
+      return body;
+    };
+    auto record = load_gpo_journal();
+    const auto report = [&](const gpo::journal& j, json::object message) {
+      if (!gpo::valid_result(message)) throw gpo::operation_error("gpo_journal_invalid");
+      message.emplace("action", "result"); message.emplace("job_id", j.assignment.text("job_id"));
+      message.emplace("input_digest", j.assignment.text("input_digest"));
+      exchange(std::move(message));
+    };
+    if (record && record->device_uri != identity.device_uri) throw gpo::operation_error("gpo_enrollment_changed");
+    if (record && record->state == gpo::phase::terminal) report(*record, record->result.as<json::object>());
+    if (record && record->state != gpo::phase::prepared && record->state != gpo::phase::terminal) {
+      if (record->state != gpo::phase::reconciliation) {
+        record->state = gpo::phase::reconciliation;
+        record->result = gpo::result("requires_reconciliation", "gpo_reconciliation_required", record->gpo_guid);
+        save_gpo_journal(*record);
+      }
+      report(*record, record->result.as<json::object>());
+      return {false, L"The previous GPO operation requires reconciliation."};
+    }
+    // Discovery is bounded in a separate process and remains available before
+    // local write approval, so the Portal can show actual eligible controllers.
+    const auto executor = probe_gpo_executor(stopping);
+    json::object request{{"action", record && record->state == gpo::phase::prepared ? "lookup" : "poll"},
+        {"agent_version", utf8(k_agent_version)}, {"executor", executor}};
+    if (record && record->state == gpo::phase::prepared) {
+      request.emplace("job_id", record->assignment.text("job_id"));
+      request.emplace("input_digest", record->assignment.text("input_digest"));
+    }
+    const auto response = exchange(std::move(request));
+    const auto& offered = response.at("gpo_job");
+    if (offered.get_if<std::nullptr_t>()) {
+      if (record && record->state == gpo::phase::prepared) {
+        record->state = gpo::phase::terminal; record->result = gpo::result("failed",
+            gpo::unexpired(record->assignment) ? "gpo_authority_expired" : "gpo_job_expired");
+        save_gpo_journal(*record); report(*record, record->result.as<json::object>());
+      }
+      return {true, L"No GPO pilot is pending."};
+    }
+    const auto assignment = gpo::parse_job(offered);
+    if (record && record->state == gpo::phase::prepared && record->assignment != assignment)
+      throw gpo::operation_error("gpo_journal_invalid");
+    if (!record || record->assignment != assignment) {
+      record = gpo::journal{assignment, identity.device_uri}; save_gpo_journal(*record);
+    }
+    if (record->state == gpo::phase::terminal) return {true, L"The GPO result was already recorded."};
+    auto fail_preflight = [&](const char* code) {
+      record->state = gpo::phase::terminal; record->result = gpo::result("failed", code);
+      save_gpo_journal(*record); report(*record, record->result.as<json::object>());
+    };
+    if (!gpo::unexpired(assignment)) { fail_preflight("gpo_job_expired"); return {false, L"The GPO job expired."}; }
+    if (!gpo::component(assignment)) { fail_preflight("gpo_unsupported_component"); return {false, L"The GPO component is unsupported."}; }
+    if (!gpo::executor_matches(assignment, executor)) {
+      fail_preflight("gpo_identity_mismatch"); return {false, L"The GPO controller identity changed."};
+    }
+    if (!has_gpo_local_approval(assignment, identity.device_uri)) {
+      report(*record, gpo::result("awaiting_local_approval", "gpo_local_approval_required"));
+      return {true, L"The exact GPO pilot requires local administrator approval."};
+    }
+    const auto artifact_request = envelope({{"action", "artifact"}, {"job_id", assignment.text("job_id")},
+        {"input_digest", assignment.text("input_digest")}});
+    const auto artifact = post_binary(identity, json::serialize(artifact_request), certificate.get(), true, stopping);
+    if (artifact.status != 200) throw gpo::operation_error("gpo_artifact_invalid");
+    save_gpo_artifact(assignment, artifact.body);
+    if (stopping() || !same_identity() || !has_gpo_local_approval(assignment, identity.device_uri))
+      return {true, L"The GPO operation stopped before claiming execution."};
+    // Fence BEFORE requesting the one-shot grant: a lost reply cannot result in
+    // a second claim or an unrecorded repeat after service/process restart.
+    record->state = gpo::phase::granted; record->grant_deadline_tick = 0; save_gpo_journal(*record);
+    const auto claim_started = GetTickCount64();
+    const auto claim = exchange({{"action", "claim"}, {"job_id", assignment.text("job_id")},
+        {"input_digest", assignment.text("input_digest")}}).at("gpo_claim").as<json::object>();
+    if (!gpo::record_claim(*record, claim, claim_started + 15'000, save_gpo_journal)) {
+      report(*record, record->result.as<json::object>());
+      return {false, record->state == gpo::phase::terminal ? L"The GPO job was cancelled before execution." :
+          L"The GPO execution claim requires reconciliation."};
+    }
+    if (stopping() || !same_identity()) return {false, L"The GPO grant was fenced before execution."};
+    const auto result = invoke_gpo_pilot_worker(stopping);
+    record = load_gpo_journal(); if (!record || record->assignment != assignment) throw gpo::operation_error("gpo_journal_invalid");
+    report(*record, result);
+    return {result.at("status").as<std::string>() == "staged", L"The GPO pilot worker finished; no policy link was created."};
+  } catch (...) {
+    return {false, L"The GPO cycle failed; its durable journal is retained."};
   }
 }
 

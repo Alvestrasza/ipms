@@ -1,11 +1,13 @@
 # File Name: gateway.py
-# Version: v0.2.47 | Last Modified: 2026-09-14
+# Version: v0.2.48 | Last Modified: 2026-09-14
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
 # Description: Minimal settings for authenticated native Agent gateway services.
 import os
 import re
 
 from django.core.exceptions import ImproperlyConfigured
+
+IPMS_SECURITY_GPO_ARTIFACT_DIR = os.environ.get('IPMS_SECURITY_GPO_ARTIFACT_DIR', '')
 
 
 def required_environment(name: str) -> str:

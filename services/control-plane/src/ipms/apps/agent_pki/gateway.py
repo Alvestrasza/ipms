@@ -146,6 +146,8 @@ def _parse_http_request(header: bytes) -> tuple[str, dict[str, str], int]:
         "/v1/hyperv-management",
         "/v1/hyperv-console",
         "/v1/security-scan",
+        "/v1/security-gpo",
+        "/v1/security-gpo-artifact",
     }:
         raise ValidationError("The Agent Gateway HTTP route is invalid.")
     headers: dict[str, str] = {}
@@ -335,7 +337,7 @@ async def _handle_http_connection(
         if path == "/v1/hyperv-console"
         else MAX_MESSAGE_BYTES,
     )
-    if path in {"/v1/hyperv-management", "/v1/security-scan"}:
+    if path in {"/v1/hyperv-management", "/v1/security-scan", "/v1/security-gpo", "/v1/security-gpo-artifact"}:
         document = _unique_management_json(body)
     if path == "/v1/enroll":
         if peer_certificate:
@@ -364,7 +366,9 @@ async def _handle_http_connection(
     enrollment = await database_call(
         validate_peer_certificate,
         peer_certificate,
-        allow_suspended_report=((path == "/v1/hyperv-management"
+        allow_suspended_report=((path == "/v1/security-gpo"
+                                 and document.get("type") == "security_gpo"
+                                 and document.get("action") in ("poll", "lookup", "result")) or (path == "/v1/hyperv-management"
                                  and document.get("type") == "hyperv_management"
                                  and document.get("action") in ("poll", "lookup", "result")) or (path, document.get("type"))
         in {
@@ -374,6 +378,16 @@ async def _handle_http_connection(
     )
     if document.get("device_uri") != enrollment.device_uri:
         raise ValidationError("The Agent message identity is invalid.")
+    if path in {"/v1/security-gpo", "/v1/security-gpo-artifact"}:
+        from ipms.apps.security.gpo_jobs import security_gpo_exchange
+        response = await _database_call_async(
+            security_gpo_exchange, enrollment, document, artifact=path.endswith('-artifact'),
+        )
+        if path.endswith('-artifact'):
+            await _http_binary_reply(writer, response[0], response[1])
+        else:
+            await _http_reply(writer, 200, response)
+        return
     if path == "/v1/security-scan":
         from ipms.apps.security.scans import security_exchange
         response = await _database_call_async(security_exchange, enrollment, document)

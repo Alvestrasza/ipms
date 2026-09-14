@@ -6,8 +6,12 @@ Description: Baseline catalog scope, percentages, source evidence and rollout ac
 -->
 # Security baselines
 
-DEV-verified release: IPMS **0.2.45**; Windows Agent **0.2.31** is available for
-explicit update. Actual service-context/fleet scanning acceptance remains open.
+The read-only foundation shipped in IPMS **0.2.45** with Windows Agent **0.2.31**.
+The **0.2.47** gateway correction verified server scan delivery; see the dated
+[acceptance record](SECURITY-GATEWAY-0247-VERIFICATION.md). Complete control
+coverage remains separate. Candidate **0.2.48** adds
+[domain plans and disabled/unlinked GPO pilots](SECURITY-GPO-PILOTS.md), with
+separate implementation and live domain acceptance boundaries.
 Open **Security → Baseline** at
 `/[locale]/security/baseline` as an authorized tenant reader or administrator.
 The page supports English/German, server/client filters, matching-system

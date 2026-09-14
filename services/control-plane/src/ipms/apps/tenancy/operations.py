@@ -134,6 +134,13 @@ def withdraw_identity_operations(user, *, reason):
         withdraw_management_jobs(tenant_id=tenant_id, actor_id=user.pk, reason=reason)
         for tenant_id in sorted(tenant_ids)
     )
+    from ipms.apps.security.gpo_jobs import withdraw_gpo_jobs
+    from ipms.apps.security.models import GpoImportJob
+    gpo_tenant_ids = GpoImportJob.objects.filter(requested_by_id=user.pk).values_list("tenant_id", flat=True).distinct()
+    counts["gpo_imports"] = sum(
+        withdraw_gpo_jobs(tenant_id=tenant_id, actor_id=user.pk, reason=reason)
+        for tenant_id in sorted(gpo_tenant_ids)
+    )
     return counts
 
 
@@ -217,6 +224,8 @@ def apply_tenant_status_change(tenant, previous_status, actor):
         )
     from ipms.apps.agent_pki.hyperv_management import withdraw_management_jobs
     counts["management_jobs"] = withdraw_management_jobs(tenant_id=tenant.pk, reason="tenant_suspended")
+    from ipms.apps.security.gpo_jobs import withdraw_gpo_jobs
+    counts["gpo_imports"] = withdraw_gpo_jobs(tenant_id=tenant.pk, reason="tenant_suspended")
     AuditEvent.objects.create(
         tenant=tenant,
         actor=actor,

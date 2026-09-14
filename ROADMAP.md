@@ -36,7 +36,21 @@ Release `0.2.45`, verified on DEV, adds tenant visibility management, explicit r
 requests and per-control findings. Windows Agent `0.2.31`, available for update, implements
 bounded native readers using pinned control definitions and authenticated
 observations. User, domain and unsupported checks remain unknown; policy
-deployment is still a future module.
+activation remains a future module. The 0.2.47 gateway correction verified
+server scan delivery while retaining unknown controls as unknown.
+
+Candidate 0.2.48 / Windows Agent 0.2.32 adds per-domain tier OU plans, GPO naming,
+drag-and-drop baseline composition and independently approved native import
+into disabled/unlinked pilots. It does not activate policies or establish
+cross-tier management isolation. The accepted production design keeps stable
+GUIDs and separate pilots; shared A templates generate separate concrete tier
+GPOs. See [domain pilot operation](docs/operations/SECURITY-GPO-PILOTS.md).
+
+The remaining work is tracked under [epic #34](https://github.com/Alvestrasza/ipms/issues/34):
+domain identity/OU verification #35, production naming/lifecycle #36,
+composition/conflicts #37, native pilot acceptance #38, connectivity/recovery
+#39, independent zone authority #40, AD user/group lifecycle #41, and reviewed
+promotion/Collections/effective-policy verification #42.
 
 Next increments:
 

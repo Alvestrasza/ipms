@@ -1,13 +1,13 @@
 # File Name: CMakeLists.txt
-# Version: v0.2.31
+# Version: v0.2.32
 # Created: 2026-08-31
 # Last Modified: 2026-09-14
 # Author: Alice Endelgard
 # Organization: Alvestrasza Corporation
-# Description: Native Agent build and contract tests, including bounded read-only security scans.
+# Description: Native Agent build with bounded scans and locally approved, unlinked GPO pilots.
 cmake_minimum_required(VERSION 3.24)
 
-project(ipms_agent VERSION 0.2.31 LANGUAGES CXX)
+project(ipms_agent VERSION 0.2.32 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,7 +20,7 @@ if(MSVC)
   add_compile_options(/EHsc)
 endif()
 
-add_library(ipms_agent_core STATIC src/configuration.cpp src/gateway_contract.cpp src/management_pack.cpp src/management_json.cpp src/hyperv_management_journal.cpp src/security_baseline.cpp)
+add_library(ipms_agent_core STATIC src/configuration.cpp src/gateway_contract.cpp src/management_pack.cpp src/management_json.cpp src/hyperv_management_journal.cpp src/security_baseline.cpp src/gpo_management.cpp)
 target_include_directories(ipms_agent_core PUBLIC include)
 target_compile_features(ipms_agent_core PUBLIC cxx_std_20)
 
@@ -37,6 +37,7 @@ if(WIN32)
   target_sources(ipms-agent PRIVATE src/windows/hyperv_management_operations.cpp src/windows/hyperv_management_settings.cpp)
   target_sources(ipms-agent PRIVATE src/windows/windows_update_evidence.cpp)
   target_sources(ipms-agent PRIVATE src/windows/windows_security_scan.cpp)
+  target_sources(ipms-agent PRIVATE src/windows/windows_gpo_management.cpp src/windows/windows_gpo_journal.cpp)
   target_link_libraries(ipms-agent PRIVATE advapi32 bcrypt crypt32 iphlpapi ncrypt ole32 oleaut32 shell32 wbemuuid windowscodecs winhttp ws2_32)
   target_link_libraries(ipms-agent PRIVATE wuguid netapi32)
   target_compile_definitions(ipms-agent PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
@@ -68,6 +69,9 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(ipms-agent-gpo-contract-tests tests/gpo_management_contract_tests.cpp)
+  target_link_libraries(ipms-agent-gpo-contract-tests PRIVATE ipms_agent_core)
+  add_test(NAME gpo-management-contract COMMAND ipms-agent-gpo-contract-tests)
   add_executable(ipms-agent-security-contract-tests tests/security_scan_contract_tests.cpp)
   target_link_libraries(ipms-agent-security-contract-tests PRIVATE ipms_agent_core)
   add_test(NAME security-scan-contract COMMAND ipms-agent-security-contract-tests)
@@ -108,6 +112,14 @@ if(BUILD_TESTING)
   endif()
   add_test(NAME native-console-guards COMMAND ipms-agent-native-console-tests)
   if(WIN32)
+    add_executable(ipms-agent-gpo-storage-tests tests/windows_gpo_storage_tests.cpp src/windows/windows_gpo_journal.cpp)
+    target_link_libraries(ipms-agent-gpo-storage-tests PRIVATE ipms_agent_core advapi32 shell32 ole32)
+    target_compile_definitions(ipms-agent-gpo-storage-tests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
+    target_compile_options(ipms-agent-gpo-storage-tests PRIVATE /W4 /permissive-)
+    add_test(NAME gpo-protected-storage COMMAND ipms-agent-gpo-storage-tests)
+    set_tests_properties(gpo-protected-storage PROPERTIES SKIP_RETURN_CODE 77)
+    add_test(NAME gpo-worker-rejects-missing-input COMMAND ipms-agent --gpo-worker)
+    set_tests_properties(gpo-worker-rejects-missing-input PROPERTIES WILL_FAIL TRUE)
     add_executable(ipms-agent-windows-security-scan-tests
       tests/windows_security_scan_tests.cpp src/windows/windows_security_scan.cpp)
     target_link_libraries(ipms-agent-windows-security-scan-tests PRIVATE ipms_agent_core advapi32 ole32 netapi32)

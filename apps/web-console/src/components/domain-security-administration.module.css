@@ -1,0 +1,324 @@
+/*
+ * File Name: domain-security-administration.module.css
+ * Version: v0.1.0 | Created: 2026-09-14 | Modified: 2026-09-14
+ * Author: Alice Endelgard | Organization: Alvestrasza Corporation
+ * Purpose: Keep tenant domain planning and pilot controls readable across viewport sizes.
+ */
+.headingText {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.content {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.panel {
+  min-width: 0;
+  padding: 22px;
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  background: var(--surface-panel);
+}
+.panel h2,
+.panel h3 {
+  margin: 0 0 14px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.panel h3 {
+  font-size: 0.87rem;
+}
+.header,
+.actions,
+.button,
+.primaryButton,
+.iconButton,
+.dragHandle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.header {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.header h2,
+.header h3 {
+  margin: 0;
+}
+.header strong,
+.header h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.actions {
+  flex-wrap: wrap;
+}
+.button,
+.primaryButton,
+.iconButton,
+.dragHandle {
+  justify-content: center;
+  width: fit-content;
+  min-height: 38px;
+  padding: 8px 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface-panel);
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.primaryButton {
+  border-color: var(--color-accent-blue);
+  color: var(--color-text-primary);
+}
+.button:hover:not(:disabled),
+.primaryButton:hover:not(:disabled),
+.iconButton:hover:not(:disabled),
+.domainButton:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--color-text-primary);
+}
+.content button:disabled,
+.content input:disabled,
+.content select:disabled,
+.content textarea:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.iconButton,
+.dragHandle {
+  width: 38px;
+  flex-shrink: 0;
+  padding: 6px;
+}
+.dragHandle {
+  border-color: transparent;
+  cursor: grab;
+}
+.dragHandle:active {
+  cursor: grabbing;
+}
+.hint {
+  margin: 10px 0;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.notice,
+.error,
+.success {
+  margin: 0;
+  padding: 15px 18px;
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--color-accent-blue);
+  border-radius: 4px;
+  background: var(--surface-panel-raised);
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+.error {
+  border-left-color: var(--color-critical);
+}
+.success {
+  border-left-color: var(--color-success);
+}
+.panel > .error,
+.panel > .success {
+  margin-top: 16px;
+}
+.domainList,
+.previews,
+.orderList,
+.jobList {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  margin: 14px 0 0;
+  list-style: none;
+}
+.domainList {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+}
+.domainButton {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface-panel-raised);
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.domainButton[aria-pressed="true"] {
+  border-color: var(--color-accent-blue);
+}
+.domainButton small,
+.layerLabel small {
+  color: var(--color-text-secondary);
+  font-size: 0.72rem;
+}
+.tierGrid,
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+.formGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.field {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  color: var(--color-text-primary);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+.field input,
+.field select,
+.field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface-panel-raised);
+  color: var(--color-text-primary);
+  font: inherit;
+}
+.field textarea {
+  min-height: 125px;
+  resize: vertical;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.badge {
+  display: inline-flex;
+  width: fit-content;
+  padding: 5px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--color-text-secondary);
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+.preview {
+  padding: 16px;
+  margin-top: 16px;
+  border: 1px solid var(--border-default);
+  border-radius: 5px;
+  background: var(--surface-panel-raised);
+}
+.previews li {
+  display: grid;
+  gap: 6px;
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+.previews strong {
+  color: var(--color-text-primary);
+}
+.orderList li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 5px;
+  background: var(--surface-panel-raised);
+}
+.position {
+  width: 22px;
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  text-align: center;
+}
+.layerLabel {
+  display: grid;
+  flex: 1;
+  gap: 6px;
+  min-width: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.importForm {
+  margin-top: 22px;
+}
+.jobs {
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid var(--border-default);
+}
+.jobList > li {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border-default);
+  border-radius: 5px;
+  font-size: 0.8rem;
+}
+.approval {
+  margin-top: 15px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-default);
+}
+.approval summary {
+  cursor: pointer;
+  color: var(--color-text-primary);
+}
+.approval pre {
+  max-height: 320px;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  background: var(--surface-panel-raised);
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.73rem;
+  line-height: 1.55;
+}
+@media (max-width: 1150px) {
+  .tierGrid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 700px) {
+  .panel {
+    padding: 16px;
+  }
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+  .orderList li {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .orderList .actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .orderList .layerLabel {
+    flex-basis: calc(100% - 86px);
+  }
+}
