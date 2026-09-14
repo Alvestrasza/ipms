@@ -392,14 +392,14 @@ django_read migrate --check
 [[ $(psql_read "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
     JOIN pg_roles r ON r.oid=c.relowner WHERE n.nspname='public' AND c.relkind='S'
     AND c.relname='updates_wsuscomputerreport_id_seq' AND r.rolname='ipms'
-    AND has_sequence_privilege('ipms',c.oid,'USAGE')") == 1 ]]
+    AND CASE WHEN c.relkind='S' THEN has_sequence_privilege('ipms',c.oid,'USAGE') ELSE false END") == 1 ]]
 [[ $(psql_read "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
     WHERE n.nspname='public' AND c.relkind IN ('r','p') AND c.relname LIKE 'updates\\_%' ESCAPE '\\'
     AND (has_table_privilege('ipms_console_broker',c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
     OR has_any_column_privilege('ipms_console_broker',c.oid,'SELECT,INSERT,UPDATE,REFERENCES'))") == 0 ]]
 [[ $(psql_read "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
     WHERE n.nspname='public' AND c.relkind='S' AND c.relname LIKE 'updates\\_%' ESCAPE '\\'
-    AND has_sequence_privilege('ipms_console_broker',c.oid,'USAGE,SELECT,UPDATE')") == 0 ]]
+    AND CASE WHEN c.relkind='S' THEN has_sequence_privilege('ipms_console_broker',c.oid,'USAGE,SELECT,UPDATE') ELSE false END") == 0 ]]
 [[ $(psql_read "SELECT count(*) FROM information_schema.columns WHERE table_schema='public'
     AND table_name='discovery_softwareinventorysnapshot' AND column_name='windows_update_evidence' AND data_type='jsonb'") == 1 ]]
 [[ $(psql_read "SELECT count(*) FROM information_schema.columns WHERE table_schema='public'
