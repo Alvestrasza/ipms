@@ -9,12 +9,13 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-Application candidate `0.2.45` extends **Security → Baseline** with reversible
+Application `0.2.45`, verified on the DEV appliance, extends **Security → Baseline** with reversible
 tenant baseline visibility settings, read-only scan requests and per-control
-findings. Windows Agent candidate `0.2.31` reads compiled Microsoft controls
+findings. Windows Agent `0.2.31` is available as an update and reads compiled Microsoft controls
 without applying policies. Eight baseline packages cover clients and servers;
 compliance and assessment coverage remain separate. Incomplete evidence never
-passes a baseline. The DEV appliance currently runs `0.2.44`; see
+passes a baseline. The existing Windows fleet still requires the Agent update
+before actual service-context scan acceptance; see
 [Security baselines](docs/operations/SECURITY-BASELINES.md) and
 [scan verification](docs/operations/SECURITY-SCAN-0245-VERIFICATION.md).
 

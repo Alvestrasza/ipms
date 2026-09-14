@@ -1,12 +1,14 @@
 <!--
 File Name: SECURITY-BASELINES.md
-Version: v0.2.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
+Version: v0.2.1 | Created: 2026-09-14 | Last Modified: 2026-09-14
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
 Description: Baseline catalog scope, percentages, source evidence and rollout acceptance.
 -->
 # Security baselines
 
-Candidate release: IPMS **0.2.45**, Windows Agent **0.2.31**. Open **Security → Baseline** at
+DEV-verified release: IPMS **0.2.45**; Windows Agent **0.2.31** is available for
+explicit update. Actual service-context/fleet scanning acceptance remains open.
+Open **Security → Baseline** at
 `/[locale]/security/baseline` as an authorized tenant reader or administrator.
 The page supports English/German, server/client filters, matching-system
 details, pagination, Microsoft source links, compliance and assessment coverage.
@@ -25,6 +27,11 @@ or show a baseline. All eight are visible by default. The preference is tenant
 specific and audited. Hiding removes the baseline from the Security catalog and
 detail pages; it preserves existing evidence and does not cancel an active scan.
 Administrators can always restore it from the administration page.
+
+The DEV tenant currently displays Server 2025 and Windows 11 24H2. The six
+baselines without matching inventory were hidden through the administration UI;
+their definitions remain available there. This is a tenant preference, not a
+change to the product's default catalog.
 
 Tenant administrators and operators can request a read-only scan from the
 selected baseline. Choose all matching systems (up to 250) or an individual
