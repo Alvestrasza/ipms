@@ -1,6 +1,6 @@
 <!--
 File Name: SECURITY-GPO-0248-VERIFICATION.md
-Version: v0.1.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
+Version: v0.1.1 | Created: 2026-09-14 | Last Modified: 2026-09-14
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
 Description: Source and isolated-test evidence for domain planning and native GPO pilots.
 -->
@@ -9,6 +9,10 @@ Description: Source and isolated-test evidence for domain planning and native GP
 Date: 2026-09-14. Candidate **Portal 0.2.48 / Windows Agent 0.2.32**.
 This records source implementation and isolated verification. It does not claim
 a deployed release or actual Active Directory acceptance.
+
+The later user-authorized software rollout is recorded separately in the
+[DEV deployment evidence](SECURITY-GPO-0248-DEPLOYMENT.md). Candidate-only
+statements below describe this earlier implementation step.
 
 ## Delivered behavior
 
