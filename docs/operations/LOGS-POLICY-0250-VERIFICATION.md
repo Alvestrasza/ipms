@@ -141,4 +141,25 @@ desktop and mobile screenshots were inspected. Evidence:
 `build/logs-0251-web-build.log`, `build/logs-0251-core.log`,
 `build/logs-0251-browser.log`,
 `build/security-baseline-e2e/2026-09-14T22-38-17-777Z`.
-Supported service-account and DEV acceptance remain pending for 0.2.51.
+The supported Python 3.14.4/PostgreSQL 18.6 suite then passed all 545 tests
+under the actual Control Plane OS account. The separate test database was
+removed and its cluster stopped. The protected acceptance receipt binds
+commit `1677447be40cbed815ed4d5b7b37c3947e4373f4`, the verified source archive,
+the test helper and a manifest of all 223 backend source files.
+
+Portal 0.2.51 was activated from that immutable commit. The 2026-09-14
+22:52 UTC read-only receipt confirms seven healthy services, unchanged
+Agent versions/process, all previous history counts and no active GPO job.
+Guarded activation preserved existing rows, schema, privileges, configuration
+and packages; recovery was not required. The previous release and protected
+backup remain available. Actual authenticated browser inspection confirmed
+0.2.51 and the long pilot name wrapping inside its column, with 16 pixels
+between the text bounds and each column edge.
+
+Private evidence: `build/logs-0251-stage.log`,
+`build/logs-0251-postgresql.log`,
+`build/logs-0251-supported-receipt.json.txt`,
+`build/logs-0251-supported-test-summary.log`,
+`build/logs-0251-activate.log`, `build/logs-0251-final-runtime.json.txt`.
+These commits and the DEV rollout do not constitute a GitHub push, tag or
+public release. The future GPO approval architecture remains under discussion.
