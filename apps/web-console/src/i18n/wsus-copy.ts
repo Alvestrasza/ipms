@@ -1,0 +1,331 @@
+/**
+ * File Name: wsus-copy.ts
+ * Version: v0.1.0
+ * Created: 2026-09-13 | Modified: 2026-09-13
+ * Author: Alice Endelgard | Organization: Alvestrasza Corporation
+ * Purpose: Localize the WSUS reception and comparison console.
+ */
+import type { Locale } from "./config";
+
+const english = {
+  title: "WSUS update comparison",
+  adminTitle: "WSUS server configuration",
+  adminNavigation: "WSUS server",
+  adminEyebrow: "Administration",
+  adminDescription:
+    "Associate each reception source with its WSUS server in the DMZ.",
+  configure: "Configure WSUS server",
+  openComparison: "Open server comparison",
+  configurationBoundary:
+    "Saving records the WSUS server association only. It does not connect to WSUS or start a synchronization. Update the exporter configuration to use this server and source.",
+  endpointSettings: "WSUS server settings",
+  host: "WSUS host",
+  port: "WSUS port",
+  ssl: "Use HTTPS (TLS)",
+  hostHint:
+    "DNS name, IPv4 or IPv6 address only. Enter the port separately; omit the URL scheme, path and IPv6 brackets.",
+  endpointNotConfigured: "No WSUS server specified yet.",
+  endpointChangeHint:
+    "Changing the host, port or HTTPS setting clears the current report from the comparison. A new report collected after the change is required; previous receipts remain in history. The source token stays unchanged.",
+  saveEndpoint: "Save WSUS server",
+  endpointSaved:
+    "WSUS server settings saved. If the connection settings changed, a new report must be collected and received before comparison resumes.",
+  endpointInvalid:
+    "Enter a WSUS host without a URL or credentials and a whole-number port from 1 to 65535.",
+  reloadConfiguration: "Reload source configuration",
+  navigation: "Windows updates",
+  eyebrow: "Update management",
+  description:
+    "Receive the DMZ WSUS catalog and compare it with local Agent evidence from the Windows servers in this tenant.",
+  boundary:
+    "Servers do not need to register with WSUS. The Agent provides local installed-update evidence; missing evidence does not prove that an update is required. Optional WSUS client reports are separate observations and apply only to the selected catalog scope. This view does not install updates or restart servers.",
+  sources: "WSUS sources",
+  source: "Source",
+  noSources: "No WSUS source has been configured for this tenant.",
+  name: "Source name",
+  scope: "Catalog scope",
+  scopeHint:
+    "Describe the products and classifications included in the WSUS catalog.",
+  create: "Create source",
+  enabled: "Reception enabled",
+  disabled: "Reception disabled",
+  enable: "Enable reception",
+  disable: "Disable reception",
+  disabledHint:
+    "Reception is disabled. Previously received reports are retained as historical data.",
+  rotate: "Replace reception token",
+  rotateHint:
+    "Replacing the token immediately invalidates the previous token. Update the WSUS exporter with the new token.",
+  confirmRotate: "Replace token now",
+  cancel: "Cancel",
+  token: "Reception token",
+  tokenHint:
+    "This token is shown once. Transfer it to the WSUS exporter through a secure channel before dismissing it.",
+  dismissToken: "Dismiss token",
+  sourceId: "Source ID",
+  reload: "Reload received data",
+  loading: "Loading received data…",
+  unavailable: "Received data could not be loaded. Reload to try again.",
+  actionFailed:
+    "The action could not be confirmed. Reload the sources to check their state before trying again. If a token response was lost, replace the token to obtain a new one.",
+  invalid: "Check the source name, catalog scope and WSUS server settings.",
+  permission: "Your tenant role does not permit this action.",
+  sessionExpired: "Your session has expired. Sign in again.",
+  saved: "Source configuration saved.",
+  noSnapshot: "No WSUS report has been received for this source.",
+  noServers: "No Windows servers are available in this tenant.",
+  snapshot: "Received WSUS report",
+  observed: "Collected (UTC)",
+  received: "Received (UTC)",
+  updates: "Catalog updates",
+  computers: "Reported computers",
+  catalogOnly:
+    "Catalog-only source: servers are compared using Agent evidence. WSUS client registration is not required.",
+  agentEvidence: "Agent catalog evidence",
+  agentEvidenceStatus: "Evidence status",
+  agentInstalled: "Installed catalog matches",
+  agentRevision: "Different installed revisions",
+  agentUnknown: "Without installation evidence",
+  evidenceStale: "Agent evidence is stale or undated.",
+  agentEvidenceStates: {
+    "not-reported": "Not reported",
+    collected: "Local evidence collected",
+    unavailable: "Unavailable",
+    "limit-exceeded": "Collection limit exceeded",
+  },
+  agentUpdateStates: {
+    installed: "Installed (Agent evidence)",
+    "revision-mismatch": "Different installed revision",
+    unknown: "No installation evidence",
+  },
+  unmatched: "Unmatched WSUS computers",
+  ambiguous: "Ambiguous WSUS computers",
+  comparison: "Server comparison",
+  hostname: "Server",
+  match: "Association",
+  wsusStatus: "Optional WSUS client status",
+  reported: "WSUS report (UTC)",
+  inventory: "IPMS inventory (UTC)",
+  inventoryStale: "Inventory is stale",
+  counts: "WSUS update counts",
+  agent: "Agent observation",
+  agentHint:
+    "The Agent scan may cover a different catalog or time window; counts are not a direct difference calculation.",
+  agentStale: "Agent scan is stale or its timestamp is missing.",
+  agentScanStates: {
+    current: "No updates reported at last scan",
+    "updates-available": "Updates reported at last scan",
+    unknown: "Unknown",
+    unavailable: "Unavailable",
+  },
+  scan: "Last scan (UTC)",
+  scanStatus: "Scan status",
+  availableUpdates: "Available updates",
+  reboot: "Reboot pending",
+  yes: "Yes",
+  no: "No",
+  unknown: "Not reported",
+  details: "View updates",
+  closeDetails: "Close update details",
+  serverUpdates: "Reported server updates",
+  noUpdates:
+    "No update states were reported for this server in the selected catalog.",
+  update: "Update",
+  products: "Products / classification",
+  severity: "Severity",
+  state: "Optional WSUS client state",
+  revision: "Revision",
+  previous: "Previous page",
+  next: "Next page",
+  page: "Page",
+  total: "Total",
+  matchStates: {
+    matched: "Matched by FQDN",
+    unmatched: "No match",
+    ambiguous: "Ambiguous",
+    "no-data": "No data",
+  },
+  wsusStates: {
+    "no-data": "No data",
+    unknown: "Unknown",
+    stale: "Stale",
+    missing: "Updates missing",
+    failed: "Installation failed",
+    "reboot-required": "Reboot required",
+    current: "Current in catalog scope",
+  },
+  updateStates: {
+    unknown: "Unknown",
+    not_applicable: "Not applicable",
+    not_installed: "Not installed",
+    downloaded: "Downloaded",
+    installed: "Installed",
+    failed: "Failed",
+    installed_pending_reboot: "Installed, reboot pending",
+  },
+};
+
+export type WsusCopy = typeof english;
+
+const german: WsusCopy = {
+  title: "WSUS-Updateabgleich",
+  adminTitle: "WSUS-Serverkonfiguration",
+  adminNavigation: "WSUS-Server",
+  adminEyebrow: "Administration",
+  adminDescription:
+    "Jede Empfangsquelle ihrem WSUS-Server in der DMZ zuordnen.",
+  configure: "WSUS-Server konfigurieren",
+  openComparison: "Serverabgleich öffnen",
+  configurationBoundary:
+    "Das Speichern hinterlegt ausschließlich die WSUS-Serverzuordnung. Es stellt keine Verbindung zum WSUS her und startet keine Synchronisierung. Die Exporterkonfiguration anschließend auf diesen Server und diese Quelle abstimmen.",
+  endpointSettings: "WSUS-Servereinstellungen",
+  host: "WSUS-Host",
+  port: "WSUS-Port",
+  ssl: "HTTPS (TLS) verwenden",
+  hostHint:
+    "Nur DNS-Name, IPv4- oder IPv6-Adresse. Port separat angeben; URL-Schema, Pfad und IPv6-Klammern weglassen.",
+  endpointNotConfigured: "Noch kein WSUS-Server angegeben.",
+  endpointChangeHint:
+    "Eine Änderung an Host, Port oder HTTPS entfernt den aktuellen Bericht aus dem Abgleich. Anschließend ist ein nach der Änderung erfasster neuer Bericht erforderlich; bisherige Empfangsnachweise bleiben in der Historie. Der Quellentoken bleibt unverändert.",
+  saveEndpoint: "WSUS-Server speichern",
+  endpointSaved:
+    "WSUS-Servereinstellungen gespeichert. Bei geänderten Verbindungseinstellungen muss vor dem nächsten Abgleich ein neuer Bericht erfasst und empfangen werden.",
+  endpointInvalid:
+    "Einen WSUS-Host ohne URL oder Zugangsdaten und einen ganzzahligen Port von 1 bis 65535 angeben.",
+  reloadConfiguration: "Quellenkonfiguration neu laden",
+  navigation: "Windows-Updates",
+  eyebrow: "Updateverwaltung",
+  description:
+    "Den Katalog des WSUS in der DMZ empfangen und mit lokalen Agent-Nachweisen der Windows-Server dieses Mandanten abgleichen.",
+  boundary:
+    "Server müssen sich nicht am WSUS registrieren. Der Agent liefert lokale Nachweise installierter Updates; fehlende Nachweise belegen keinen Updatebedarf. Optionale WSUS-Clientberichte sind separate Beobachtungen und gelten nur für den ausgewählten Katalogumfang. Diese Ansicht installiert keine Updates und startet keine Server neu.",
+  sources: "WSUS-Quellen",
+  source: "Quelle",
+  noSources: "Für diesen Mandanten ist noch keine WSUS-Quelle eingerichtet.",
+  name: "Quellenname",
+  scope: "Katalogumfang",
+  scopeHint:
+    "Produkte und Klassifizierungen beschreiben, die der WSUS-Katalog umfasst.",
+  create: "Quelle anlegen",
+  enabled: "Empfang aktiviert",
+  disabled: "Empfang deaktiviert",
+  enable: "Empfang aktivieren",
+  disable: "Empfang deaktivieren",
+  disabledHint:
+    "Der Empfang ist deaktiviert. Bisher empfangene Berichte bleiben als historische Daten erhalten.",
+  rotate: "Empfangstoken ersetzen",
+  rotateHint:
+    "Das Ersetzen macht den bisherigen Token sofort ungültig. Den neuen Token anschließend im WSUS-Exporter hinterlegen.",
+  confirmRotate: "Token jetzt ersetzen",
+  cancel: "Abbrechen",
+  token: "Empfangstoken",
+  tokenHint:
+    "Dieser Token wird einmalig angezeigt. Vor dem Ausblenden über einen sicheren Kanal an den WSUS-Exporter übertragen.",
+  dismissToken: "Token ausblenden",
+  sourceId: "Quellen-ID",
+  reload: "Empfangene Daten neu laden",
+  loading: "Empfangene Daten werden geladen…",
+  unavailable:
+    "Die empfangenen Daten konnten nicht geladen werden. Zum erneuten Versuch neu laden.",
+  actionFailed:
+    "Die Aktion konnte nicht bestätigt werden. Vor einem weiteren Versuch die Quellen neu laden und ihren Zustand prüfen. Ging die Token-Antwort verloren, den Token ersetzen, um einen neuen zu erhalten.",
+  invalid: "Quellennamen, Katalogumfang und WSUS-Servereinstellungen prüfen.",
+  permission: "Die Mandantenrolle erlaubt diese Aktion nicht.",
+  sessionExpired: "Die Sitzung ist abgelaufen. Bitte erneut anmelden.",
+  saved: "Quellenkonfiguration gespeichert.",
+  noSnapshot: "Für diese Quelle wurde noch kein WSUS-Bericht empfangen.",
+  noServers: "Für diesen Mandanten sind keine Windows-Server vorhanden.",
+  snapshot: "Empfangener WSUS-Bericht",
+  observed: "Erfasst (UTC)",
+  received: "Empfangen (UTC)",
+  updates: "Katalogupdates",
+  computers: "Gemeldete Computer",
+  catalogOnly:
+    "Reine Katalogquelle: Der Serverabgleich verwendet Agent-Nachweise. Eine WSUS-Clientregistrierung ist nicht erforderlich.",
+  agentEvidence: "Agent-Nachweise zum Katalog",
+  agentEvidenceStatus: "Nachweisstatus",
+  agentInstalled: "Installierte Katalogtreffer",
+  agentRevision: "Abweichende installierte Revisionen",
+  agentUnknown: "Ohne Installationsnachweis",
+  evidenceStale: "Agent-Nachweise sind veraltet oder undatiert.",
+  agentEvidenceStates: {
+    "not-reported": "Nicht gemeldet",
+    collected: "Lokale Nachweise erfasst",
+    unavailable: "Nicht verfügbar",
+    "limit-exceeded": "Erfassungsgrenze überschritten",
+  },
+  agentUpdateStates: {
+    installed: "Installiert (Agent-Nachweis)",
+    "revision-mismatch": "Abweichende installierte Revision",
+    unknown: "Kein Installationsnachweis",
+  },
+  unmatched: "Nicht zugeordnete WSUS-Computer",
+  ambiguous: "Mehrdeutige WSUS-Computer",
+  comparison: "Serverabgleich",
+  hostname: "Server",
+  match: "Zuordnung",
+  wsusStatus: "Optionaler WSUS-Clientstatus",
+  reported: "WSUS-Meldung (UTC)",
+  inventory: "IPMS-Inventar (UTC)",
+  inventoryStale: "Inventar ist veraltet",
+  counts: "WSUS-Updateanzahl",
+  agent: "Agent-Beobachtung",
+  agentHint:
+    "Der Agent-Scan kann einen anderen Katalog oder Zeitpunkt abdecken; die Anzahlen werden nicht als direkte Differenz berechnet.",
+  agentStale: "Der Agent-Scan ist veraltet oder sein Zeitstempel fehlt.",
+  agentScanStates: {
+    current: "Beim letzten Scan keine Updates gemeldet",
+    "updates-available": "Beim letzten Scan Updates gemeldet",
+    unknown: "Unbekannt",
+    unavailable: "Nicht verfügbar",
+  },
+  scan: "Letzter Scan (UTC)",
+  scanStatus: "Scanstatus",
+  availableUpdates: "Verfügbare Updates",
+  reboot: "Neustart ausstehend",
+  yes: "Ja",
+  no: "Nein",
+  unknown: "Nicht gemeldet",
+  details: "Updates anzeigen",
+  closeDetails: "Updatedetails schließen",
+  serverUpdates: "Gemeldete Serverupdates",
+  noUpdates:
+    "Für diesen Server wurden im ausgewählten Katalog keine Updatestatus gemeldet.",
+  update: "Update",
+  products: "Produkte / Klassifizierung",
+  severity: "Schweregrad",
+  state: "Optionaler WSUS-Clientstatus",
+  revision: "Revision",
+  previous: "Vorherige Seite",
+  next: "Nächste Seite",
+  page: "Seite",
+  total: "Gesamt",
+  matchStates: {
+    matched: "Über FQDN zugeordnet",
+    unmatched: "Keine Zuordnung",
+    ambiguous: "Mehrdeutig",
+    "no-data": "Keine Daten",
+  },
+  wsusStates: {
+    "no-data": "Keine Daten",
+    unknown: "Unbekannt",
+    stale: "Veraltet",
+    missing: "Updates fehlen",
+    failed: "Installation fehlgeschlagen",
+    "reboot-required": "Neustart erforderlich",
+    current: "Im Katalogumfang aktuell",
+  },
+  updateStates: {
+    unknown: "Unbekannt",
+    not_applicable: "Nicht anwendbar",
+    not_installed: "Nicht installiert",
+    downloaded: "Heruntergeladen",
+    installed: "Installiert",
+    failed: "Fehlgeschlagen",
+    installed_pending_reboot: "Installiert, Neustart ausstehend",
+  },
+};
+
+export function getWsusCopy(locale: Locale): WsusCopy {
+  return locale === "de" ? german : english;
+}

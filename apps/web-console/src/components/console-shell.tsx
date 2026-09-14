@@ -56,6 +56,7 @@ export async function ConsoleShell({
         activeWindowsRole={activeWindowsRole}
         activeWindowsClientFamily={activeWindowsClientFamily}
         canManageAgents={hasPermission(tenant, "agents.manage")}
+        canManageConnectors={hasPermission(tenant, "connectors.manage")}
         canViewUsers={hasPermission(tenant, "users.view")}
         canManageServiceAccounts={hasPermission(
           tenant,

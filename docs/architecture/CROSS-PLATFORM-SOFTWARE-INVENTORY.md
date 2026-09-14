@@ -1,3 +1,12 @@
+<!--
+File Name: CROSS-PLATFORM-SOFTWARE-INVENTORY.md
+Version: v0.2.0
+Created: 2026-09-04
+Last Modified: 2026-09-13
+Author: Alice Endelgard
+Organization: Alvestrasza Corporation
+Description: Native software inventory and versioned local Windows update evidence.
+-->
 # Cross-Platform Software and Update Inventory
 
 ## Scope
@@ -11,10 +20,23 @@ authenticated device identity over the Agent-initiated mTLS Gateway.
 
 The Agent reads machine-wide uninstall registration from the native 32-bit and
 64-bit registry views. It does not query `Win32_Product`, invoke Windows
-Installer, run PowerShell, or trigger an update scan. Windows Update history
+Installer, run PowerShell, or trigger an online update scan. Windows Update history
 registry timestamps are reported when present. Individual Windows package
 update state remains `unknown` until a bounded source can determine it without
-starting a scan or changing endpoint state.
+changing endpoint state.
+
+Windows Agent candidate 0.2.30 additionally queries the local WUA cache for
+installed software-update GUIDs and exact revisions. A fixed offline query runs
+inside an isolated child process with a 15-second deadline, a 12 KiB output
+limit and a maximum of 128 identities. Failed or oversized collections expose
+no partial positive results. The query does not register a WSUS client, change
+update sources or policies, or download/install updates. The observation time
+is the local cache query time, not a new scan against Microsoft.
+
+The [WSUS comparison](ADR-0014-WSUS-METADATA-RECEPTION.md) matches this evidence
+against the received catalog, including catalogs without WSUS computer reports.
+Absent identities remain unknown; they do not prove applicability or missing
+installation. This evidence does not change the existing package update state.
 
 ## Linux
 
@@ -26,9 +48,14 @@ sizes are bounded. Update installation is outside this read-only scope.
 
 ## Transport and persistence
 
-- Software documents use schema version 1.
+- Linux and older Windows software documents use schema version `"1"`.
+- Windows candidate 0.2.30 uses schema version `"2"`, adding the bounded
+  `windows_update_evidence` object documented in the
+  [reception protocol](../operations/WSUS-METADATA-RECEPTION.md). Deploy the
+  receiving Control Plane and additive database migration before this Agent.
 - Package arrays are divided into pages below the Gateway message limit.
 - All pages must use the same snapshot identifier and page count.
+- Schema-2 evidence must also agree across all pages of a snapshot.
 - Duplicate, missing, oversized, cross-tenant, and inconsistent inputs are
   rejected.
 - Incomplete snapshots are not presented as current inventory.

@@ -733,6 +733,7 @@ class SoftwareInventorySnapshot(models.Model):
     update_scan_status = models.CharField(max_length=32, default="unknown")
     last_update_scan_at = models.DateTimeField(blank=True, null=True)
     last_update_install_at = models.DateTimeField(blank=True, null=True)
+    windows_update_evidence = models.JSONField(default=dict, blank=True)
     package_count = models.PositiveIntegerField(default=0)
     updates_available = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)

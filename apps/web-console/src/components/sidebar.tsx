@@ -9,6 +9,7 @@ import {
   MonitorCog,
   Network,
   ScrollText,
+  Server,
   ServerCog,
   Settings,
   UsersRound,
@@ -18,6 +19,7 @@ import Link from "next/link";
 
 import { getDictionary } from "@/i18n/dictionaries";
 import { resolveLocale } from "@/i18n/server";
+import { getWsusCopy } from "@/i18n/wsus-copy";
 import type {
   WindowsClientFamilySummary,
   WindowsServerRoleSummary,
@@ -41,8 +43,10 @@ export type ActiveSection =
   | "virtual-linux"
   | "hyper-v-vms"
   | "network"
+  | "updates-wsus"
   | "admin-users"
   | "admin-service-accounts"
+  | "admin-wsus"
   | "admin-agents";
 
 export async function Sidebar({
@@ -50,6 +54,7 @@ export async function Sidebar({
   activeWindowsRole,
   activeWindowsClientFamily,
   canManageAgents,
+  canManageConnectors,
   canViewUsers,
   canManageServiceAccounts,
   windowsRoles,
@@ -59,6 +64,7 @@ export async function Sidebar({
   activeWindowsRole?: string;
   activeWindowsClientFamily?: string;
   canManageAgents: boolean;
+  canManageConnectors: boolean;
   canViewUsers: boolean;
   canManageServiceAccounts: boolean;
   windowsRoles: WindowsServerRoleSummary[];
@@ -91,13 +97,20 @@ export async function Sidebar({
     "admin-users",
     "admin-agents",
     "admin-service-accounts",
+    "admin-wsus",
   ].includes(activeSection);
-  const canAdmin = canManageAgents || canViewUsers || canManageServiceAccounts;
+  const canAdmin =
+    canManageAgents ||
+    canViewUsers ||
+    canManageServiceAccounts ||
+    canManageConnectors;
   const administrationHref = canViewUsers
     ? `/${locale}/administration/users`
     : canManageAgents
       ? `/${locale}/administration/infrastructure/agents`
-      : `/${locale}/administration/service-accounts`;
+      : canManageServiceAccounts
+        ? `/${locale}/administration/service-accounts`
+        : `/${locale}/administration/updates/wsus`;
   const navigation = [
     {
       label: dictionary.navigation.overview,
@@ -130,6 +143,13 @@ export async function Sidebar({
       icon: Network,
       href: `/${locale}/network`,
       section: "network" as const,
+      enabled: true as const,
+    },
+    {
+      label: getWsusCopy(locale).navigation,
+      icon: Server,
+      href: `/${locale}/updates/wsus`,
+      section: "updates-wsus" as const,
       enabled: true as const,
     },
     {
@@ -344,6 +364,20 @@ export async function Sidebar({
         )}
         {canAdmin && administrationExpanded ? (
           <ul className="nav-tree">
+            {canManageConnectors ? (
+              <li>
+                <Link
+                  className={`nav-subitem ${activeSection === "admin-wsus" ? "nav-subitem--active" : ""}`}
+                  href={`/${locale}/administration/updates/wsus` as Route}
+                  aria-current={
+                    activeSection === "admin-wsus" ? "page" : undefined
+                  }
+                >
+                  <Server aria-hidden="true" size={15} />
+                  <span>{getWsusCopy(locale).adminNavigation}</span>
+                </Link>
+              </li>
+            ) : null}
             {canViewUsers ? (
               <li>
                 <Link

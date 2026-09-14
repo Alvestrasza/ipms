@@ -1545,7 +1545,9 @@ def confirm_software_inventory(
         WindowsServer,
     )
 
-    if not isinstance(document, dict) or set(document) != {
+    if not isinstance(document, dict):
+        raise ValidationError("The Agent software inventory document is invalid.")
+    software_fields = {
         "schema_version",
         "platform",
         "snapshot_id",
@@ -1556,9 +1558,12 @@ def confirm_software_inventory(
         "last_update_scan_at",
         "last_update_install_at",
         "packages",
-    }:
+    }
+    if document.get("schema_version") == "2":
+        software_fields.add("windows_update_evidence")
+    if set(document) != software_fields:
         raise ValidationError("The Agent software inventory document is invalid.")
-    if document.get("schema_version") != "1":
+    if document.get("schema_version") not in {"1", "2"}:
         raise ValidationError("The Agent software inventory schema is invalid.")
     if not isinstance(agent_version, str) or not 1 <= len(agent_version) <= 64:
         raise ValidationError("The Agent version is invalid.")
@@ -1567,6 +1572,16 @@ def confirm_software_inventory(
         raise ValidationError("The Agent software inventory platform is invalid.")
     if platform != enrollment.platform:
         raise ValidationError("The Agent software platform does not match enrollment.")
+    windows_update_evidence = {}
+    if document["schema_version"] == "2":
+        if platform != "windows":
+            raise ValidationError("Installed Windows update evidence requires a Windows Agent.")
+        from ipms.apps.updates.contract import AgentUpdateEvidenceSerializer
+        evidence_serializer = AgentUpdateEvidenceSerializer(data=document["windows_update_evidence"])
+        if not evidence_serializer.is_valid():
+            raise ValidationError("The Agent installed update evidence is invalid.")
+        # Canonical JSON values allow equality validation across every software page.
+        windows_update_evidence = dict(evidence_serializer.data)
     try:
         snapshot_id = uuid.UUID(str(document.get("snapshot_id")))
     except ValueError as exc:
@@ -1614,6 +1629,7 @@ def confirm_software_inventory(
             "last_update_install_at": _bounded_optional_timestamp(
                 document.get("last_update_install_at")
             ),
+            "windows_update_evidence": windows_update_evidence,
         },
     )
     if (
@@ -1626,6 +1642,7 @@ def confirm_software_inventory(
             or snapshot.status != SoftwareInventorySnapshot.Status.RECEIVING
             or snapshot.reboot_required != reboot_required
             or snapshot.update_scan_status != update_scan_status
+            or snapshot.windows_update_evidence != windows_update_evidence
             or snapshot.last_update_scan_at
             != _bounded_optional_timestamp(document.get("last_update_scan_at"))
             or snapshot.last_update_install_at

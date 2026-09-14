@@ -12,7 +12,11 @@ From `services/control-plane`, set `PYTHONPATH` to `src`,
 `IPMS_NATIVE_CONSOLE_KEY_FILE` to `fixture.key` beside the isolated database.
 The seed creates this test-only key if absent; never reuse a deployed key.
 
-1. Run `python ../../apps/web-console/tests/fixtures/seed-console.py`.
+1. Run `python ../../apps/web-console/tests/fixtures/seed-wsus.py` for the complete
+   suite. It runs the base `seed-console.py` fixture and adds synthetic local
+   Agent update evidence through the normal software-inventory validation path.
+   Both require explicit isolated E2E settings and a dedicated SQLite path.
+   `seed-console.py` alone remains sufficient when excluding the WSUS suite.
 2. Run `python manage.py runserver 127.0.0.1:8107 --noreload`.
 3. From `apps/web-console`, set
    `IPMS_CONTROL_PLANE_URL=http://127.0.0.1:8107` and build with `pnpm exec next build`.
@@ -93,3 +97,37 @@ live tenant credentials. No forced-next-login-password-change workflow is claime
 
 Run deterministic native state and dependency integrity tests with
 `node --test tests/native-console-channel.test.mjs tests/guacamole-artifact.test.mjs`.
+
+The WSUS tests run with
+`pnpm exec playwright test --config=playwright.console.config.ts wsus.spec.ts`.
+They use real fixture authentication, tenant authorization, source creation,
+one-time reception tokens, token replacement, reception enable/disable, metadata
+ingestion, persistence and comparison APIs. The catalog-only case receives
+`computers: []` and compares three catalog entries with seeded local Agent
+evidence: one exact installed revision, one different installed revision, and
+one without installation evidence. No WSUS client registration is required.
+The suite also covers a 51-entry catalog and detail pagination, missing report
+cells, stale reports, ambiguous and unmatched computers, source selection,
+German reader controls and real API denial. Only the final transport-failure
+case replaces one comparison HTTP response with a synthetic 503.
+
+Source creation, reception controls and server settings are available under
+Administration → WSUS server (`/[locale]/administration/updates/wsus`) with
+`connectors.manage`. The comparison remains at `/[locale]/updates/wsus` and
+links to the selected source's configuration for permitted tenant users. The
+browser suite verifies the administration navigation, DNS/IPv6 server fields,
+the default HTTPS/8531 values, explicit HTTP/8530 editing, validation, save and
+reload, and preservation of the source token. Changing the WSUS server settings
+clears the current comparison until a new report is collected and received;
+reports collected before the change are rejected. Saving does not contact the
+configured host or start synchronization. Tenant readers cannot access the
+configuration page, and platform administration does not grant tenant access.
+Both English and German administration screenshots are captured.
+
+The synthetic evidence is not proof of Windows Update Agent collection on a
+real server or reception from a real WSUS instance. No Windows update scan,
+installation, reboot or production/DMZ connection is performed. Unknown Agent
+scan states do not expose a default zero as a verified update count. Browser
+screenshots deliberately exclude the one-time reception token. Each repeated
+test run creates sources in the disposable database; use a fresh isolated
+database before reaching the intentional per-tenant source limit.

@@ -547,3 +547,9 @@ alone must not convey a system state.
 - Giving the cloud service unsolicited administrative access to customer
   environments.
 - Treating discovery data as an authoritative overwrite of intended CMDB data.
+The first WSUS integration slice is prepared as a read-only metadata receiver
+with tenant source management, server/DC correlation and scoped update-state
+comparison. See [ADR-0014](docs/architecture/ADR-0014-WSUS-METADATA-RECEPTION.md)
+and [operations](docs/operations/WSUS-METADATA-RECEPTION.md). Actual WSUS export,
+Appliance deployment, update content distribution and patch installation remain
+separate acceptance scopes tracked by [Epic #25](https://github.com/Alvestrasza/ipms/issues/25).

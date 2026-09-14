@@ -1,4 +1,12 @@
+// File Name: windows_software_pack.cpp
+// Version: v0.2.0
+// Created: 2026-09-04
+// Last Modified: 2026-09-13
+// Author: Alice Endelgard
+// Organization: Alvestrasza Corporation
+// Description: Passive software inventory with bounded local WUA installed-update evidence.
 #include "ipms/agent/windows_software_pack.hpp"
+#include "ipms/agent/windows_update_evidence.hpp"
 
 #include <windows.h>
 #include <objbase.h>
@@ -213,25 +221,32 @@ std::vector<std::string> collect_windows_software_inventory_pages() {
   if (id.empty()) return {};
   const auto last_scan = windows_update_time(L"Detect");
   const auto last_install = windows_update_time(L"Install");
+  // Collect once so every page carries the same evidence and reboot state.
+  const auto update_evidence = collect_windows_update_evidence_json();
+  const bool needs_reboot = reboot_required();
   std::vector<std::string> result;
   result.reserve(pages.size());
   for (std::size_t page_index = 0; page_index < pages.size(); ++page_index) {
     std::ostringstream json;
-    json << "{\"schema_version\":\"1\",\"platform\":\"windows\","
+    json << "{\"schema_version\":\"2\",\"platform\":\"windows\","
          << "\"snapshot_id\":\"" << id << "\",\"page_index\":" << page_index
          << ",\"page_count\":" << pages.size() << ",\"reboot_required\":"
-         << (reboot_required() ? "true" : "false")
+         << (needs_reboot ? "true" : "false")
          << ",\"update_scan_status\":\"unknown\",\"last_update_scan_at\":"
          << (last_scan.empty() ? "null" : "\"" + json_escape(last_scan) + "\"")
          << ",\"last_update_install_at\":"
          << (last_install.empty() ? "null" : "\"" + json_escape(last_install) + "\"")
+         << ",\"windows_update_evidence\":" << update_evidence
          << ",\"packages\":[";
     for (std::size_t item_index = 0; item_index < pages[page_index].size(); ++item_index) {
       if (item_index) json << ',';
       json << pages[page_index][item_index];
     }
     json << "]}";
-    result.push_back(json.str());
+    auto document = json.str();
+    // Never emit an oversized or partially omitted software snapshot.
+    if (document.size() >= 65536) return {};
+    result.push_back(std::move(document));
   }
   return result;
 }

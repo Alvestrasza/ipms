@@ -9,6 +9,15 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
+Local application candidate `0.2.43` adds WSUS catalog reception and server/DC
+comparison, including a download-only WSUS with no registered clients.
+Windows Agent candidate `0.2.30` adds bounded local installed-update evidence
+without changing update sources or running an online scan. See
+[WSUS reception](docs/operations/WSUS-METADATA-RECEPTION.md) for the exporter,
+limits and separate deployment/WSUS acceptance requirements.
+Tenant **Administration → WSUS server** stores the host, port and HTTPS
+settings for each reception source; **Windows updates** displays its comparison.
+
 IPMS application build `0.2.34` adds local account renaming, administrative
 password reset and **My account** password changes, with reauthentication,
 session invalidation and tenant isolation. See [Account management](docs/operations/ACCOUNT-MANAGEMENT.md)
@@ -124,3 +133,5 @@ The product roadmap is maintained in [ROADMAP.md](ROADMAP.md).
 IPMS is proprietary software. See [LICENSE](LICENSE). Public extension
 interfaces, SDKs, and example connectors may be released under separate open
 source licenses in dedicated repositories.
+- [WSUS metadata reception and server comparison](docs/operations/WSUS-METADATA-RECEPTION.md)
+- [ADR-0014: WSUS metadata reception](docs/architecture/ADR-0014-WSUS-METADATA-RECEPTION.md)

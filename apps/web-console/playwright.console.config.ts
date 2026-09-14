@@ -9,6 +9,7 @@ export default defineConfig({
     "platform-tenants.spec.ts",
     "account-security.spec.ts",
     "hyperv-management.spec.ts",
+    "wsus.spec.ts",
   ],
   timeout: 60_000,
   workers: 1,

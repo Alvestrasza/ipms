@@ -1,5 +1,11 @@
 # IPMS Agent
 
+Windows candidate **0.2.30** adds bounded local WUA-cache installed-update
+identity evidence for the IPMS WSUS catalog comparison. It uses a fixed offline
+query in an isolated subprocess; it does not register the server with WSUS,
+change update policies or install updates. Deploy the schema-2 receiver first.
+See [WSUS reception](../docs/operations/WSUS-METADATA-RECEPTION.md).
+
 The IPMS Agent is a native C++20 service for customer-managed Windows and Linux systems. It will establish an outbound, mutually authenticated connection to the IPMS Control Plane and collect only capabilities explicitly assigned to the enrolled device.
 
 The implementation contains the pack registry and fixed read-only Windows and

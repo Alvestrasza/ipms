@@ -1,6 +1,13 @@
+# File Name: CMakeLists.txt
+# Version: v0.2.30
+# Created: 2026-08-31
+# Last Modified: 2026-09-13
+# Author: Alice Endelgard
+# Organization: Alvestrasza Corporation
+# Description: Native Agent build and contract tests, including offline update evidence.
 cmake_minimum_required(VERSION 3.24)
 
-project(ipms_agent VERSION 0.2.29 LANGUAGES CXX)
+project(ipms_agent VERSION 0.2.30 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -28,7 +35,9 @@ if(WIN32)
   target_sources(ipms-agent PRIVATE src/windows/hyperv_pack.cpp src/windows/updater.cpp src/windows/windows_core_pack.cpp src/windows/windows_service.cpp src/windows/windows_software_pack.cpp src/windows/windows_telemetry.cpp src/windows/windows_transport.cpp src/windows/windows_native_console.cpp)
   target_sources(ipms-agent PRIVATE src/windows/hyperv_management.cpp src/windows/windows_management_journal.cpp)
   target_sources(ipms-agent PRIVATE src/windows/hyperv_management_operations.cpp src/windows/hyperv_management_settings.cpp)
+  target_sources(ipms-agent PRIVATE src/windows/windows_update_evidence.cpp)
   target_link_libraries(ipms-agent PRIVATE advapi32 bcrypt crypt32 iphlpapi ncrypt ole32 oleaut32 shell32 wbemuuid windowscodecs winhttp ws2_32)
+  target_link_libraries(ipms-agent PRIVATE wuguid)
   target_compile_definitions(ipms-agent PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
   target_compile_options(ipms-agent PRIVATE /W4 /permissive-)
   add_executable(ipms-agent-config WIN32
@@ -95,6 +104,12 @@ if(BUILD_TESTING)
   endif()
   add_test(NAME native-console-guards COMMAND ipms-agent-native-console-tests)
   if(WIN32)
+    add_executable(ipms-agent-windows-update-evidence-tests
+      tests/windows_update_evidence_tests.cpp src/windows/windows_update_evidence.cpp)
+    target_link_libraries(ipms-agent-windows-update-evidence-tests PRIVATE ipms_agent_core ole32 oleaut32 wuguid)
+    target_compile_definitions(ipms-agent-windows-update-evidence-tests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
+    target_compile_options(ipms-agent-windows-update-evidence-tests PRIVATE /W4 /permissive-)
+    add_test(NAME windows-update-evidence-contract COMMAND ipms-agent-windows-update-evidence-tests)
     add_executable(ipms-agent-native-console-event-tests tests/windows_native_console_event_tests.cpp)
     target_link_libraries(ipms-agent-native-console-event-tests PRIVATE ipms_agent_core ws2_32)
     target_compile_definitions(ipms-agent-native-console-event-tests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
