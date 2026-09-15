@@ -1,6 +1,6 @@
 <!--
 File Name: BASELINE-APPLICATION-0252-VERIFICATION.md
-Version: v0.1.0 | Created: 2026-09-15 | Last Modified: 2026-09-15
+Version: v0.2.0 | Created: 2026-09-15 | Last Modified: 2026-09-15
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
 Description: Baseline configuration, native application evidence and release acceptance.
 -->
@@ -85,3 +85,50 @@ There are no schema migrations or changes to policy content, the updater,
 local pilot approval, GPO import/link execution, credentials or Linux Agent
 behavior. This release performs no directory or policy mutation. Real GPO
 application and a future unattended approval model remain separate work.
+
+## Supported runtime and DEV acceptance
+
+Evidence cutoff: 2026-09-15 09:15 UTC. The immutable deployed source is
+`199069b293df0113acab678011735bad9407eab5`. Later documentation changes do not
+change that runtime identity.
+
+All 586 backend tests passed on Python 3.14.4 and PostgreSQL 18.6 under the
+actual Control Plane OS account. The run used an isolated PostgreSQL cluster
+and test database, without contacting the active application database. The
+test cluster was stopped after verification. The supported Linux production
+Next build and protected release staging also passed.
+
+Portal 0.2.52 is active on the DEV appliance. All eight checked application,
+gateway, console and database services are active. Live browser verification
+confirmed the relocated domain configuration, explicit catalog selection,
+nested collapsible details and five square overview tiles. The inventory
+contains 26 Windows systems: 25 servers and one client. Both active Microsoft
+baseline families remain unknown because no verified component/GPO import
+association exists. Import names and existing setting matches do not fill
+that evidence gap.
+
+The checksum-pinned Windows Agent 0.2.33 package was activated after the Portal
+receiver. The existing client canary updated successfully through the normal
+lifecycle job and subsequently submitted fresh inventory and a valid GPO
+report. That report has status `incomplete` and contains no GPO confirmation.
+The remaining 25 Agents are still on 0.2.32; their updates have not been queued
+while the incomplete real-host collection is investigated. Successful update
+delivery is therefore confirmed, but positive native collection and fleet
+acceptance remain open. Local RSoP diagnostics require access unavailable to
+the automation account; no permissions were changed to obtain that access.
+
+The domain plan, 51 assessments and 51 scan jobs remain unchanged. The sole
+pre-existing GPO import job had expired before activation and was never
+claimed; this rollout created no GPO import jobs or directory mutations.
+Linux Agent 0.2.13 retained its existing process and executable checksum.
+Protected activation backups and the previous Windows package were retained.
+
+GitHub publication has not occurred. The source push and prerelease uploads
+are awaiting explicit owner confirmation after automatic approval review
+rejected that external publication.
+
+Private evidence: `build/baseline-0252-postgresql.log`,
+`build/baseline-0252-stage.log`, `build/baseline-0252-activate.log`,
+`build/agent-0233-activate.log`, `build/agent-0233-canary.json.txt`,
+`build/baseline-0252-live-status.json.txt` and the source-bound supported-test
+receipt on the DEV release.
