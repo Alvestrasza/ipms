@@ -1,5 +1,5 @@
 // File Name: gpo_management.cpp
-// Version: v0.1.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
+// Version: v0.2.0 | Created: 2026-09-14 | Last Modified: 2026-09-15
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Validate pinned pilot inputs, artifact bytes and non-retryable native write ordering.
 #include "ipms/agent/gpo_management.hpp"
@@ -27,6 +27,12 @@ bool dns(std::string_view s) {
 }
 bool clean(std::string_view s, std::size_t limit) { return !s.empty() && s.size() <= limit &&
   std::none_of(s.begin(), s.end(), [](unsigned char c) { return c < 32 || c == 127; }); }
+bool principal(std::string_view s) {
+  constexpr std::string_view maximum = "9223372036854775807";
+  return !s.empty() && s.size() <= maximum.size() && s.front() >= '1' && s.front() <= '9' &&
+      std::all_of(s.begin(), s.end(), [](char c) { return c >= '0' && c <= '9'; }) &&
+      (s.size() < maximum.size() || s <= maximum);
+}
 std::chrono::system_clock::time_point expiry(std::string_view s) {
   if (s.size() != 20 || s[4] != '-' || s[7] != '-' || s[10] != 'T' || s[13] != ':' || s[16] != ':' || s[19] != 'Z') invalid();
   auto num = [&](std::size_t i, std::size_t n) { unsigned v = 0; for (; n; --n, ++i) {
@@ -42,7 +48,8 @@ bool known_code(std::string_view code) {
     "gpo_domain_identity_unavailable", "gpmc_unavailable", "gpo_permission_denied", "gpo_name_collision",
     "gpo_source_mismatch", "gpo_artifact_invalid", "gpo_local_approval_invalid", "gpo_reconciliation_required",
     "gpo_provider_failed", "gpo_verification_failed", "gpo_worker_timeout", "gpo_worker_failed",
-    "gpo_journal_invalid", "gpo_claim_uncertain", "gpo_authority_expired", "gpo_enrollment_changed"};
+    "gpo_journal_invalid", "gpo_claim_uncertain", "gpo_authority_expired", "gpo_enrollment_changed",
+    "gpo_portal_approval_required", "gpo_portal_approval_invalid"};
   return std::find(std::begin(codes), std::end(codes), code) != std::end(codes);
 }
 }  // namespace
@@ -103,9 +110,12 @@ job parse_job(const json::value& value) {
   const auto& f=value.as<json::object>();
   constexpr const char* keys[]{"schema","job_id","input_digest","operation","domain_dns_name","domain_guid","forest_dns_name",
     "executor_dc_fqdn","scope_id","scope_revision","target_tier","baseline_id","profile","backup_id","artifact_sha256","pilot_display_name","expires_at"};
-  if(f.size()!=std::size(keys)) invalid(); for(const auto* key:keys) if(!f.contains(key)) invalid();
+  const auto schema=f.at("schema").as<std::int64_t>();
+  if((schema!=1&&schema!=2)||f.size()!=std::size(keys)+(schema==2?1:0)) invalid();
+  for(const auto* key:keys) if(!f.contains(key)) invalid();
+  if(schema==2&&f.at("approval_mode").as<std::string>()!="portal") invalid();
   job j{f};
-  if(j.number("schema")!=1 || j.number("scope_revision")<1 || j.number("target_tier")<0 || j.number("target_tier")>2 ||
+  if(j.number("scope_revision")<1 || j.number("target_tier")<0 || j.number("target_tier")>2 ||
       j.text("operation")!="create_unlinked_pilot" || !valid_uuid(j.text("job_id")) || !valid_uuid(j.text("scope_id")) ||
       !valid_uuid(j.text("domain_guid")) || !dns(j.text("domain_dns_name")) || !dns(j.text("forest_dns_name")) ||
       !dns(j.text("executor_dc_fqdn")) || !digest(j.text("input_digest")) || !digest(j.text("artifact_sha256")) ||
@@ -123,6 +133,34 @@ job parse_job(const json::value& value) {
 bool unexpired(const job& j,std::chrono::system_clock::time_point now) { try {
   const auto t=expiry(j.text("expires_at")); return t>now && t<=now+std::chrono::hours(1);
 } catch(...) { return false; } }
+json::object local_approval_document(const job& j,std::string_view uri) {
+  if(j.number("schema")!=1||!clean(uri,512)) throw operation_error("gpo_local_approval_invalid");
+  return {{"schema",1},{"job",j.fields},{"device_uri",uri}};
+}
+json::object parse_portal_approval(const json::value& value,const job& j,std::string_view uri) {
+  try {
+    const auto& a=value.as<json::object>();
+    constexpr const char* keys[]{"schema","job_id","input_digest","device_uri","domain_guid","target_tier","operation",
+      "requested_by","approved_by","approved_at","expires_at","policy_revision","four_eyes_required"};
+    if(j.number("schema")!=2||j.text("approval_mode")!="portal"||a.size()!=std::size(keys)||!clean(uri,512)) invalid();
+    for(const auto* key:keys) if(!a.contains(key)) invalid();
+    if(a.at("schema").as<std::int64_t>()!=1||a.at("device_uri").as<std::string>()!=uri||
+        a.at("policy_revision").as<std::int64_t>()<1||a.at("target_tier").as<std::int64_t>()!=j.number("target_tier")) invalid();
+    for(const auto* key:{"job_id","input_digest","domain_guid","operation","expires_at"})
+      if(a.at(key).as<std::string>()!=j.text(key)) invalid();
+    const auto& requested=a.at("requested_by").as<std::string>();
+    const auto& approved=a.at("approved_by").as<std::string>();
+    if(!principal(requested)||!principal(approved)||(a.at("four_eyes_required").as<bool>()&&requested==approved)) invalid();
+    const auto approved_at=expiry(a.at("approved_at").as<std::string>()),expires_at=expiry(j.text("expires_at"));
+    if(approved_at>=expires_at||approved_at<expires_at-std::chrono::hours(1)) invalid();
+    return a;
+  } catch(...) { throw operation_error("gpo_portal_approval_invalid"); }
+}
+bool portal_approval_current(const json::value& a,const job& j,std::string_view uri,std::chrono::system_clock::time_point now) {
+  try {const auto parsed=parse_portal_approval(a,j,uri);
+    return unexpired(j,now)&&expiry(parsed.at("approved_at").as<std::string>())<=now;
+  } catch(...) {return false;}
+}
 const component_descriptor* component(const job& j) {
   const auto* c=lookup_component(j.text("baseline_id"),j.text("backup_id"));
   return c && c->artifact_sha256==j.text("artifact_sha256") ? c : nullptr;
@@ -145,11 +183,22 @@ std::vector<std::span<const std::uint8_t>> decode_artifact(const component_descr
 std::string_view name(phase p) { switch(p) { case phase::prepared:return "prepared";case phase::granted:return "granted";
   case phase::creating:return "creating";case phase::created:return "created";case phase::importing:return "importing";
   case phase::terminal:return "terminal";case phase::reconciliation:return "reconciliation";} invalid(); }
-json::object journal_document(const journal& j) { return {{"schema",1},{"job",j.assignment.fields},{"device_uri",j.device_uri},
-  {"phase",name(j.state)},{"gpo_guid",j.gpo_guid},{"grant_deadline_tick",j.grant_deadline_tick},{"result",j.result}}; }
+json::object journal_document(const journal& j) {
+  json::object document{{"schema",j.assignment.number("schema")},{"job",j.assignment.fields},{"device_uri",j.device_uri},
+    {"phase",name(j.state)},{"gpo_guid",j.gpo_guid},{"grant_deadline_tick",j.grant_deadline_tick},{"result",j.result}};
+  if(j.assignment.number("schema")==2) document.emplace("portal_approval",j.portal_approval);
+  else if(!j.portal_approval.get_if<std::nullptr_t>()) invalid();
+  return document;
+}
 journal parse_journal(const json::value& v) {
-  const auto& f=v.as<json::object>(); if(f.size()!=7 || f.at("schema").as<std::int64_t>()!=1) invalid();
+  const auto& f=v.as<json::object>(); const auto schema=f.at("schema").as<std::int64_t>();
+  if((schema!=1&&schema!=2)||f.size()!=(schema==2?8:7)) invalid();
   journal j{parse_job(f.at("job")),f.at("device_uri").as<std::string>()};
+  if(j.assignment.number("schema")!=schema) invalid();
+  if(schema==2) {
+    j.portal_approval=f.at("portal_approval");
+    if(!j.portal_approval.get_if<std::nullptr_t>()) (void)parse_portal_approval(j.portal_approval,j.assignment,j.device_uri);
+  }
   bool matched=false; for(const auto p:{phase::prepared,phase::granted,phase::creating,phase::created,phase::importing,phase::terminal,phase::reconciliation})
     if(f.at("phase").as<std::string>()==name(p)) { j.state=p; matched=true; }
   j.gpo_guid=f.at("gpo_guid").as<std::string>(); const auto tick=f.at("grant_deadline_tick").as<std::int64_t>();
@@ -157,15 +206,31 @@ journal parse_journal(const json::value& v) {
   j.grant_deadline_tick=static_cast<std::uint64_t>(tick); j.result=f.at("result");
   if((j.state==phase::prepared||j.state==phase::granted||j.state==phase::creating)&&!j.gpo_guid.empty()) invalid();
   if(j.state==phase::prepared&&j.grant_deadline_tick!=0) invalid();
+  if(schema==2) {
+    const bool approved=!j.portal_approval.get_if<std::nullptr_t>();
+    if(approved!=(j.grant_deadline_tick>0)||(approved&&j.state==phase::prepared)) invalid();
+    if(!approved&&(j.state==phase::creating||j.state==phase::created||j.state==phase::importing)) invalid();
+  }
   if((j.state==phase::created||j.state==phase::importing)&&j.gpo_guid.empty()) invalid();
   const bool completed=j.state==phase::terminal||j.state==phase::reconciliation;
   if(completed ? !valid_result(j.result) : !j.result.get_if<std::nullptr_t>()) invalid();
   if(completed) {
     const auto& receipt=j.result.as<json::object>();const auto status=receipt.at("status").as<std::string>();
+    if(schema==2&&status=="staged"&&j.portal_approval.get_if<std::nullptr_t>()) invalid();
     if(j.state==phase::reconciliation ? status!="requires_reconciliation" : status!="staged"&&status!="failed") invalid();
     const auto* id=receipt.at("gpo_guid").get_if<std::string>();if((id?*id:std::string{})!=j.gpo_guid) invalid();
   }
   return j;
+}
+json::object portal_approval_receipt(const journal& j) {
+  if(j.assignment.number("schema")!=2||j.state!=phase::granted||j.grant_deadline_tick==0||!j.gpo_guid.empty()||
+      !j.result.get_if<std::nullptr_t>()) throw operation_error("gpo_portal_approval_invalid");
+  const auto approved=parse_portal_approval(j.portal_approval,j.assignment,j.device_uri);
+  return {{"schema",1},{"purpose","portal_gpo_claim"},{"job",j.assignment.fields},{"device_uri",j.device_uri},
+    {"approval",approved},{"grant_deadline_tick",j.grant_deadline_tick}};
+}
+bool grant_current(const journal& j,std::uint64_t now_tick) {
+  return j.grant_deadline_tick>now_tick&&j.grant_deadline_tick-now_tick<=15'000;
 }
 json::object result(std::string_view status,std::string_view code,std::string_view guid,json::value evidence) {
   json::object r{{"status",status},{"result_code",code},{"gpo_guid",guid.empty()?json::value{}:json::value(guid)},{"evidence",std::move(evidence)}};
@@ -175,26 +240,39 @@ bool valid_result(const json::value& v) { try {
   const auto& f=v.as<json::object>(); if(f.size()!=4 || !known_code(f.at("result_code").as<std::string>())) return false;
   const auto& s=f.at("status").as<std::string>();
   const auto& code=f.at("result_code").as<std::string>();
-  if(s!="staged"&&s!="failed"&&s!="awaiting_local_approval"&&s!="requires_reconciliation") return false;
+  if(s!="staged"&&s!="failed"&&s!="awaiting_local_approval"&&s!="awaiting_portal_approval"&&s!="requires_reconciliation") return false;
   const auto* id=f.at("gpo_guid").get_if<std::string>(); if(id&&(!valid_uuid(*id)||protected_gpo(*id))) return false;
   if(!id&&!f.at("gpo_guid").get_if<std::nullptr_t>()) return false;
   if(s=="staged") { const auto& e=f.at("evidence").as<json::object>(); return id && e.size()==6 &&
     f.at("result_code").as<std::string>()=="gpo_staged_unlinked" && !e.at("computer_enabled").as<bool>() && !e.at("user_enabled").as<bool>() &&
     e.at("unlinked").as<bool>() && dns(e.at("domain_dns_name").as<std::string>()) && valid_uuid(e.at("domain_guid").as<std::string>()) && dns(e.at("dc_fqdn").as<std::string>()); }
-  if(code=="gpo_staged_unlinked" || (s=="awaiting_local_approval"&&code!="gpo_local_approval_required"))return false;
+  if(code=="gpo_staged_unlinked" || (s=="awaiting_local_approval"&&code!="gpo_local_approval_required") ||
+      (s=="awaiting_portal_approval"&&code!="gpo_portal_approval_required"))return false;
   return f.at("evidence").get_if<std::nullptr_t>() && (s=="requires_reconciliation" || !id);
 } catch(...) { return false; } }
 bool executor_matches(const job& j,const json::object& e) { try { return e.at("role").as<std::string>()=="writable-domain-controller" &&
   e.at("gpmc_available").as<bool>() && e.at("domain_dns_name").as<std::string>()==j.text("domain_dns_name") &&
   e.at("domain_guid").as<std::string>()==j.text("domain_guid") && e.at("forest_dns_name").as<std::string>()==j.text("forest_dns_name") &&
   e.at("dc_fqdn").as<std::string>()==j.text("executor_dc_fqdn"); } catch(...) { return false; } }
-bool record_claim(journal& j,const json::value& reply,std::uint64_t deadline,const persist& save) {
-  if(!save||j.state!=phase::granted||j.grant_deadline_tick!=0||!j.gpo_guid.empty()||!j.result.get_if<std::nullptr_t>()||deadline==0)
+bool record_claim(journal& j,const json::value& reply,std::uint64_t deadline,const persist& save,
+    const json::value& expected_approval,std::chrono::system_clock::time_point now) {
+  if(!save||j.state!=phase::granted||j.grant_deadline_tick!=0||!j.gpo_guid.empty()||!j.result.get_if<std::nullptr_t>()||
+      !j.portal_approval.get_if<std::nullptr_t>()||deadline==0)
     throw operation_error("gpo_journal_invalid");
   const auto& claim=reply.as<json::object>();
-  if(claim.size()!=3||parse_job(claim.at("job"))!=j.assignment) invalid();
   const bool authorized=claim.at("authorized").as<bool>();const auto& mode=claim.at("mode").as<std::string>();
-  if(authorized&&mode=="execute") {j.grant_deadline_tick=deadline;save(j);return true;}
+  const bool portal=j.assignment.number("schema")==2;
+  if(claim.size()!=(portal&&authorized&&mode=="execute"?4:3)||parse_job(claim.at("job"))!=j.assignment) invalid();
+  if(!portal&&!expected_approval.get_if<std::nullptr_t>()) throw operation_error("gpo_local_approval_invalid");
+  if(authorized&&mode=="execute") {
+    if(portal) {
+      const auto approved=parse_portal_approval(claim.at("approval"),j.assignment,j.device_uri);
+      if(json::value(approved)!=expected_approval||!portal_approval_current(approved,j.assignment,j.device_uri,now))
+        throw operation_error("gpo_portal_approval_invalid");
+      j.portal_approval=approved;
+    }
+    j.grant_deadline_tick=deadline;save(j);return true;
+  }
   if(!authorized&&mode=="cancelled") {
     j.state=phase::terminal;j.result=result("failed","gpo_authority_expired");
   }else {
@@ -211,6 +289,7 @@ json::object execute_pilot(journal& j,pilot_provider& provider,const persist& sa
   }
   bool invoked=false;
   try {
+    if(j.assignment.number("schema")==2) (void)portal_approval_receipt(j);
     if(!authority()) throw operation_error("gpo_authority_expired");
     provider.preflight(); if(!authority()) throw operation_error("gpo_authority_expired");
     consume(); j.state=phase::creating; save(j);

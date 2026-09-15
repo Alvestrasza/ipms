@@ -84,7 +84,7 @@ result(system("hidden-other-tenant", owner=other))
 gpo_dc = system("gpo-ui-dc", role="domain-controller", build="", os_name="")
 gpo_dc.domain_name = "gpo-ui.example.invalid"
 gpo_dc.fqdn = "gpo-ui-dc.gpo-ui.example.invalid"
-gpo_dc.agent_version = "0.2.32"
+gpo_dc.agent_version = "0.2.34"
 gpo_dc.save()
 gpo_agent = AgentEnrollment.objects.get(device_uri=gpo_dc.source_id)
 gpo_agent.last_heartbeat_at = timezone.now()
@@ -93,7 +93,7 @@ gpo_agent.certificate_not_before = timezone.now() - timedelta(days=1)
 gpo_agent.certificate_not_after = timezone.now() + timedelta(days=1)
 gpo_agent.save()
 GpoExecutorReport.objects.create(
-    enrollment=gpo_agent, agent_version="0.2.32", domain_dns_name=gpo_dc.domain_name,
+    enrollment=gpo_agent, agent_version="0.2.34", domain_dns_name=gpo_dc.domain_name,
     domain_guid="e99d4445-1d3b-4a30-92ca-77c04e725eab", forest_dns_name=gpo_dc.domain_name,
     dc_fqdn=gpo_dc.fqdn, role="writable-domain-controller", gpmc_available=True,
     result_code="ready_for_approval", observed_at=timezone.now(),
@@ -160,3 +160,30 @@ confirm_inventory(
     ),
 )
 print("Synthetic security fixture ready: independent application and compliance evidence.")
+
+# Explicit central-approval browser fixtures; no real directory or Agent runs.
+from ipms.apps.tenancy.models import TenantMembership
+approval_user = get_user_model().objects.create_user(username="e2e-gpo-approver", password="test-only-password")
+TenantMembership.objects.create(tenant=tenant, user=approval_user, role="approver")
+# Reuse three existing unknown inventory rows to preserve exact family denominators.
+for index, label in enumerate(("self", "four-eyes", "errors")):
+    dc = WindowsServer.objects.get(tenant=tenant, hostname=f"baseline-2022-{23 + index:02}")
+    dc.hostname = f"gpo-{label}-dc"
+    dc.domain_name = f"gpo-{label}.example.invalid"
+    dc.fqdn = f"{dc.hostname}.{dc.domain_name}"
+    dc.operating_system_role = "domain-controller"
+    dc.agent_version = "0.2.34"
+    dc.save()
+    enrollment = AgentEnrollment.objects.get(device_uri=dc.source_id)
+    enrollment.last_heartbeat_at = timezone.now()
+    enrollment.certificate_fingerprint_sha256 = "a" * 64
+    enrollment.certificate_not_before = timezone.now() - timedelta(days=1)
+    enrollment.certificate_not_after = timezone.now() + timedelta(days=1)
+    enrollment.save()
+    GpoExecutorReport.objects.create(enrollment=enrollment, agent_version="0.2.34", domain_dns_name=dc.domain_name,
+        domain_guid=str(uuid.uuid4()), forest_dns_name=dc.domain_name, dc_fqdn=dc.fqdn,
+        role="writable-domain-controller", gpmc_available=True, result_code="ready_for_approval", observed_at=timezone.now())
+    DomainSecuritySettings.objects.create(tenant=tenant, domain_name=dc.domain_name,
+        tier_ous={"0": ["OU=_T0," + ",".join("DC=" + part for part in dc.domain_name.split("."))],
+                  "1": ["OU=_T1," + ",".join("DC=" + part for part in dc.domain_name.split("."))], "2": []},
+        gpo_name_template="{tier}-{scope}-{target}-{purpose}_V{version}", baseline_order=[item.id for item in BASELINES])

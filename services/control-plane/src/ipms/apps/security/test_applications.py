@@ -127,6 +127,24 @@ class GroupPolicyApplicationTests(TestCase):
         self.assertEqual(self.group(query="?target=client"), self.group())
         self.assertIsNone(self.group("client")["summary"]["application_percent"])
 
+    def test_portal_approved_imports_bind_only_with_immutable_historical_approval(self):
+        from .gpo_approvals import approval_object
+        system = self.system()
+        jobs = self.bind_profile()
+        for job in jobs:
+            job.assignment.update(schema=2, approval_mode='portal')
+            job.assignment['input_digest'] = digest({key: value for key, value in job.assignment.items() if key != 'input_digest'})
+            job.input_digest = job.assignment['input_digest']
+            job.requested_by = self.user
+            job.approved_by = self.user
+            job.approved_at = job.requested_at.replace(microsecond=0) + timedelta(seconds=1)
+            job.approval_digest = digest(approval_object(job))
+            job.save()
+        self.receive(system, report=self.observe(jobs))
+        self.assertEqual(self.group()['summary']['applied'], 1)
+        GpoImportJob.objects.filter(pk=jobs[0].pk).update(approval_digest='a' * 64)
+        self.assertEqual(self.group()['summary']['applied'], 0)
+
     def test_imports_alone_unknown_gpos_or_compliance_do_not_prove_application(self):
         system = self.system()
         self.assessment(system)

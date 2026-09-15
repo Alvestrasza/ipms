@@ -8,8 +8,12 @@ from .administration import BaselineSettingsView, BaselineSettingView
 from .scan_views import BaselineScansView, BaselineFindingsView
 from .domains import DomainSettingsView, DomainSettingView
 from .gpo_views import DomainGpoImportsView
+from .gpo_approvals import GpoApprovalPolicyView, GpoDomainAuthorizationView, GpoApproveView
 
 urlpatterns = [
+    path('gpo-approval-policy/', GpoApprovalPolicyView.as_view(), name='security-gpo-approval-policy'),
+    path('domain-settings/<uuid:domain_id>/gpo-authorization/', GpoDomainAuthorizationView.as_view(), name='security-gpo-authorization'),
+    path('gpo-imports/<uuid:job_id>/approve/', GpoApproveView.as_view(), name='security-gpo-approve'),
     path('domain-settings/', DomainSettingsView.as_view(), name='security-domain-settings'),
     path('domain-settings/<uuid:domain_id>/', DomainSettingView.as_view(), name='security-domain-setting'),
     path('domain-settings/<uuid:domain_id>/gpo-imports/', DomainGpoImportsView.as_view(), name='security-domain-gpo-imports'),

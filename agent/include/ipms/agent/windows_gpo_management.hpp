@@ -1,7 +1,7 @@
 // File Name: windows_gpo_management.hpp
-// Version: v0.1.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
+// Version: v0.2.0 | Created: 2026-09-14 | Last Modified: 2026-09-15
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
-// Description: Purpose-bound local approval, storage and isolated GPMC worker.
+// Description: Separate local and portal approval receipts, protected storage and isolated GPMC worker.
 #pragma once
 #include "ipms/agent/gpo_management.hpp"
 #include <filesystem>
@@ -12,6 +12,9 @@ std::optional<gpo::journal> load_gpo_journal();
 void save_gpo_journal(const gpo::journal& record);
 bool has_gpo_local_approval(const gpo::job& job, std::string_view device_uri);
 void consume_gpo_local_approval(const gpo::job& job, std::string_view device_uri);
+void save_gpo_portal_approval(const gpo::journal& record);
+bool has_gpo_portal_approval(const gpo::journal& record);
+void consume_gpo_portal_approval(const gpo::journal& record);
 void save_gpo_artifact(const gpo::job& job, std::string_view bytes);
 std::filesystem::path expand_gpo_artifact(const gpo::job& job);
 bool gpo_enrollment_matches(std::string_view device_uri);
@@ -26,6 +29,8 @@ int run_gpo_worker();
 // a disposable directory. Production callers always use gpo_storage_directory.
 std::string read_protected_gpo_file(const std::filesystem::path& path, std::size_t limit);
 void write_protected_gpo_file(const std::filesystem::path& path, std::string_view bytes, bool replace);
+void consume_protected_gpo_file(const std::filesystem::path& path, const std::filesystem::path& consumed,
+    std::string_view expected_bytes);
 void ensure_gpo_directory(const std::filesystem::path& directory);
 void verify_gpo_storage_parent(const std::filesystem::path& directory);
 }  // namespace ipms::agent::windows

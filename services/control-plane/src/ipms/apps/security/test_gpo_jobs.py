@@ -28,7 +28,7 @@ from ipms.apps.tenancy.models import TenantMembership
 from ipms.apps.tenancy.operations import apply_tenant_status_change, withdraw_identity_operations
 from .gpo_content import COMPONENTS, PROFILE_COMPONENTS
 from .gpo_jobs import artifact_bytes, digest, security_gpo_exchange
-from .models import BaselineAssessment, DomainSecuritySettings, GpoExecutorReport, GpoImportJob
+from .models import BaselineAssessment, DomainSecuritySettings, GpoExecutorReport, GpoImportJob, GpoDomainAuthorization
 from . import test_domains
 
 SERVER = 'microsoft-windows-server-2025'
@@ -49,6 +49,7 @@ class GpoJobTests(TestCase):
         self.addCleanup(self.artifacts.stop)
         self.config = self.create().data
         self.import_url = URL + self.config['id'] + '/gpo-imports/'
+        GpoDomainAuthorization.objects.create(domain_id=self.config['id'], grants=[{'user_id': str(self.user.pk), 'tiers': ['0', '1', '2']}])
         self.agent = AgentEnrollment.objects.create(
             tenant=self.tenant, device_uri=f'urn:ipms:agent:{uuid.uuid4()}', display_name='pilot-dc',
             platform='windows', status='active', last_heartbeat_at=timezone.now(),
@@ -59,7 +60,7 @@ class GpoJobTests(TestCase):
         self.system = WindowsServer.objects.create(
             tenant=self.tenant, source_id=self.agent.device_uri, inventory_source='agent',
             hostname='pilot-dc', fqdn='pilot-dc.example.invalid', domain_name='example.invalid',
-            agent_version='0.2.32', operating_system_role='domain-controller',
+            agent_version='0.2.34', operating_system_role='domain-controller',
             operating_system='Microsoft Windows Server 2025 Standard', os_build='26100',
             discovered_at=timezone.now(),
         )
@@ -79,12 +80,23 @@ class GpoJobTests(TestCase):
                 'correlation_id': 'synthetic-gpo', 'action': action, **values}
 
     def poll(self, **changes):
-        return security_gpo_exchange(self.agent, self.envelope(agent_version='0.2.32', executor={**self.report, **changes}))['gpo_job']
+        return security_gpo_exchange(self.agent, self.envelope(agent_version='0.2.34', executor={**self.report, **changes}))['gpo_job']
 
     def queue(self, **changes):
         response = self.client.post(self.import_url, {**self.selection, **changes}, format='json')
         self.assertEqual(response.status_code, 202, response.data)
-        return response.data['approval_document']
+        # These pre-existing tests exercise persisted schema-1 local approvals.
+        # New schema-2 portal authorization is tested separately through its API.
+        row = GpoImportJob.objects.get(pk=response.data['id'])
+        assignment = dict(row.assignment)
+        if assignment['schema'] == 2:
+            row.status = 'queued'  # Persisted schema-1 fixtures keep their original pre-approval state.
+        assignment['schema'] = 1
+        assignment.pop('approval_mode', None)
+        assignment['input_digest'] = digest({key: value for key, value in assignment.items() if key != 'input_digest'})
+        row.assignment, row.input_digest = assignment, assignment['input_digest']
+        row.save(update_fields=('assignment', 'input_digest', 'status'))
+        return assignment
 
     def exchange(self, job, action, **values):
         return security_gpo_exchange(self.agent, self.envelope(action, job_id=job['job_id'], input_digest=job['input_digest'], **values))
@@ -240,7 +252,7 @@ class GpoJobTests(TestCase):
     def test_prepared_lookup_withdraws_changed_settings_before_artifact_fetch(self):
         job = self.queue()
         DomainSecuritySettings.objects.filter(pk=self.config['id']).update(revision=2)
-        response = self.exchange(job, 'lookup', agent_version='0.2.32', executor=self.report)
+        response = self.exchange(job, 'lookup', agent_version='0.2.34', executor=self.report)
         self.assertIsNone(response['gpo_job'])
         self.assertEqual(GpoImportJob.objects.get().status, 'failed')
         self.result(job, code='gpo_authority_expired')

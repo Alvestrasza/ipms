@@ -1,5 +1,5 @@
 // File Name: windows_gpo_management.cpp
-// Version: v0.1.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
+// Version: v0.2.0 | Created: 2026-09-14 | Last Modified: 2026-09-15
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Fixed isolated native GPMC import into newly created disabled, unlinked pilot GPOs.
 #include "ipms/agent/windows_gpo_management.hpp"
@@ -236,8 +236,11 @@ int run_gpo_worker() {
       auto record=load_gpo_journal();if(!record)return 1;
       native_provider provider(record->assignment);
       response=gpo::execute_pilot(*record,provider,save_gpo_journal,[&]{return gpo::unexpired(record->assignment)&&
-        GetTickCount64()<record->grant_deadline_tick&&gpo_enrollment_matches(record->device_uri);},
-        [&]{consume_gpo_local_approval(record->assignment,record->device_uri);});
+        gpo::grant_current(*record,GetTickCount64())&&gpo_enrollment_matches(record->device_uri)&&
+        (record->assignment.number("schema")==1||
+          gpo::portal_approval_current(record->portal_approval,record->assignment,record->device_uri));},
+        [&]{if(record->assignment.number("schema")==2) consume_gpo_portal_approval(*record);
+          else consume_gpo_local_approval(record->assignment,record->device_uri);});
     }else return 1;
     const auto text=json::serialize(response);DWORD written{};
     if(!WriteFile(output,text.data(),static_cast<DWORD>(text.size()),&written,nullptr)||written!=text.size())return 1;

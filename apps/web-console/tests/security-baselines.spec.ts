@@ -221,11 +221,11 @@ test("real system pagination and invalid selection are safe", async ({
     page.getByText("baseline-2022-00.example.invalid", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("baseline-2022-25.example.invalid", { exact: true }),
+    page.getByText("gpo-self-dc.gpo-self.example.invalid", { exact: true }),
   ).toHaveCount(0);
   await page.getByRole("link", { name: "Next", exact: true }).click();
   await expect(
-    page.getByText("baseline-2022-25.example.invalid", { exact: true }),
+    page.getByText("gpo-self-dc.gpo-self.example.invalid", { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByText("baseline-2022-00.example.invalid", { exact: true }),

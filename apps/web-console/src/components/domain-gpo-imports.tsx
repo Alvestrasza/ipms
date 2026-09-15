@@ -2,7 +2,7 @@
  * File Name: domain-gpo-imports.tsx
  * Version: v0.1.0 | Created: 2026-09-14 | Modified: 2026-09-14
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
- * Purpose: Request exact-job local approval for disabled, unlinked pilot GPO imports.
+ * Purpose: Request centrally approved disabled, unlinked pilot GPO imports.
  */
 "use client";
 

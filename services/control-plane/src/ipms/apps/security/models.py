@@ -27,6 +27,22 @@ class DomainSecuritySettings(models.Model):
         constraints = [models.UniqueConstraint(fields=('tenant', 'domain_name'), name='security_tenant_domain')]
 
 
+class GpoApprovalPolicy(models.Model):
+    """Tenant approval rule; absent row means revision 1, four eyes disabled."""
+
+    tenant = models.OneToOneField('tenancy.Tenant', on_delete=models.CASCADE, primary_key=True)
+    four_eyes_required = models.BooleanField(default=False, db_default=False)
+    revision = models.PositiveIntegerField(default=1)
+
+
+class GpoDomainAuthorization(models.Model):
+    """Explicit domain/tier grants, independent of broad tenant administration."""
+
+    domain = models.OneToOneField(DomainSecuritySettings, on_delete=models.CASCADE, primary_key=True)
+    revision = models.PositiveIntegerField(default=1)
+    grants = models.JSONField(default=list)
+
+
 class GpoExecutorReport(models.Model):
     """Authenticated local DC observations, not a delegation or approval."""
 
@@ -51,6 +67,13 @@ class GpoImportJob(models.Model):
     enrollment = models.ForeignKey('agent_pki.AgentEnrollment', on_delete=models.PROTECT)
     system = models.ForeignKey('discovery.WindowsServer', on_delete=models.PROTECT)
     requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+                                    related_name='approved_gpo_import_jobs')
+    approved_at = models.DateTimeField(null=True)
+    approval_digest = models.CharField(max_length=64, blank=True, db_default="")
+    policy_revision = models.PositiveIntegerField(default=1, db_default=1)
+    four_eyes_required = models.BooleanField(default=False, db_default=False)
+    authorization_revision = models.PositiveIntegerField(default=1, db_default=1)
     domain_guid = models.CharField(max_length=36)
     request_sha256 = models.CharField(max_length=64)
     input_digest = models.CharField(max_length=64)

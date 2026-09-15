@@ -48,7 +48,9 @@ export async function LogsPage({
   const query = logQuery(selected);
   const path = `/${locale}/logs/${scope}`;
   const detailRequested = scope === "baselines" && selected.job !== undefined;
-  const canViewPilot = hasPermission(tenant, "security.domains.manage");
+  const canViewPilot =
+    hasPermission(tenant, "security.domains.manage") ||
+    hasPermission(tenant, "security.gpo_imports.approve");
   const jobId = typeof selected.job === "string" ? selected.job : "";
   const [history, detail] = await Promise.all([
     getJobLogs(tenant.id, scope, query.toString()),
@@ -118,9 +120,11 @@ export async function LogsPage({
           </div>
           {detail.data && canViewPilot ? (
             <LogsGpoDetail
-              key={detail.data.id}
+              key={`${tenant.id}:${detail.data.id}:${detail.data.input_digest}:${detail.data.policy_revision}:${detail.data.can_approve}:${detail.data.approval_blocker}:${session.csrf_token}:${tenant.permissions.join(",")}`}
               job={detail.data}
               locale={locale}
+              tenantId={tenant.id}
+              csrfToken={session.csrf_token}
             />
           ) : (
             <p className={styles.notice} role="alert">

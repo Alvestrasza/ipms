@@ -545,7 +545,7 @@ test("stale OU edits cannot overwrite a concurrent policy configuration", async 
   expect(actual.tier_ous).toEqual(settings.tier_ous);
 });
 
-test("pilot import is an explicit separate request and reports local approval without application", async ({
+test("pilot import is an explicit separate request and reports Portal approval without application", async ({
   page,
 }) => {
   const { headers } = await login(page);
@@ -564,6 +564,25 @@ test("pilot import is an explicit separate request and reports local approval wi
   });
   expect(configured.status()).toBe(200);
   const settings: DomainSecuritySettings = await configured.json();
+  const authorizationEndpoint = `${api}${settings.id}/gpo-authorization/`;
+  const authorization = await (
+    await page.request.get(authorizationEndpoint, { headers })
+  ).json();
+  const administrator = authorization.members.find(
+    (member: { username: string }) => member.username === "e2e-admin",
+  );
+  expect(administrator).toBeTruthy();
+  expect(
+    (
+      await page.request.put(authorizationEndpoint, {
+        headers,
+        data: {
+          expected_revision: authorization.revision,
+          grants: [{ user_id: administrator.user_id, tiers: ["0"] }],
+        },
+      })
+    ).status(),
+  ).toBe(200);
   const baseline = catalog.baseline_options.find(
     (item) => item.id === "microsoft-windows-server-2025",
   );
@@ -611,6 +630,7 @@ test("pilot import is an explicit separate request and reports local approval wi
   const response = await receipt;
   expect([200, 201, 202]).toContain(response.status());
   const job = await response.json();
+  expect(job.approval_mode).toBe("portal");
   expect(["queued", "awaiting_approval"]).toContain(job.status);
   expect(job.gpo_guid).toBeFalsy();
   expect(job.approval_document).toBeTruthy();
@@ -624,7 +644,7 @@ test("pilot import is an explicit separate request and reports local approval wi
     version: "1.0.0",
   });
   const logLink = page.getByRole("link", {
-    name: "Open request and local approval in Logs",
+    name: "Open request and approval in Logs",
     exact: true,
   });
   await expect(logLink).toHaveAttribute(
@@ -633,7 +653,7 @@ test("pilot import is an explicit separate request and reports local approval wi
   );
   await expect(
     page.getByText(
-      "Pilot import request recorded. Local approval is required before the Agent can create the GPO.",
+      "Pilot import request recorded. Review and approve the exact import in Logs before the Agent can create the GPO.",
       { exact: true },
     ),
   ).toBeVisible();

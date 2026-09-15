@@ -9,6 +9,7 @@ import type {
   DomainSecurityCatalog,
   DomainSecuritySettings,
   GpoImportJob,
+  GpoImportReview,
   SecurityTier,
 } from "./domain-security-types";
 
@@ -124,6 +125,9 @@ export function isGpoImportJob(value: unknown): value is GpoImportJob {
       "pilot_display_name",
       "hostname",
       "error_code",
+      "requested_by_name",
+      "input_digest",
+      "dc_fqdn",
     ].every((key) => typeof value[key] === "string") &&
     [
       "queued",
@@ -139,7 +143,47 @@ export function isGpoImportJob(value: unknown): value is GpoImportJob {
     date(value.requested_at) &&
     (value.completed_at === null || date(value.completed_at)) &&
     nullableString(value.gpo_guid) &&
-    (value.approval_document === null || record(value.approval_document))
+    nullableString(value.requested_by) &&
+    (value.approval_document === null || record(value.approval_document)) &&
+    (value.approval_mode === "local" || value.approval_mode === "portal") &&
+    nullableString(value.approved_by) &&
+    nullableString(value.approved_by_name) &&
+    (value.approved_at === null || date(value.approved_at)) &&
+    typeof value.four_eyes_required === "boolean" &&
+    Number.isSafeInteger(value.policy_revision) &&
+    Number(value.policy_revision) >= 0 &&
+    typeof value.can_approve === "boolean" &&
+    nullableString(value.approval_blocker) &&
+    date(value.expires_at) &&
+    (value.review === null || isGpoImportReview(value.review))
+  );
+}
+
+export function isGpoImportReview(value: unknown): value is GpoImportReview {
+  const sha256 = (digest: unknown) =>
+    typeof digest === "string" && /^[0-9a-f]{64}$/.test(digest);
+  return (
+    record(value) &&
+    typeof value.component_name === "string" &&
+    sha256(value.artifact_sha256) &&
+    typeof value.report_xml === "string" &&
+    value.report_xml.length <= 1024 * 1024 &&
+    Array.isArray(value.files) &&
+    value.files.length <= 1024 &&
+    value.files.every(
+      (file) =>
+        record(file) &&
+        typeof file.path === "string" &&
+        file.path.length <= 1024 &&
+        Number.isSafeInteger(file.bytes) &&
+        Number(file.bytes) >= 0 &&
+        Number(file.bytes) <= 1024 * 1024 &&
+        sha256(file.sha256),
+    ) &&
+    new Set(value.files.map((file) => file.path)).size === value.files.length &&
+    Array.isArray(value.changes) &&
+    value.changes.length === 1 &&
+    value.changes[0] === "create_disabled_unlinked_pilot"
   );
 }
 

@@ -96,4 +96,13 @@ ADR-0010.
 
 ## Control-plane requirements
 
+New GPO pilot requests use the central approval contract in
+[ADR-0017](ADR-0017-PORTAL-GPO-APPROVAL.md). Windows Agent 0.2.34 validates
+schema 2 jobs and exact, expiring domain/tier approvals received through its
+authenticated gateway. The protected worker consumes one approval for the
+fixed `create_unlinked_pilot` operation. Schema 1 local approval is retained
+only for legacy jobs and cannot authorize a schema 2 request. This does not
+provide independently signed cross-zone authorization or add a generic
+remote execution capability.
+
 The Control Plane must persist pack assignment, acceptance, rejection, last inventory sequence, policy version, and audit attribution. It must enforce tenant and license policy before queueing any assignment. The Web Console only displays this state; it is not the authorization boundary.

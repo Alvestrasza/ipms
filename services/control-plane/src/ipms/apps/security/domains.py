@@ -273,6 +273,8 @@ class DomainSettingView(DomainSettingsView):
             setattr(config, key, value)
         config.revision += 1
         config.save()
+        from .gpo_approvals import _withdraw
+        _withdraw(request.tenant, domain=config)
         AuditEvent.objects.create(tenant=request.tenant, actor=str(request.user.pk), action='security.domain_settings_changed',
                                  object_type='security_domain', object_id=str(config.id), outcome='succeeded', details={'revision': config.revision})
         return Response(projection(config))

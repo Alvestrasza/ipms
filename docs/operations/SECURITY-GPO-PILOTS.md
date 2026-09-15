@@ -1,12 +1,12 @@
 <!--
 File Name: SECURITY-GPO-PILOTS.md
-Version: v0.1.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
+Version: v0.2.0 | Created: 2026-09-14 | Last Modified: 2026-09-15
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
 Description: Configure domain plans and prepare independently approved unlinked pilot GPOs.
 -->
 # Domain settings and GPO pilots
 
-Candidate: Portal **0.2.48**, Windows Agent **0.2.32**. Source implementation,
+Candidate: Portal **0.2.53**, Windows Agent **0.2.34**. Source implementation,
 automated verification and actual domain acceptance are separate. This guide
 does not authorize a live import or claim the candidate is deployed.
 
@@ -68,7 +68,8 @@ unsafe artifact files are rejected. Without an available verified component the
 Portal cannot queue its import. No runtime configuration is changed by building
 or running the preparation tool.
 
-The selected executor must report Windows Agent 0.2.32 or later, active enrollment,
+For a new centrally approved request, the selected executor must report Windows
+Agent 0.2.34 or later, active enrollment,
 a heartbeat and native executor observation less than five minutes old, matching
 domain/inventory identity, a writable local DC and available GPMC. RODCs, member
 servers and clients cannot execute this provider. No GPMC feature installation
@@ -77,7 +78,48 @@ Validate the service identity and delegated GPO rights in the selected test
 domain. Do not reuse the Hyper-V console account, grant broad rights automatically
 or use one shared service credential across tiers.
 
-## Request and approve one pilot
+## Configure central approval
+
+In **Administration → Security → Domains & GPOs**, configure the tenant-wide
+four-eyes requirement and explicitly assign permitted administrators to each
+domain and tier. Tenant administrators may request and approve within their
+granted scope; Approvers may approve within theirs. There are no implicit
+domain/tier grants. Saving these settings neither creates nor approves a job.
+
+Four-eyes approval is off by default. With it off, a single scoped administrator
+can create a request and explicitly approve it afterward. With it on, another
+scoped administrator must approve. There is no exception for tiers with only
+one administrator. Changing approval policy or grants invalidates outstanding
+authority, so review settings before creating requests.
+
+## Request and centrally approve one pilot
+
+1. In **Security → Baseline**, select a configured domain, its eligible DC,
+   the baseline component, concrete target tier, target alias and version.
+   Request the pilot import. This creates an immutable request, valid for at
+   most one hour, without starting an import.
+2. Open the request in **Logs → Baselines**. Review the domain, tier, DC,
+   proposed name, baseline component, exact settings report, manifest and
+   expiry. This operation creates a new disabled, unlinked pilot; it does not
+   modify existing policies or apply settings to computers.
+3. Explicitly approve the displayed request. If four eyes are required, use
+   another administrator with the matching domain/tier grant. The server
+   checks the reviewed digest and policy revision; stale reviews are rejected.
+4. The Agent receives the bound approval over its existing authenticated
+   connection and obtains a one-use execution grant. It validates the local
+   controller and immutable content again, then imports only the pilot.
+
+No interactive DC sign-in or local approval command is required for these
+schema 2 requests. An expired or invalidated request needs a new request and
+review. Linking and activation are separate future actions, not consequences
+of this approval. See [ADR-0017](../architecture/ADR-0017-PORTAL-GPO-APPROVAL.md)
+for the application authorization and deployment trust boundaries.
+
+## Approve a legacy local pilot
+
+The following procedure applies only to already persisted schema 1 jobs.
+They cannot be converted into centrally approved jobs. New Portal requests
+use the central workflow above.
 
 1. Select the domain plan, DC Agent, baseline, original backup component,
    concrete tier, target alias and policy version. A configured OU list is
@@ -114,7 +156,7 @@ policy application, `gpupdate`, restart or firewall activation occurs.
 
 | Portal state | Meaning |
 | --- | --- |
-| Queued / awaiting local approval | No write grant yet; independent approval is outstanding. |
+| Queued / awaiting approval | No execution grant yet; approval or the Agent's claim is outstanding. The detail identifies central versus legacy local approval. |
 | Running | One grant was issued; it cannot be issued again. |
 | Staged | Agent observed the new GUID with both halves disabled and no domain/OU/site links. |
 | Failed / expired | A terminal pre-execution failure or expiry; inspect the reported reason. |
@@ -133,7 +175,7 @@ Only one active/ambiguous import per domain is permitted. Agent update, uninstal
 remote deployment and removal cannot overlap its reservation. Expired unclaimed
 offers release that maintenance restriction; claimed or ambiguous operations
 retain it. Tenant suspension, account/password or membership changes invalidate
-old authority. Re-enabling access requires a new job and local approval.
+old authority. Re-enabling access requires a new job and a new approval.
 
 ## API, schema and later activation
 

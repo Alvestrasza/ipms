@@ -8,6 +8,7 @@ from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils.crypto import constant_time_compare
 from django.views.decorators.debug import sensitive_variables
 
@@ -138,7 +139,7 @@ def locked_identities(actor_id, target_id, selected_tenant_id=None):
             actor_id__in=user_ids,
         ).values_list("tenant_id", flat=True))
         tenant_ids.update(GpoImportJob.objects.filter(
-            requested_by_id__in=user_ids,
+            Q(requested_by_id__in=user_ids) | Q(approved_by_id__in=user_ids),
         ).values_list("tenant_id", flat=True))
         if selected_tenant_id is not None:
             tenant_ids.add(selected_tenant_id)
@@ -166,7 +167,7 @@ def locked_identities(actor_id, target_id, selected_tenant_id=None):
             actor_id__in=user_ids,
         ).values_list("tenant_id", flat=True))
         current_tenants.update(GpoImportJob.objects.filter(
-            requested_by_id__in=user_ids,
+            Q(requested_by_id__in=user_ids) | Q(approved_by_id__in=user_ids),
         ).values_list("tenant_id", flat=True))
         if not current_tenants.issubset(tenant_ids):
             raise PublicApiError("forbidden", status_code=403)

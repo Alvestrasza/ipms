@@ -71,6 +71,10 @@
   outline: 2px solid var(--color-accent-blue);
   outline-offset: 3px;
 }
+.applyButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
 .export {
   display: flex;
   flex-direction: column;
@@ -180,6 +184,8 @@
 .approval {
   border-top: 1px solid var(--border-default);
   padding-top: 1rem;
+  margin: 1rem 0;
+  min-width: 0;
 }
 .approval summary {
   cursor: pointer;
@@ -197,4 +203,22 @@
   border-radius: 0.5rem;
   font-size: 0.75rem;
   line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.reviewFiles {
+  display: grid;
+  gap: 1rem;
+  padding-left: 1.25rem;
+}
+.reviewFiles li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.8rem;
+}
+.reviewFiles strong,
+.reviewFiles span,
+.reviewFiles code {
+  display: block;
+  margin-top: 0.3rem;
 }

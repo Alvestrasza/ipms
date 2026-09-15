@@ -31,6 +31,10 @@ import {
 } from "@/lib/domain-security-validation";
 import { DomainGpoImports } from "./domain-gpo-imports";
 import styles from "./domain-security-administration.module.css";
+import {
+  GpoApprovalPolicySettings,
+  GpoDomainAuthorizationSettings,
+} from "./gpo-approval-settings";
 
 type Draft = {
   domain: string;
@@ -92,10 +96,11 @@ function DomainSettingsWorkspace({
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(false);
+  const [authorizationLocked, setAuthorizationLocked] = useState(false);
   const [notice, setNotice] = useState("");
   const settings =
     catalog?.results.find((item) => item.id === selectedId) ?? null;
-  const locked = dirty || busy || uncertain;
+  const locked = dirty || busy || uncertain || authorizationLocked;
 
   function saved(value: DomainSecuritySettings) {
     setCatalog((previous) =>
@@ -141,6 +146,13 @@ function DomainSettingsWorkspace({
         </div>
       ) : (
         <>
+          {mode === "domain" ? (
+            <GpoApprovalPolicySettings
+              tenantId={tenantId}
+              csrfToken={csrfToken}
+              locale={locale}
+            />
+          ) : null}
           <section
             className={styles.panel}
             aria-labelledby="configured-domains-heading"
@@ -265,6 +277,17 @@ function DomainSettingsWorkspace({
               configurationDirty={locked}
               locale={locale}
               copy={copy}
+            />
+          ) : null}
+          {mode === "domain" && settings ? (
+            <GpoDomainAuthorizationSettings
+              key={`authorization:${tenantId}:${settings.id}`}
+              domainId={settings.id}
+              domainName={settings.domain_name}
+              tenantId={tenantId}
+              csrfToken={csrfToken}
+              locale={locale}
+              onLocked={setAuthorizationLocked}
             />
           ) : null}
         </>

@@ -1,6 +1,28 @@
 # IPMS Agent
 
-Windows candidate **0.2.33** adds read-only computer GPO processing evidence to
+Windows candidate **0.2.34** accepts Portal approval for exact schema-2 pilot
+jobs over the existing authenticated mTLS channel. Each approval binds the
+job input digest, enrolled device, domain, tier, operation, requester, approver,
+policy revision and expiry. When the tenant requires four eyes, requester and
+approver must be different principals. The approval returned by the execution
+claim must exactly match the approval observed during polling. A future-dated
+approval waits for the local clock; validity is never extended for clock skew.
+
+After a validated claim, the Agent writes a separate protected, one-use Portal
+receipt. The fixed GPMC worker verifies and consumes that exact receipt before
+creation. The 15-second monotonic execution grant and durable uncertainty fences
+remain in force. Portal approval requires no interactive controller logon or
+per-job local approval command. Legacy schema-1 jobs retain their exact local
+approval flow; their approval files and CLI cannot authorize schema-2 jobs.
+
+Current roles, tenant policy and revocation are enforced by the authenticated
+Control Plane at claim time. This is the existing mTLS execution authority, not
+an independent signature or security-zone boundary. No AD permissions or service
+credentials are installed. The native worker still creates only a new disabled,
+unlinked pilot GPO; effective write permissions and domain acceptance remain
+separate checks. Deploy the compatible receiver before updating Agents.
+
+Windows **0.2.33** adds read-only computer GPO processing evidence to
 the existing core inventory. The fixed local worker combines RSoP eligibility,
 per-extension processing status and the applied-GPO history for every extension.
 It binds each observation to the local domain GUID and DNS name, GPO GUID and
@@ -16,9 +38,9 @@ or changing snapshots cannot produce a positive application confirmation. No
 policy refresh, directory write, command or script is issued. Missing permissions
 remain explicit; no interactive logon is requested by this read-only collector.
 Deploy the compatible Portal receiver before updating Agents. This observation
-feature does not change the protected pilot import workflow described below.
+feature is independent of the pilot import workflow.
 
-Windows candidate **0.2.32** adds a separate native GPMC worker for creating a
+Windows **0.2.32** introduced the legacy schema-1 native GPMC worker for creating a
 new **disabled, unlinked pilot GPO** from one checksum-pinned Microsoft backup
 component. The Portal first sends an immutable domain/DC-bound job. An elevated
 administrator on that controller reviews its complete JSON and approves exactly

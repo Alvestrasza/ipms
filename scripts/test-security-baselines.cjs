@@ -1,5 +1,5 @@
 // File Name: test-security-baselines.cjs
-// Version: v0.1.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
+// Version: v0.1.1 | Created: 2026-09-14 | Last Modified: 2026-09-15
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Fresh loopback-only Security browser fixture with automatic helper cleanup.
 const { spawn } = require("node:child_process");
@@ -20,6 +20,7 @@ const env = {
   IPMS_E2E_DATABASE: path.join(output, "fixture.sqlite3"),
   IPMS_ALLOWED_HOSTS: "127.0.0.1,localhost,testserver",
   IPMS_CSRF_TRUSTED_ORIGINS: "http://127.0.0.1:3116",
+  IPMS_PUBLIC_ORIGIN: "http://127.0.0.1:3116",
   IPMS_CONTROL_PLANE_URL: "http://127.0.0.1:3116",
   IPMS_NATIVE_CONSOLE_KEY_FILE: "",
   IPMS_SECURITY_GPO_ARTIFACT_DIR: path.join(root, "build/security-gpo-packages"),

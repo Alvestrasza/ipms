@@ -24,15 +24,17 @@ class DomainGpoImportsView(DomainSettingsView):
         config = get_object_or_404(DomainSecuritySettings, pk=domain_id, tenant=request.tenant)
         expire_jobs(request.tenant)
         jobs = GpoImportJob.objects.filter(tenant=request.tenant, domain=config).select_related('system')[:50]
-        return Response({'results': [job_projection(job) for job in jobs], 'executors': executor_options(request.tenant, config)})
+        return Response({'results': [job_projection(job, user=request.user) for job in jobs], 'executors': executor_options(request.tenant, config)})
 
     @transaction.atomic
     def post(self, request, domain_id):
+        from .gpo_approvals import fresh_actor
         query(request, set())
         request.tenant = Tenant.objects.select_for_update().get(pk=request.tenant.pk)
+        fresh_actor(request)
         self.check_permissions(request)
         if not has_tenant_permission(request.user, request.tenant, Permission.SECURITY_GPO_IMPORTS_RUN):
             raise PermissionDenied()
         config = get_object_or_404(DomainSecuritySettings.objects.select_for_update(), pk=domain_id, tenant=request.tenant)
         job = queue_job(request.tenant, request.user, config, request.data)
-        return Response(job_projection(job), status=202)
+        return Response(job_projection(job, user=request.user), status=202)

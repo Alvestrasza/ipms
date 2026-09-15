@@ -1,5 +1,5 @@
 // File Name: windows_gpo_journal.cpp
-// Version: v0.1.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
+// Version: v0.2.0 | Created: 2026-09-14 | Last Modified: 2026-09-15
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Protected exact-job approval, immutable package staging and durable GPO fences.
 #include "ipms/agent/windows_gpo_management.hpp"
@@ -74,9 +74,6 @@ std::filesystem::path job_directory(const gpo::job& j) {
   const auto root=gpo_storage_directory(); ensure_gpo_directory(root);
   const auto path=root/wide(j.text("job_id")); ensure_gpo_directory(path); return path;
 }
-json::object approval(const gpo::job& j,std::string_view uri) {
-  return {{"schema",1},{"job",j.fields},{"device_uri",uri}};
-}
 std::string enrollment() {
   const auto content=read_protected_gpo_file(agent_directory()/L"agent-state.json",65536);
   return json::parse(content).as<json::object>().at("device_uri").as<std::string>();
@@ -132,6 +129,14 @@ void write_protected_gpo_file(const std::filesystem::path& path,std::string_view
     if(!MoveFileExW(target.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)) unsafe();
   }
 }
+void consume_protected_gpo_file(const std::filesystem::path& path,const std::filesystem::path& consumed,
+    std::string_view expected_bytes) {
+  if(path==consumed||path.parent_path()!=consumed.parent_path()||
+      read_protected_gpo_file(path,65536)!=expected_bytes) unsafe();
+  // Move without REPLACE_EXISTING is the durable one-use transition. An existing
+  // destination, reparse point or mismatching receipt can never be overwritten.
+  if(!MoveFileExW(path.c_str(),consumed.c_str(),MOVEFILE_WRITE_THROUGH)) unsafe();
+}
 std::filesystem::path gpo_storage_directory() { return agent_directory()/L"gpo-management"; }
 std::optional<gpo::journal> load_gpo_journal() {
   const auto root=gpo_storage_directory(); ensure_gpo_directory(root); const auto path=root/L"current.json";
@@ -164,16 +169,45 @@ void save_gpo_journal(const gpo::journal& record) {
 }
 bool gpo_enrollment_matches(std::string_view uri) { try { return enrollment()==uri; } catch(...) { return false; } }
 bool has_gpo_local_approval(const gpo::job& j,std::string_view uri) { try {
-  if(!gpo::unexpired(j)||!gpo_enrollment_matches(uri)) return false;
+  if(j.number("schema")!=1||!gpo::unexpired(j)||!gpo_enrollment_matches(uri)) return false;
   const auto path=job_directory(j);
   if(GetFileAttributesW((path/L"approval-consumed.json").c_str())!=INVALID_FILE_ATTRIBUTES) return false;
-  return json::parse(read_protected_gpo_file(path/L"approval.json",65536))==json::value(approval(j,uri));
+  return json::parse(read_protected_gpo_file(path/L"approval.json",65536))==json::value(gpo::local_approval_document(j,uri));
 } catch(...) { return false; } }
 void consume_gpo_local_approval(const gpo::job& j,std::string_view uri) {
   if(!has_gpo_local_approval(j,uri)) throw gpo::operation_error("gpo_local_approval_invalid");
   const auto path=job_directory(j);
   if(!MoveFileExW((path/L"approval.json").c_str(),(path/L"approval-consumed.json").c_str(),MOVEFILE_WRITE_THROUGH))
     throw gpo::operation_error("gpo_local_approval_invalid");
+}
+bool has_gpo_portal_approval(const gpo::journal& record) { try {
+  if(!gpo::grant_current(record,GetTickCount64())||
+      !gpo::portal_approval_current(record.portal_approval,record.assignment,record.device_uri)||
+      !gpo_enrollment_matches(record.device_uri)) return false;
+  const auto expected=json::serialize(gpo::portal_approval_receipt(record));
+  const auto path=job_directory(record.assignment);
+  if(GetFileAttributesW((path/L"portal-approval-consumed.json").c_str())!=INVALID_FILE_ATTRIBUTES) return false;
+  return read_protected_gpo_file(path/L"portal-approval.json",65536)==expected;
+} catch(...) { return false; } }
+void save_gpo_portal_approval(const gpo::journal& record) {
+  if(!gpo::grant_current(record,GetTickCount64())||
+      !gpo::portal_approval_current(record.portal_approval,record.assignment,record.device_uri)||
+      !gpo_enrollment_matches(record.device_uri)) throw gpo::operation_error("gpo_portal_approval_invalid");
+  const auto expected=json::serialize(gpo::portal_approval_receipt(record));
+  const auto path=job_directory(record.assignment);
+  if(GetFileAttributesW((path/L"portal-approval-consumed.json").c_str())!=INVALID_FILE_ATTRIBUTES)
+    throw gpo::operation_error("gpo_portal_approval_invalid");
+  // Called only after the exact authenticated execution claim has been
+  // validated and durably recorded. A poll or legacy CLI cannot create this.
+  write_protected_gpo_file(path/L"portal-approval.json",expected,false);
+  if(!has_gpo_portal_approval(record)) throw gpo::operation_error("gpo_portal_approval_invalid");
+}
+void consume_gpo_portal_approval(const gpo::journal& record) {
+  if(!has_gpo_portal_approval(record)) throw gpo::operation_error("gpo_portal_approval_invalid");
+  const auto path=job_directory(record.assignment);
+  try {consume_protected_gpo_file(path/L"portal-approval.json",path/L"portal-approval-consumed.json",
+      json::serialize(gpo::portal_approval_receipt(record)));}
+  catch(...) {throw gpo::operation_error("gpo_portal_approval_invalid");}
 }
 void save_gpo_artifact(const gpo::job& j,std::string_view bytes) {
   const auto* c=gpo::component(j); if(!c) throw gpo::operation_error("gpo_unsupported_component");
@@ -235,11 +269,12 @@ int approve_gpo_pilot(const std::filesystem::path& document) {
     std::string text(static_cast<std::size_t>(size),'\0'); input.read(text.data(),static_cast<std::streamsize>(text.size()));
     if(!input||input.peek()!=std::char_traits<char>::eof()) unsafe();
     const auto j=gpo::parse_job(json::parse(text));
+    if(j.number("schema")!=1) throw gpo::operation_error("gpo_local_approval_invalid");
     if(!gpo::unexpired(j)||!gpo::component(j)) throw gpo::operation_error("gpo_invalid_job");
     const auto uri=enrollment(); const auto root=job_directory(j);
     if(GetFileAttributesW((root/L"approval-consumed.json").c_str())!=INVALID_FILE_ATTRIBUTES)
       throw gpo::operation_error("gpo_reconciliation_required");
-    write_protected_gpo_file(root/L"approval.json",json::serialize(approval(j,uri)),false);
+    write_protected_gpo_file(root/L"approval.json",json::serialize(gpo::local_approval_document(j,uri)),false);
     if(!has_gpo_local_approval(j,uri)) unsafe();
     std::cout<<"Approved exact unlinked pilot job "<<j.text("job_id")<<" with digest "<<j.text("input_digest")<<" until "<<j.text("expires_at")<<".\n";
     return 0;

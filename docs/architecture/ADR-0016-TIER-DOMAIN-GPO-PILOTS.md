@@ -10,6 +10,10 @@ Status: accepted design; implementation candidate in Portal 0.2.48 and Windows
 Agent 0.2.32. This is not a declaration of deployed or live AD acceptance.
 Tracking: [security and identity epic #34](https://github.com/Alvestrasza/ipms/issues/34).
 
+The owner decision of 2026-09-15 supersedes the mandatory local approval
+requirement for new requests with [central domain/tier approval](ADR-0017-PORTAL-GPO-APPROVAL.md).
+The local workflow below remains the contract for persisted schema 1 jobs.
+
 ## Context and decisions
 
 Customers have different forests, domains, OU layouts, tier boundaries and

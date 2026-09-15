@@ -8,6 +8,7 @@ from .models import PlatformAdministrator, Tenant, TenantMembership
 
 class Permission:
     SECURITY_DOMAINS_MANAGE = 'security.domains.manage'
+    SECURITY_GPO_IMPORTS_APPROVE = 'security.gpo_imports.approve'
     SECURITY_GPO_IMPORTS_RUN = 'security.gpo_imports.run'
     INVENTORY_VIEW = "inventory.view"
     CONNECTORS_MANAGE = "connectors.manage"
@@ -51,6 +52,7 @@ ROLE_PERMISSIONS = {
         {
             Permission.INVENTORY_VIEW,
             Permission.OPERATIONS_APPROVE,
+            Permission.SECURITY_GPO_IMPORTS_APPROVE,
             Permission.AUDIT_VIEW,
         }
     ),

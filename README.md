@@ -9,13 +9,17 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-Candidate `0.2.48` adds tenant domain plans with multiple Tier 0/1/2 OU mappings,
-configurable GPO naming and ordered baseline composition. Windows Agent `0.2.32`
-adds independently approved native import into new disabled, unlinked pilot
-GPOs. Saving or rearranging settings never applies policies. See
+Candidate `0.2.53` adds central GPO pilot approval with explicit domain/tier
+permissions and optional tenant-wide four-eyes approval. Windows Agent `0.2.34`
+validates the exact approval and imports only a new disabled, unlinked pilot
+GPO. A single scoped administrator may approve his own request when four eyes
+are not required. Domain plans retain flexible OU mappings, GPO naming and
+ordered baseline composition. Saving or rearranging settings never applies
+policies. See
 [domain plans and pilot workflow](docs/operations/SECURITY-GPO-PILOTS.md) and
 [epic #34](https://github.com/Alvestrasza/ipms/issues/34). This candidate has not
-been deployed or accepted against a live domain.
+been accepted against a live domain; deployment and verification evidence are
+recorded separately.
 
 Application `0.2.45` extended **Security → Baseline** with reversible
 tenant baseline visibility settings, read-only scan requests and per-control

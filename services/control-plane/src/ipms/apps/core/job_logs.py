@@ -16,7 +16,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.dateparse import parse_date, parse_datetime
 from django.utils.timezone import is_naive
-from rest_framework.exceptions import ParseError
+from rest_framework.exceptions import ParseError, PermissionDenied
 from rest_framework.response import Response
 
 from ipms.apps.agent_pki.models import AgentLifecycleJob, WindowsAgentDeployment
@@ -25,7 +25,7 @@ from ipms.apps.security.domains import CanManageDomains
 from ipms.apps.security.gpo_jobs import job_projection
 from ipms.apps.security.models import BaselineScanJob, GpoImportJob
 from ipms.apps.security.views import SecurityReadView, query
-from ipms.apps.tenancy.rbac import Permission, effective_tenant_permissions
+from ipms.apps.tenancy.rbac import Permission, effective_tenant_permissions, has_tenant_permission
 from .exceptions import PublicApiError
 
 
@@ -37,7 +37,7 @@ KINDS = {
     "agent_lifecycle": Permission.AGENTS_MANAGE,
     "agent_deployment": Permission.AGENTS_MANAGE,
     "baseline_scan": Permission.INVENTORY_VIEW,
-    "gpo_import": Permission.SECURITY_DOMAINS_MANAGE,
+    "gpo_import": Permission.SECURITY_GPO_IMPORTS_APPROVE,
     "hyperv_power": Permission.VIRTUAL_MACHINES_OPERATE,
     "hyperv_management": Permission.INVENTORY_VIEW,
 }
@@ -171,6 +171,8 @@ def _rows(request, scope, options):
     kinds = [kind for kind, permission in KINDS.items() if permission in permissions
              and (scope == "agents" or kind in {"baseline_scan", "gpo_import"})]
     sources = _sources(request.tenant)
+    from ipms.apps.security.gpo_approvals import visible_jobs
+    sources["gpo_import"] = visible_jobs(request.user, request.tenant, sources["gpo_import"])
     selected = [_filtered(sources[kind], options) for kind in kinds if not options["kind"] or kind == options["kind"]]
     if not selected:
         return sources["baseline_scan"].none(), kinds
@@ -228,11 +230,12 @@ class JobLogView(SecurityReadView):
 
 
 class GpoImportLogDetailView(SecurityReadView):
-    permission_classes = (*SecurityReadView.permission_classes, CanManageDomains)
-
     def get(self, request, pk):
         query(request, set())
-        job = get_object_or_404(GpoImportJob.objects.select_related("system", "domain"),
+        from ipms.apps.security.gpo_approvals import visible_jobs
+        if not has_tenant_permission(request.user, request.tenant, Permission.SECURITY_GPO_IMPORTS_APPROVE):
+            raise PermissionDenied()
+        job = get_object_or_404(visible_jobs(request.user, request.tenant, GpoImportJob.objects.select_related("system", "domain", "tenant", "enrollment")),
             pk=pk, tenant=request.tenant, enrollment__tenant=request.tenant,
             system__tenant=request.tenant, domain__tenant=request.tenant)
-        return Response({**job_projection(job), "domain_id": str(job.domain_id), "domain": job.domain.domain_name})
+        return Response({**job_projection(job, user=request.user, include_review=True), "domain_id": str(job.domain_id), "domain": job.domain.domain_name})

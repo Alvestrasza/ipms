@@ -70,6 +70,28 @@ export type GpoImportJob = {
   error_code: string;
   gpo_guid: string | null;
   approval_document: Record<string, unknown> | null;
+  approval_mode: "local" | "portal";
+  approved_by: string | null;
+  approved_by_name: string | null;
+  approved_at: string | null;
+  four_eyes_required: boolean;
+  policy_revision: number;
+  can_approve: boolean;
+  approval_blocker: string | null;
+  requested_by: string | null;
+  requested_by_name: string;
+  expires_at: string;
+  input_digest: string;
+  dc_fqdn: string;
+  review: GpoImportReview | null;
+};
+
+export type GpoImportReview = {
+  component_name: string;
+  artifact_sha256: string;
+  files: { path: string; bytes: number; sha256: string }[];
+  report_xml: string;
+  changes: ["create_disabled_unlinked_pilot"];
 };
 
 export type GpoImportExecutor = {

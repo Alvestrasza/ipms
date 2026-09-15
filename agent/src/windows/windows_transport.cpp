@@ -1,5 +1,5 @@
 // File Name: windows_transport.cpp
-// Version: v0.2.33 | Created: 2026-08-31 | Last Modified: 2026-09-15
+// Version: v0.2.34 | Created: 2026-08-31 | Last Modified: 2026-09-15
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Authenticated fixed Agent channels with durable, exact-job GPO execution grants.
 #include "ipms/agent/windows_transport.hpp"
@@ -46,7 +46,7 @@
 namespace {
 using Microsoft::WRL::ComPtr;
 constexpr std::size_t k_max_document_bytes = 65'536;
-constexpr wchar_t k_agent_version[] = L"0.2.33";
+constexpr wchar_t k_agent_version[] = L"0.2.34";
 constexpr std::size_t k_max_artifact_bytes = 64 * 1024 * 1024;
 std::mutex identity_mutex;
 std::mutex management_cycle_mutex;
@@ -491,7 +491,7 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
     ~failure_reset() { if (cache && !succeeded) cache->reset(); }
   } guard{reusable ? &console_transport : nullptr};
   if (!transport->session) {
-    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.33", WINHTTP_ACCESS_TYPE_NO_PROXY,
+    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.34", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
     if (!transport->session) throw std::runtime_error("The Agent HTTP session could not be created.");
     if (input_channel || security_channel || path == L"/v1/heartbeat" || path == L"/v1/hyperv-management") {
@@ -582,7 +582,7 @@ http_response post_binary(const state& identity, const std::string& body, PCCERT
   const auto check_deadline = [&] { if (gpo_artifact && ((cancelled && cancelled()) || std::chrono::steady_clock::now() >= deadline))
     throw std::runtime_error("The GPO artifact transfer stopped."); };
   check_deadline();
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.33", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.34", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent artifact session could not be created.");
   if (gpo_artifact) WinHttpSetTimeouts(session.get(), 2'000, 2'000, 2'000, 2'000);
@@ -1480,7 +1480,7 @@ TransportResult run_gpo_cycle(const std::function<bool()>& cancelled) {
       return {false, L"The previous GPO operation requires reconciliation."};
     }
     // Discovery is bounded in a separate process and remains available before
-    // local write approval, so the Portal can show actual eligible controllers.
+    // write approval, so the Portal can show actual eligible controllers.
     const auto executor = probe_gpo_executor(stopping);
     json::object request{{"action", record && record->state == gpo::phase::prepared ? "lookup" : "poll"},
         {"agent_version", utf8(k_agent_version)}, {"executor", executor}};
@@ -1514,16 +1514,38 @@ TransportResult run_gpo_cycle(const std::function<bool()>& cancelled) {
     if (!gpo::executor_matches(assignment, executor)) {
       fail_preflight("gpo_identity_mismatch"); return {false, L"The GPO controller identity changed."};
     }
-    if (!has_gpo_local_approval(assignment, identity.device_uri)) {
-      report(*record, gpo::result("awaiting_local_approval", "gpo_local_approval_required"));
-      return {true, L"The exact GPO pilot requires local administrator approval."};
+    const bool portal_mode = assignment.number("schema") == 2;
+    json::value portal_approval;
+    const auto offered_approval = response.find("gpo_approval");
+    if (portal_mode) {
+      if (offered_approval == response.end()) {
+        fail_preflight("gpo_portal_approval_invalid"); return {false, L"The Portal approval response is incomplete."};
+      }
+      if (!offered_approval->second.get_if<std::nullptr_t>()) {
+        try { portal_approval = gpo::parse_portal_approval(offered_approval->second, assignment, identity.device_uri); }
+        catch (...) { fail_preflight("gpo_portal_approval_invalid"); return {false, L"The Portal approval binding is invalid."}; }
+      }
+      if (!gpo::portal_approval_current(portal_approval, assignment, identity.device_uri)) {
+        report(*record, gpo::result("awaiting_portal_approval", "gpo_portal_approval_required"));
+        return {true, L"The exact GPO pilot awaits a current Portal approval."};
+      }
+    } else {
+      if (offered_approval != response.end() && !offered_approval->second.get_if<std::nullptr_t>()) {
+        fail_preflight("gpo_portal_approval_invalid"); return {false, L"A Portal approval cannot authorize a legacy GPO job."};
+      }
+      if (!has_gpo_local_approval(assignment, identity.device_uri)) {
+        report(*record, gpo::result("awaiting_local_approval", "gpo_local_approval_required"));
+        return {true, L"The legacy GPO pilot requires exact local administrator approval."};
+      }
     }
     const auto artifact_request = envelope({{"action", "artifact"}, {"job_id", assignment.text("job_id")},
         {"input_digest", assignment.text("input_digest")}});
     const auto artifact = post_binary(identity, json::serialize(artifact_request), certificate.get(), true, stopping);
     if (artifact.status != 200) throw gpo::operation_error("gpo_artifact_invalid");
     save_gpo_artifact(assignment, artifact.body);
-    if (stopping() || !same_identity() || !has_gpo_local_approval(assignment, identity.device_uri))
+    if (stopping() || !same_identity() || (portal_mode ?
+        !gpo::portal_approval_current(portal_approval, assignment, identity.device_uri) :
+        !has_gpo_local_approval(assignment, identity.device_uri)))
       return {true, L"The GPO operation stopped before claiming execution."};
     // Fence BEFORE requesting the one-shot grant: a lost reply cannot result in
     // a second claim or an unrecorded repeat after service/process restart.
@@ -1531,12 +1553,13 @@ TransportResult run_gpo_cycle(const std::function<bool()>& cancelled) {
     const auto claim_started = GetTickCount64();
     const auto claim = exchange({{"action", "claim"}, {"job_id", assignment.text("job_id")},
         {"input_digest", assignment.text("input_digest")}}).at("gpo_claim").as<json::object>();
-    if (!gpo::record_claim(*record, claim, claim_started + 15'000, save_gpo_journal)) {
+    if (!gpo::record_claim(*record, claim, claim_started + 15'000, save_gpo_journal, portal_approval)) {
       report(*record, record->result.as<json::object>());
       return {false, record->state == gpo::phase::terminal ? L"The GPO job was cancelled before execution." :
           L"The GPO execution claim requires reconciliation."};
     }
     if (stopping() || !same_identity()) return {false, L"The GPO grant was fenced before execution."};
+    if (portal_mode) save_gpo_portal_approval(*record);
     const auto result = invoke_gpo_pilot_worker(stopping);
     record = load_gpo_journal(); if (!record || record->assignment != assignment) throw gpo::operation_error("gpo_journal_invalid");
     report(*record, result);

@@ -136,7 +136,7 @@ def withdraw_identity_operations(user, *, reason):
     )
     from ipms.apps.security.gpo_jobs import withdraw_gpo_jobs
     from ipms.apps.security.models import GpoImportJob
-    gpo_tenant_ids = GpoImportJob.objects.filter(requested_by_id=user.pk).values_list("tenant_id", flat=True).distinct()
+    gpo_tenant_ids = GpoImportJob.objects.filter(Q(requested_by_id=user.pk) | Q(approved_by_id=user.pk)).values_list("tenant_id", flat=True).distinct()
     counts["gpo_imports"] = sum(
         withdraw_gpo_jobs(tenant_id=tenant_id, actor_id=user.pk, reason=reason)
         for tenant_id in sorted(gpo_tenant_ids)

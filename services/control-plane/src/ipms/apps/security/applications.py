@@ -69,7 +69,16 @@ class BaselineApplications:
         # It is not application evidence: these GPOs start disabled/unlinked.
         from .gpo_jobs import DEFAULT_GPO_IDS, digest
         try:
+            from .gpo_approvals import is_portal, approval_object
             assigned = job.assignment
+            portal = is_portal(job)
+            if portal:
+                approval = approval_object(job)
+                if (not approval or not job.approval_digest or digest(approval) != job.approval_digest
+                        or not job.approved_at or not job.claimed_at
+                        or not job.requested_at.replace(microsecond=0) <= job.approved_at <= job.claimed_at
+                        or (job.four_eyes_required and job.requested_by_id == job.approved_by_id)):
+                    return None
             if (job.status != "staged" or job.error_code or not job.claimed_at or not job.completed_at
                     or not job.requested_at <= job.claimed_at <= job.completed_at <= self.now
                     or job.gpo_guid in DEFAULT_GPO_IDS or canonical_guid(job.gpo_guid) != job.gpo_guid
@@ -77,8 +86,8 @@ class BaselineApplications:
                     or job.domain.tenant_id != self.tenant_id or job.enrollment.tenant_id != self.tenant_id
                     or job.system.tenant_id != self.tenant_id or job.enrollment.platform != "windows"
                     or job.system.inventory_source != "agent" or job.system.source_id != job.enrollment.device_uri
-                    or not isinstance(assigned, dict) or set(assigned) != _ASSIGNMENT_FIELDS
-                    or type(assigned["schema"]) is not int or assigned["schema"] != 1
+                    or not isinstance(assigned, dict) or set(assigned) != _ASSIGNMENT_FIELDS | ({"approval_mode"} if portal else set())
+                    or type(assigned["schema"]) is not int or assigned["schema"] != (2 if portal else 1)
                     or assigned["operation"] != "create_unlinked_pilot"
                     or assigned["job_id"] != str(job.id) or assigned["scope_id"] != str(job.domain_id)
                     or type(assigned["scope_revision"]) is not int or assigned["scope_revision"] < 1
@@ -120,6 +129,7 @@ class BaselineApplications:
             "id", "domain_id", "enrollment_id", "system_id", "domain_guid", "status", "error_code",
             "requested_at", "claimed_at", "completed_at", "gpo_guid", "assignment", "input_digest",
             "result_digest", "result_evidence", "pilot_display_name",
+            "requested_by_id", "approved_by_id", "approved_at", "approval_digest", "policy_revision", "four_eyes_required",
             "domain__tenant_id", "domain__domain_name", "enrollment__tenant_id",
             "enrollment__platform", "enrollment__device_uri", "system__tenant_id",
             "system__inventory_source", "system__source_id",

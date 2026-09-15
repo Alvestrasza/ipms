@@ -29,7 +29,7 @@ const en = {
   configureDomains: "Configure domains & tiers",
   scanLogs: "View scan logs",
   importLogs: "View GPO import logs",
-  openImportLog: "Open request and local approval in Logs",
+  openImportLog: "Open request and approval in Logs",
   add: "Add domain",
   edit: "Edit domain",
   empty: "No domain settings have been saved for this tenant.",
@@ -97,7 +97,7 @@ const en = {
   sessionExpired: "Your session has expired. Sign in again to continue.",
   importsTitle: "Unlinked pilot GPOs",
   importBoundary:
-    "Prepare a separate pilot GPO on a domain controller. The Agent requires local approval for this exact job. The pilot remains unlinked with Computer and User settings disabled; this does not apply the baseline.",
+    "Prepare a separate pilot GPO on a domain controller. An authorized administrator reviews and approves the exact import in Logs. The pilot remains unlinked with Computer and User settings disabled; this does not apply the baseline.",
   saveFirst: "Save the GPO configuration before requesting a pilot import.",
   importsUnavailable:
     "Eligible Agents and the request state could not be loaded.",
@@ -105,7 +105,7 @@ const en = {
   executor: "Domain controller Agent",
   noExecutor: "No eligible Agent in this domain",
   executorHint:
-    "The selected Agent must report the expected domain identity and permit this bounded operation locally.",
+    "The selected Agent must run version 0.2.34 or later and report the expected domain identity. Requesting and approving require an explicit domain and Tier authorization.",
   baseline: "Baseline package",
   component: "GPO component",
   unavailableComponent: "Artifact unavailable",
@@ -115,7 +115,7 @@ const en = {
   importAction: "Request unlinked pilot import",
   requesting: "Requesting…",
   importReceived:
-    "Pilot import request recorded. Local approval is required before the Agent can create the GPO.",
+    "Pilot import request recorded. Review and approve the exact import in Logs before the Agent can create the GPO.",
   importInvalid:
     "The pilot request was rejected. Check the saved domain revision, Agent and package selection.",
   importUncertain:
@@ -137,7 +137,7 @@ const en = {
   errorCode: "Result code",
   states: {
     queued: "Queued",
-    awaiting_approval: "Awaiting local approval",
+    awaiting_approval: "Awaiting approval",
     running: "Running",
     staged: "Prepared, not applied",
     blocked: "Blocked",
@@ -171,7 +171,7 @@ const de: DomainSecurityCopy = {
   configureDomains: "Domänen & Tiers konfigurieren",
   scanLogs: "Scan-Protokolle öffnen",
   importLogs: "GPO-Importprotokolle öffnen",
-  openImportLog: "Auftrag und lokale Freigabe in Logs öffnen",
+  openImportLog: "Auftrag und Freigabe in Logs öffnen",
   add: "Domäne hinzufügen",
   edit: "Domäne bearbeiten",
   empty:
@@ -243,7 +243,7 @@ const de: DomainSecurityCopy = {
   sessionExpired: "Die Sitzung ist abgelaufen. Bitte erneut anmelden.",
   importsTitle: "Unverknüpfte Pilot-GPOs",
   importBoundary:
-    "Eine separate Pilot-GPO auf einem Domain Controller vorbereiten. Der Agent benötigt eine lokale Freigabe für genau diesen Auftrag. Die GPO bleibt unverknüpft; Computer- und Benutzereinstellungen sind deaktiviert. Die Baseline wird dadurch nicht angewendet.",
+    "Eine separate Pilot-GPO auf einem Domain Controller vorbereiten. Ein berechtigter Administrator prüft und genehmigt den konkreten Import unter Logs. Die GPO bleibt unverknüpft; Computer- und Benutzereinstellungen sind deaktiviert. Die Baseline wird dadurch nicht angewendet.",
   saveFirst: "Vor einem Pilot-Import die GPO-Konfiguration speichern.",
   importsUnavailable:
     "Geeignete Agents und der Auftragsstand konnten nicht geladen werden.",
@@ -251,7 +251,7 @@ const de: DomainSecurityCopy = {
   executor: "Domain-Controller-Agent",
   noExecutor: "Kein geeigneter Agent in dieser Domäne",
   executorHint:
-    "Der ausgewählte Agent muss die erwartete Domänenidentität melden und diese begrenzte Operation lokal erlauben.",
+    "Der ausgewählte Agent muss mindestens Version 0.2.34 ausführen und die erwartete Domänenidentität melden. Anfordern und Freigeben erfordern eine ausdrückliche Berechtigung für Domäne und Tier.",
   baseline: "Baseline-Paket",
   component: "GPO-Komponente",
   unavailableComponent: "Artefakt nicht verfügbar",
@@ -261,7 +261,7 @@ const de: DomainSecurityCopy = {
   importAction: "Unverknüpften Pilot-Import anfordern",
   requesting: "Wird angefordert…",
   importReceived:
-    "Pilot-Import erfasst. Bevor der Agent die GPO erstellen kann, ist die lokale Freigabe erforderlich.",
+    "Pilot-Import erfasst. Den konkreten Import unter Logs prüfen und freigeben, bevor der Agent die GPO erstellen kann.",
   importInvalid:
     "Der Pilot-Auftrag wurde abgelehnt. Bitte gespeicherte Domänenrevision, Agent und Paket prüfen.",
   importUncertain:
@@ -283,7 +283,7 @@ const de: DomainSecurityCopy = {
   errorCode: "Ergebniscode",
   states: {
     queued: "Eingereiht",
-    awaiting_approval: "Lokale Freigabe ausstehend",
+    awaiting_approval: "Freigabe ausstehend",
     running: "Wird ausgeführt",
     staged: "Vorbereitet, nicht angewendet",
     blocked: "Blockiert",

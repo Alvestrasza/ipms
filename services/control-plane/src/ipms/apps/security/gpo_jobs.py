@@ -16,7 +16,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
-from rest_framework.exceptions import NotFound, ParseError
+from rest_framework.exceptions import NotFound, ParseError, PermissionDenied
 
 from ipms.apps.agent_pki.models import AgentEnrollment
 from ipms.apps.audit.models import AuditEvent
@@ -39,7 +39,7 @@ RESULT_CODES = set('gpo_staged_unlinked gpo_local_approval_required gpo_job_expi
                    'gpo_name_collision gpo_source_mismatch gpo_artifact_invalid gpo_local_approval_invalid '
                    'gpo_reconciliation_required gpo_provider_failed gpo_verification_failed '
                    'gpo_worker_timeout gpo_worker_failed gpo_journal_invalid gpo_claim_uncertain '
-                   'gpo_authority_expired gpo_enrollment_changed'.split())
+                   'gpo_authority_expired gpo_enrollment_changed gpo_portal_approval_invalid gpo_portal_approval_required'.split())
 EXECUTOR_CODES = {'ready_for_approval', 'not_writable_domain_controller', 'domain_identity_unavailable',
                   'gpmc_unavailable', 'executor_probe_failed'}
 
@@ -116,9 +116,9 @@ def baseline_options():
     return results
 
 
-def version_supported(value):
+def version_supported(value, *, portal=False):
     return bool(isinstance(value, str) and re.fullmatch(r'\d{1,5}\.\d{1,5}\.\d{1,5}', value)
-                and tuple(map(int, value.split('.'))) >= (0, 2, 32))
+                and tuple(map(int, value.split('.'))) >= ((0, 2, 34) if portal else (0, 2, 32)))
 
 
 def active_gpo_jobs(tenant_id, *, enrollment_id=None):
@@ -137,14 +137,14 @@ def maintenance_pending(enrollment, system):
             or pending_agent_deployments(enrollment, system).exists())
 
 
-def _ready(system, enrollment, report, configured_domain):
+def _ready(system, enrollment, report, configured_domain, *, portal=False):
     now = timezone.now()
     return bool(system and enrollment and report and enrollment.status == 'active' and enrollment.platform == 'windows'
                 and system.tenant_id == enrollment.tenant_id and system.inventory_source == 'agent'
                 and system.source_id == enrollment.device_uri and system.operating_system_role == 'domain-controller'
                 and system.domain_name.lower() == configured_domain and report.domain_dns_name == configured_domain
                 and (not system.fqdn or system.fqdn.lower() == report.dc_fqdn)
-                and version_supported(system.agent_version) and version_supported(report.agent_version)
+                and version_supported(system.agent_version, portal=portal) and version_supported(report.agent_version, portal=portal)
                 and report.role == 'writable-domain-controller' and report.gpmc_available
                 and report.result_code == 'ready_for_approval' and report.domain_guid and report.forest_dns_name and report.dc_fqdn
                 and now - timedelta(minutes=5) < report.observed_at <= now
@@ -163,18 +163,39 @@ def executor_options(tenant, config):
         results.append({'system_id': str(system.id), 'hostname': system.hostname, 'agent_version': system.agent_version,
                         'state': report.result_code if report else 'not_reported', 'domain_name': system.domain_name,
                         'domain_guid': report.domain_guid if report else '', 'forest_name': report.forest_dns_name if report else '',
-                        'dc_fqdn': report.dc_fqdn if report else '', 'eligible': _ready(system, enrollment, report, config.domain_name),
+                        'dc_fqdn': report.dc_fqdn if report else '', 'eligible': _ready(system, enrollment, report, config.domain_name, portal=True),
                         'last_seen': report.observed_at.isoformat() if report else None})
     return results
 
 
-def job_projection(job):
+def job_projection(job, *, user=None, include_review=False):
+    from .gpo_approvals import approval_blocker, is_portal, review_document
     assigned = job.assignment
+    blocker = approval_blocker(job, user)
+    review = None
+    if include_review:
+        try:
+            review = review_document(job)
+        except ValidationError:
+            blocker = blocker or 'artifact_unavailable'
+        if blocker is None and not _scope_current(job, job.enrollment, job.tenant, lock=False):
+            blocker = 'scope_changed'
+
     return {'id': str(job.id), 'status': job.status, 'baseline_id': assigned['baseline_id'],
             'backup_id': assigned['backup_id'], 'tier': str(assigned['target_tier']),
             'pilot_display_name': job.pilot_display_name, 'hostname': job.system.hostname,
             'requested_at': job.requested_at.isoformat(), 'completed_at': job.completed_at.isoformat() if job.completed_at else None,
             'error_code': job.error_code, 'gpo_guid': job.gpo_guid or None,
+            'requested_by': str(job.requested_by_id) if job.requested_by_id else None,
+            'requested_by_name': job.requested_by.username if job.requested_by else '',
+            'expires_at': job.expires_at.isoformat(), 'input_digest': job.input_digest,
+            'dc_fqdn': assigned.get('executor_dc_fqdn', ''),
+            'approval_mode': 'portal' if is_portal(job) else 'local',
+            'approved_by': str(job.approved_by_id) if job.approved_by_id else None,
+            'approved_by_name': job.approved_by.username if job.approved_by else None,
+            'approved_at': job.approved_at.isoformat() if job.approved_at else None,
+            'four_eyes_required': job.four_eyes_required, 'policy_revision': job.policy_revision,
+            'can_approve': blocker is None, 'approval_blocker': blocker, 'review': review,
             'approval_document': assigned if job.status in PRE_EXECUTION and timezone.now() < job.expires_at else None}
 
 
@@ -209,6 +230,11 @@ def queue_job(tenant, user, config, data):
         request_digest = digest({'domain_id': str(config.id), **data})
     except (UnicodeError, ValueError, TypeError) as exc:
         raise ParseError('The GPO selection encoding is invalid.') from exc
+    from .gpo_approvals import scoped, policy_for, authorization_for
+    if data['tier'] not in ('0', '1', '2'):
+        raise ParseError('Select one concrete tier.')
+    if not scoped(user, tenant, config, data['tier']):
+        raise PermissionDenied('An explicit domain/tier grant is required.')
     existing = GpoImportJob.objects.filter(pk=job_id).select_related('system').first()
     if existing:
         if existing.tenant_id != tenant.id:
@@ -233,7 +259,7 @@ def queue_job(tenant, user, config, data):
     system = WindowsServer.objects.select_for_update().filter(pk=system_id, tenant=tenant).first()
     enrollment = AgentEnrollment.objects.filter(tenant=tenant, device_uri=system.source_id).first() if system else None
     report = GpoExecutorReport.objects.filter(enrollment=enrollment).first() if enrollment else None
-    if not _ready(system, enrollment, report, config.domain_name):
+    if not _ready(system, enrollment, report, config.domain_name, portal=True):
         raise PublicApiError('security_gpo_executor_unavailable', status_code=409)
     try:
         artifact_bytes(component)
@@ -247,7 +273,8 @@ def queue_job(tenant, user, config, data):
     if GpoImportJob.objects.filter(tenant=tenant).count() >= 10000:
         raise PublicApiError('security_gpo_job_limit', status_code=409)
     expires = (timezone.now() + timedelta(hours=1)).replace(microsecond=0)
-    assignment = {'schema': 1, 'job_id': job_id, 'operation': 'create_unlinked_pilot',
+    policy, auth = policy_for(tenant), authorization_for(config)
+    assignment = {'schema': 2, 'approval_mode': 'portal', 'job_id': job_id, 'operation': 'create_unlinked_pilot',
                   'domain_dns_name': config.domain_name, 'domain_guid': report.domain_guid,
                   'forest_dns_name': report.forest_dns_name, 'executor_dc_fqdn': report.dc_fqdn,
                   'scope_id': str(config.id), 'scope_revision': config.revision, 'target_tier': int(data['tier']),
@@ -257,6 +284,8 @@ def queue_job(tenant, user, config, data):
     assignment['input_digest'] = digest(assignment)
     job = GpoImportJob.objects.create(id=job_id, tenant=tenant, domain=config, enrollment=enrollment, system=system,
                                       requested_by=user, domain_guid=report.domain_guid, request_sha256=request_digest,
+                                      policy_revision=policy.revision, four_eyes_required=policy.four_eyes_required,
+                                      authorization_revision=auth.revision, status='awaiting_approval',
                                       input_digest=assignment['input_digest'], assignment=assignment,
                                       pilot_display_name=name, pilot_name_key=name.casefold(), expires_at=expires)
     _audit(job, 'security.gpo_import_requested')
@@ -294,17 +323,36 @@ def _executor_report(enrollment, data, version):
                                                'result_code': data['result_code'], 'observed_at': timezone.now()})
 
 
-def _scope_current(job, enrollment, tenant):
+def _scope_current(job, enrollment, tenant, *, lock=True):
+    from .gpo_approvals import is_portal, policy_current, approval_current
     assignment = job.assignment
-    config = DomainSecuritySettings.objects.select_for_update().get(pk=job.domain_id)
-    system = WindowsServer.objects.select_for_update().get(pk=job.system_id)
+    base_fields = {'schema', 'job_id', 'operation', 'domain_dns_name', 'domain_guid', 'forest_dns_name',
+                   'executor_dc_fqdn', 'scope_id', 'scope_revision', 'target_tier', 'baseline_id', 'profile',
+                   'backup_id', 'artifact_sha256', 'pilot_display_name', 'expires_at', 'input_digest'}
+    portal = is_portal(job)
+    if (not isinstance(assignment, dict) or set(assignment) != base_fields | ({'approval_mode'} if portal else set())
+            or type(assignment['schema']) is not int or assignment['schema'] != (2 if portal else 1)
+            or assignment['operation'] != 'create_unlinked_pilot'
+            or assignment['job_id'] != str(job.pk) or assignment['scope_id'] != str(job.domain_id)
+            or assignment['domain_guid'] != job.domain_guid or assignment['pilot_display_name'] != job.pilot_display_name
+            or assignment['expires_at'] != job.expires_at.strftime('%Y-%m-%dT%H:%M:%SZ')
+            or assignment['input_digest'] != job.input_digest
+            or digest({key: value for key, value in assignment.items() if key != 'input_digest'}) != job.input_digest):
+        return False
+    if portal and (not policy_current(job, tenant) or (job.approved_at and not approval_current(job, tenant))):
+        return False
+    configs, systems = DomainSecuritySettings.objects, WindowsServer.objects
+    if lock:
+        configs, systems = configs.select_for_update(), systems.select_for_update()
+    config = configs.get(pk=job.domain_id)
+    system = systems.get(pk=job.system_id)
     report = GpoExecutorReport.objects.filter(enrollment=enrollment).first()
     components, profiles = _content()
     component = components.get((assignment['baseline_id'], assignment['backup_id']))
     return bool(tenant.status == 'active' and job.tenant_id == tenant.id and job.enrollment_id == enrollment.id
                 and job.requested_by and has_tenant_permission(job.requested_by, tenant, Permission.SECURITY_GPO_IMPORTS_RUN)
                 and config.revision == assignment['scope_revision'] and config.domain_name == assignment['domain_dns_name']
-                and _ready(system, enrollment, report, config.domain_name)
+                and _ready(system, enrollment, report, config.domain_name, portal=portal)
                 and report.domain_guid == assignment['domain_guid'] and report.forest_dns_name == assignment['forest_dns_name']
                 and report.dc_fqdn == assignment['executor_dc_fqdn']
                 and component and component['artifact_sha256'] == assignment['artifact_sha256']
@@ -327,7 +375,7 @@ def withdraw_gpo_jobs(*, tenant_id, actor_id=None, enrollment_id=None, reason):
         raise ValidationError('GPO withdrawal requires a transaction.')
     jobs = GpoImportJob.objects.select_for_update().filter(tenant_id=tenant_id, status__in=ACTIVE)
     if actor_id is not None:
-        jobs = jobs.filter(requested_by_id=actor_id)
+        jobs = jobs.filter(Q(requested_by_id=actor_id) | Q(approved_by_id=actor_id))
     if enrollment_id is not None:
         jobs = jobs.filter(enrollment_id=enrollment_id)
     count = 0
@@ -340,7 +388,7 @@ def withdraw_gpo_jobs(*, tenant_id, actor_id=None, enrollment_id=None, reason):
 def _result(job, document):
     status, code, guid, evidence = (document[key] for key in ('status', 'result_code', 'gpo_guid', 'evidence'))
     if (not isinstance(status, str) or not isinstance(code, str)
-            or status not in ('awaiting_local_approval', 'staged', 'failed', 'requires_reconciliation') or code not in RESULT_CODES):
+            or status not in ('awaiting_local_approval', 'awaiting_portal_approval', 'staged', 'failed', 'requires_reconciliation') or code not in RESULT_CODES):
         _reject()
     if guid is not None:
         try:
@@ -373,9 +421,15 @@ def _result(job, document):
         if job.result_digest != receipt_digest:
             _reject()
         return
-    if status == 'awaiting_local_approval':
-        if job.status not in PRE_EXECUTION or guid is not None or code != 'gpo_local_approval_required':
+    if status in ('awaiting_local_approval', 'awaiting_portal_approval'):
+        from .gpo_approvals import is_portal
+        portal = is_portal(job)
+        if ((status == 'awaiting_portal_approval') != portal
+                or job.status not in PRE_EXECUTION or guid is not None
+                or code != ('gpo_portal_approval_required' if portal else 'gpo_local_approval_required')):
             _reject()
+        if job.approved_at:
+            return  # An in-flight waiting report cannot replace a newer approval.
         changed = job.status != 'awaiting_approval'
         job.status, job.error_code = 'awaiting_approval', code
         job.save()
@@ -416,6 +470,7 @@ def security_gpo_exchange(enrollment, document, *, artifact=False):
     enrollment = AgentEnrollment.objects.select_for_update().get(pk=enrollment.id)
     if enrollment.platform != 'windows' or enrollment.status not in ('active', 'suspended'):
         _reject()
+    from .gpo_approvals import is_portal, approval_current, approval_object
     response = {'status': 'accepted', 'correlation_id': document['correlation_id']}
     if action != 'result':
         expire_jobs(tenant)
@@ -426,7 +481,8 @@ def security_gpo_exchange(enrollment, document, *, artifact=False):
         if job and not _scope_current(job, enrollment, tenant):
             _invalidate(job)
             job = None
-        return {**response, 'gpo_job': job.assignment if job else None}
+        return {**response, 'gpo_job': job.assignment if job else None,
+                'gpo_approval': approval_object(job) if job and approval_current(job, tenant) else None}
     try:
         job_id = uuid_text(document['job_id'])
     except (ValueError, TypeError, AttributeError):
@@ -440,17 +496,21 @@ def security_gpo_exchange(enrollment, document, *, artifact=False):
     if action == 'lookup':
         if job.status in PRE_EXECUTION and not _scope_current(job, enrollment, tenant):
             _invalidate(job)
-        return {**response, 'gpo_job': job.assignment if job.status in ACTIVE else None}
+        return {**response, 'gpo_job': job.assignment if job.status in ACTIVE else None,
+                'gpo_approval': approval_object(job) if job.status in ACTIVE and approval_current(job, tenant) else None}
     current = _scope_current(job, enrollment, tenant) and timezone.now() < job.expires_at
     if not current:
         _invalidate(job)
     if action == 'artifact':
-        if not current or job.status not in (*PRE_EXECUTION, 'running'):
+        if not current or job.status not in (*PRE_EXECUTION, 'running') or (is_portal(job) and not approval_current(job, tenant)):
             _reject()
         components, _ = _content()
         content = artifact_bytes(components[(job.assignment['baseline_id'], job.assignment['backup_id'])])
         return content, job.assignment['artifact_sha256']
-    if current and job.status in PRE_EXECUTION:
+    approved = not is_portal(job) or approval_current(job, tenant)
+    if current and job.status in PRE_EXECUTION and not approved:
+        _invalidate(job, 'gpo_portal_approval_required')
+    if current and approved and job.status in PRE_EXECUTION:
         job.status, job.claimed_at, job.error_code = 'running', timezone.now(), ''
         job.save()
         _audit(job, 'security.gpo_import_claimed')
@@ -461,4 +521,7 @@ def security_gpo_exchange(enrollment, document, *, artifact=False):
         mode = 'reconcile'
     else:
         mode = 'cancelled'
-    return {**response, 'gpo_claim': {'authorized': mode == 'execute', 'mode': mode, 'job': job.assignment}}
+    claim = {'authorized': mode == 'execute', 'mode': mode, 'job': job.assignment}
+    if mode == 'execute' and is_portal(job):
+        claim['approval'] = approval_object(job)
+    return {**response, 'gpo_claim': claim}

@@ -22,6 +22,7 @@ export type PermissionCode =
   | "security.scans.run"
   | "security.domains.manage"
   | "security.gpo_imports.run"
+  | "security.gpo_imports.approve"
   | "virtual_machines.operate"
   | "virtual_machines.console.control"
   | "virtual_machines.configure"
