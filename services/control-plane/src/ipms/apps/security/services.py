@@ -1,7 +1,7 @@
 # File Name: services.py
-# Version: v0.1.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
+# Version: v0.1.1 | Created: 2026-09-14 | Last Modified: 2026-09-15
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
-# Description: Tenant-bound baseline applicability, evidence freshness and compliance calculations.
+# Description: Tenant-bound baseline compliance and independent Agent-confirmed GPO application summaries.
 from collections import Counter
 from datetime import timedelta
 
@@ -18,11 +18,12 @@ STATUSES = ("compliant", "non_compliant", "unknown", "error", "stale")
 
 class BaselineOverview:
     def __init__(self, tenant):
+        self.tenant = tenant
         self.now = timezone.now()
         self.preferences = {row.baseline_id: row for row in BaselinePreference.objects.filter(tenant=tenant)}
         self.systems = list(WindowsServer.objects.filter(tenant=tenant).only(
             "id", "hostname", "fqdn", "operating_system", "os_build", "operating_system_role",
-            "server_type", "source_id", "inventory_source", "tenant_id",
+            "server_type", "source_id", "inventory_source", "tenant_id", "domain_name", "detail_snapshot",
         ).order_by("hostname", "id"))
         # Select latest *attempt*, including incomplete/old-revision attempts.
         # Selecting only successful results would conceal a later failed scan.
@@ -108,6 +109,7 @@ class BaselineOverview:
         }
 
     def catalog(self, target="all", *, include_hidden=False):
+        from .applications import BaselineApplications
         roles = Counter(system.operating_system_role for system in self.systems)
         selected = [baseline for baseline in BASELINES if target == "all" or baseline.target == target]
         hidden = {key for key, value in self.preferences.items() if value.hidden}
@@ -120,5 +122,8 @@ class BaselineOverview:
                 "clients": roles["client"], "unclassified": sum(value for key, value in roles.items() if key not in ("server", "domain-controller", "client")),
                 "unmatched": sum(not any(baseline.matches(system) for baseline in BASELINES) for system in self.systems),
             },
+            "application_groups": BaselineApplications(self.tenant, self.systems, self.now).groups(
+                baseline for baseline in BASELINES if baseline.id not in hidden
+            ),
             "results": [self.baseline(baseline) for baseline in selected if include_hidden or baseline.id not in hidden],
         }

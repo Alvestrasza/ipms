@@ -1244,6 +1244,26 @@ def confirm_inventory(
     if not isinstance(gateway_port, int) or not 1 <= gateway_port <= 65_535:
         raise ValidationError("The Agent Gateway port is invalid.")
     now = timezone.now()
+    from .group_policy import preserve_newer_group_policy, validate_group_policy
+    group_policy_snapshot = {
+        "group_policy_context": {
+            "enrollment_id": str(enrollment.id), "domain_name": domain_name,
+            "operating_system_role": operating_system_role, "os_build": os_build,
+            "operating_system": os_name or os_product,
+            "received_at": now.isoformat().replace("+00:00", "Z"),
+        },
+    }
+    if "group_policy" in inventory:
+        group_policy_snapshot["group_policy"] = validate_group_policy(
+            inventory["group_policy"], inventory_domain=domain_name, now=now,
+        )
+    previous_system = WindowsServer.objects.select_for_update().filter(
+        tenant_id=enrollment.tenant_id, inventory_source=WindowsServer.InventorySource.AGENT,
+        source_id=enrollment.device_uri,
+    ).only("detail_snapshot").first()
+    group_policy_snapshot = preserve_newer_group_policy(
+        previous_system.detail_snapshot if previous_system else None, group_policy_snapshot, now=now,
+    )
     updates = {"last_seen_at": now}
     if enrollment.first_inventory_at is None:
         updates["first_inventory_at"] = now
@@ -1297,6 +1317,7 @@ def confirm_inventory(
                 "registry_product_name": os_product,
                 "reported_os_name": os_name,
                 "machine_type": machine_type or "legacy-physical",
+                **group_policy_snapshot,
             },
             "last_seen_at": now,
             "discovered_at": now,

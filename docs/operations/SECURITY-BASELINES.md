@@ -6,6 +6,14 @@ Description: Baseline catalog scope, percentages, source evidence and rollout ac
 -->
 # Security baselines
 
+Portal **0.2.52** adds square Agent-confirmed application tiles and selectable,
+collapsible catalog details. Domain, tier OU, naming and baseline-order settings
+are maintained together in Tenant Administration → Security → Domains.
+Windows Agent **0.2.33** supplies the independent computer GPO evidence; deploy
+the receiver first. See the [application counting contract](../architecture/BASELINE-APPLICATION-EVIDENCE.md).
+The compliance formulas below remain assessment metrics and are not the
+application percentage shown in the overview tiles.
+
 The read-only foundation shipped in IPMS **0.2.45** with Windows Agent **0.2.31**.
 The **0.2.47** gateway correction verified server scan delivery; see the dated
 [acceptance record](SECURITY-GATEWAY-0247-VERIFICATION.md). Complete control

@@ -1,5 +1,5 @@
 // File Name: main.cpp
-// Version: v0.2.32 | Created: 2026-08-31 | Last Modified: 2026-09-14
+// Version: v0.2.33 | Created: 2026-08-31 | Last Modified: 2026-09-15
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Native Agent entry points and fixed internal workers; no arbitrary command execution.
 #include "ipms/agent/management_pack.hpp"
@@ -17,6 +17,7 @@
 #include "ipms/agent/windows_update_evidence.hpp"
 #include "ipms/agent/windows_security_scan.hpp"
 #include "ipms/agent/windows_gpo_management.hpp"
+#include "ipms/agent/windows_group_policy.hpp"
 namespace ipms::agent::windows { int run_windows_service(); }
 #else
 #include "ipms/agent/linux_inventory.hpp"
@@ -42,6 +43,9 @@ int main(int argc, char** argv) {
   }
   if (argc == 2 && std::string_view(argv[1]) == "--collect-windows-update-evidence") {
     return ipms::agent::windows::run_windows_update_evidence_worker();
+  }
+  if (argc == 2 && std::string_view(argv[1]) == "--collect-windows-group-policy") {
+    return ipms::agent::windows::run_windows_group_policy_worker();
   }
   if (argc >= 2 && std::string_view(argv[1]) == "--apply-lifecycle-update") {
     return ipms::agent::windows::run_windows_updater();

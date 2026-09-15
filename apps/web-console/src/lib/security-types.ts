@@ -1,7 +1,7 @@
 /**
  * File Name: security-types.ts
- * Version: v0.1.0
- * Created: 2026-09-14 | Modified: 2026-09-14
+ * Version: v0.1.1
+ * Created: 2026-09-14 | Modified: 2026-09-15
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Define the tenant security baseline catalog and assessment read model.
  */
@@ -23,7 +23,7 @@ export type SecurityBaselineSummary = {
 export type SecurityBaseline = {
   id: string;
   name: string;
-  provider: "microsoft";
+  provider: string;
   platform: "windows";
   target: Exclude<SecurityBaselineTarget, "all">;
   release: string;
@@ -52,7 +52,24 @@ export type SecurityBaselineCatalog = {
     unclassified: number;
     unmatched: number;
   };
+  application_groups: SecurityBaselineApplicationGroup[];
   results: SecurityBaseline[];
+};
+
+export type SecurityBaselineApplicationGroup = {
+  id: string;
+  provider: string;
+  platform: "windows";
+  target: "server" | "client";
+  baseline_ids: string[];
+  summary: {
+    applicable: number;
+    applied: number;
+    not_applied: number;
+    partial: number;
+    unknown: number;
+    application_percent: number | null;
+  };
 };
 
 export type SecurityBaselineSetting = SecurityBaseline & {

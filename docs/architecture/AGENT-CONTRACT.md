@@ -4,6 +4,12 @@
 
 This contract defines the boundary between IPMS Control Plane and an enrolled IPMS Agent. It supplements the read-only connector contract; it does not turn agents into connector endpoints or generic management channels.
 
+Windows Agent 0.2.33 adds bounded, read-only computer GPO processing evidence
+to the existing Windows inventory. The receiver must be upgraded first.
+Identity, freshness and baseline-family counting are defined in
+[Agent-confirmed baseline application](BASELINE-APPLICATION-EVIDENCE.md).
+This capability does not execute, approve, link or modify policy.
+
 Windows Agent 0.2.32 adds the separate typed GPO pilot channel described in
 [ADR-0016](ADR-0016-TIER-DOMAIN-GPO-PILOTS.md). An exact locally approved job can
 create one new disabled, unlinked GPO on its selected writable domain controller.

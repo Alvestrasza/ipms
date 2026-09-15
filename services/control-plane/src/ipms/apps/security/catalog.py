@@ -1,5 +1,5 @@
 # File Name: catalog.py
-# Version: v0.1.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
+# Version: v0.1.1 | Created: 2026-09-14 | Last Modified: 2026-09-15
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
 # Description: Source-verified Microsoft GPO package metadata; no executable policy payloads.
 from dataclasses import dataclass
@@ -20,6 +20,8 @@ class Baseline:
     product: str
     package_name: str
     profiles: tuple[str, ...]
+    provider: str = "microsoft"
+    platform: str = "windows"
 
     def matches(self, system):
         # An OS build alone is ambiguous (notably Windows 11 and Server 2025).
@@ -41,8 +43,8 @@ class Baseline:
 
     def projection(self):
         return {
-            "id": self.id, "name": self.name, "provider": "microsoft",
-            "platform": "windows", "target": self.target, "release": self.release,
+            "id": self.id, "name": self.name, "provider": self.provider,
+            "platform": self.platform, "target": self.target, "release": self.release,
             "revision": self.revision, "profiles": list(self.profiles),
             "source_url": SOURCE_URL, "package_name": self.package_name,
             "verified_at": CATALOG_REVISION, "assessment_state": "native-read-only",

@@ -1,6 +1,6 @@
 /**
  * File Name: domain-security-administration.tsx
- * Version: v0.1.1 | Created: 2026-09-14 | Modified: 2026-09-14
+ * Version: v0.1.2 | Created: 2026-09-14 | Modified: 2026-09-15
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Edit tenant domain plans with accessible ordering and explicit persistence.
  */
@@ -71,8 +71,8 @@ export function DomainSecurityAdministration(props: WorkspaceProps) {
   return <DomainSettingsWorkspace {...props} mode="domain" />;
 }
 
-export function BaselinePolicyConfiguration(props: WorkspaceProps) {
-  return <DomainSettingsWorkspace {...props} mode="policy" />;
+export function BaselineGpoDeployment(props: WorkspaceProps) {
+  return <DomainSettingsWorkspace {...props} mode="deployment" />;
 }
 
 function DomainSettingsWorkspace({
@@ -84,7 +84,7 @@ function DomainSettingsWorkspace({
   locale,
   copy,
   mode,
-}: WorkspaceProps & { mode: "domain" | "policy" }) {
+}: WorkspaceProps & { mode: "domain" | "deployment" }) {
   const [catalog, setCatalog] = useState(initialCatalog);
   const [selectedId, setSelectedId] = useState(
     initialCatalog?.results[0]?.id ?? "",
@@ -112,14 +112,14 @@ function DomainSettingsWorkspace({
     );
     setSelectedId(value.id);
     setDirty(false);
-    setNotice(mode === "domain" ? copy.saved : copy.policySaved);
+    setNotice(copy.saved);
   }
 
   return (
     <div className={styles.content}>
-      <p className={styles.notice}>
-        {mode === "domain" ? copy.boundary : copy.policyBoundary}
-      </p>
+      {mode === "domain" ? (
+        <p className={styles.notice}>{copy.boundary}</p>
+      ) : null}
       {notice ? (
         <p className={styles.success} role="status">
           {notice}
@@ -128,7 +128,7 @@ function DomainSettingsWorkspace({
       {!catalog ? (
         <div className={styles.panel}>
           <p role="alert">
-            {mode === "domain" ? copy.unavailable : copy.policyUnavailable}
+            {mode === "domain" ? copy.unavailable : copy.deploymentUnavailable}
           </p>
           <button
             className={styles.button}
@@ -147,11 +147,8 @@ function DomainSettingsWorkspace({
           >
             <div className={styles.header}>
               <h2 id="configured-domains-heading">
-                {mode === "domain" ? copy.domains : copy.policyTitle}
+                {mode === "domain" ? copy.domains : copy.deploymentTitle}
               </h2>
-              {mode === "policy" && dirty ? (
-                <span className={styles.badge}>{copy.unsaved}</span>
-              ) : null}
               <div className={styles.actions}>
                 {mode === "domain" ? (
                   <button
@@ -185,7 +182,7 @@ function DomainSettingsWorkspace({
                 </button>
               </div>
             </div>
-            {mode === "policy" ? (
+            {mode === "deployment" ? (
               catalog.results.length ? (
                 <>
                   <label className={styles.field}>
@@ -205,7 +202,7 @@ function DomainSettingsWorkspace({
                       ))}
                     </select>
                   </label>
-                  <p className={styles.hint}>{copy.policyDescription}</p>
+                  <p className={styles.hint}>{copy.deploymentDescription}</p>
                   {settings ? (
                     <p className={styles.hint}>
                       {copy.revision}: {settings.revision}
@@ -213,7 +210,7 @@ function DomainSettingsWorkspace({
                   ) : null}
                 </>
               ) : (
-                <p className={styles.hint}>{copy.policyEmpty}</p>
+                <p className={styles.hint}>{copy.deploymentEmpty}</p>
               )
             ) : catalog.results.length ? (
               <ul className={styles.domainList}>
@@ -242,7 +239,7 @@ function DomainSettingsWorkspace({
             )}
             {locked ? <p className={styles.hint}>{copy.discardHint}</p> : null}
           </section>
-          {mode === "domain" || settings ? (
+          {mode === "domain" ? (
             <DomainSettingsEditor
               key={`editor:${settings?.id ?? "new"}:${settings?.revision ?? 0}`}
               catalog={catalog}
@@ -250,14 +247,13 @@ function DomainSettingsWorkspace({
               tenantId={tenantId}
               csrfToken={csrfToken}
               copy={copy}
-              mode={mode}
               onSaved={saved}
               onDirty={setDirty}
               onBusy={setBusy}
               onUncertain={setUncertain}
             />
           ) : null}
-          {mode === "policy" && settings ? (
+          {mode === "deployment" && settings ? (
             <DomainGpoImports
               key={`imports:${settings.id}:${settings.revision}:${preferredBaselineId ?? ""}`}
               settings={settings}
@@ -283,7 +279,6 @@ function DomainSettingsEditor({
   tenantId,
   csrfToken,
   copy,
-  mode,
   onSaved,
   onDirty,
   onBusy,
@@ -294,7 +289,6 @@ function DomainSettingsEditor({
   tenantId: string;
   csrfToken: string;
   copy: DomainSecurityCopy;
-  mode: "domain" | "policy";
   onSaved: (settings: DomainSecuritySettings) => void;
   onDirty: (dirty: boolean) => void;
   onBusy: (busy: boolean) => void;
@@ -442,239 +436,231 @@ function DomainSettingsEditor({
 
   return (
     <form className={styles.content} onSubmit={submit} aria-busy={busy}>
-      {mode === "domain" ? (
-        <>
-          <section
-            className={styles.panel}
-            aria-labelledby="domain-settings-heading"
-          >
-            <div className={styles.header}>
-              <h2 id="domain-settings-heading">
-                {settings ? copy.edit : copy.add}
-              </h2>
-              {dirty ? (
-                <span className={styles.badge}>{copy.unsaved}</span>
-              ) : null}
-            </div>
-            <label className={styles.field}>
-              {copy.domain}
-              <input
-                name="domain_name"
-                type="text"
-                required
-                maxLength={253}
-                list="discovered-security-domains"
-                disabled={busy || Boolean(settings)}
-                value={draft.domain}
-                onChange={(event) =>
-                  setDraft({ ...draft, domain: event.target.value })
-                }
-                aria-describedby="domain-name-hint"
-              />
-            </label>
-            <datalist id="discovered-security-domains">
-              {catalog.discovered_domains.map((domain) => (
-                <option value={domain} key={domain} />
-              ))}
-            </datalist>
-            <p className={styles.hint} id="domain-name-hint">
-              {copy.domainHint}
-            </p>
-            {settings ? (
-              <p className={styles.hint}>
-                {copy.revision}: {settings.revision}
-              </p>
-            ) : null}
-          </section>
-          <section
-            className={styles.panel}
-            aria-labelledby="tier-mappings-heading"
-          >
-            <h2 id="tier-mappings-heading">{copy.mappings}</h2>
-            <p className={styles.hint} id="tier-mappings-hint">
-              {copy.mappingHint}
-            </p>
-            <div className={styles.tierGrid}>
-              {SECURITY_TIERS.map((tier) => (
-                <div className={styles.field} key={tier}>
-                  <label htmlFor={`${formId}-tier-${tier}-ous`}>
-                    Tier {tier} OUs
-                  </label>
-                  <textarea
-                    id={`${formId}-tier-${tier}-ous`}
-                    name={`tier_${tier}_ous`}
-                    rows={5}
-                    maxLength={24000}
-                    disabled={busy}
-                    value={draft.ous[tier]}
-                    onChange={(event) =>
-                      setDraft({
-                        ...draft,
-                        ous: { ...draft.ous, [tier]: event.target.value },
-                      })
-                    }
-                    aria-describedby="tier-mappings-hint"
-                    spellCheck={false}
-                  />
-                </div>
-              ))}
-            </div>
-            <p className={styles.badge}>{copy.unverified}</p>
-            <p className={styles.hint}>{copy.verificationHint}</p>
-          </section>
-        </>
-      ) : null}
-      {mode === "policy" ? (
-        <>
-          <section
-            className={styles.panel}
-            aria-labelledby="gpo-naming-heading"
-          >
-            <h2 id="gpo-naming-heading">{copy.naming}</h2>
-            <label className={styles.field}>
-              {copy.nameTemplate}
-              <input
-                name="gpo_name_template"
-                type="text"
-                required
-                maxLength={160}
+      <section
+        className={styles.panel}
+        aria-labelledby="domain-settings-heading"
+      >
+        <div className={styles.header}>
+          <h2 id="domain-settings-heading">
+            {settings ? copy.edit : copy.add}
+          </h2>
+          {dirty ? <span className={styles.badge}>{copy.unsaved}</span> : null}
+        </div>
+        <label className={styles.field}>
+          {copy.domain}
+          <input
+            name="domain_name"
+            type="text"
+            required
+            maxLength={253}
+            list="discovered-security-domains"
+            disabled={busy || Boolean(settings)}
+            value={draft.domain}
+            onChange={(event) =>
+              setDraft({ ...draft, domain: event.target.value })
+            }
+            aria-describedby="domain-name-hint"
+          />
+        </label>
+        <datalist id="discovered-security-domains">
+          {catalog.discovered_domains.map((domain) => (
+            <option value={domain} key={domain} />
+          ))}
+        </datalist>
+        <p className={styles.hint} id="domain-name-hint">
+          {copy.domainHint}
+        </p>
+        {settings ? (
+          <p className={styles.hint}>
+            {copy.revision}: {settings.revision}
+          </p>
+        ) : null}
+      </section>
+      <section className={styles.panel} aria-labelledby="tier-mappings-heading">
+        <h2 id="tier-mappings-heading">{copy.mappings}</h2>
+        <p className={styles.hint} id="tier-mappings-hint">
+          {copy.mappingHint}
+        </p>
+        <div className={styles.tierGrid}>
+          {SECURITY_TIERS.map((tier) => (
+            <div className={styles.field} key={tier}>
+              <label htmlFor={`${formId}-tier-${tier}-ous`}>
+                Tier {tier} OUs
+              </label>
+              <textarea
+                id={`${formId}-tier-${tier}-ous`}
+                name={`tier_${tier}_ous`}
+                rows={5}
+                maxLength={24000}
                 disabled={busy}
-                value={draft.template}
+                value={draft.ous[tier]}
                 onChange={(event) =>
-                  setDraft({ ...draft, template: event.target.value })
+                  setDraft({
+                    ...draft,
+                    ous: { ...draft.ous, [tier]: event.target.value },
+                  })
                 }
-                aria-describedby="gpo-template-hint"
+                aria-describedby="tier-mappings-hint"
                 spellCheck={false}
               />
-            </label>
-            <p className={styles.hint} id="gpo-template-hint">
-              {copy.tokens}
-            </p>
-            <section
-              className={styles.preview}
-              aria-labelledby="gpo-name-preview-heading"
-            >
-              <h3 id="gpo-name-preview-heading">{copy.preview}</h3>
-              <p className={styles.hint}>{copy.exampleHint}</p>
-              <ul className={styles.previews}>
-                {SECURITY_TIERS.map((tier) => {
-                  const confirmed =
-                    settings?.gpo_name_template === draft.template
-                      ? settings.name_previews.find(
-                          (item) => item.tier === tier,
-                        )
-                      : null;
-                  return (
-                    <li key={tier}>
-                      <strong>Tier {tier}</strong>
-                      <span>
-                        {copy.production}:{" "}
-                        <code>
-                          {confirmed?.production ??
-                            previewGpoName(draft.template, tier) ??
-                            copy.invalidPreview}
-                        </code>
-                      </span>
-                      {confirmed?.pilot ? (
-                        <span>
-                          {copy.pilot}: <code>{confirmed.pilot}</code>
-                        </span>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          </section>
+            </div>
+          ))}
+        </div>
+        <p className={styles.badge}>{copy.unverified}</p>
+        <p className={styles.hint}>{copy.verificationHint}</p>
+      </section>
+      <section
+        className={styles.panel}
+        aria-labelledby="domain-gpo-configuration-heading"
+      >
+        <h2 id="domain-gpo-configuration-heading">{copy.policyTitle}</h2>
+        <p className={styles.hint}>{copy.policyDescription}</p>
+        <section
+          className={styles.configurationSection}
+          aria-labelledby="gpo-naming-heading"
+        >
+          <h3 id="gpo-naming-heading">{copy.naming}</h3>
+          <label className={styles.field}>
+            {copy.nameTemplate}
+            <input
+              name="gpo_name_template"
+              type="text"
+              required
+              maxLength={160}
+              disabled={busy}
+              value={draft.template}
+              onChange={(event) =>
+                setDraft({ ...draft, template: event.target.value })
+              }
+              aria-describedby="gpo-template-hint"
+              spellCheck={false}
+            />
+          </label>
+          <p className={styles.hint} id="gpo-template-hint">
+            {copy.tokens}
+          </p>
           <section
-            className={styles.panel}
-            aria-labelledby="baseline-order-heading"
+            className={styles.preview}
+            aria-labelledby="gpo-name-preview-heading"
           >
-            <h2 id="baseline-order-heading">{copy.order}</h2>
-            <p className={styles.hint} id="baseline-order-hint">
-              {copy.orderHint}
-            </p>
-            <ol
-              className={styles.orderList}
-              aria-label={copy.order}
-              aria-describedby="baseline-order-hint"
-            >
-              {draft.order.map((id, index) => {
-                const baseline = baselineById.get(id);
-                const name = baseline?.name ?? id;
+            <h4 id="gpo-name-preview-heading">{copy.preview}</h4>
+            <p className={styles.hint}>{copy.exampleHint}</p>
+            <ul className={styles.previews}>
+              {SECURITY_TIERS.map((tier) => {
+                const confirmed =
+                  settings?.gpo_name_template === draft.template
+                    ? settings.name_previews.find((item) => item.tier === tier)
+                    : null;
                 return (
-                  <li
-                    key={id}
-                    data-baseline-id={id}
-                    onDragOver={(event) => {
-                      if (dragging.current && !busy) {
-                        event.preventDefault();
-                        event.dataTransfer.dropEffect = "move";
-                      }
-                    }}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      if (dragging.current) move(dragging.current, index);
-                      dragging.current = null;
-                    }}
-                  >
-                    <span className={styles.position} aria-hidden="true">
-                      {index + 1}
+                  <li key={tier}>
+                    <strong>Tier {tier}</strong>
+                    <span>
+                      {copy.production}:{" "}
+                      <code>
+                        {confirmed?.production ??
+                          previewGpoName(draft.template, tier) ??
+                          copy.invalidPreview}
+                      </code>
                     </span>
-                    <button
-                      className={styles.dragHandle}
-                      type="button"
-                      draggable={!busy}
-                      disabled={busy}
-                      aria-label={`${copy.drag}: ${name}`}
-                      onDragStart={(event) => {
-                        dragging.current = id;
-                        event.dataTransfer.effectAllowed = "move";
-                        event.dataTransfer.setData("text/plain", id);
-                      }}
-                      onDragEnd={() => {
-                        dragging.current = null;
-                      }}
-                    >
-                      <GripVertical size={20} aria-hidden="true" />
-                    </button>
-                    <div className={styles.layerLabel}>
-                      <strong>{name}</strong>
-                      <small>
-                        {baseline?.provider} · {baseline?.revision}
-                      </small>
-                    </div>
-                    <div className={styles.actions}>
-                      <button
-                        className={styles.iconButton}
-                        type="button"
-                        disabled={busy || index === 0}
-                        aria-label={`${copy.moveUp}: ${name}`}
-                        onClick={() => move(id, index - 1)}
-                      >
-                        <ArrowUp size={17} aria-hidden="true" />
-                      </button>
-                      <button
-                        className={styles.iconButton}
-                        type="button"
-                        disabled={busy || index === draft.order.length - 1}
-                        aria-label={`${copy.moveDown}: ${name}`}
-                        onClick={() => move(id, index + 1)}
-                      >
-                        <ArrowDown size={17} aria-hidden="true" />
-                      </button>
-                    </div>
+                    {confirmed?.pilot ? (
+                      <span>
+                        {copy.pilot}: <code>{confirmed.pilot}</code>
+                      </span>
+                    ) : null}
                   </li>
                 );
               })}
-            </ol>
-            <p className={styles.hint}>{copy.providersHint}</p>
-            <p role="status" aria-live="polite" className={styles.hint}>
-              {moveNotice}
-            </p>
+            </ul>
           </section>
-        </>
-      ) : null}
+        </section>
+        <section
+          className={styles.configurationSection}
+          aria-labelledby="baseline-order-heading"
+        >
+          <h3 id="baseline-order-heading">{copy.order}</h3>
+          <p className={styles.hint} id="baseline-order-hint">
+            {copy.orderHint}
+          </p>
+          <ol
+            className={styles.orderList}
+            aria-label={copy.order}
+            aria-describedby="baseline-order-hint"
+          >
+            {draft.order.map((id, index) => {
+              const baseline = baselineById.get(id);
+              const name = baseline?.name ?? id;
+              return (
+                <li
+                  key={id}
+                  data-baseline-id={id}
+                  onDragOver={(event) => {
+                    if (dragging.current && !busy) {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                    }
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    if (dragging.current) move(dragging.current, index);
+                    dragging.current = null;
+                  }}
+                >
+                  <span className={styles.position} aria-hidden="true">
+                    {index + 1}
+                  </span>
+                  <button
+                    className={styles.dragHandle}
+                    type="button"
+                    draggable={!busy}
+                    disabled={busy}
+                    aria-label={`${copy.drag}: ${name}`}
+                    onDragStart={(event) => {
+                      dragging.current = id;
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", id);
+                    }}
+                    onDragEnd={() => {
+                      dragging.current = null;
+                    }}
+                  >
+                    <GripVertical size={20} aria-hidden="true" />
+                  </button>
+                  <div className={styles.layerLabel}>
+                    <strong>{name}</strong>
+                    <small>
+                      {baseline?.provider} · {baseline?.revision}
+                    </small>
+                  </div>
+                  <div className={styles.actions}>
+                    <button
+                      className={styles.iconButton}
+                      type="button"
+                      disabled={busy || index === 0}
+                      aria-label={`${copy.moveUp}: ${name}`}
+                      onClick={() => move(id, index - 1)}
+                    >
+                      <ArrowUp size={17} aria-hidden="true" />
+                    </button>
+                    <button
+                      className={styles.iconButton}
+                      type="button"
+                      disabled={busy || index === draft.order.length - 1}
+                      aria-label={`${copy.moveDown}: ${name}`}
+                      onClick={() => move(id, index + 1)}
+                    >
+                      <ArrowDown size={17} aria-hidden="true" />
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+          <p className={styles.hint}>{copy.providersHint}</p>
+          <p role="status" aria-live="polite" className={styles.hint}>
+            {moveNotice}
+          </p>
+        </section>
+      </section>
       {error ? (
         <p className={styles.error} role="alert">
           {error}
@@ -686,7 +672,7 @@ function DomainSettingsEditor({
           type="submit"
           disabled={busy || uncertain || (Boolean(settings) && !dirty)}
         >
-          {busy ? copy.saving : mode === "domain" ? copy.save : copy.policySave}
+          {busy ? copy.saving : copy.save}
         </button>
         <button
           className={styles.button}

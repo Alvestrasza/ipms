@@ -1,7 +1,7 @@
 /**
  * File Name: server-security.ts
- * Version: v0.1.0
- * Created: 2026-09-14 | Modified: 2026-09-14
+ * Version: v0.1.1
+ * Created: 2026-09-14 | Modified: 2026-09-15
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Read security baselines through the authenticated tenant API.
  */
@@ -18,6 +18,7 @@ import {
 } from "./security-scan-validation";
 import type {
   SecurityBaseline,
+  SecurityBaselineApplicationGroup,
   SecurityBaselineCatalog,
   SecurityBaselineSettings,
   SecurityBaselineSystems,
@@ -81,7 +82,8 @@ function isBaseline(value: unknown): value is SecurityBaseline {
     ].every((key) => typeof value[key] === "string" && value[key] !== "") &&
     typeof value.revision === "string" &&
     isSourceUrl(value.source_url) &&
-    value.provider === "microsoft" &&
+    typeof value.provider === "string" &&
+    /^[a-z][a-z0-9-]{0,63}$/.test(value.provider) &&
     value.platform === "windows" &&
     ["server", "client"].includes(value.target as string) &&
     ["catalog-only", "native-read-only"].includes(
@@ -101,6 +103,44 @@ function isBaseline(value: unknown): value is SecurityBaseline {
     isPercent(summary.compliance_percent) &&
     isPercent(summary.coverage_percent) &&
     isOptionalDate(summary.last_assessed_at)
+  );
+}
+
+function isApplicationGroup(
+  value: unknown,
+): value is SecurityBaselineApplicationGroup {
+  if (!isRecord(value) || !isRecord(value.summary)) return false;
+  const summary = value.summary;
+  if (
+    typeof value.provider !== "string" ||
+    !/^[a-z][a-z0-9-]{0,63}$/.test(value.provider) ||
+    value.platform !== "windows" ||
+    !["server", "client"].includes(value.target as string) ||
+    value.id !== `${value.provider}:${value.platform}:${value.target}` ||
+    !Array.isArray(value.baseline_ids) ||
+    value.baseline_ids.length === 0 ||
+    !value.baseline_ids.every(
+      (id) => typeof id === "string" && id.length > 0,
+    ) ||
+    new Set(value.baseline_ids).size !== value.baseline_ids.length ||
+    !["applicable", "applied", "not_applied", "partial", "unknown"].every(
+      (key) => isCount(summary[key]),
+    ) ||
+    !isPercent(summary.application_percent)
+  )
+    return false;
+  const counts = summary as SecurityBaselineApplicationGroup["summary"];
+  const expected =
+    counts.applicable === 0 || counts.unknown === counts.applicable
+      ? null
+      : (counts.applied / counts.applicable) * 100;
+  return (
+    counts.applied + counts.not_applied + counts.partial + counts.unknown ===
+      counts.applicable &&
+    (expected === null
+      ? counts.application_percent === null
+      : counts.application_percent !== null &&
+        Math.abs(counts.application_percent - expected) <= 0.050001)
   );
 }
 
@@ -124,6 +164,10 @@ function isCatalog(value: unknown): value is SecurityBaselineCatalog {
     ["assessment", "deployment", "collections"].every(
       (key) => typeof capabilities[key] === "boolean",
     ) &&
+    Array.isArray(value.application_groups) &&
+    value.application_groups.every(isApplicationGroup) &&
+    new Set(value.application_groups.map((group) => group.id)).size ===
+      value.application_groups.length &&
     Array.isArray(value.results) &&
     value.results.every(isBaseline)
   );

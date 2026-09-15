@@ -1,7 +1,7 @@
 /**
  * File Name: security-copy.ts
- * Version: v0.1.0
- * Created: 2026-09-14 | Modified: 2026-09-14
+ * Version: v0.1.1
+ * Created: 2026-09-14 | Modified: 2026-09-15
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Provide English and German security baseline console copy.
  */
@@ -12,7 +12,7 @@ const en = {
   baselineNavigation: "Baseline",
   title: "Microsoft security baselines",
   description:
-    "A shared view of Microsoft's Windows GPO baselines and compliance across this tenant's servers and clients.",
+    "Windows baseline application confirmed by the Agent, with assessment results for each catalog release.",
   readOnly: "Read-only catalog",
   reload: "Reload data",
   unavailable: "Baseline data is currently unavailable.",
@@ -63,6 +63,16 @@ const en = {
   inventoried: "Inventoried Windows systems",
   servers: "Servers",
   clients: "Clients",
+  application: "Baseline application",
+  applicationTargets: { server: "Windows Server", client: "Windows clients" },
+  confirmed: "Agent confirmed",
+  applicationUnknown: "Unknown",
+  applicationPartial: "Partly applied",
+  applicationMissing: "Not applied",
+  noSystems: "No systems",
+  applicationHint:
+    "The tiles count systems where the Agent confirms all computer GPO components of a known baseline profile. Each provider and system type is grouped across Windows releases. Later baselines may override individual settings without changing this count. Evidence must be current within 24 hours; missing, expired or unmapped evidence remains unknown.",
+  clearSelection: "Clear selection",
   unclassified: "Unclassified system role",
   unmatched: "No matching baseline",
   mappingHint:
@@ -153,7 +163,7 @@ const de: SecurityCopy = {
   baselineNavigation: "Baseline",
   title: "Microsoft-Sicherheitsbaselines",
   description:
-    "Die Windows-GPO-Baselines von Microsoft und der Erfüllungsgrad der Server und Clients dieses Mandanten auf einen Blick.",
+    "Vom Agent bestätigte Windows-Baseline-Anwendung und Prüfergebnisse zu den einzelnen Katalogversionen.",
   readOnly: "Lesender Katalog",
   reload: "Daten neu laden",
   unavailable: "Baseline-Daten sind derzeit nicht verfügbar.",
@@ -205,6 +215,16 @@ const de: SecurityCopy = {
   inventoried: "Inventarisierte Windows-Systeme",
   servers: "Server",
   clients: "Clients",
+  application: "Baseline-Anwendung",
+  applicationTargets: { server: "Windows Server", client: "Windows-Clients" },
+  confirmed: "Vom Agent bestätigt",
+  applicationUnknown: "Unbekannt",
+  applicationPartial: "Teilweise angewendet",
+  applicationMissing: "Nicht angewendet",
+  noSystems: "Keine Systeme",
+  applicationHint:
+    "Die Kacheln zählen Systeme, für die der Agent alle Computer-GPO-Bestandteile eines bekannten Baseline-Profils bestätigt. Jeder Anbieter und Systemtyp wird über die Windows-Versionen hinweg zusammengefasst. Spätere Baselines dürfen einzelne Einstellungen überschreiben, ohne diese Zahl zu verändern. Nachweise müssen innerhalb von 24 Stunden aktuell sein; fehlende, abgelaufene oder nicht zuordenbare Nachweise bleiben unbekannt.",
+  clearSelection: "Auswahl aufheben",
   unclassified: "Systemrolle nicht zugeordnet",
   unmatched: "Keine passende Baseline",
   mappingHint:

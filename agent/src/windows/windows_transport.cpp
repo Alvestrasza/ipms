@@ -1,5 +1,5 @@
 // File Name: windows_transport.cpp
-// Version: v0.2.32 | Created: 2026-08-31 | Last Modified: 2026-09-14
+// Version: v0.2.33 | Created: 2026-08-31 | Last Modified: 2026-09-15
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Authenticated fixed Agent channels with durable, exact-job GPO execution grants.
 #include "ipms/agent/windows_transport.hpp"
@@ -46,7 +46,7 @@
 namespace {
 using Microsoft::WRL::ComPtr;
 constexpr std::size_t k_max_document_bytes = 65'536;
-constexpr wchar_t k_agent_version[] = L"0.2.32";
+constexpr wchar_t k_agent_version[] = L"0.2.33";
 constexpr std::size_t k_max_artifact_bytes = 64 * 1024 * 1024;
 std::mutex identity_mutex;
 std::mutex management_cycle_mutex;
@@ -491,7 +491,7 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
     ~failure_reset() { if (cache && !succeeded) cache->reset(); }
   } guard{reusable ? &console_transport : nullptr};
   if (!transport->session) {
-    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.32", WINHTTP_ACCESS_TYPE_NO_PROXY,
+    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.33", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
     if (!transport->session) throw std::runtime_error("The Agent HTTP session could not be created.");
     if (input_channel || security_channel || path == L"/v1/heartbeat" || path == L"/v1/hyperv-management") {
@@ -582,7 +582,7 @@ http_response post_binary(const state& identity, const std::string& body, PCCERT
   const auto check_deadline = [&] { if (gpo_artifact && ((cancelled && cancelled()) || std::chrono::steady_clock::now() >= deadline))
     throw std::runtime_error("The GPO artifact transfer stopped."); };
   check_deadline();
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.32", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.33", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent artifact session could not be created.");
   if (gpo_artifact) WinHttpSetTimeouts(session.get(), 2'000, 2'000, 2'000, 2'000);

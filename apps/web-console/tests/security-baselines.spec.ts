@@ -70,6 +70,24 @@ test("catalog navigation, true percentages, scope, tenant isolation and accessib
     .first();
   await expect(row).toContainText("25%");
   await expect(row).toContainText("50%");
+  const catalog = page.getByRole("region", {
+    name: "Baseline catalog",
+    exact: true,
+  });
+  await expect(catalog.locator("details")).toHaveCount(0);
+  await expect(
+    page.getByRole("combobox", { name: "Scan target", exact: true }),
+  ).toHaveCount(0);
+  await row
+    .getByRole("link", { name: "Microsoft Windows Server 2025", exact: true })
+    .click();
+  const details = catalog.locator("details");
+  await expect(details).toHaveAttribute("open", "");
+  await expect(
+    details.getByRole("heading", {
+      name: "Baseline details Microsoft Windows Server 2025",
+    }),
+  ).toBeVisible();
   await expect(
     page.getByText("baseline-failed.example.invalid", { exact: true }),
   ).toBeVisible();
@@ -84,6 +102,14 @@ test("catalog navigation, true percentages, scope, tenant isolation and accessib
       exact: true,
     }),
   ).toBeVisible();
+  await details.locator("summary").click();
+  await expect(details).not.toHaveAttribute("open");
+  await expect(
+    page.getByText("baseline-failed.example.invalid", { exact: true }),
+  ).toBeHidden();
+  await details.locator("summary").focus();
+  await page.keyboard.press("Enter");
+  await expect(details).toHaveAttribute("open", "");
   const violations = (
     await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
@@ -95,6 +121,55 @@ test("catalog navigation, true percentages, scope, tenant isolation and accessib
     fullPage: true,
   });
   expect(errors).toEqual([]);
+  await page
+    .getByRole("link", { name: "Clear selection", exact: true })
+    .click();
+  await expect(catalog.locator("details")).toHaveCount(0);
+});
+
+test("application tiles group active releases and remain square", async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto("/en/security/baseline");
+  const tiles = page.getByRole("definition");
+  const overview = page.locator('dl[aria-label="Baseline application"]');
+  await expect(overview.locator(":scope > div")).toHaveCount(5);
+  await expect(overview.locator("[data-application-group]")).toHaveCount(2);
+  const server = overview.locator(
+    '[data-application-group="microsoft:windows:server"]',
+  );
+  const client = overview.locator(
+    '[data-application-group="microsoft:windows:client"]',
+  );
+  await expect(server).toContainText("Agent confirmed");
+  await expect(server.locator("dd > strong")).toHaveText("3.2%");
+  await expect(server).toContainText("1 / 31");
+  await expect(client.locator("dd > strong")).toHaveText("—");
+  await expect(client).toContainText("Unknown: 2");
+  await expect(tiles.first()).toBeVisible();
+  for (const width of [1700, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    const dimensions = await overview
+      .locator(":scope > div")
+      .evaluateAll((cards) =>
+        cards.map((card) => {
+          const rect = card.getBoundingClientRect();
+          return {
+            width: rect.width,
+            height: rect.height,
+            scrollHeight: card.scrollHeight,
+            clientHeight: card.clientHeight,
+          };
+        }),
+      );
+    for (const size of dimensions) {
+      expect(Math.abs(size.width - size.height)).toBeLessThan(2);
+      expect(size.scrollHeight).toBeLessThanOrEqual(size.clientHeight + 1);
+    }
+  }
+  await page.getByRole("link", { name: "Clients", exact: true }).click();
+  await expect(overview.locator("[data-application-group]")).toHaveCount(2);
 });
 
 test("client unknown is not a zero score and empty baseline has no matching systems", async ({
@@ -288,7 +363,9 @@ test("read-only scan request reaches the real API and complete native-shaped evi
   page,
 }) => {
   await login(page, "e2e-operator");
-  await page.goto("/en/security/baseline");
+  await page.goto(
+    "/en/security/baseline?baseline=microsoft-windows-server-2025",
+  );
   await page
     .getByRole("combobox", { name: "Scan target", exact: true })
     .selectOption({ label: "baseline-unknown" });

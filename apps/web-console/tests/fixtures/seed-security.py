@@ -129,4 +129,34 @@ GpoImportJob.objects.create(
     assignment={"baseline_id": "microsoft-windows-server-2025", "backup_id": "fixture-backup", "target_tier": "0",
                 "approval_test_marker": "logs-fixture-approval"},
 )
-print("Synthetic security fixture ready: 25% compliance / 50% coverage for Server 2025.")
+# A real receiver path seals historical component identities and ingests one
+# computer application report. This isolated fixture performs no AD operation.
+# The same DC has failed controls above, proving application is independent.
+from ipms.apps.agent_pki.services import confirm_inventory
+from ipms.apps.agent_pki.test_group_policy_inventory import group_policy_report, utc_text, windows_inventory
+from ipms.apps.security.gpo_content import COMPONENTS, PROFILE_COMPONENTS
+from ipms.apps.security.test_applications import staged_component
+
+application_dc = WindowsServer.objects.get(tenant=tenant, hostname="baseline-failed")
+application_domain = DomainSecuritySettings.objects.create(
+    tenant=tenant, domain_name="example.invalid", tier_ous={"0": [], "1": [], "2": []},
+    gpo_name_template="{tier}-{scope}-{target}-{purpose}_V{version}", baseline_order=[item.id for item in BASELINES],
+)
+application_jobs = [staged_component(
+    tenant=tenant, domain=application_domain, executor=application_dc,
+    baseline_id="microsoft-windows-server-2025", backup_id=backup_id,
+) for backup_id in PROFILE_COMPONENTS[("microsoft-windows-server-2025", "domain-controller")]
+    if COMPONENTS[("microsoft-windows-server-2025", backup_id)]["scope"] == "machine"]
+application_report = group_policy_report(gpos=[{
+    "guid": job.gpo_guid, "version": 65538, "status": "applied",
+    "processed_at": utc_text(timezone.now() - timedelta(minutes=1)),
+} for job in application_jobs])
+confirm_inventory(
+    AgentEnrollment.objects.get(device_uri=application_dc.source_id), agent_version="0.2.33",
+    inventory=windows_inventory(
+        report=application_report, hostname=application_dc.hostname, fqdn=application_dc.fqdn,
+        os_name=application_dc.operating_system, os_build=application_dc.os_build,
+        operating_system_role=application_dc.operating_system_role,
+    ),
+)
+print("Synthetic security fixture ready: independent application and compliance evidence.")

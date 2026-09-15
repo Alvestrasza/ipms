@@ -1,13 +1,14 @@
 /**
  * File Name: page.tsx
- * Version: v0.1.0
- * Created: 2026-09-14 | Modified: 2026-09-14
+ * Version: v0.1.1
+ * Created: 2026-09-14 | Modified: 2026-09-15
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
- * Purpose: Display Microsoft baseline packages and tenant compliance evidence.
+ * Purpose: Display baseline-family application and selectable assessment details.
  */
 import {
   ArrowDownToLine,
   ArrowRight,
+  ChevronDown,
   CircleHelp,
   ExternalLink,
   EyeOff,
@@ -23,7 +24,8 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ConsoleShell } from "@/components/console-shell";
-import { BaselinePolicyConfiguration } from "@/components/domain-security-administration";
+import { BaselineGpoDeployment } from "@/components/domain-security-administration";
+import { SecurityBaselineDetails } from "@/components/security-baseline-details";
 import { SecurityBaselineScansPanel } from "@/components/security-baseline-scans";
 import { documentLocale, type Locale } from "@/i18n/config";
 import { getDomainSecurityCopy } from "@/i18n/domain-security-copy";
@@ -301,7 +303,7 @@ export default async function SecurityBaselinePage({
   const catalog = response.data;
   const selection = requestedBaseline
     ? catalog?.results.find((baseline) => baseline.id === requestedBaseline)
-    : catalog?.results[0];
+    : undefined;
   const [systemsResponse, scansResponse] = selection
     ? await Promise.all([
         getSecurityBaselineSystems(tenant.id, selection.id, requestedPage),
@@ -375,7 +377,7 @@ export default async function SecurityBaselinePage({
         </div>
       ) : (
         <div className={styles.content}>
-          <dl className={styles.inventory}>
+          <dl className={styles.inventory} aria-label={copy.application}>
             {[
               {
                 label: copy.inventoried,
@@ -401,7 +403,46 @@ export default async function SecurityBaselinePage({
                 <dd>{value.toLocaleString(documentLocale(locale))}</dd>
               </div>
             ))}
+            {catalog.application_groups.map((group) => (
+              <div
+                key={group.id}
+                className={styles.applicationTile}
+                data-application-group={group.id}
+              >
+                <dt>
+                  <ShieldCheck size={17} aria-hidden="true" />
+                  <span>
+                    {group.provider === "microsoft"
+                      ? "Microsoft"
+                      : group.provider}
+                    <br />
+                    {copy.applicationTargets[group.target]}
+                  </span>
+                </dt>
+                <dd>
+                  <strong>
+                    {formatPercent(group.summary.application_percent, locale)}
+                  </strong>
+                  <span className={styles.tileCaption}>
+                    {group.summary.applicable === 0
+                      ? copy.noSystems
+                      : `${group.summary.applied} / ${group.summary.applicable} · ${copy.confirmed}`}
+                  </span>
+                  {group.summary.unknown > 0 ? (
+                    <span className={styles.tileCaption}>
+                      {copy.applicationUnknown}: {group.summary.unknown}
+                    </span>
+                  ) : null}
+                  {group.summary.partial > 0 ? (
+                    <span className={styles.tileCaption}>
+                      {copy.applicationPartial}: {group.summary.partial}
+                    </span>
+                  ) : null}
+                </dd>
+              </div>
+            ))}
           </dl>
+          <p className={styles.applicationHint}>{copy.applicationHint}</p>
 
           {catalog.inventory.unclassified > 0 ||
           catalog.inventory.unmatched > 0 ? (
@@ -541,149 +582,162 @@ export default async function SecurityBaselinePage({
               <CircleHelp size={18} aria-hidden="true" />
               <p>{copy.scope}</p>
             </div>
-          </section>
-
-          {!catalog.capabilities.assessment ? (
-            <div className={styles.assessmentNotice} role="status">
-              <ScanLine size={20} aria-hidden="true" />
-              <p>{copy.assessmentPending}</p>
-            </div>
-          ) : null}
-
-          {requestedBaseline && !selection ? (
-            <div className={styles.empty} role="status">
-              <strong>{copy.selectionMissing}</strong>
-              <p>{copy.selectBaseline}</p>
-            </div>
-          ) : null}
-
-          {baseline ? (
-            <section
-              className={styles.panel}
-              aria-labelledby="baseline-details-heading"
-            >
-              <header className={styles.panelHeader}>
-                <div>
-                  <p className="eyebrow">{copy.details}</p>
-                  <h2 id="baseline-details-heading">{baseline.name}</h2>
-                </div>
-                <a
-                  className={styles.sourceLink}
-                  href={baseline.source_url}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                >
-                  {copy.openSource}
-                  <ExternalLink size={15} aria-hidden="true" />
-                </a>
-              </header>
-              <dl className={styles.packageDetails}>
-                <div>
-                  <dt>{copy.package}</dt>
-                  <dd>{baseline.package_name}</dd>
-                </div>
-                <div>
-                  <dt>{copy.revision}</dt>
-                  <dd>{baseline.revision || "—"}</dd>
-                </div>
-                <div>
-                  <dt>{copy.profiles}</dt>
-                  <dd>
-                    {baseline.profiles
-                      .map(
-                        (profile) =>
-                          copy.roles[profile as keyof typeof copy.roles] ??
-                          profile,
-                      )
-                      .join(" · ") || "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{copy.verifiedAt}</dt>
-                  <dd>{formatDate(baseline.verified_at, locale)}</dd>
-                </div>
-                <div>
-                  <dt>{copy.lastAssessed}</dt>
-                  <dd>
-                    {baseline.summary.last_assessed_at
-                      ? formatDate(baseline.summary.last_assessed_at, locale)
-                      : copy.notAssessed}
-                  </dd>
-                </div>
-              </dl>
-              {catalog.capabilities.assessment ? (
-                <SecurityBaselineScansPanel
-                  key={`${tenant.id}:${baseline.id}:${requestedPage}`}
-                  baselineId={baseline.id}
-                  applicable={baseline.summary.applicable}
-                  systems={systems?.results ?? []}
-                  initialJobs={scansResponse?.data ?? null}
-                  tenantId={tenant.id}
-                  csrfToken={session.csrf_token}
-                  canRun={hasPermission(tenant, "security.scans.run")}
-                  locale={locale}
-                  logsLabel={domainCopy.scanLogs}
-                  scanCopy={scanCopy}
-                />
-              ) : null}
-              <dl className={styles.statusSummary}>
-                {statuses.map((status) => (
-                  <div key={status}>
-                    <dt className={styles.status} data-state={status}>
-                      <span aria-hidden="true" />
-                      {copy.statuses[status]}
-                    </dt>
-                    <dd>{baseline.summary[status]}</dd>
-                  </div>
-                ))}
-              </dl>
-              <div className={styles.systemsHeading}>
-                <h3>{copy.systems}</h3>
-                <p>{copy.systemsHint}</p>
+            {!catalog.capabilities.assessment ? (
+              <div className={styles.assessmentNotice} role="status">
+                <ScanLine size={20} aria-hidden="true" />
+                <p>{copy.assessmentPending}</p>
               </div>
-              {systemsResponse?.notFound ? (
-                <div className={styles.empty} role="status">
-                  <p>{copy.pageMissing}</p>
-                  <Link
-                    className={styles.button}
-                    href={baselineHref(locale, target, baseline.id)}
-                  >
-                    {copy.firstPage}
-                    <ArrowRight size={15} aria-hidden="true" />
-                  </Link>
-                </div>
-              ) : !systems ? (
-                <div className={styles.empty} role="status">
-                  <p>{copy.systemsUnavailable}</p>
-                </div>
-              ) : systems.count === 0 ? (
-                <div className={styles.empty}>
-                  <p>{copy.noMatching}</p>
-                </div>
-              ) : (
-                <SystemsTable
-                  data={systems}
-                  locale={locale}
-                  copy={copy}
-                  target={target}
-                  scanCopy={scanCopy}
-                />
-              )}
-            </section>
-          ) : null}
+            ) : null}
 
-          {canManageDomains && baseline ? (
-            <BaselinePolicyConfiguration
-              key={tenant.id}
-              initialCatalog={domainResponse?.data ?? null}
-              tenantId={tenant.id}
-              csrfToken={session.csrf_token}
-              canImport={hasPermission(tenant, "security.gpo_imports.run")}
-              preferredBaselineId={baseline.id}
-              locale={locale}
-              copy={domainCopy}
-            />
-          ) : null}
+            {requestedBaseline && !selection ? (
+              <div className={styles.empty} role="status">
+                <strong>{copy.selectionMissing}</strong>
+                <p>{copy.selectBaseline}</p>
+              </div>
+            ) : null}
+
+            {baseline ? (
+              <SecurityBaselineDetails
+                baselineId={baseline.id}
+                className={styles.baselineDetails}
+              >
+                <summary className={styles.detailsToggle}>
+                  <h3 id="baseline-details-heading">
+                    <span>{copy.details}</span>
+                    {baseline.name}
+                  </h3>
+                  <ChevronDown size={20} aria-hidden="true" />
+                </summary>
+                <header className={styles.panelHeader}>
+                  <Link
+                    className={styles.sourceLink}
+                    href={baselineHref(locale, target)}
+                    scroll={false}
+                  >
+                    {copy.clearSelection}
+                  </Link>
+                  <a
+                    className={styles.sourceLink}
+                    href={baseline.source_url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                  >
+                    {copy.openSource}
+                    <ExternalLink size={15} aria-hidden="true" />
+                  </a>
+                </header>
+                <dl className={styles.packageDetails}>
+                  <div>
+                    <dt>{copy.package}</dt>
+                    <dd>{baseline.package_name}</dd>
+                  </div>
+                  <div>
+                    <dt>{copy.revision}</dt>
+                    <dd>{baseline.revision || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>{copy.profiles}</dt>
+                    <dd>
+                      {baseline.profiles
+                        .map(
+                          (profile) =>
+                            copy.roles[profile as keyof typeof copy.roles] ??
+                            profile,
+                        )
+                        .join(" · ") || "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{copy.verifiedAt}</dt>
+                    <dd>{formatDate(baseline.verified_at, locale)}</dd>
+                  </div>
+                  <div>
+                    <dt>{copy.lastAssessed}</dt>
+                    <dd>
+                      {baseline.summary.last_assessed_at
+                        ? formatDate(baseline.summary.last_assessed_at, locale)
+                        : copy.notAssessed}
+                    </dd>
+                  </div>
+                </dl>
+                {catalog.capabilities.assessment ? (
+                  <SecurityBaselineScansPanel
+                    key={`${tenant.id}:${baseline.id}:${requestedPage}`}
+                    baselineId={baseline.id}
+                    applicable={baseline.summary.applicable}
+                    systems={systems?.results ?? []}
+                    initialJobs={scansResponse?.data ?? null}
+                    tenantId={tenant.id}
+                    csrfToken={session.csrf_token}
+                    canRun={hasPermission(tenant, "security.scans.run")}
+                    locale={locale}
+                    logsLabel={domainCopy.scanLogs}
+                    scanCopy={scanCopy}
+                  />
+                ) : null}
+                <dl className={styles.statusSummary}>
+                  {statuses.map((status) => (
+                    <div key={status}>
+                      <dt className={styles.status} data-state={status}>
+                        <span aria-hidden="true" />
+                        {copy.statuses[status]}
+                      </dt>
+                      <dd>{baseline.summary[status]}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <div className={styles.systemsHeading}>
+                  <h4>{copy.systems}</h4>
+                  <p>{copy.systemsHint}</p>
+                </div>
+                {systemsResponse?.notFound ? (
+                  <div className={styles.empty} role="status">
+                    <p>{copy.pageMissing}</p>
+                    <Link
+                      className={styles.button}
+                      href={baselineHref(locale, target, baseline.id)}
+                    >
+                      {copy.firstPage}
+                      <ArrowRight size={15} aria-hidden="true" />
+                    </Link>
+                  </div>
+                ) : !systems ? (
+                  <div className={styles.empty} role="status">
+                    <p>{copy.systemsUnavailable}</p>
+                  </div>
+                ) : systems.count === 0 ? (
+                  <div className={styles.empty}>
+                    <p>{copy.noMatching}</p>
+                  </div>
+                ) : (
+                  <SystemsTable
+                    data={systems}
+                    locale={locale}
+                    copy={copy}
+                    target={target}
+                    scanCopy={scanCopy}
+                  />
+                )}
+                {canManageDomains ? (
+                  <div className={styles.deployment}>
+                    <BaselineGpoDeployment
+                      key={tenant.id}
+                      initialCatalog={domainResponse?.data ?? null}
+                      tenantId={tenant.id}
+                      csrfToken={session.csrf_token}
+                      canImport={hasPermission(
+                        tenant,
+                        "security.gpo_imports.run",
+                      )}
+                      preferredBaselineId={baseline.id}
+                      locale={locale}
+                      copy={domainCopy}
+                    />
+                  </div>
+                ) : null}
+              </SecurityBaselineDetails>
+            ) : null}
+          </section>
 
           <section
             className={styles.modules}

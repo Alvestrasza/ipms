@@ -1,5 +1,23 @@
 # IPMS Agent
 
+Windows candidate **0.2.33** adds read-only computer GPO processing evidence to
+the existing core inventory. The fixed local worker combines RSoP eligibility,
+per-extension processing status and the applied-GPO history for every extension.
+It binds each observation to the local domain GUID and DNS name, GPO GUID and
+version. A stable before/after snapshot is required; display names and resultant
+setting values are never evidence that a baseline was applied. The oldest required
+extension completion time is retained so the receiver can reject stale evidence.
+An inconsistent domain between core inventory and the GPO observation clears
+only GPO evidence, preserving the otherwise valid host inventory.
+
+The worker has a 30-second deadline, 128-MiB process limit and 64-KiB output cap.
+Disabled logging, unavailable APIs, excluded GPOs, failed processing and incomplete
+or changing snapshots cannot produce a positive application confirmation. No
+policy refresh, directory write, command or script is issued. Missing permissions
+remain explicit; no interactive logon is requested by this read-only collector.
+Deploy the compatible Portal receiver before updating Agents. This observation
+feature does not change the protected pilot import workflow described below.
+
 Windows candidate **0.2.32** adds a separate native GPMC worker for creating a
 new **disabled, unlinked pilot GPO** from one checksum-pinned Microsoft backup
 component. The Portal first sends an immutable domain/DC-bound job. An elevated

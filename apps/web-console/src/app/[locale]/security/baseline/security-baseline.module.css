@@ -1,7 +1,7 @@
 /*
  * File Name: security-baseline.module.css
- * Version: v0.1.0
- * Created: 2026-09-14 | Modified: 2026-09-14
+ * Version: v0.1.1
+ * Created: 2026-09-14 | Modified: 2026-09-15
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Scope the responsive security catalog and compliance detail layout.
  */
@@ -41,12 +41,20 @@
 }
 .inventory {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 156px), 1fr));
+  gap: 12px;
+  max-width: 1200px;
   margin: 0;
 }
 .inventory > div {
-  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  aspect-ratio: 1;
+  padding: 18px;
   border: 1px solid var(--border-default);
   border-radius: 7px;
   background: var(--surface-panel);
@@ -54,20 +62,91 @@
 .inventory dt {
   display: flex;
   gap: 9px;
-  align-items: center;
+  align-items: flex-start;
   color: var(--color-text-secondary);
   font-size: 0.78rem;
+  line-height: 1.45;
 }
 .inventory dt svg {
   flex-shrink: 0;
   color: var(--color-accent-blue);
 }
 .inventory dd {
-  margin: 14px 0 0;
-  font-size: 2rem;
+  margin: 12px 0 0;
+  font-size: 2.25rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 1;
+}
+.inventory .applicationTile {
+  border-top: 3px solid var(--color-accent-blue);
+}
+.applicationTile dd {
+  display: grid;
+  gap: 5px;
+}
+.applicationTile dd > strong {
+  font-weight: 600;
+}
+.tileCaption {
+  color: var(--color-text-secondary);
+  font-size: 0.67rem;
+  font-weight: 400;
+  line-height: 1.4;
+}
+.applicationHint {
+  max-width: 1200px;
+  margin: -6px 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+.baselineDetails {
+  min-width: 0;
+  margin: 0 18px 18px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+}
+.detailsToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px;
+  background: var(--surface-panel-raised);
+  cursor: pointer;
+  list-style: none;
+}
+.detailsToggle::-webkit-details-marker {
+  display: none;
+}
+.detailsToggle:focus-visible {
+  outline: 2px solid var(--color-accent-blue);
+  outline-offset: -3px;
+}
+.detailsToggle h3 {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.6;
+}
+.detailsToggle h3 > span {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  font-weight: 400;
+}
+.detailsToggle > svg {
+  flex-shrink: 0;
+  transform: rotate(-90deg);
+}
+.baselineDetails[open] > .detailsToggle > svg {
+  transform: rotate(0);
+}
+.deployment {
+  padding: 18px;
+  border-top: 1px solid var(--border-default);
 }
 .mappingNote,
 .explanation,
@@ -339,7 +418,7 @@
 .systemsHeading {
   padding: 20px 22px;
 }
-.systemsHeading h3 {
+.systemsHeading h4 {
   margin: 0;
   font-size: 0.86rem;
   font-weight: 600;
@@ -443,19 +522,21 @@
     justify-content: flex-start;
   }
   .inventory {
-    grid-template-columns: 1fr;
     gap: 10px;
   }
   .inventory > div {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 14px;
-    padding: 16px;
+    padding: 12px;
   }
-  .inventory dd {
-    margin: 0;
-    font-size: 1.5rem;
+  .inventory dt {
+    gap: 6px;
+    font-size: 0.71rem;
+  }
+  .baselineDetails {
+    margin: 0 10px 10px;
+  }
+  .detailsToggle,
+  .deployment {
+    padding: 14px;
   }
   .packageDetails {
     grid-template-columns: 1fr;

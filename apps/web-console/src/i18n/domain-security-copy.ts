@@ -1,6 +1,6 @@
 /**
  * File Name: domain-security-copy.ts
- * Version: v0.1.1 | Created: 2026-09-14 | Modified: 2026-09-14
+ * Version: v0.1.2 | Created: 2026-09-14 | Modified: 2026-09-15
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Localize domain mapping, GPO names, baseline order and unlinked pilot imports.
  */
@@ -11,21 +11,20 @@ const en = {
   title: "Domain security settings",
   eyebrow: "Tenant administration / Security",
   description:
-    "Configure domain DNS names and map existing OUs to security tiers.",
+    "Configure domain DNS names, tier OUs, GPO naming and baseline composition order.",
   boundary:
     "Saving these settings records a plan. It does not create or move OUs, modify GPOs, or apply policy.",
   domains: "Configured domains",
   policyTitle: "Domain GPO configuration",
   policyDomain: "Configured domain",
   policyDescription:
-    "Set GPO names and arrange baseline layers for the selected domain. OU mappings are maintained in tenant administration.",
-  policyBoundary:
-    "Saving GPO configuration records the naming and composition plan. A pilot import is a separate action and does not apply policy.",
-  policySave: "Save GPO configuration",
-  policySaved: "GPO configuration saved. No directory policies were applied.",
-  policyUnavailable:
-    "GPO configuration could not be loaded. Reload to try again.",
-  policyEmpty:
+    "Set the naming template and baseline composition order for this domain. These settings are saved together with the tier OU mappings.",
+  deploymentTitle: "GPO preparation",
+  deploymentDescription:
+    "Select the configured domain for this baseline. GPO names, OU mappings and composition order are maintained in tenant administration.",
+  deploymentUnavailable:
+    "Saved domain configuration could not be loaded. Reload to try again.",
+  deploymentEmpty:
     "Configure a domain and its tier OUs in tenant administration before preparing GPOs.",
   configureDomains: "Configure domains & tiers",
   scanLogs: "View scan logs",
@@ -154,22 +153,20 @@ const de: DomainSecurityCopy = {
   title: "Domänen-Sicherheitseinstellungen",
   eyebrow: "Tenant-Administration / Security",
   description:
-    "DNS-Namen der Domänen konfigurieren und vorhandene OUs den Sicherheits-Tiers zuordnen.",
+    "DNS-Namen der Domänen, Tier-OUs, GPO-Namensschema und Baseline-Reihenfolge konfigurieren.",
   boundary:
     "Das Speichern hält die Planung fest. Es erstellt oder verschiebt keine OUs, ändert keine GPOs und wendet keine Richtlinien an.",
   domains: "Konfigurierte Domänen",
   policyTitle: "GPO-Konfiguration der Domäne",
   policyDomain: "Konfigurierte Domäne",
   policyDescription:
-    "GPO-Namen und Baseline-Reihenfolge für die gewählte Domäne festlegen. Die OU-Zuordnung wird in der Tenant-Administration gepflegt.",
-  policyBoundary:
-    "Das Speichern hält Namensschema und Baseline-Zusammenstellung fest. Ein Pilot-Import wird separat angefordert und wendet keine Richtlinien an.",
-  policySave: "GPO-Konfiguration speichern",
-  policySaved:
-    "GPO-Konfiguration gespeichert. Es wurden keine Verzeichnisrichtlinien angewendet.",
-  policyUnavailable:
-    "Die GPO-Konfiguration konnte nicht geladen werden. Bitte erneut laden.",
-  policyEmpty:
+    "Namensschema und Reihenfolge der Baseline-Zusammenstellung für diese Domäne festlegen. Diese Einstellungen werden gemeinsam mit den Tier-OUs gespeichert.",
+  deploymentTitle: "GPO-Vorbereitung",
+  deploymentDescription:
+    "Konfigurierte Domäne für diese Baseline auswählen. GPO-Namen, OU-Zuordnung und Baseline-Reihenfolge werden in der Tenant-Administration gepflegt.",
+  deploymentUnavailable:
+    "Die gespeicherte Domänenkonfiguration konnte nicht geladen werden. Bitte erneut laden.",
+  deploymentEmpty:
     "Vor der GPO-Vorbereitung eine Domäne mit ihren Tier-OUs in der Tenant-Administration konfigurieren.",
   configureDomains: "Domänen & Tiers konfigurieren",
   scanLogs: "Scan-Protokolle öffnen",

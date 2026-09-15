@@ -1,6 +1,7 @@
 #include "ipms/agent/gateway_contract.hpp"
 #include "ipms/agent/hyperv_pack.hpp"
 #include "ipms/agent/windows_core_pack.hpp"
+#include "ipms/agent/windows_group_policy.hpp"
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -1017,6 +1018,7 @@ std::string collect_windows_server_core_inventory_json() {
        << "\"hyperv_inventory_status\":\"" << hyperv.status << "\","
        << "\"hyperv_inventory_error\":\"" << json_escape(hyperv.error) << "\","
        << "\"hyperv_virtual_machines\":" << hyperv.virtual_machines_json << ","
+       << "\"group_policy\":" << bind_windows_group_policy_domain(collect_windows_group_policy_json(), utf8(identity.domain)) << ","
        << "\"network_interfaces\":" << network_interfaces_json() << "}";
   return json.str();
 }
