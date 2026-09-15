@@ -49,12 +49,12 @@ const en = {
   legacyHint:
     "This older request uses local approval and cannot be approved centrally. A new centrally approved request is required to use the Portal workflow.",
   centralHint:
-    "Approval permits only the displayed import: one separate pilot GPO, unlinked and with Computer and User settings disabled. It does not link, activate or apply the baseline.",
+    "Approval permits only the displayed import: one separate GPO, unlinked and with Computer and User settings disabled. It does not link, activate or apply the baseline.",
   approved:
-    "Import approved. The Agent can collect this exact request; its execution result will appear in Logs.",
-  approve: "Approve this pilot import",
+    "Action approved. The Agent can collect this exact request; its execution result will appear in Logs.",
+  approve: "Approve this GPO action",
   approving: "Approving…",
-  refreshReview: "Reload import review",
+  refreshReview: "Reload action review",
   reviewUnavailable:
     "The authorized import review is unavailable. Reload before approving.",
   reviewInvalidated:
@@ -139,12 +139,12 @@ const de: GpoApprovalCopy = {
   legacyHint:
     "Dieser ältere Auftrag verwendet die lokale Freigabe und kann nicht zentral freigegeben werden. Für den Portal-Ablauf muss ein neuer Auftrag mit zentraler Freigabe erstellt werden.",
   centralHint:
-    "Die Freigabe erlaubt ausschließlich den angezeigten Import: eine separate Pilot-GPO ohne Verknüpfung und mit deaktivierten Computer- und Benutzereinstellungen. Sie verknüpft, aktiviert oder wendet die Baseline nicht an.",
+    "Die Freigabe erlaubt ausschließlich den angezeigten Import: eine separate GPO ohne Verknüpfung und mit deaktivierten Computer- und Benutzereinstellungen. Sie verknüpft, aktiviert oder wendet die Baseline nicht an.",
   approved:
-    "Import freigegeben. Der Agent kann genau diesen Auftrag übernehmen; das Ausführungsergebnis erscheint in Logs.",
-  approve: "Diesen Pilot-Import freigeben",
+    "Aktion freigegeben. Der Agent kann genau diesen Auftrag übernehmen; das Ausführungsergebnis erscheint in Logs.",
+  approve: "Diese GPO-Aktion freigeben",
   approving: "Wird freigegeben…",
-  refreshReview: "Importprüfung neu laden",
+  refreshReview: "Auftragsprüfung neu laden",
   reviewUnavailable:
     "Die berechtigte Importvorschau ist nicht verfügbar. Vor einer Freigabe erneut laden.",
   reviewInvalidated:

@@ -13,6 +13,7 @@ export default defineConfig({
     "domain-security.spec.ts",
     "job-logs.spec.ts",
     "gpo-approval.spec.ts",
+    "gpo-production.spec.ts",
   ],
   timeout: 60_000,
   workers: 1,

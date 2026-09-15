@@ -1,5 +1,5 @@
 // File Name: gpo_management_contract_tests.cpp
-// Version: v0.1.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
+// Version: v0.1.0 | Created: 2026-09-14 | Last Modified: 2026-09-15
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Independent hash vectors, hostile artifacts and no-retry pilot write boundaries.
 #include "ipms/agent/gpo_management.hpp"
@@ -65,6 +65,9 @@ int main(int argc,char** argv) {
       {"domain_dns_name","example.invalid"},{"domain_guid",j.text("domain_guid")},{"forest_dns_name","example.invalid"},{"dc_fqdn","dc.example.invalid"}};
     require(gpo::executor_matches(j,executor),"Correct DC rejected");executor["role"]="read-only-domain-controller";require(!gpo::executor_matches(j,executor),"RODC accepted");
     executor["role"]="writable-domain-controller";executor["domain_guid"]="55555555-5555-4555-8555-555555555555";require(!gpo::executor_matches(j,executor),"Different domain accepted");
+    auto managed_routing=journal();managed_routing.assignment.fields["schema"]=3;provider wrong_provider;
+    rejects([&]{gpo::execute_pilot(managed_routing,wrong_provider,[](const auto&){},[]{return true;},[]{});});
+    require(wrong_provider.calls.empty(),"Managed assignment reached legacy provider without snapshot guards");
     auto rec=journal();require(gpo::parse_journal(gpo::journal_document(rec)).assignment==rec.assignment,"Journal binding changed");
     rec.grant_deadline_tick=0;const json::object cancellation{{"authorized",false},{"mode","cancelled"},{"job",rec.assignment.fields}};
     require(!gpo::record_claim(rec,cancellation,1000,[](const auto&){})&&rec.state==gpo::phase::terminal&&

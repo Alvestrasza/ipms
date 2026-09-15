@@ -403,7 +403,9 @@ class GroupPolicyApplicationTests(TestCase):
         jobs = self.bind_profile()
         for index in range(25):
             self.receive(self.system(name=f"host-{index}"), report=self.observe(jobs))
-        with self.assertNumQueries(5):
+        # Managed production identities add one bounded tenant query; inventory
+        # and baseline growth must still never produce per-system queries.
+        with self.assertNumQueries(6):
             data = BaselineOverview(self.tenant).catalog()
         summary = next(group for group in data["application_groups"] if group["target"] == "server")["summary"]
         self.assertEqual((summary["applied"], summary["applicable"]), (25, 26))

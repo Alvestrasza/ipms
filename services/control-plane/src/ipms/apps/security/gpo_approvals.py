@@ -79,7 +79,8 @@ def visible_jobs(user, tenant, jobs):
 
 
 def is_portal(job):
-    return isinstance(job.assignment, dict) and job.assignment.get('schema') == 2 and job.assignment.get('approval_mode') == 'portal'
+    return (isinstance(job.assignment, dict) and type(job.assignment.get('schema')) is int
+            and job.assignment['schema'] in (2, 3) and job.assignment.get('approval_mode') == 'portal')
 
 
 def approval_object(job):
@@ -87,7 +88,7 @@ def approval_object(job):
         return None
     return {'schema': 1, 'job_id': str(job.pk), 'input_digest': job.input_digest,
             'device_uri': job.enrollment.device_uri, 'domain_guid': job.domain_guid,
-            'target_tier': job.assignment['target_tier'], 'operation': 'create_unlinked_pilot',
+            'target_tier': job.assignment['target_tier'], 'operation': job.assignment['operation'],
             'requested_by': str(job.requested_by_id), 'approved_by': str(job.approved_by_id),
             'approved_at': job.approved_at.strftime('%Y-%m-%dT%H:%M:%SZ'),
             'expires_at': job.assignment['expires_at'], 'policy_revision': job.policy_revision,
@@ -114,6 +115,9 @@ def approval_current(job, tenant):
 
 
 def approval_blocker(job, user):
+    from .gpo_production import inspecting
+    if inspecting(job):
+        return 'inspection_only'
     if not is_portal(job):
         return 'local_approval_required'
     if job.status not in ('queued', 'awaiting_approval') or job.claimed_at:
@@ -159,8 +163,13 @@ def review_document(job):
                 raise ValidationError('Invalid GPO review encoding.') from exc
     if offset != len(content) or report is None:
         raise ValidationError('Invalid GPO review manifest.')
-    return {'component_name': component['name'], 'artifact_sha256': component['artifact_sha256'],
+    result = {'component_name': component['name'], 'artifact_sha256': component['artifact_sha256'],
             'files': files, 'report_xml': report, 'changes': ['create_disabled_unlinked_pilot']}
+    from .gpo_production import production
+    if production(job):
+        result.update(changes=[job.assignment['operation']], expected_state=job.assignment['expected_state'],
+                      target_ous=job.assignment['target_ous'], safety_review=job.assignment['safety_review'])
+    return result
 
 
 def _revision(data, fields):
@@ -171,7 +180,7 @@ def _revision(data, fields):
 
 def _withdraw(tenant, *, domain=None):
     from .gpo_jobs import ACTIVE, _invalidate
-    jobs = GpoImportJob.objects.select_for_update().filter(tenant=tenant, status__in=ACTIVE, assignment__schema=2)
+    jobs = GpoImportJob.objects.select_for_update().filter(tenant=tenant, status__in=ACTIVE, assignment__schema__in=(2, 3))
     if domain:
         jobs = jobs.filter(domain=domain)
     for job in jobs:

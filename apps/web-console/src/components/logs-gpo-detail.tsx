@@ -11,12 +11,14 @@ import { useEffect, useRef, useState } from "react";
 import { documentLocale, type Locale } from "@/i18n/config";
 import { getDomainSecurityCopy } from "@/i18n/domain-security-copy";
 import { getGpoApprovalCopy } from "@/i18n/gpo-approval-copy";
+import { getGpoProductionCopy } from "@/i18n/gpo-production-copy";
 import { getJobLogsCopy } from "@/i18n/job-logs-copy";
 import { isGpoImportJob } from "@/lib/domain-security-validation";
 import {
   type GpoImportLogDetail,
   isGpoImportLogDetail,
 } from "@/lib/job-log-types";
+import { GpoStateReview } from "./gpo-state-review";
 import styles from "./logs-page.module.css";
 
 export function LogsGpoDetail({
@@ -33,6 +35,7 @@ export function LogsGpoDetail({
   const copy = getDomainSecurityCopy(locale);
   const approval = getGpoApprovalCopy(locale);
   const logs = getJobLogsCopy(locale);
+  const production = getGpoProductionCopy(locale);
   const router = useRouter();
   const [job, setJob] = useState<GpoImportLogDetail | null>(initialJob);
   const [notice, setNotice] = useState("");
@@ -210,7 +213,7 @@ export function LogsGpoDetail({
     <div className={styles.detail} aria-busy={busy}>
       <div className={styles.detailHeading}>
         {job ? (
-          <h3>{job.pilot_display_name}</h3>
+          <h3>{job.display_name ?? job.pilot_display_name}</h3>
         ) : (
           <h3>{approval.centralTitle}</h3>
         )}
@@ -237,6 +240,12 @@ export function LogsGpoDetail({
             </span>
           </p>
           <dl className={styles.metadata}>
+            {job.operation && job.operation !== "create_unlinked_pilot" ? (
+              <div>
+                <dt>{production.operation}</dt>
+                <dd>{production.actions[job.operation]}</dd>
+              </div>
+            ) : null}
             <div>
               <dt>{logs.requestId}</dt>
               <dd>
@@ -310,14 +319,50 @@ export function LogsGpoDetail({
               </div>
             ) : null}
           </dl>
-          {job.status === "staged" ? <p>{copy.staged}</p> : null}
+          {job.status === "staged" ? (
+            <p>{job.managed_id ? production.description : copy.staged}</p>
+          ) : null}
+          {job.approval_mode === "inspection" ? (
+            <p>{production.inspectOnly}</p>
+          ) : null}
           {job.approval_mode === "portal" ? (
             <section
               className={styles.approval}
               aria-labelledby="central-gpo-review-heading"
             >
               <h4 id="central-gpo-review-heading">{approval.centralTitle}</h4>
-              <p>{approval.centralHint}</p>
+              <p>
+                {job.managed_id ? production.actionHint : approval.centralHint}
+              </p>
+              {job.operation === "activate_managed_gpo" ? (
+                <p>{production.activation}</p>
+              ) : null}
+              {job.operation === "link_managed_gpo" ? (
+                <p>{production.linkBoundary}</p>
+              ) : null}
+              {job.operation === "deactivate_managed_gpo" ? (
+                <p>{production.deactivateBoundary}</p>
+              ) : null}
+              {job.review?.expected_state ? (
+                <GpoStateReview
+                  state={job.review.expected_state}
+                  displayName={job.display_name ?? job.pilot_display_name}
+                  locale={locale}
+                />
+              ) : null}
+              {job.review?.safety_review &&
+              job.operation === "activate_managed_gpo" ? (
+                <ul>
+                  <li>
+                    {production.management}:{" "}
+                    {job.review.safety_review.management_access ? "✓" : "—"}
+                  </li>
+                  <li>
+                    {production.recovery}:{" "}
+                    {job.review.safety_review.recovery_access ? "✓" : "—"}
+                  </li>
+                </ul>
+              ) : null}
               <p>
                 {job.four_eyes_required
                   ? approval.fourEyesRequired

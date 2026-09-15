@@ -1,11 +1,10 @@
 /**
  * File Name: domain-gpo-imports.tsx
- * Version: v0.1.0 | Created: 2026-09-14 | Modified: 2026-09-14
+ * Version: v0.3.0 | Created: 2026-09-14 | Modified: 2026-09-15
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
- * Purpose: Request centrally approved disabled, unlinked pilot GPO imports.
+ * Purpose: Prepare separate, snapshot-bound GPO import, link and activation requests.
  */
 "use client";
-
 import { RefreshCw } from "lucide-react";
 import type { Route } from "next";
 import Link from "next/link";
@@ -18,30 +17,28 @@ import {
 } from "react";
 import type { Locale } from "@/i18n/config";
 import type { DomainSecurityCopy } from "@/i18n/domain-security-copy";
-import {
-  type DomainSecurityCatalog,
-  type DomainSecuritySettings,
-  type DomainGpoImports as Imports,
-  SECURITY_TIERS,
-  type SecurityTier,
+import { getGpoProductionCopy } from "@/i18n/gpo-production-copy";
+import type {
+  DomainSecurityCatalog,
+  DomainSecuritySettings,
+  GpoImportExecutor,
+  GpoImportJob,
+  SecurityTier,
 } from "@/lib/domain-security-types";
 import {
   isDomainGpoImports,
   isGpoImportJob,
 } from "@/lib/domain-security-validation";
-import styles from "./domain-security-administration.module.css";
+import {
+  GPO_OPERATIONS,
+  type GpoOperation,
+  isManagedGpo,
+  type ManagedGpo,
+} from "@/lib/gpo-production-types";
+import styles from "./gpo-production.module.css";
+import { GpoStateReview } from "./gpo-state-review";
 
-export function DomainGpoImports({
-  settings,
-  catalog,
-  tenantId,
-  csrfToken,
-  canImport,
-  configurationDirty,
-  preferredBaselineId,
-  locale,
-  copy,
-}: {
+type Props = {
   settings: DomainSecuritySettings;
   catalog: DomainSecurityCatalog;
   tenantId: string;
@@ -51,398 +48,622 @@ export function DomainGpoImports({
   preferredBaselineId?: string;
   locale: Locale;
   copy: DomainSecurityCopy;
-}) {
-  const [imports, setImports] = useState<Imports | null>(null);
+};
+type Listing = {
+  results: ManagedGpo[];
+  executors: GpoImportExecutor[];
+  jobs: GpoImportJob[];
+};
+function listing(v: unknown): v is Listing {
+  if (v === null || typeof v !== "object" || Array.isArray(v)) return false;
+  const r = v as Record<string, unknown>;
+  return (
+    Array.isArray(r.results) &&
+    r.results.length <= 10000 &&
+    r.results.every(isManagedGpo) &&
+    isDomainGpoImports({ results: r.jobs, executors: r.executors })
+  );
+}
+export function DomainGpoImports(props: Props) {
+  return (
+    <ProductionWorkflow
+      key={`${props.tenantId}:${props.settings.id}:${props.settings.revision}:${props.csrfToken}:${props.canImport}`}
+      {...props}
+    />
+  );
+}
+function ProductionWorkflow({
+  settings,
+  catalog,
+  tenantId,
+  csrfToken,
+  canImport,
+  configurationDirty,
+  preferredBaselineId,
+  locale,
+  copy,
+}: Props) {
+  const c = getGpoProductionCopy(locale);
+  const endpoint = `/api/v1/security/domain-settings/${encodeURIComponent(settings.id)}`;
+  const [data, setData] = useState<Listing | null>(null);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [uncertain, setUncertain] = useState(false);
-  const [stale, setStale] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [receiptId, setReceiptId] = useState<string | null>(null);
+  const [policyId, setPolicyId] = useState("");
   const [systemId, setSystemId] = useState("");
-  const [baselineId, setBaselineId] = useState(
-    settings.baseline_order.includes(preferredBaselineId ?? "")
-      ? (preferredBaselineId ?? "")
-      : "",
-  );
+  const [baselineId, setBaselineId] = useState(preferredBaselineId ?? "");
   const [backupId, setBackupId] = useState("");
   const [tier, setTier] = useState<SecurityTier>("0");
   const [target, setTarget] = useState("ALL");
   const [version, setVersion] = useState("1.0.0");
-  const activeRequest = useRef<AbortController | null>(null);
-  const loadRequest = useRef<AbortController | null>(null);
+  const [adoptJobId, setAdoptJobId] = useState("");
+  const [operation, setOperation] =
+    useState<GpoOperation>("import_managed_gpo");
+  const [inspectionId, setInspectionId] = useState("");
+  const [receiptId, setReceiptId] = useState("");
+  const [management, setManagement] = useState(false);
+  const [recovery, setRecovery] = useState(false);
+  const [domainRootConfirmed, setDomainRootConfirmed] = useState(false);
   const mounted = useRef(false);
-  const lastRequest = useRef<{ signature: string; key: string } | null>(null);
-  const endpoint = `/api/v1/security/domain-settings/${encodeURIComponent(settings.id)}/gpo-imports/`;
-
+  const mutation = useRef<AbortController | null>(null);
+  const read = useRef<AbortController | null>(null);
+  const pending = useRef<{
+    signature: string;
+    id: string;
+    kind: "inspect" | "write";
+  } | null>(null);
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
-      activeRequest.current?.abort();
-      loadRequest.current?.abort();
+      mutation.current?.abort();
+      read.current?.abort();
     };
   }, []);
-
   const refresh = useCallback(async () => {
-    if (activeRequest.current) return;
-    loadRequest.current?.abort();
+    if (mutation.current) return;
+    read.current?.abort();
     const controller = new AbortController();
-    loadRequest.current = controller;
-    const current = () => mounted.current && loadRequest.current === controller;
+    read.current = controller;
+    const current = () => mounted.current && read.current === controller;
     setLoading(true);
     try {
-      const response = await fetch(endpoint, {
+      const response = await fetch(`${endpoint}/managed-gpos/`, {
         credentials: "same-origin",
         cache: "no-store",
         headers: { "X-IPMS-Tenant-ID": tenantId },
         signal: AbortSignal.any([
           controller.signal,
-          AbortSignal.timeout(15_000),
+          AbortSignal.timeout(15000),
         ]),
       });
       const payload: unknown = response.ok ? await response.json() : null;
       if (!current()) return;
-      if (!isDomainGpoImports(payload)) {
-        setImports(null);
-        setError(
-          response.status === 401
-            ? copy.sessionExpired
-            : response.status === 403
-              ? copy.permission
-              : copy.importsUnavailable,
-        );
+      if (!listing(payload)) {
+        setData(null);
+        setError(c.unavailable);
         return;
       }
-      setImports(payload);
-      setUncertain(false);
+      setData(payload);
       setError("");
+      const existing =
+        pending.current &&
+        payload.jobs.find((j) => j.id === pending.current?.id);
+      if (existing) {
+        if (pending.current?.kind === "inspect") setInspectionId(existing.id);
+        else setReceiptId(existing.id);
+        pending.current = null;
+      }
     } catch {
       if (current()) {
-        setImports(null);
-        setError(copy.importsUnavailable);
+        setData(null);
+        setError(c.unavailable);
       }
     } finally {
       if (current()) {
-        loadRequest.current = null;
+        read.current = null;
         setLoading(false);
       }
     }
-  }, [
-    endpoint,
-    tenantId,
-    copy.importsUnavailable,
-    copy.permission,
-    copy.sessionExpired,
-  ]);
-
+  }, [endpoint, tenantId, c.unavailable]);
   useEffect(() => {
     void refresh();
-    return () => {
-      loadRequest.current?.abort();
-      loadRequest.current = null;
-    };
+    return () => read.current?.abort();
   }, [refresh]);
-
-  const eligibleExecutors =
-    imports?.executors.filter(
-      (executor) =>
-        executor.eligible &&
-        executor.domain_name.toLowerCase() ===
-          settings.domain_name.toLowerCase(),
-    ) ?? [];
-  const executor = systemId
-    ? eligibleExecutors.find((item) => item.system_id === systemId)
-    : eligibleExecutors[0];
+  const policy = data?.results.find((p) => p.id === policyId);
+  const inspection = data?.jobs.find((j) => j.id === inspectionId);
+  const checking =
+    inspection?.operation === "inspect_managed_gpo" &&
+    ["queued", "running"].includes(inspection.status);
+  useEffect(() => {
+    if (!checking || busy) return;
+    const timer = setInterval(() => void refresh(), 4000);
+    return () => clearInterval(timer);
+  }, [checking, busy, refresh]);
   const baselines = settings.baseline_order.flatMap((id) => {
-    const option = catalog.baseline_options.find((item) => item.id === id);
-    return option ? [option] : [];
+    const b = catalog.baseline_options.find((b) => b.id === id);
+    return b ? [b] : [];
   });
-  const baseline =
-    baselines.find((item) => item.id === baselineId) ?? baselines[0];
+  const baseline = baselines.find((b) => b.id === baselineId) ?? baselines[0];
   const component =
-    baseline?.components.find((item) => item.id === backupId) ??
-    baseline?.components.find((item) => item.available);
-  const busy = loading || submitting;
-  const canRequest =
-    canImport &&
-    !configurationDirty &&
-    !busy &&
-    !uncertain &&
-    !stale &&
-    Boolean(executor && component?.available);
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (
-      !canRequest ||
-      activeRequest.current ||
-      !executor ||
-      !baseline ||
-      !component
-    )
+    baseline?.components.find((b) => b.id === backupId) ??
+    baseline?.components.find((b) => b.available);
+  const executors =
+    data?.executors.filter(
+      (e) =>
+        e.eligible &&
+        e.domain_name.toLowerCase() === settings.domain_name.toLowerCase() &&
+        /^\d+\.\d+\.\d+$/.test(e.agent_version) &&
+        (Number(e.agent_version.split(".")[0]) > 0 ||
+          Number(e.agent_version.split(".")[1]) > 2 ||
+          (Number(e.agent_version.split(".")[1]) === 2 &&
+            Number(e.agent_version.split(".")[2]) >= 35)),
+    ) ?? [];
+  const executor =
+    executors.find((e) => e.system_id === systemId) ?? executors[0];
+  const resetInspection = () => {
+    setInspectionId("");
+    setReceiptId("");
+    setManagement(false);
+    setRecovery(false);
+    setDomainRootConfirmed(false);
+    setNotice("");
+  };
+  const selectPolicy = (id: string) => {
+    resetInspection();
+    setPolicyId(id);
+    setAdoptJobId("");
+    const selected = data?.results.find((p) => p.id === id);
+    if (selected) {
+      setBaselineId(selected.baseline_id);
+      setBackupId(selected.backup_id);
+      setTier(selected.tier);
+      setTarget(selected.target);
+      setVersion(selected.version);
+    } else setOperation("import_managed_gpo");
+  };
+  const legacy =
+    data?.jobs.filter(
+      (j) =>
+        !j.managed_id &&
+        j.status === "staged" &&
+        j.gpo_guid &&
+        j.baseline_id === baseline?.id &&
+        j.backup_id === component?.id &&
+        j.tier === tier,
+    ) ?? [];
+  const disabled = busy || loading || !canImport || configurationDirty;
+  const lockedSelection = disabled || pending.current !== null;
+  const domainRootAction =
+    component?.scope === "domain" && operation !== "import_managed_gpo";
+  const domainRootDn = settings.domain_name
+    .split(".")
+    .map((part) => `DC=${part}`)
+    .join(",");
+  const actionSelection = {
+    revision: settings.revision,
+    system_id: executor?.system_id ?? "",
+    baseline_id: baseline?.id ?? "",
+    backup_id: component?.id ?? "",
+    tier,
+    target,
+    version,
+    operation,
+    managed_id: policy?.id ?? null,
+    adopt_job_id: adoptJobId || null,
+    domain_root_confirmed: domainRootAction && domainRootConfirmed,
+  };
+  async function submit(kind: "inspect" | "write") {
+    if (disabled || mutation.current || !data) return;
+    const body =
+      kind === "inspect"
+        ? actionSelection
+        : {
+            preflight_id: inspectionId,
+            safety_review: {
+              management_access:
+                operation === "activate_managed_gpo" && management,
+              recovery_access: operation === "activate_managed_gpo" && recovery,
+            },
+          };
+    const signature = JSON.stringify({ kind, body });
+    if (pending.current && pending.current.signature !== signature) {
+      setError(c.uncertain);
       return;
-    const document = {
-      revision: settings.revision,
-      system_id: executor.system_id,
-      baseline_id: baseline.id,
-      backup_id: component.id,
-      tier,
-      target: target.trim(),
-      version: version.trim(),
-    };
-    const signature = JSON.stringify(document);
-    if (lastRequest.current?.signature !== signature)
-      lastRequest.current = { signature, key: crypto.randomUUID() };
+    }
+    const key = pending.current?.id ?? crypto.randomUUID();
+    pending.current = { signature, id: key, kind };
+    read.current?.abort();
+    read.current = null;
     const controller = new AbortController();
-    activeRequest.current = controller;
-    setSubmitting(true);
+    mutation.current = controller;
+    setBusy(true);
     setError("");
     setNotice("");
-    setReceiptId(null);
-    const current = () =>
-      mounted.current && activeRequest.current === controller;
+    const current = () => mounted.current && mutation.current === controller;
     try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        credentials: "same-origin",
-        cache: "no-store",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRFToken": csrfToken,
-          "X-IPMS-Tenant-ID": tenantId,
+      const response = await fetch(
+        `${endpoint}/${kind === "inspect" ? "gpo-preflights" : "managed-gpos"}/`,
+        {
+          method: "POST",
+          credentials: "same-origin",
+          cache: "no-store",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": csrfToken,
+            "X-IPMS-Tenant-ID": tenantId,
+          },
+          body: JSON.stringify({ ...body, idempotency_key: key }),
+          signal: AbortSignal.any([
+            controller.signal,
+            AbortSignal.timeout(20000),
+          ]),
         },
-        signal: AbortSignal.any([
-          controller.signal,
-          AbortSignal.timeout(20_000),
-        ]),
-        body: JSON.stringify({
-          ...document,
-          idempotency_key: lastRequest.current.key,
-        }),
-      });
+      );
+      const payload: unknown = response.ok ? await response.json() : null;
       if (!current()) return;
       if (!response.ok) {
-        if (response.status === 409) setStale(true);
-        if (response.status >= 500) setUncertain(true);
-        setError(
-          response.status === 401
-            ? copy.sessionExpired
-            : response.status === 403
-              ? copy.permission
-              : response.status === 409
-                ? copy.conflict
-                : response.status === 400
-                  ? copy.importInvalid
-                  : copy.importUncertain,
-        );
+        if (response.status < 500) {
+          pending.current = null;
+          resetInspection();
+        }
+        setError(response.status >= 500 ? c.uncertain : c.rejected);
         return;
       }
-      const payload: unknown = await response.json();
       if (
         !isGpoImportJob(payload) ||
-        payload.baseline_id !== baseline.id ||
-        payload.backup_id !== component.id ||
-        payload.tier !== tier
+        payload.id !== key ||
+        (kind === "inspect"
+          ? payload.operation !== "inspect_managed_gpo"
+          : payload.operation !== operation)
       )
         throw new Error("invalid_receipt");
-      if (!current()) return;
-      setImports((previous) =>
-        previous
-          ? {
-              ...previous,
-              results: [
-                payload,
-                ...previous.results.filter((item) => item.id !== payload.id),
-              ],
-            }
-          : previous,
+      pending.current = null;
+      setData((old) =>
+        old
+          ? { ...old, jobs: [payload, ...old.jobs.filter((j) => j.id !== key)] }
+          : old,
       );
-      setNotice(copy.importReceived);
-      setReceiptId(payload.id);
-    } catch {
-      if (current()) {
-        setUncertain(true);
-        setError(copy.importUncertain);
+      if (kind === "inspect") {
+        setInspectionId(payload.id);
+        setReceiptId("");
+        setManagement(false);
+        setRecovery(false);
+        setNotice(c.preparing);
+      } else {
+        setReceiptId(payload.id);
+        setNotice(c.prepared);
       }
+    } catch {
+      if (current()) setError(c.uncertain);
     } finally {
       if (current()) {
-        activeRequest.current = null;
-        setSubmitting(false);
+        mutation.current = null;
+        setBusy(false);
+        setLoading(false);
       }
     }
   }
-
-  const logsQuery = new URLSearchParams({
-    kind: "gpo_import",
-    domain: settings.domain_name,
-    ...(baseline ? { baseline: baseline.id } : {}),
-  });
-
+  const canInspect =
+    !disabled &&
+    executor &&
+    baseline &&
+    component?.available &&
+    (!domainRootAction || domainRootConfirmed) &&
+    (operation === "import_managed_gpo" || policy?.gpo_guid) &&
+    /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(target) &&
+    /^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(version);
+  const fresh =
+    inspection?.can_prepare &&
+    inspection.preflight_state &&
+    inspection.inspection_expires_at &&
+    Date.parse(inspection.inspection_expires_at) > Date.now();
+  const canPrepare =
+    !disabled &&
+    !receiptId &&
+    fresh &&
+    (operation !== "activate_managed_gpo" || (management && recovery));
+  const logsUrl = (id: string) =>
+    `/${locale}/logs/baselines?job=${encodeURIComponent(id)}` as Route;
   return (
     <section
       className={styles.panel}
-      aria-labelledby="gpo-imports-heading"
-      aria-busy={busy}
+      aria-label={c.title}
+      aria-busy={busy || loading}
     >
-      <div className={styles.header}>
-        <h2 id="gpo-imports-heading">{copy.importsTitle}</h2>
+      <div className={styles.heading}>
+        <h3>{c.title}</h3>
         <button
-          className={styles.button}
           type="button"
-          disabled={busy}
+          className="outline-button"
+          disabled={busy || loading}
           onClick={() => void refresh()}
         >
-          <RefreshCw size={16} aria-hidden="true" />
-          {copy.importsRefresh}
+          <RefreshCw size={16} aria-hidden /> {c.refresh}
         </button>
       </div>
-      <p className={styles.notice}>{copy.importBoundary}</p>
-      {configurationDirty ? (
-        <p className={styles.hint}>{copy.saveFirst}</p>
-      ) : null}
+      <p>{c.description}</p>
+      {configurationDirty ? <p>{copy.saveFirst}</p> : null}
       {error ? (
         <p className={styles.error} role="alert">
           {error}
         </p>
       ) : null}
       {notice ? (
-        <div className={styles.success} role="status">
-          <p>{notice}</p>
-          {receiptId ? (
-            <Link
-              href={
-                `/${locale}/logs/baselines?job=${encodeURIComponent(receiptId)}` as Route
-              }
+        <p className={styles.notice} role="status">
+          {notice}
+        </p>
+      ) : null}
+      <form
+        className={styles.form}
+        onSubmit={(event: FormEvent) => {
+          event.preventDefault();
+          if (canInspect) void submit("inspect");
+        }}
+      >
+        <div className={styles.fields}>
+          <label>
+            {c.policy}
+            <select
+              value={policyId}
+              disabled={lockedSelection}
+              onChange={(e) => selectPolicy(e.target.value)}
             >
-              {copy.openImportLog}
-            </Link>
+              <option value="">{c.create}</option>
+              {data?.results.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.state === "active"
+                    ? p.active_display_name
+                      ? `${p.active_display_name} · ${c.states.active}`
+                      : c.activeUnverified
+                    : `${p.display_name} · ${c.states[p.state]}`}
+                  {p.state === "active" &&
+                  p.active_display_name !== p.display_name
+                    ? ` · ${c.states.prepared}: ${p.display_name}`
+                    : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {c.operation}
+            <select
+              value={operation}
+              disabled={lockedSelection}
+              onChange={(e) => {
+                resetInspection();
+                setOperation(e.target.value as GpoOperation);
+              }}
+            >
+              {GPO_OPERATIONS.map((op) => (
+                <option
+                  key={op}
+                  value={op}
+                  disabled={op !== "import_managed_gpo" && !policy?.gpo_guid}
+                >
+                  {c.actions[op]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {c.executor}
+            <select
+              value={executor?.system_id ?? ""}
+              disabled={lockedSelection}
+              onChange={(e) => {
+                resetInspection();
+                setSystemId(e.target.value);
+              }}
+            >
+              {!executors.length ? (
+                <option value="">{c.noExecutor}</option>
+              ) : (
+                executors.map((e) => (
+                  <option key={e.system_id} value={e.system_id}>
+                    {e.hostname} · {e.agent_version}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+          <label>
+            {c.baseline}
+            <select
+              value={baseline?.id ?? ""}
+              disabled={lockedSelection || Boolean(policy)}
+              onChange={(e) => {
+                resetInspection();
+                setBaselineId(e.target.value);
+                setBackupId("");
+                setAdoptJobId("");
+              }}
+            >
+              {baselines.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {c.component}
+            <select
+              value={component?.id ?? ""}
+              disabled={lockedSelection || Boolean(policy)}
+              onChange={(e) => {
+                resetInspection();
+                setBackupId(e.target.value);
+                setAdoptJobId("");
+              }}
+            >
+              {baseline?.components.map((c) => (
+                <option key={c.id} value={c.id} disabled={!c.available}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {c.tier}
+            <select
+              value={tier}
+              disabled={lockedSelection || Boolean(policy)}
+              onChange={(e) => {
+                resetInspection();
+                setTier(e.target.value as SecurityTier);
+                setAdoptJobId("");
+              }}
+            >
+              {["0", "1", "2"].map((t) => (
+                <option key={t} value={t}>
+                  Tier {t}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {c.target}
+            <input
+              value={target}
+              maxLength={32}
+              pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,31}"
+              required
+              disabled={lockedSelection || Boolean(policy)}
+              onChange={(e) => {
+                resetInspection();
+                setTarget(e.target.value);
+              }}
+            />
+          </label>
+          <label>
+            {c.version}
+            <input
+              value={version}
+              maxLength={14}
+              pattern="[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}"
+              required
+              disabled={lockedSelection || operation !== "import_managed_gpo"}
+              onChange={(e) => {
+                resetInspection();
+                setVersion(e.target.value);
+              }}
+            />
+          </label>
+          {!policy && legacy.length ? (
+            <label>
+              {c.adopt}
+              <select
+                value={adoptJobId}
+                disabled={lockedSelection}
+                onChange={(e) => {
+                  resetInspection();
+                  setAdoptJobId(e.target.value);
+                }}
+              >
+                <option value="">{c.noAdopt}</option>
+                {legacy.map((j) => (
+                  <option key={j.id} value={j.id}>
+                    {j.display_name ?? j.pilot_display_name}
+                  </option>
+                ))}
+              </select>
+            </label>
           ) : null}
         </div>
-      ) : null}
-      {canImport && imports ? (
-        <form className={styles.importForm} onSubmit={submit}>
-          <div className={styles.formGrid}>
-            <label className={styles.field}>
-              {copy.executor}
-              <select
-                name="system_id"
-                value={executor?.system_id ?? ""}
-                onChange={(event) => setSystemId(event.target.value)}
-                disabled={busy || configurationDirty}
-              >
-                {!executor ? <option value="">{copy.noExecutor}</option> : null}
-                {eligibleExecutors.map((item) => (
-                  <option key={item.system_id} value={item.system_id}>
-                    {item.hostname} · {item.agent_version}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className={styles.field}>
-              {copy.baseline}
-              <select
-                name="baseline_id"
-                value={baseline?.id ?? ""}
+        {component?.scope === "domain" ? <p>{c.domainBoundary}</p> : null}
+        {domainRootAction ? (
+          <div className={styles.checks}>
+            <p>
+              {c.domainRoot}: <strong>{domainRootDn}</strong>
+            </p>
+            <label>
+              <input
+                type="checkbox"
+                checked={domainRootConfirmed}
+                disabled={lockedSelection}
                 onChange={(event) => {
-                  setBaselineId(event.target.value);
-                  setBackupId("");
+                  resetInspection();
+                  setDomainRootConfirmed(event.target.checked);
                 }}
-                disabled={busy || configurationDirty}
-              >
-                {baselines.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className={styles.field}>
-              {copy.component}
-              <select
-                name="backup_id"
-                value={component?.id ?? ""}
-                onChange={(event) => setBackupId(event.target.value)}
-                disabled={busy || configurationDirty}
-              >
-                {!component ? (
-                  <option value="">{copy.unavailableComponent}</option>
-                ) : null}
-                {baseline?.components.map((item) => (
-                  <option
-                    key={item.id}
-                    value={item.id}
-                    disabled={!item.available}
-                  >
-                    {item.name}
-                    {item.available ? "" : ` · ${copy.unavailableComponent}`}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className={styles.field}>
-              {copy.tier}
-              <select
-                name="tier"
-                value={tier}
-                onChange={(event) =>
-                  setTier(event.target.value as SecurityTier)
-                }
-                disabled={busy || configurationDirty}
-              >
-                {SECURITY_TIERS.map((item) => (
-                  <option key={item} value={item}>
-                    Tier {item}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className={styles.field}>
-              {copy.target}
-              <input
-                name="target"
-                value={target}
-                required
-                maxLength={32}
-                pattern="[A-Za-z0-9][A-Za-z0-9_\-]{0,31}"
-                onChange={(event) => setTarget(event.target.value)}
-                disabled={busy || configurationDirty}
               />
-            </label>
-            <label className={styles.field}>
-              {copy.version}
-              <input
-                name="version"
-                value={version}
-                required
-                maxLength={14}
-                pattern="[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}"
-                onChange={(event) => setVersion(event.target.value)}
-                disabled={busy || configurationDirty}
-              />
+              {c.confirmDomainRoot}
             </label>
           </div>
-          <p className={styles.hint}>{copy.executorHint}</p>
-          {executor ? (
-            <p className={styles.hint}>
-              {executor.domain_name} · {executor.dc_fqdn}
-            </p>
-          ) : null}
+        ) : null}
+        {operation === "link_managed_gpo" ? (
+          <p>{c.linkBoundary}</p>
+        ) : operation === "deactivate_managed_gpo" ? (
+          <p>{c.deactivateBoundary}</p>
+        ) : null}
+        <div className={styles.actions}>
           <button
-            className={styles.primaryButton}
             type="submit"
-            disabled={!canRequest}
+            className="primary-button"
+            disabled={!canInspect || checking}
           >
-            {submitting ? copy.requesting : copy.importAction}
+            {c.inspect}
           </button>
-        </form>
+          <span>{c.inspectOnly}</span>
+        </div>
+      </form>
+      {checking ? <p role="status">{c.preparing}</p> : null}
+      {inspection && !checking && inspection.status !== "inspected" ? (
+        <p role="alert">
+          {copy.states[inspection.status]} {inspection.error_code}
+        </p>
       ) : null}
-      <p className={styles.hint}>
-        <Link href={`/${locale}/logs/baselines?${logsQuery}` as Route}>
-          {copy.importLogs}
-        </Link>
-      </p>
+      {inspection?.preflight_state ? (
+        <>
+          <GpoStateReview
+            state={inspection.preflight_state}
+            displayName={
+              inspection.display_name ?? inspection.pilot_display_name
+            }
+            locale={locale}
+          />
+          {operation === "activate_managed_gpo" ? (
+            <div className={styles.checks}>
+              <p>{c.activation}</p>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={management}
+                  disabled={busy || Boolean(receiptId)}
+                  onChange={(e) => setManagement(e.target.checked)}
+                />
+                {c.management}
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={recovery}
+                  disabled={busy || Boolean(receiptId)}
+                  onChange={(e) => setRecovery(e.target.checked)}
+                />
+                {c.recovery}
+              </label>
+            </div>
+          ) : null}
+          {!fresh && !receiptId ? <p role="alert">{c.expiry}</p> : null}
+          <div className={styles.actions}>
+            <button
+              type="button"
+              className="primary-button"
+              disabled={!canPrepare}
+              onClick={() => void submit("write")}
+            >
+              {c.prepare}
+            </button>
+            {receiptId ? (
+              <Link className="outline-button" href={logsUrl(receiptId)}>
+                {c.logs}
+              </Link>
+            ) : null}
+          </div>
+        </>
+      ) : null}
     </section>
   );
 }

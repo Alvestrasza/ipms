@@ -4,6 +4,7 @@
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Define tenant domain configuration and bounded unlinked pilot import contracts.
  */
+import type { GpoOperation, GpoSnapshot } from "./gpo-production-types";
 export type SecurityTier = "0" | "1" | "2";
 export const SECURITY_TIERS: SecurityTier[] = ["0", "1", "2"];
 
@@ -52,12 +53,22 @@ export type GpoImportStatus =
   | "awaiting_approval"
   | "running"
   | "staged"
+  | "inspected"
+  | "linked"
+  | "activated"
+  | "deactivated"
   | "blocked"
   | "failed"
   | "expired"
   | "reconciliation_required";
 
 export type GpoImportJob = {
+  display_name?: string;
+  operation?: GpoOperation | "inspect_managed_gpo" | "create_unlinked_pilot";
+  managed_id?: string | null;
+  preflight_state?: GpoSnapshot | null;
+  can_prepare?: boolean;
+  inspection_expires_at?: string | null;
   id: string;
   status: GpoImportStatus;
   baseline_id: string;
@@ -70,7 +81,7 @@ export type GpoImportJob = {
   error_code: string;
   gpo_guid: string | null;
   approval_document: Record<string, unknown> | null;
-  approval_mode: "local" | "portal";
+  approval_mode: "local" | "portal" | "inspection";
   approved_by: string | null;
   approved_by_name: string | null;
   approved_at: string | null;
@@ -91,7 +102,10 @@ export type GpoImportReview = {
   artifact_sha256: string;
   files: { path: string; bytes: number; sha256: string }[];
   report_xml: string;
-  changes: ["create_disabled_unlinked_pilot"];
+  changes: string[];
+  expected_state?: GpoSnapshot;
+  target_ous?: string[];
+  safety_review?: { management_access: boolean; recovery_access: boolean };
 };
 
 export type GpoImportExecutor = {

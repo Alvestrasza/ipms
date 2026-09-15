@@ -8,9 +8,13 @@ from .administration import BaselineSettingsView, BaselineSettingView
 from .scan_views import BaselineScansView, BaselineFindingsView
 from .domains import DomainSettingsView, DomainSettingView
 from .gpo_views import DomainGpoImportsView
+from .gpo_production import ManagedGposView, GpoPreflightsView, ManagedJobDetailView
 from .gpo_approvals import GpoApprovalPolicyView, GpoDomainAuthorizationView, GpoApproveView
 
 urlpatterns = [
+    path('domain-settings/<uuid:domain_id>/managed-gpos/', ManagedGposView.as_view(), name='security-managed-gpos'),
+    path('domain-settings/<uuid:domain_id>/gpo-preflights/', GpoPreflightsView.as_view(), name='security-gpo-preflights'),
+    path('gpo-imports/<uuid:job_id>/', ManagedJobDetailView.as_view(), name='security-gpo-job-detail'),
     path('gpo-approval-policy/', GpoApprovalPolicyView.as_view(), name='security-gpo-approval-policy'),
     path('domain-settings/<uuid:domain_id>/gpo-authorization/', GpoDomainAuthorizationView.as_view(), name='security-gpo-authorization'),
     path('gpo-imports/<uuid:job_id>/approve/', GpoApproveView.as_view(), name='security-gpo-approve'),

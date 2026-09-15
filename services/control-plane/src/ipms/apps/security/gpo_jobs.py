@@ -30,7 +30,7 @@ from .models import DomainSecuritySettings, GpoExecutorReport, GpoImportJob
 
 ACTIVE = ('queued', 'awaiting_approval', 'running', 'reconciliation_required')
 PRE_EXECUTION = ('queued', 'awaiting_approval')
-TERMINAL = ('staged', 'failed', 'expired')
+TERMINAL = ('staged', 'failed', 'expired', 'inspected', 'linked', 'activated', 'deactivated')
 MAX_ARTIFACT = 1024 * 1024
 DEFAULT_GPO_IDS = {'31b2f340-016d-11d2-945f-00c04fb984f9', '6ac1786c-016f-11d2-945f-00c04fb984f9'}
 RESULT_CODES = set('gpo_staged_unlinked gpo_local_approval_required gpo_job_expired gpo_invalid_job '
@@ -39,7 +39,9 @@ RESULT_CODES = set('gpo_staged_unlinked gpo_local_approval_required gpo_job_expi
                    'gpo_name_collision gpo_source_mismatch gpo_artifact_invalid gpo_local_approval_invalid '
                    'gpo_reconciliation_required gpo_provider_failed gpo_verification_failed '
                    'gpo_worker_timeout gpo_worker_failed gpo_journal_invalid gpo_claim_uncertain '
-                   'gpo_authority_expired gpo_enrollment_changed gpo_portal_approval_invalid gpo_portal_approval_required'.split())
+                   'gpo_authority_expired gpo_enrollment_changed gpo_portal_approval_invalid gpo_portal_approval_required '
+                   'gpo_state_changed gpo_requires_disabled gpo_unmanaged_target gpo_target_invalid gpo_link_conflict '
+                   'gpo_backup_failed gpo_preflight_required'.split())
 EXECUTOR_CODES = {'ready_for_approval', 'not_writable_domain_controller', 'domain_identity_unavailable',
                   'gpmc_unavailable', 'executor_probe_failed'}
 
@@ -181,7 +183,7 @@ def job_projection(job, *, user=None, include_review=False):
         if blocker is None and not _scope_current(job, job.enrollment, job.tenant, lock=False):
             blocker = 'scope_changed'
 
-    return {'id': str(job.id), 'status': job.status, 'baseline_id': assigned['baseline_id'],
+    projection = {'id': str(job.id), 'status': job.status, 'baseline_id': assigned['baseline_id'],
             'backup_id': assigned['backup_id'], 'tier': str(assigned['target_tier']),
             'pilot_display_name': job.pilot_display_name, 'hostname': job.system.hostname,
             'requested_at': job.requested_at.isoformat(), 'completed_at': job.completed_at.isoformat() if job.completed_at else None,
@@ -197,6 +199,8 @@ def job_projection(job, *, user=None, include_review=False):
             'four_eyes_required': job.four_eyes_required, 'policy_revision': job.policy_revision,
             'can_approve': blocker is None, 'approval_blocker': blocker, 'review': review,
             'approval_document': assigned if job.status in PRE_EXECUTION and timezone.now() < job.expires_at else None}
+    from .gpo_production import extend_projection
+    return extend_projection(job, user, projection)
 
 
 def _audit(job, action, outcome='succeeded'):
@@ -214,6 +218,13 @@ def expire_jobs(tenant):
             job.completed_at = timezone.now()
         job.save()
         _audit(job, 'security.gpo_import_expired')
+        if job.status == 'reconciliation_required':
+            from .gpo_production import production, policy_for_job
+            if production(job):
+                policy = policy_for_job(job, lock=True)
+                if policy:
+                    policy.state = 'reconciliation_required'
+                    policy.save(update_fields=('state',))
 
 
 def queue_job(tenant, user, config, data):
@@ -324,6 +335,9 @@ def _executor_report(enrollment, data, version):
 
 
 def _scope_current(job, enrollment, tenant, *, lock=True):
+    from .gpo_production import production, scope_current
+    if production(job):
+        return scope_current(job, enrollment, tenant, lock=lock)
     from .gpo_approvals import is_portal, policy_current, approval_current
     assignment = job.assignment
     base_fields = {'schema', 'job_id', 'operation', 'domain_dns_name', 'domain_guid', 'forest_dns_name',
@@ -366,6 +380,13 @@ def _invalidate(job, reason='scope_changed'):
         if not job.claimed_at:
             job.completed_at = timezone.now()
         job.save()
+        if job.status == 'reconciliation_required':
+            from .gpo_production import production, policy_for_job
+            if production(job):
+                policy = policy_for_job(job, lock=True)
+                if policy:
+                    policy.state = 'reconciliation_required'
+                    policy.save(update_fields=('state',))
         _audit(job, 'security.gpo_import_scope_changed')
 
 
@@ -386,6 +407,10 @@ def withdraw_gpo_jobs(*, tenant_id, actor_id=None, enrollment_id=None, reason):
 
 
 def _result(job, document):
+    from .gpo_production import production, receive_success, SUCCESS, policy_for_job
+    if production(job) and document.get('status') in {item[0] for item in SUCCESS.values()}:
+        receive_success(job, document)
+        return
     status, code, guid, evidence = (document[key] for key in ('status', 'result_code', 'gpo_guid', 'evidence'))
     if (not isinstance(status, str) or not isinstance(code, str)
             or status not in ('awaiting_local_approval', 'awaiting_portal_approval', 'staged', 'failed', 'requires_reconciliation') or code not in RESULT_CODES):
@@ -449,6 +474,11 @@ def _result(job, document):
     job.result_evidence = evidence or {}
     job.completed_at = timezone.now() if job.status in TERMINAL else None
     job.save()
+    if production(job) and job.status == 'reconciliation_required':
+        policy = policy_for_job(job, lock=True)
+        if policy:
+            policy.state = 'reconciliation_required'
+            policy.save(update_fields=('state',))
     _audit(job, 'security.gpo_import_result')
 
 
@@ -537,9 +567,14 @@ def security_gpo_exchange(enrollment, document, *, artifact=False):
         return {**response, 'gpo_job': job.assignment if job.status in ACTIVE else None,
                 'gpo_approval': approval_object(job) if job.status in ACTIVE and approval_current(job, tenant) else None}
     current = _scope_current(job, enrollment, tenant) and timezone.now() < job.expires_at
+    from .gpo_production import inspecting, production, IMPORT, ACTIVATE
+    if inspecting(job):
+        _reject()  # Inspections can neither claim write authority nor fetch artifacts.
     if not current:
         _invalidate(job)
     if action == 'artifact':
+        if production(job) and job.assignment['operation'] not in (IMPORT, ACTIVATE):
+            _reject()
         if not current or job.status not in (*PRE_EXECUTION, 'running') or (is_portal(job) and not approval_current(job, tenant)):
             _reject()
         components, _ = _content()

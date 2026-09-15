@@ -4,6 +4,8 @@
 // Description: Separate local and portal approval receipts, protected storage and isolated GPMC worker.
 #pragma once
 #include "ipms/agent/gpo_management.hpp"
+#include "ipms/agent/gpo_managed.hpp"
+#include <memory>
 #include <filesystem>
 
 namespace ipms::agent::windows {
@@ -24,6 +26,8 @@ int approve_gpo_pilot(const std::filesystem::path& document);
 gpo::json::object probe_gpo_executor(const std::function<bool()>& cancelled = {});
 gpo::json::object invoke_gpo_pilot_worker(const std::function<bool()>& cancelled = {});
 int run_gpo_worker();
+std::unique_ptr<gpo::managed_provider> make_managed_gpo_provider(const gpo::job& job);
+gpo::json::object invoke_gpo_inspection_worker(const std::function<bool()>& cancelled = {});
 
 // Storage primitives are public only to allow real filesystem boundary tests in
 // a disposable directory. Production callers always use gpo_storage_directory.

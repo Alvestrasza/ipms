@@ -585,11 +585,6 @@ function DomainSettingsEditor({
                           copy.invalidPreview}
                       </code>
                     </span>
-                    {confirmed?.pilot ? (
-                      <span>
-                        {copy.pilot}: <code>{confirmed.pilot}</code>
-                      </span>
-                    ) : null}
                   </li>
                 );
               })}

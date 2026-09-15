@@ -248,7 +248,7 @@ test("explicit domain scopes permit a single administrator to review and approve
     response.url().endsWith(`/security/gpo-imports/${job.id}/approve/`),
   );
   await page
-    .getByRole("button", { name: "Approve this pilot import", exact: true })
+    .getByRole("button", { name: "Approve this GPO action", exact: true })
     .click();
   const approved = await approvalResponse;
   expect(approved.status()).toBe(200);
@@ -271,7 +271,7 @@ test("explicit domain scopes permit a single administrator to review and approve
   expect(actual.gpo_guid).toBeNull();
   await expect(
     page.getByRole("button", {
-      name: "Approve this pilot import",
+      name: "Approve this GPO action",
       exact: true,
     }),
   ).toHaveCount(0);
@@ -314,7 +314,7 @@ test("four eyes blocks the requester and permits a separately scoped approver wi
   await page.goto(`/en/logs/baselines?job=${job.id}`);
   await expect(
     page.getByRole("button", {
-      name: "Approve this pilot import",
+      name: "Approve this GPO action",
       exact: true,
     }),
   ).toBeDisabled();
@@ -343,7 +343,7 @@ test("four eyes blocks the requester and permits a separately scoped approver wi
   await page.goto(`/en/logs/baselines?job=${job.id}`);
   await expect(
     page.getByRole("button", {
-      name: "Approve this pilot import",
+      name: "Approve this GPO action",
       exact: true,
     }),
   ).toBeEnabled();
@@ -354,7 +354,7 @@ test("four eyes blocks the requester and permits a separately scoped approver wi
     response.url().endsWith(`/security/gpo-imports/${job.id}/approve/`),
   );
   await page
-    .getByRole("button", { name: "Approve this pilot import", exact: true })
+    .getByRole("button", { name: "Approve this GPO action", exact: true })
     .click();
   const response = await approved;
   expect(response.status()).toBe(200);
@@ -440,7 +440,7 @@ test("revoked authorization clears an old import preview and never retries appro
   await page.goto(`/en/logs/baselines?job=${job.id}`);
   await expect(
     page.getByRole("button", {
-      name: "Approve this pilot import",
+      name: "Approve this GPO action",
       exact: true,
     }),
   ).toBeEnabled();
@@ -457,7 +457,7 @@ test("revoked authorization clears an old import preview and never retries appro
     response.url().endsWith(`/security/gpo-imports/${job.id}/approve/`),
   );
   await page
-    .getByRole("button", { name: "Approve this pilot import", exact: true })
+    .getByRole("button", { name: "Approve this GPO action", exact: true })
     .click();
   expect([400, 403, 409]).toContain((await rejected).status());
   await expect(page.getByRole("main").getByRole("alert")).toContainText(
@@ -469,7 +469,7 @@ test("revoked authorization clears an old import preview and never retries appro
   await expect(page.locator("pre")).toHaveCount(0);
   await expect(
     page.getByRole("button", {
-      name: "Approve this pilot import",
+      name: "Approve this GPO action",
       exact: true,
     }),
   ).toHaveCount(0);

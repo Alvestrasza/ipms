@@ -1,5 +1,31 @@
 # IPMS Agent
 
+Windows candidate **0.2.35** adds schema-3 managed GPO operations: read-only
+inspection, import, link, activation and deactivation. Each write requires its
+own exact Portal approval and a fresh directory snapshot. Initial imports use
+the final readable name but remain disabled and unlinked. Later imports only
+prepare content; activation backs up and updates the stable GPO GUID. Links are
+limited to configured tier OUs or the explicitly approved Tier 0 domain root for
+compiled Domain Security components, non-enforced and initially disabled. Unrelated
+links, default policies, ACLs and WMI filters are not changed. The Agent does not
+accept commands or scripts. Existing schema-1/2 journals and receipts retain
+their original interpretation; explicit legacy adoption verifies the previous
+job identity and its still-disabled, unlinked GPO. See
+[managed GPO operations](../docs/operations/SECURITY-MANAGED-GPOS.md).
+
+The Agent verifies complete forest-wide link visibility before mutation, using
+bounded signed/sealed LDAP DirSync and GPMC observations. Missing read rights or
+an unreachable forest domain stop the operation. Domain-root actions verify the
+root object GUID against the approved domain identity.
+
+The production lifecycle implementation requires live domain acceptance.
+Protected backups support operator-led recovery; a partial or uncertain write
+is fenced for reconciliation and is never automatically replayed or restored.
+The 15-second claim grant remains bounded: slow inspection or backup can stop
+the action before its first write rather than silently extend authorization.
+
+## Earlier compatible protocols
+
 Windows candidate **0.2.34** accepts Portal approval for exact schema-2 pilot
 jobs over the existing authenticated mTLS channel. Each approval binds the
 job input digest, enrolled device, domain, tier, operation, requester, approver,

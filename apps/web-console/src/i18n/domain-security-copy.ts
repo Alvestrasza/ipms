@@ -2,7 +2,7 @@
  * File Name: domain-security-copy.ts
  * Version: v0.1.2 | Created: 2026-09-14 | Modified: 2026-09-15
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
- * Purpose: Localize domain mapping, GPO names, baseline order and unlinked pilot imports.
+ * Purpose: Localize domain mapping, GPO names, baseline order and unlinked GPO requests.
  */
 import type { Locale } from "./config";
 
@@ -54,7 +54,7 @@ const en = {
     "Draft examples use Computer, ALL, Baseline and version 1.0.0. Saved examples are validated by the server.",
   invalidPreview: "An example cannot be rendered with this template.",
   production: "Production",
-  pilot: "Pilot",
+  pilot: "Legacy",
   order: "Baseline composition order",
   orderHint:
     "Arrange layers from first to last. This is a proposed composition order, not AD link order. Saving the order does not apply policy or resolve conflicting settings.",
@@ -95,33 +95,33 @@ const en = {
     "The result could not be confirmed. Your draft is retained. Reload the saved version before trying again.",
   permission: "Your current tenant permissions do not allow this action.",
   sessionExpired: "Your session has expired. Sign in again to continue.",
-  importsTitle: "Unlinked pilot GPOs",
+  importsTitle: "Unlinked GPOs",
   importBoundary:
-    "Prepare a separate pilot GPO on a domain controller. An authorized administrator reviews and approves the exact import in Logs. The pilot remains unlinked with Computer and User settings disabled; this does not apply the baseline.",
-  saveFirst: "Save the GPO configuration before requesting a pilot import.",
+    "Prepare a separate GPO on a domain controller. An authorized administrator reviews and approves the exact import in Logs. The GPO remains unlinked with Computer and User settings disabled; this does not apply the baseline.",
+  saveFirst: "Save the GPO configuration before requesting a GPO request.",
   importsUnavailable:
     "Eligible Agents and the request state could not be loaded.",
   importsRefresh: "Refresh Agents and request state",
   executor: "Domain controller Agent",
   noExecutor: "No eligible Agent in this domain",
   executorHint:
-    "The selected Agent must run version 0.2.34 or later and report the expected domain identity. Requesting and approving require an explicit domain and Tier authorization.",
+    "The selected Agent must run version 0.2.35 or later and report the expected domain identity. Requesting and approving require an explicit domain and Tier authorization.",
   baseline: "Baseline package",
   component: "GPO component",
   unavailableComponent: "Artifact unavailable",
   tier: "Target tier",
   target: "Target name token",
   version: "GPO version",
-  importAction: "Request unlinked pilot import",
+  importAction: "Request unlinked GPO request",
   requesting: "Requesting…",
   importReceived:
-    "Pilot import request recorded. Review and approve the exact import in Logs before the Agent can create the GPO.",
+    "GPO request request recorded. Review and approve the exact import in Logs before the Agent can create the GPO.",
   importInvalid:
-    "The pilot request was rejected. Check the saved domain revision, Agent and package selection.",
+    "The GPO request was rejected. Check the saved domain revision, Agent and package selection.",
   importUncertain:
     "The request result is uncertain. Refresh the request state and check Logs before retrying. No new request will be created automatically.",
-  noJobs: "No pilot imports have been requested for this domain.",
-  jobs: "Pilot import jobs",
+  noJobs: "No GPO requests have been requested for this domain.",
+  jobs: "GPO request jobs",
   status: "Status",
   agent: "Agent",
   requested: "Requested (UTC)",
@@ -139,7 +139,11 @@ const en = {
     queued: "Queued",
     awaiting_approval: "Awaiting approval",
     running: "Running",
-    staged: "Prepared, not applied",
+    staged: "Version prepared",
+    inspected: "AD state checked",
+    linked: "Linked, inactive",
+    activated: "Activated",
+    deactivated: "Deactivated",
     blocked: "Blocked",
     failed: "Failed",
     expired: "Expired",
@@ -197,7 +201,7 @@ const de: DomainSecurityCopy = {
     "Entwurfsbeispiele verwenden Computer, ALL, Baseline und Version 1.0.0. Gespeicherte Beispiele werden vom Server geprüft.",
   invalidPreview: "Mit dieser Vorlage kann kein Beispiel erzeugt werden.",
   production: "Produktiv",
-  pilot: "Pilot",
+  pilot: "Legacy",
   order: "Reihenfolge der Baseline-Zusammenstellung",
   orderHint:
     "Die Baselines werden von oben nach unten eingeplant. Dies ist die geplante Zusammenstellung, nicht die AD-Verknüpfungsreihenfolge. Das Speichern wendet keine Richtlinien an und löst keine Einstellungskonflikte.",
@@ -241,33 +245,33 @@ const de: DomainSecurityCopy = {
   permission:
     "Die aktuellen Tenant-Berechtigungen erlauben diese Aktion nicht.",
   sessionExpired: "Die Sitzung ist abgelaufen. Bitte erneut anmelden.",
-  importsTitle: "Unverknüpfte Pilot-GPOs",
+  importsTitle: "Unverknüpfte GPOs",
   importBoundary:
-    "Eine separate Pilot-GPO auf einem Domain Controller vorbereiten. Ein berechtigter Administrator prüft und genehmigt den konkreten Import unter Logs. Die GPO bleibt unverknüpft; Computer- und Benutzereinstellungen sind deaktiviert. Die Baseline wird dadurch nicht angewendet.",
-  saveFirst: "Vor einem Pilot-Import die GPO-Konfiguration speichern.",
+    "Eine separate GPO auf einem Domain Controller vorbereiten. Ein berechtigter Administrator prüft und genehmigt den konkreten Import unter Logs. Die GPO bleibt unverknüpft; Computer- und Benutzereinstellungen sind deaktiviert. Die Baseline wird dadurch nicht angewendet.",
+  saveFirst: "Vor einem GPO-Auftrag die GPO-Konfiguration speichern.",
   importsUnavailable:
     "Geeignete Agents und der Auftragsstand konnten nicht geladen werden.",
   importsRefresh: "Agents und Auftragsstand aktualisieren",
   executor: "Domain-Controller-Agent",
   noExecutor: "Kein geeigneter Agent in dieser Domäne",
   executorHint:
-    "Der ausgewählte Agent muss mindestens Version 0.2.34 ausführen und die erwartete Domänenidentität melden. Anfordern und Freigeben erfordern eine ausdrückliche Berechtigung für Domäne und Tier.",
+    "Der ausgewählte Agent muss mindestens Version 0.2.35 ausführen und die erwartete Domänenidentität melden. Anfordern und Freigeben erfordern eine ausdrückliche Berechtigung für Domäne und Tier.",
   baseline: "Baseline-Paket",
   component: "GPO-Komponente",
   unavailableComponent: "Artefakt nicht verfügbar",
   tier: "Ziel-Tier",
   target: "Zielgruppen-Kürzel im Namen",
   version: "GPO-Version",
-  importAction: "Unverknüpften Pilot-Import anfordern",
+  importAction: "Unverknüpften GPO-Auftrag anfordern",
   requesting: "Wird angefordert…",
   importReceived:
-    "Pilot-Import erfasst. Den konkreten Import unter Logs prüfen und freigeben, bevor der Agent die GPO erstellen kann.",
+    "GPO-Auftrag erfasst. Den konkreten Import unter Logs prüfen und freigeben, bevor der Agent die GPO erstellen kann.",
   importInvalid:
-    "Der Pilot-Auftrag wurde abgelehnt. Bitte gespeicherte Domänenrevision, Agent und Paket prüfen.",
+    "Der GPO-Auftrag wurde abgelehnt. Bitte gespeicherte Domänenrevision, Agent und Paket prüfen.",
   importUncertain:
     "Das Auftragsergebnis ist unklar. Vor einem erneuten Versuch den Auftragsstand aktualisieren und Logs prüfen. Es wird kein neuer Auftrag automatisch erstellt.",
-  noJobs: "Für diese Domäne wurden noch keine Pilot-Importe angefordert.",
-  jobs: "Pilot-Import-Aufträge",
+  noJobs: "Für diese Domäne wurden noch keine GPO-Auftrage angefordert.",
+  jobs: "GPO-Aufträge",
   status: "Status",
   agent: "Agent",
   requested: "Angefordert (UTC)",
@@ -285,7 +289,11 @@ const de: DomainSecurityCopy = {
     queued: "Eingereiht",
     awaiting_approval: "Freigabe ausstehend",
     running: "Wird ausgeführt",
-    staged: "Vorbereitet, nicht angewendet",
+    staged: "Version vorbereitet",
+    inspected: "AD-Zustand geprüft",
+    linked: "Verknüpft, inaktiv",
+    activated: "Aktiviert",
+    deactivated: "Deaktiviert",
     blocked: "Blockiert",
     failed: "Fehlgeschlagen",
     expired: "Abgelaufen",

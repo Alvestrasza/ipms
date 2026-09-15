@@ -1,6 +1,6 @@
 /**
  * File Name: job-logs-copy.ts
- * Version: v0.1.0 | Created: 2026-09-14 | Modified: 2026-09-14
+ * Version: v0.1.1 | Created: 2026-09-14 | Modified: 2026-09-15
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Localize tenant job histories, filters, exports and log navigation.
  */
@@ -61,11 +61,11 @@ const en = {
   exportLimit:
     "More than 10,000 entries match. Narrow the filters and export again.",
   sessionExpired: "Your session has expired. Sign in again.",
-  gpoDetails: "Pilot import details",
-  openDetails: "View pilot import details",
+  gpoDetails: "GPO request details",
+  openDetails: "View GPO request details",
   closeDetails: "Close details",
   detailUnavailable:
-    "This pilot import is unavailable for the selected tenant or your account.",
+    "This GPO request is unavailable for the selected tenant or your account.",
   requestId: "Request ID",
   componentId: "Component backup ID",
   noApproval: "No local approval document is available for this request.",
@@ -73,7 +73,7 @@ const en = {
     agent_lifecycle: "Agent maintenance",
     agent_deployment: "Agent deployment",
     baseline_scan: "Baseline scan",
-    gpo_import: "GPO pilot import",
+    gpo_import: "GPO request",
     hyperv_power: "Hyper-V power action",
     hyperv_management: "Hyper-V management",
   },
@@ -88,6 +88,10 @@ const en = {
     expired: "Expired",
     awaiting_approval: "Awaiting approval",
     staged: "Prepared, not applied",
+    inspected: "AD state inspected",
+    linked: "Linked, inactive",
+    activated: "Activated",
+    deactivated: "Deactivated",
     blocked: "Blocked",
     reconciliation_required: "Directory reconciliation required",
     requires_reconciliation: "Reconciliation required",
@@ -151,11 +155,11 @@ const de: JobLogsCopy = {
   exportLimit:
     "Mehr als 10.000 Einträge gefunden. Grenze die Filter ein und exportiere erneut.",
   sessionExpired: "Deine Sitzung ist abgelaufen. Melde dich erneut an.",
-  gpoDetails: "Details zum Pilot-Import",
-  openDetails: "Details zum Pilot-Import anzeigen",
+  gpoDetails: "Details zum GPO-Auftrag",
+  openDetails: "Details zum GPO-Auftrag anzeigen",
   closeDetails: "Details schließen",
   detailUnavailable:
-    "Dieser Pilot-Import ist für den gewählten Mandanten oder dein Konto nicht verfügbar.",
+    "Dieser GPO-Auftrag ist für den gewählten Mandanten oder dein Konto nicht verfügbar.",
   requestId: "Auftrags-ID",
   componentId: "Komponenten-Backup-ID",
   noApproval: "Für diesen Auftrag ist kein lokales Freigabedokument verfügbar.",
@@ -163,7 +167,7 @@ const de: JobLogsCopy = {
     agent_lifecycle: "Agent-Wartung",
     agent_deployment: "Agent-Bereitstellung",
     baseline_scan: "Baseline-Scan",
-    gpo_import: "GPO-Pilot-Import",
+    gpo_import: "GPO-Auftrag",
     hyperv_power: "Hyper-V-Energieaktion",
     hyperv_management: "Hyper-V-Verwaltung",
   },
@@ -178,6 +182,10 @@ const de: JobLogsCopy = {
     expired: "Abgelaufen",
     awaiting_approval: "Wartet auf Freigabe",
     staged: "Vorbereitet, nicht angewendet",
+    inspected: "AD-Zustand geprüft",
+    linked: "Verknüpft, inaktiv",
+    activated: "Aktiviert",
+    deactivated: "Deaktiviert",
     blocked: "Blockiert",
     reconciliation_required: "Verzeichnisabgleich erforderlich",
     requires_reconciliation: "Abgleich erforderlich",

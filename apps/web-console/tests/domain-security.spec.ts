@@ -308,7 +308,7 @@ test("domain administration saves OUs, GPO names and composition together withou
   expect(imports).toEqual([]);
 });
 
-test("switching baselines keeps the second domain while updating the pilot package", async ({
+test("switching baselines keeps the second domain while updating the selected package", async ({
   page,
 }) => {
   const { headers } = await login(page);
@@ -334,7 +334,7 @@ test("switching baselines keeps the second domain while updating the pilot packa
   expect(secondId).not.toBe(firstId);
   await domains.selectOption(secondId);
   const pilotPackage = page.getByRole("combobox", {
-    name: "Baseline package",
+    name: "Baseline",
     exact: true,
   });
   await expect(pilotPackage).toHaveValue(initialBaseline);
@@ -545,7 +545,7 @@ test("stale OU edits cannot overwrite a concurrent policy configuration", async 
   expect(actual.tier_ous).toEqual(settings.tier_ous);
 });
 
-test("pilot import is an explicit separate request and reports Portal approval without application", async ({
+test("legacy import API remains scoped and new Portal controls require the production Agent", async ({
   page,
 }) => {
   const { headers } = await login(page);
@@ -596,73 +596,55 @@ test("pilot import is an explicit separate request and reports Portal approval w
       "The fixture requires one staged, verified Microsoft GPO backup component.",
     );
   await selectPolicyDomain(page, settings);
-  const posts: unknown[] = [];
-  page.on("request", (request) => {
-    if (request.method() === "POST" && request.url().endsWith("/gpo-imports/"))
-      posts.push(request.postDataJSON());
-  });
-  const executor = page.getByRole("combobox", {
-    name: "Domain controller Agent",
+  const workflow = page.getByRole("region", {
+    name: "GPO distribution",
     exact: true,
   });
-  await expect(executor).toContainText("gpo-ui-dc");
+  // Existing 0.2.34 Agents retain the old API contract but cannot receive schema 3 writes.
   await expect(
-    page.getByRole("combobox", { name: "Baseline package", exact: true }),
-  ).toHaveValue(baseline.id);
-  await page
-    .getByRole("combobox", { name: "GPO component", exact: true })
-    .selectOption(component.id);
-  await expect(
-    page.getByRole("button", {
-      name: "Request unlinked pilot import",
+    workflow.getByRole("combobox", {
+      name: "Executing domain controller",
       exact: true,
     }),
-  ).toBeEnabled();
-  expect(posts).toEqual([]);
-  const receipt = page.waitForResponse(
-    (response) =>
-      response.url().endsWith(`${api}${settings.id}/gpo-imports/`) &&
-      response.request().method() === "POST",
+  ).toContainText("No eligible Agent 0.2.35 or newer");
+  await expect(
+    workflow.getByRole("button", { name: "Inspect AD state", exact: true }),
+  ).toBeDisabled();
+  const available = await (
+    await page.request.get(`${api}${settings.id}/gpo-imports/`, { headers })
+  ).json();
+  const executor = available.executors.find(
+    (entry: { eligible: boolean; hostname: string }) =>
+      entry.eligible && entry.hostname === "gpo-ui-dc",
   );
-  await page
-    .getByRole("button", { name: "Request unlinked pilot import", exact: true })
-    .click();
-  const response = await receipt;
-  expect([200, 201, 202]).toContain(response.status());
-  const job = await response.json();
-  expect(job.approval_mode).toBe("portal");
-  expect(["queued", "awaiting_approval"]).toContain(job.status);
-  expect(job.gpo_guid).toBeFalsy();
-  expect(job.approval_document).toBeTruthy();
-  expect(posts).toHaveLength(1);
-  expect(posts[0]).toMatchObject({
+  expect(executor).toBeTruthy();
+  const selection = {
     revision: settings.revision,
+    system_id: executor.system_id,
     baseline_id: baseline.id,
     backup_id: component.id,
     tier: "0",
     target: "ALL",
     version: "1.0.0",
-  });
-  const logLink = page.getByRole("link", {
-    name: "Open request and approval in Logs",
-    exact: true,
-  });
-  await expect(logLink).toHaveAttribute(
-    "href",
-    `/en/logs/baselines?job=${job.id}`,
+    idempotency_key: randomUUID(),
+  };
+  const response = await page.request.post(
+    `${api}${settings.id}/gpo-imports/`,
+    { headers, data: selection },
   );
-  await expect(
-    page.getByText(
-      "Pilot import request recorded. Review and approve the exact import in Logs before the Agent can create the GPO.",
-      { exact: true },
-    ),
-  ).toBeVisible();
-  await expect(
-    page.getByText("Local approval document", { exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("heading", { name: "Pilot import jobs", exact: true }),
-  ).toHaveCount(0);
+  expect(response.status()).toBe(202);
+  const job = await response.json();
+  expect(job.approval_mode).toBe("portal");
+  expect(job.status).toBe("awaiting_approval");
+  expect(job.approved_at).toBeNull();
+  expect(job.gpo_guid).toBeFalsy();
+  expect(job.approval_document).toBeTruthy();
+  const retry = await page.request.post(`${api}${settings.id}/gpo-imports/`, {
+    headers,
+    data: selection,
+  });
+  expect(retry.status()).toBe(202);
+  expect((await retry.json()).id).toBe(job.id);
   await expect(
     page.getByRole("table", { name: "Recent scan jobs", exact: true }),
   ).toHaveCount(0);
@@ -672,16 +654,14 @@ test("pilot import is an explicit separate request and reports Portal approval w
     "href",
     `/en/logs/baselines?baseline=${baseline.id}&kind=baseline_scan`,
   );
-  await page
-    .getByRole("button", {
-      name: "Refresh Agents and request state",
-      exact: true,
-    })
-    .click();
-  await expect(logLink).toBeVisible();
-  expect(posts).toHaveLength(1);
+  await page.goto(`/en/logs/baselines?job=${job.id}`);
+  await expect(
+    page.getByRole("heading", { name: job.pilot_display_name, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Approve this GPO action", exact: true }),
+  ).toBeEnabled();
 });
-
 test("tenant scope and reader permissions protect domain settings", async ({
   page,
 }) => {

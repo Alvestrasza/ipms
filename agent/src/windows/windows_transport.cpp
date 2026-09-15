@@ -1,5 +1,5 @@
 // File Name: windows_transport.cpp
-// Version: v0.2.34 | Created: 2026-08-31 | Last Modified: 2026-09-15
+// Version: v0.2.35 | Created: 2026-08-31 | Last Modified: 2026-09-15
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Authenticated fixed Agent channels with durable, exact-job GPO execution grants.
 #include "ipms/agent/windows_transport.hpp"
@@ -46,7 +46,7 @@
 namespace {
 using Microsoft::WRL::ComPtr;
 constexpr std::size_t k_max_document_bytes = 65'536;
-constexpr wchar_t k_agent_version[] = L"0.2.34";
+constexpr wchar_t k_agent_version[] = L"0.2.35";
 constexpr std::size_t k_max_artifact_bytes = 64 * 1024 * 1024;
 std::mutex identity_mutex;
 std::mutex management_cycle_mutex;
@@ -491,7 +491,7 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
     ~failure_reset() { if (cache && !succeeded) cache->reset(); }
   } guard{reusable ? &console_transport : nullptr};
   if (!transport->session) {
-    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.34", WINHTTP_ACCESS_TYPE_NO_PROXY,
+    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.35", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
     if (!transport->session) throw std::runtime_error("The Agent HTTP session could not be created.");
     if (input_channel || security_channel || path == L"/v1/heartbeat" || path == L"/v1/hyperv-management") {
@@ -582,7 +582,7 @@ http_response post_binary(const state& identity, const std::string& body, PCCERT
   const auto check_deadline = [&] { if (gpo_artifact && ((cancelled && cancelled()) || std::chrono::steady_clock::now() >= deadline))
     throw std::runtime_error("The GPO artifact transfer stopped."); };
   check_deadline();
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.34", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.35", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent artifact session could not be created.");
   if (gpo_artifact) WinHttpSetTimeouts(session.get(), 2'000, 2'000, 2'000, 2'000);
@@ -1496,7 +1496,7 @@ TransportResult run_gpo_cycle(const std::function<bool()>& cancelled) {
             gpo::unexpired(record->assignment) ? "gpo_authority_expired" : "gpo_job_expired");
         save_gpo_journal(*record); report(*record, record->result.as<json::object>());
       }
-      return {true, L"No GPO pilot is pending."};
+      return {true, L"No GPO operation is pending."};
     }
     const auto assignment = gpo::parse_job(offered);
     if (record && record->state == gpo::phase::prepared && record->assignment != assignment)
@@ -1514,7 +1514,18 @@ TransportResult run_gpo_cycle(const std::function<bool()>& cancelled) {
     if (!gpo::executor_matches(assignment, executor)) {
       fail_preflight("gpo_identity_mismatch"); return {false, L"The GPO controller identity changed."};
     }
-    const bool portal_mode = assignment.number("schema") == 2;
+    if (gpo::inspection(assignment)) {
+      const auto approval = response.find("gpo_approval");
+      if (approval != response.end() && !approval->second.get_if<std::nullptr_t>()) {
+        fail_preflight("gpo_portal_approval_invalid"); return {false, L"Inspection cannot carry execution approval."};
+      }
+      const auto inspected = invoke_gpo_inspection_worker(stopping);
+      record = load_gpo_journal();
+      if (!record || record->assignment != assignment) throw gpo::operation_error("gpo_journal_invalid");
+      report(*record, inspected);
+      return {inspected.at("status").as<std::string>() == "inspected", L"The read-only GPO inspection finished."};
+    }
+    const bool portal_mode = assignment.number("schema") >= 2;
     json::value portal_approval;
     const auto offered_approval = response.find("gpo_approval");
     if (portal_mode) {
@@ -1527,7 +1538,7 @@ TransportResult run_gpo_cycle(const std::function<bool()>& cancelled) {
       }
       if (!gpo::portal_approval_current(portal_approval, assignment, identity.device_uri)) {
         report(*record, gpo::result("awaiting_portal_approval", "gpo_portal_approval_required"));
-        return {true, L"The exact GPO pilot awaits a current Portal approval."};
+        return {true, L"The exact GPO operation awaits a current Portal approval."};
       }
     } else {
       if (offered_approval != response.end() && !offered_approval->second.get_if<std::nullptr_t>()) {
@@ -1538,11 +1549,13 @@ TransportResult run_gpo_cycle(const std::function<bool()>& cancelled) {
         return {true, L"The legacy GPO pilot requires exact local administrator approval."};
       }
     }
+    if (assignment.number("schema") < 3 || assignment.text("operation") == "import_managed_gpo" || assignment.text("operation") == "activate_managed_gpo") {
     const auto artifact_request = envelope({{"action", "artifact"}, {"job_id", assignment.text("job_id")},
         {"input_digest", assignment.text("input_digest")}});
     const auto artifact = post_binary(identity, json::serialize(artifact_request), certificate.get(), true, stopping);
     if (artifact.status != 200) throw gpo::operation_error("gpo_artifact_invalid");
     save_gpo_artifact(assignment, artifact.body);
+    }
     if (stopping() || !same_identity() || (portal_mode ?
         !gpo::portal_approval_current(portal_approval, assignment, identity.device_uri) :
         !has_gpo_local_approval(assignment, identity.device_uri)))
@@ -1563,7 +1576,8 @@ TransportResult run_gpo_cycle(const std::function<bool()>& cancelled) {
     const auto result = invoke_gpo_pilot_worker(stopping);
     record = load_gpo_journal(); if (!record || record->assignment != assignment) throw gpo::operation_error("gpo_journal_invalid");
     report(*record, result);
-    return {result.at("status").as<std::string>() == "staged", L"The GPO pilot worker finished; no policy link was created."};
+    const auto status = result.at("status").as<std::string>();
+    return {status == "staged" || status == "linked" || status == "activated" || status == "deactivated", L"The approved GPO operation finished."};
   } catch (...) {
     return {false, L"The GPO cycle failed; its durable journal is retained."};
   }

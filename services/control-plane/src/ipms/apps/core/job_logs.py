@@ -9,7 +9,7 @@ import unicodedata
 import uuid
 from datetime import datetime, time, timedelta, timezone as datetime_timezone
 
-from django.db.models import DateTimeField, F, Q, TextField, Value
+from django.db.models import Case, DateTimeField, F, Q, TextField, Value, When
 from django.db.models.fields.json import KeyTextTransform
 from django.db.models.functions import Cast, Coalesce
 from django.http import HttpResponse
@@ -44,6 +44,7 @@ KINDS = {
 STATUSES = frozenset({
     "queued", "delivered", "running", "succeeded", "failed", "cancelled", "completed", "expired",
     "awaiting_approval", "staged", "blocked", "reconciliation_required", "requires_reconciliation",
+    "inspected", "linked", "activated", "deactivated",
 })
 SORTS = {"requested_at", "completed_at", "system", "kind", "status"}
 QUERY_FIELDS = {"q", "kind", "status", "from", "to", "baseline", "domain", "agent", "sort", "direction", "page", "page_size"}
@@ -87,7 +88,8 @@ def _sources(tenant):
             requested_at=F("requested_at"), started_at=missing_time, result_code=_text(F("error_code")),
             requested_by=_text(F("requested_by__username"))),
         "gpo_import": _source(GpoImportJob, tenant, "gpo_import", relations=("system", "domain"),
-            action=_literal("pilot_import"), system=_text(F("system__hostname")),
+            action=Case(When(assignment__schema=3, then=_text(KeyTextTransform("operation", "assignment"))),
+                        default=_literal("pilot_import"), output_field=TextField()), system=_text(F("system__hostname")),
             target=_text(F("pilot_display_name")), baseline_id=_text(KeyTextTransform("baseline_id", "assignment")),
             domain=_text(F("domain__domain_name")), requested_at=F("requested_at"), started_at=F("claimed_at"),
             result_code=_text(F("error_code")), requested_by=_text(F("requested_by__username"))),

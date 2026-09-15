@@ -13,7 +13,7 @@ from ipms.apps.agent_pki.group_policy import (
 )
 from ipms.apps.agent_pki.models import AgentEnrollment
 from .gpo_content import COMPONENTS, PROFILE_COMPONENTS
-from .models import GpoImportJob
+from .models import GpoImportJob, ManagedGpoPolicy
 
 MAX_APPLICATION_AGE = timedelta(hours=24)
 APPLICATION_STATUSES = ("applied", "not_applied", "partial", "unknown")
@@ -122,6 +122,10 @@ class BaselineApplications:
             return None
 
     def _bindings(self, tenant):
+        from .gpo_production import active_binding
+        managed = list(ManagedGpoPolicy.objects.filter(tenant=tenant).exclude(gpo_guid='').select_related(
+            'active_job', 'active_job__domain', 'active_job__system', 'active_job__enrollment'))
+        owned = {(row.domain_guid, row.gpo_guid) for row in managed}
         candidates = defaultdict(list)
         for job in GpoImportJob.objects.filter(tenant=tenant).exclude(gpo_guid="").select_related(
             "domain", "enrollment", "system",
@@ -134,6 +138,8 @@ class BaselineApplications:
             "enrollment__platform", "enrollment__device_uri", "system__tenant_id",
             "system__inventory_source", "system__source_id",
         ).order_by("-requested_at", "-id"):
+            if (isinstance(job.assignment, dict) and job.assignment.get('schema') == 3) or (job.domain_guid, job.gpo_guid) in owned:
+                continue
             candidates[(job.domain_guid, job.gpo_guid)].append(job)
         bindings = defaultdict(list)
         for jobs in candidates.values():
@@ -155,6 +161,10 @@ class BaselineApplications:
             )
             if not ambiguous:
                 bindings[identity].append((latest.gpo_guid, latest.completed_at))
+        for policy in managed:
+            identity = active_binding(policy, self.now)
+            if identity:
+                bindings[identity].append((policy.gpo_guid, policy.active_job.completed_at))
         return bindings
 
     def _component_state(self, report, baseline_id, backup_id):

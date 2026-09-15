@@ -211,13 +211,13 @@ test("pilot receipt and exact local approval can be inspected and copied without
   );
   const row = page.getByRole("row").filter({ hasText: pilotName });
   await row
-    .getByRole("link", { name: "View pilot import details", exact: true })
+    .getByRole("link", { name: "View GPO request details", exact: true })
     .click();
   await expect(page).toHaveURL(
     (url) => url.searchParams.get("job") === pilotId,
   );
   await expect(
-    page.getByRole("heading", { name: "Pilot import details", exact: true }),
+    page.getByRole("heading", { name: "GPO request details", exact: true }),
   ).toBeVisible();
   await expect(page.locator("pre")).toContainText("logs-fixture-approval");
   await expect(
@@ -291,7 +291,7 @@ test("reader sees scans but no GPO approval or restricted Agent maintenance", as
   ).toContainText(scanMarker);
   await expectAlert(
     page,
-    "This pilot import is unavailable for the selected tenant or your account.",
+    "This GPO request is unavailable for the selected tenant or your account.",
   );
   await expect(
     page.getByRole("button", { name: "Copy approval document", exact: true }),
@@ -343,7 +343,7 @@ test("invalid duplicate filters stay explicit and cross-tenant pilot details sta
   await page.goto(`/en/logs/baselines?job=invalid`);
   await expectAlert(
     page,
-    "This pilot import is unavailable for the selected tenant or your account.",
+    "This GPO request is unavailable for the selected tenant or your account.",
   );
 });
 

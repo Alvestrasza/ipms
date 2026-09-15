@@ -9,19 +9,19 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-Candidate `0.2.54` includes central GPO pilot approval with explicit domain/tier
-permissions and optional tenant-wide four-eyes approval. Windows Agent `0.2.34`
-validates the exact approval and imports only a new disabled, unlinked pilot
-GPO. A single scoped administrator may approve his own request when four eyes
-are not required. Domain plans retain flexible OU mappings, GPO naming and
-ordered baseline composition. Saving or rearranging settings never applies
-policies. Deleted, unclaimed legacy requests can receive a narrowly bound
-retirement acknowledgement so their Agent journals can finish without
-restoring execution authority. See
-[domain plans and pilot workflow](docs/operations/SECURITY-GPO-PILOTS.md) and
-[epic #34](https://github.com/Alvestrasza/ipms/issues/34). This candidate has not
-been accepted against a live domain; deployment and verification evidence are
-recorded separately.
+Candidate `0.2.55` and Windows Agent `0.2.35` add separately approved GPO import,
+linking, activation and deactivation. Names use readable component aliases
+and the configured naming template; managed GPOs retain their GUID. Each action
+starts with a read-only directory inspection. Approval binds that exact state,
+content, domain and tier; the Agent checks it again before writing. Initial
+imports remain disabled and unlinked. Importing a later version stages its
+package without changing active settings; activation takes a protected backup
+and applies that prepared version. Tenant-wide four-eyes approval remains
+optional. Domain Security components use explicitly confirmed Tier 0 actions at
+the domain root; other components target configured tier OUs. Forest-wide link
+visibility is checked before mutation. See [managed GPO operations](docs/operations/SECURITY-MANAGED-GPOS.md)
+and [epic #34](https://github.com/Alvestrasza/ipms/issues/34). Native build and
+contract tests are distinct from real-domain functional acceptance.
 
 Application `0.2.45` extended **Security → Baseline** with reversible
 tenant baseline visibility settings, read-only scan requests and per-control

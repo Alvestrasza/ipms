@@ -81,7 +81,9 @@ const front = http.createServer((req, res) => {
     await ready("http://127.0.0.1:8117/api/v1/health/live/");
     await ready("http://127.0.0.1:3117/en/login");
     console.log(`Synthetic evidence directory: ${output}`);
-    await run(process.execPath, ["node_modules/@playwright/test/cli.js", "test", "--config=playwright.security.config.ts", `--output=${path.join(output, "results")}`], web);
+    const selected = process.env.IPMS_TEST_SECURITY_SPEC;
+    if (selected && !["security-baselines.spec.ts", "domain-security.spec.ts", "job-logs.spec.ts", "gpo-approval.spec.ts", "gpo-production.spec.ts"].includes(selected)) throw new Error("Unknown bounded Security test selection.");
+    await run(process.execPath, ["node_modules/@playwright/test/cli.js", "test", "--config=playwright.security.config.ts", `--output=${path.join(output, "results")}`, ...(selected ? [selected] : [])], web);
   } catch (error) { console.error(error.message); process.exitCode = 1; }
   finally {
     front.closeAllConnections(); front.close();

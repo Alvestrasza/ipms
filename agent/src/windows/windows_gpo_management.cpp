@@ -223,6 +223,17 @@ json::object invoke_gpo_pilot_worker(const std::function<bool()>& cancelled) {
     return receipt;
   }
 }
+json::object invoke_gpo_inspection_worker(const std::function<bool()>& cancelled) {
+  try {const auto out=worker_call("inspect_managed",std::chrono::seconds(120),cancelled);
+    if(!gpo::valid_result(out))fail("gpo_worker_failed");return out;
+  } catch(...) {
+    auto record=load_gpo_journal();if(!record||!gpo::inspection(record->assignment))throw;
+    if(record->state==gpo::phase::terminal)return record->result.as<json::object>();
+    if(record->state!=gpo::phase::prepared)throw;
+    record->state=gpo::phase::terminal;record->result=gpo::result("failed","gpo_worker_failed");save_gpo_journal(*record);
+    return record->result.as<json::object>();
+  }
+}
 int run_gpo_worker() {
   try {
     const HANDLE input=GetStdHandle(STD_INPUT_HANDLE),output=GetStdHandle(STD_OUTPUT_HANDLE);std::string document;
@@ -232,15 +243,26 @@ int run_gpo_worker() {
     const auto action=request.at("action").as<std::string>();json::object response;
     com_scope apartment;
     if(action=="inspect")response=executor_identity();
+    else if(action=="inspect_managed") {
+      auto record=load_gpo_journal();if(!record||!gpo::inspection(record->assignment))return 1;
+      auto provider=make_managed_gpo_provider(record->assignment);
+      response=gpo::inspect_managed(*record,*provider,save_gpo_journal,[&]{return gpo::unexpired(record->assignment)&&gpo_enrollment_matches(record->device_uri);});
+    }
     else if(action=="execute") {
       auto record=load_gpo_journal();if(!record)return 1;
-      native_provider provider(record->assignment);
-      response=gpo::execute_pilot(*record,provider,save_gpo_journal,[&]{return gpo::unexpired(record->assignment)&&
+      const auto authority=[&]{return gpo::unexpired(record->assignment)&&
         gpo::grant_current(*record,GetTickCount64())&&gpo_enrollment_matches(record->device_uri)&&
         (record->assignment.number("schema")==1||
-          gpo::portal_approval_current(record->portal_approval,record->assignment,record->device_uri));},
-        [&]{if(record->assignment.number("schema")==2) consume_gpo_portal_approval(*record);
-          else consume_gpo_local_approval(record->assignment,record->device_uri);});
+          gpo::portal_approval_current(record->portal_approval,record->assignment,record->device_uri));};
+      const auto consume=[&]{if(record->assignment.number("schema")>=2)consume_gpo_portal_approval(*record);
+        else consume_gpo_local_approval(record->assignment,record->device_uri);};
+      if(record->assignment.number("schema")==3) {
+        auto provider=make_managed_gpo_provider(record->assignment);
+        response=gpo::execute_managed(*record,*provider,save_gpo_journal,authority,consume);
+      }else {
+        native_provider provider(record->assignment);
+        response=gpo::execute_pilot(*record,provider,save_gpo_journal,authority,consume);
+      }
     }else return 1;
     const auto text=json::serialize(response);DWORD written{};
     if(!WriteFile(output,text.data(),static_cast<DWORD>(text.size()),&written,nullptr)||written!=text.size())return 1;

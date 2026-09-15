@@ -96,9 +96,43 @@ class GpoImportJob(models.Model):
             models.UniqueConstraint(fields=('tenant', 'domain_guid'), condition=models.Q(status__in=(
                 'queued', 'awaiting_approval', 'running', 'reconciliation_required',
             )), name='security_gpo_domain_fence'),
-            models.UniqueConstraint(fields=('tenant', 'domain_guid', 'pilot_name_key'), name='security_gpo_pilot_identity'),
+            models.UniqueConstraint(fields=('tenant', 'domain_guid', 'pilot_name_key'),
+                                    condition=models.Q(assignment__schema__in=(1, 2)), name='security_gpo_pilot_identity'),
         ]
         indexes = [models.Index(fields=('enrollment', 'status'), name='security_gpo_agent_status')]
+
+
+class ManagedGpoPolicy(models.Model):
+    """Stable directory identity; immutable jobs retain prepared and active content."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey('tenancy.Tenant', on_delete=models.CASCADE)
+    domain = models.ForeignKey(DomainSecuritySettings, on_delete=models.PROTECT)
+    domain_guid = models.CharField(max_length=36)
+    logical_key = models.CharField(max_length=64)
+    tier = models.PositiveSmallIntegerField()
+    baseline_id = models.CharField(max_length=96)
+    profile = models.CharField(max_length=32)
+    purpose = models.CharField(max_length=80)
+    target = models.CharField(max_length=32)
+    gpo_guid = models.CharField(max_length=36, blank=True)
+    display_name = models.CharField(max_length=240)
+    name_key = models.CharField(max_length=240)
+    version = models.CharField(max_length=32)
+    backup_id = models.CharField(max_length=38)
+    state = models.CharField(max_length=32, default='new')
+    revision = models.PositiveIntegerField(default=1)
+    origin_job = models.ForeignKey(GpoImportJob, on_delete=models.PROTECT, null=True, related_name='+')
+    staged_job = models.ForeignKey(GpoImportJob, on_delete=models.PROTECT, null=True, related_name='+')
+    active_job = models.ForeignKey(GpoImportJob, on_delete=models.PROTECT, null=True, related_name='+')
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=('tenant', 'domain_guid', 'logical_key'), name='security_managed_gpo_identity'),
+            models.UniqueConstraint(fields=('tenant', 'domain_guid', 'name_key'), name='security_managed_gpo_name'),
+            models.UniqueConstraint(fields=('tenant', 'domain_guid', 'gpo_guid'), condition=~models.Q(gpo_guid=''),
+                                    name='security_managed_gpo_guid'),
+        ]
 
 
 class BaselinePreference(models.Model):

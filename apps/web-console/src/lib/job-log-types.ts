@@ -1,6 +1,6 @@
 /**
  * File Name: job-log-types.ts
- * Version: v0.1.0 | Created: 2026-09-14 | Modified: 2026-09-14
+ * Version: v0.1.1 | Created: 2026-09-14 | Modified: 2026-09-15
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Define bounded job-history projections and URL navigation helpers.
  */
@@ -29,6 +29,10 @@ export const JOB_LOG_STATUSES = [
   "expired",
   "awaiting_approval",
   "staged",
+  "inspected",
+  "linked",
+  "activated",
+  "deactivated",
   "blocked",
   "reconciliation_required",
   "requires_reconciliation",

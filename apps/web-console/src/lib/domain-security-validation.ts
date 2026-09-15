@@ -4,6 +4,7 @@
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Validate domain settings and import receipts before presenting confirmed state.
  */
+
 import type {
   DomainGpoImports,
   DomainSecurityCatalog,
@@ -12,6 +13,7 @@ import type {
   GpoImportReview,
   SecurityTier,
 } from "./domain-security-types";
+import { GPO_OPERATIONS, isGpoSnapshot } from "./gpo-production-types";
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -134,6 +136,10 @@ export function isGpoImportJob(value: unknown): value is GpoImportJob {
       "awaiting_approval",
       "running",
       "staged",
+      "inspected",
+      "linked",
+      "activated",
+      "deactivated",
       "blocked",
       "failed",
       "expired",
@@ -145,7 +151,26 @@ export function isGpoImportJob(value: unknown): value is GpoImportJob {
     nullableString(value.gpo_guid) &&
     nullableString(value.requested_by) &&
     (value.approval_document === null || record(value.approval_document)) &&
-    (value.approval_mode === "local" || value.approval_mode === "portal") &&
+    (value.approval_mode === "local" ||
+      value.approval_mode === "portal" ||
+      value.approval_mode === "inspection") &&
+    (value.display_name === undefined ||
+      typeof value.display_name === "string") &&
+    (value.operation === undefined ||
+      [
+        ...GPO_OPERATIONS,
+        "inspect_managed_gpo",
+        "create_unlinked_pilot",
+      ].includes(value.operation as string)) &&
+    (value.managed_id === undefined || nullableString(value.managed_id)) &&
+    (value.preflight_state === undefined ||
+      value.preflight_state === null ||
+      isGpoSnapshot(value.preflight_state)) &&
+    (value.can_prepare === undefined ||
+      typeof value.can_prepare === "boolean") &&
+    (value.inspection_expires_at === undefined ||
+      value.inspection_expires_at === null ||
+      date(value.inspection_expires_at)) &&
     nullableString(value.approved_by) &&
     nullableString(value.approved_by_name) &&
     (value.approved_at === null || date(value.approved_at)) &&
@@ -182,8 +207,23 @@ export function isGpoImportReview(value: unknown): value is GpoImportReview {
     ) &&
     new Set(value.files.map((file) => file.path)).size === value.files.length &&
     Array.isArray(value.changes) &&
-    value.changes.length === 1 &&
-    value.changes[0] === "create_disabled_unlinked_pilot"
+    value.changes.length >= 1 &&
+    value.changes.length <= 8 &&
+    value.changes.every(
+      (change) => typeof change === "string" && change.length <= 128,
+    ) &&
+    (value.expected_state === undefined ||
+      isGpoSnapshot(value.expected_state)) &&
+    (value.target_ous === undefined ||
+      (Array.isArray(value.target_ous) &&
+        value.target_ous.length <= 32 &&
+        value.target_ous.every(
+          (dn) => typeof dn === "string" && dn.length <= 2048,
+        ))) &&
+    (value.safety_review === undefined ||
+      (record(value.safety_review) &&
+        typeof value.safety_review.management_access === "boolean" &&
+        typeof value.safety_review.recovery_access === "boolean"))
   );
 }
 
