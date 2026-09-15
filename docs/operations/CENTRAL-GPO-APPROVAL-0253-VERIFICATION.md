@@ -1,6 +1,6 @@
 <!--
 File Name: CENTRAL-GPO-APPROVAL-0253-VERIFICATION.md
-Version: v0.1.0 | Created: 2026-09-15 | Last Modified: 2026-09-15
+Version: v0.2.0 | Created: 2026-09-15 | Last Modified: 2026-09-15
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
 Description: Evidence and acceptance boundaries for central GPO approval.
 -->
@@ -36,10 +36,37 @@ The immutable Windows package is 1,132,480 bytes with SHA-256
 Its Agent executable is 1,919,488 bytes with SHA-256
 `0c95a131102eda062e299a81f2d6209a975142b11b6c5bb3d306e2da9a932607`.
 
+## Supported environment and DEV evidence
+
+Source `7f4a262825dc962471f40afe0dd268134e3d80d5` passed all 609 backend tests
+under Python 3.14.4 and PostgreSQL 18.6, with zero failures or skips. The test
+cluster was isolated from the active database and stopped after verification.
+The final combined browser run passed all 34 cases; production builds,
+TypeScript and formatting checks passed.
+
+Portal 0.2.53 was activated on DEV with the single additive migration. The
+deployment verifier initially did not account for PostgreSQL 18 named NOT NULL
+constraints and Django's two new content types/eight unassigned model permission
+descriptors. It kept writers stopped. A corrected, independently checked
+comparison proved that existing rows, schema objects and privileges were
+unchanged, then completed activation. No database restore or reverse migration
+was performed. The recovery material was retained.
+
+All 26 existing Windows devices confirmed successful Agent 0.2.34 updates and
+fresh inventory. The Linux Agent and its process remained unchanged. No domain
+grants or four-eyes policy rows were created by deployment. Live UI verification
+confirmed that four-eyes defaults to off and domain/tier grants start empty.
+
+The owner explicitly requested deletion of two unclaimed legacy requests.
+Their records were removed with a protected backup and retained audit history.
+Acceptance then identified their prepared Agent journals repeatedly requesting
+the now-missing jobs. Portal 0.2.54 addresses this with a separately audited,
+strictly bound retirement receipt; it does not restore the jobs or clear an
+ambiguous or claimed journal. Its final evidence is recorded separately below.
+
 ## Acceptance boundaries
 
-Browser, supported PostgreSQL and DEV deployment results are recorded after
-their completion. Local tests do not establish live directory acceptance.
+Local and supported-environment tests do not establish live directory acceptance.
 No GPO approval, import, link, activation or policy refresh was performed as
 part of implementation verification. The implemented operation remains a
 disabled, unlinked pilot import. Linking and activation are separate future

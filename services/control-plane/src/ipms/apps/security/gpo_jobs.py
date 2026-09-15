@@ -1,5 +1,5 @@
 # File Name: gpo_jobs.py
-# Version: v0.1.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
+# Version: v0.1.1 | Created: 2026-09-14 | Last Modified: 2026-09-15
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
 # Description: Immutable native GPO pilot jobs, scoped artifacts and durable domain fences.
 import hashlib
@@ -452,6 +452,38 @@ def _result(job, document):
     _audit(job, 'security.gpo_import_result')
 
 
+def _retired_unclaimed_exchange(tenant, enrollment, document):
+    """A pinned retirement can settle a missing legacy journal, never execute it.
+
+    Operators may append this exact tombstone only after retiring an unclaimed
+    schema-1 job. Unknown jobs retain the normal rejection behavior. Existing
+    jobs, even outside this enrollment's visible scope, cannot use this path.
+    """
+    if document['action'] not in ('lookup', 'result') or GpoImportJob.objects.filter(pk=document['job_id']).exists():
+        return False
+    input_digest = document['input_digest']
+    if not isinstance(input_digest, str) or not re.fullmatch(r'[a-f0-9]{64}', input_digest):
+        return False
+    events = list(AuditEvent.objects.filter(tenant=tenant, action='security.gpo_import_retired',
+        object_id=document['job_id']).only('object_type', 'outcome', 'details')[:2])
+    if len(events) != 1:
+        return False
+    event, fields = events[0], {'schema', 'job_schema', 'enrollment_id', 'device_uri', 'input_digest', 'operation', 'unclaimed'}
+    details = event.details
+    if (event.object_type != 'security_gpo_import' or event.outcome != 'succeeded'
+            or not isinstance(details, dict) or set(details) != fields
+            or type(details['schema']) is not int or details['schema'] != 1
+            or type(details['job_schema']) is not int or details['job_schema'] != 1
+            or details['unclaimed'] is not True or details['operation'] != 'create_unlinked_pilot'
+            or details['enrollment_id'] != str(enrollment.pk) or details['device_uri'] != enrollment.device_uri
+            or details['input_digest'] != input_digest):
+        return False
+    return document['action'] == 'lookup' or (
+        document['status'] == 'failed' and document['result_code'] in (
+            'gpo_job_expired', 'gpo_authority_expired', 'gpo_enrollment_changed')
+        and document['gpo_guid'] is None and document['evidence'] is None)
+
+
 @transaction.atomic
 def security_gpo_exchange(enrollment, document, *, artifact=False):
     base = {'type', 'schema_version', 'device_uri', 'correlation_id', 'action'}
@@ -488,7 +520,13 @@ def security_gpo_exchange(enrollment, document, *, artifact=False):
     except (ValueError, TypeError, AttributeError):
         _reject()
     job = GpoImportJob.objects.select_for_update(of=('self',)).filter(pk=job_id, tenant=tenant, enrollment=enrollment).select_related('requested_by').first()
-    if not job or document['input_digest'] != job.input_digest:
+    if not job:
+        if _retired_unclaimed_exchange(tenant, enrollment, document):
+            if action == 'lookup':
+                return {**response, 'gpo_job': None, 'gpo_approval': None}
+            return response
+        _reject()
+    if document['input_digest'] != job.input_digest:
         _reject()
     if action == 'result':
         _result(job, document)
