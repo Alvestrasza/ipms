@@ -13,7 +13,7 @@ from django.test import TestCase, SimpleTestCase, TransactionTestCase, skipUnles
 from django.utils import timezone
 
 from .gpo_jobs import digest, security_gpo_exchange
-from .gpo_production import (ACTIVATE, DEACTIVATE, IMPORT, INSPECT, LINK, SUCCESS, active_binding,
+from .gpo_production import (ACTIVATE, DEACTIVATE, IMPORT, IMPORT_LINK, INSPECT, LINK, SUCCESS, active_binding,
                              compact_purpose, validate_snapshot)
 from .models import DomainSecuritySettings, GpoExecutorReport, GpoImportJob, ManagedGpoPolicy
 from . import test_gpo_approvals as approval_tests
@@ -69,7 +69,7 @@ class ProductionGpoTests(TestCase):
     def report_success(self, job, state, *, backup=False, **changes):
         operation = job['operation']
         evidence = {'schema': 3, 'operation': operation, 'managed_id': job['managed_id'], 'state': state,
-                    'prepared_artifact_sha256': job['artifact_sha256'] if operation in (IMPORT, ACTIVATE) else '',
+                    'prepared_artifact_sha256': job['artifact_sha256'] if operation in (IMPORT, IMPORT_LINK, ACTIVATE) else '',
                     'backup_id': str(uuid.UUID(int=50)) if backup else '',
                     'backup_manifest_sha256': 'b' * 64 if backup else ''}
         values = {'status': SUCCESS[operation][0], 'result_code': SUCCESS[operation][1],
@@ -194,6 +194,172 @@ class ProductionGpoTests(TestCase):
                     self.report_success(job, state)
         self.managed.refresh_from_db()
         self.assertEqual(self.managed.gpo_guid, '')
+
+    def agent_036(self):
+        self.system.agent_version = '0.2.36'
+        self.system.save(update_fields=('agent_version',))
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.36')
+
+    def combined(self, *, root=False):
+        self.agent_036()
+        inspected = self.root_inspection(IMPORT_LINK) if root else self.inspect(IMPORT_LINK)
+        state = self.root_snapshot(inspected, None) if root else self.snapshot(inspected)
+        self.report_success(inspected, state)
+        job = self.change(inspected)
+        self.execute(job)
+        post = copy.deepcopy(state)
+        post['gpo'] = self.gpo(job)
+        post = self.linked_state(job, post, kind='domain' if root else 'ou')
+        artifact, artifact_hash = security_gpo_exchange(self.agent, self.envelope(
+            'artifact', job_id=job['job_id'], input_digest=job['input_digest']), artifact=True)
+        self.assertEqual(artifact, self.bundle)
+        self.assertEqual(artifact_hash, job['artifact_sha256'])
+        self.report_success(job, post)
+        self.managed.refresh_from_db()
+        return job, post
+
+    def test_combined_initial_import_links_with_one_approval_and_separate_activation(self):
+        job, state = self.combined()
+        self.assertEqual(len(job), 28)
+        self.assertEqual(self.managed.state, 'linked')
+        self.assertEqual(str(self.managed.origin_job_id), job['job_id'])
+        self.assertEqual(str(self.managed.staged_job_id), job['job_id'])
+        self.assertIsNone(self.managed.active_job_id)
+        self.assertEqual(GpoImportJob.objects.filter(approved_at__isnull=False).count(), 1)
+        self.assertEqual(GpoImportJob.objects.count(), 2)
+        self.assertFalse(state['gpo']['computer_enabled'])
+        self.assertTrue(all(not link['enabled'] for link in state['gpo']['links']))
+        self.assertIsNone(active_binding(self.managed, timezone.now()))
+        inspected = self.inspect(ACTIVATE)
+        self.report_success(inspected, state)
+        activation = self.change(inspected)
+        self.execute(activation)
+        active = self.linked_state(activation, state, enabled=True)
+        active['gpo']['computer_enabled'] = True
+        self.report_success(activation, active, backup=True)
+        self.managed.refresh_from_db()
+        self.assertIsNotNone(active_binding(self.managed, timezone.now()))
+        self.assertEqual(GpoImportJob.objects.filter(approved_at__isnull=False).count(), 2)
+
+    def test_combined_root_import_preserves_default_domain_policy(self):
+        self.use_domain_component()
+        self.agent_036()
+        config = DomainSecuritySettings.objects.get(pk=self.config['id'])
+        config.tier_ous['0'] = []
+        config.save(update_fields=('tier_ous',))
+        inspected = self.root_inspection(IMPORT_LINK)
+        state = self.root_snapshot(inspected, None)
+        default = {'guid': '31b2f340-016d-11d2-945f-00c04fb984f9', 'domain': DOMAIN,
+                   'dn': state['ous'][0]['dn'], 'kind': 'domain', 'enabled': True, 'enforced': False, 'order': 1}
+        state['ous'][0]['links'] = [default]
+        self.report_success(inspected, state)
+        job = self.change(inspected)
+        self.assertEqual(job['link_orders'], [1])
+        self.execute(job)
+        post = copy.deepcopy(state)
+        post['gpo'] = self.gpo(job)
+        post = self.linked_state(job, post, kind='domain')
+        self.report_success(job, post)
+        self.managed.refresh_from_db()
+        self.assertEqual(post['ous'][0]['links'][-1], {**default, 'order': 2})
+        self.assertEqual(self.managed.state, 'linked')
+        self.assertIsNone(self.managed.active_job_id)
+
+    def test_combined_partial_receipt_does_not_advance_policy(self):
+        self.agent_036()
+        inspected = self.inspect(IMPORT_LINK)
+        state = self.snapshot(inspected)
+        self.report_success(inspected, state)
+        job = self.change(inspected)
+        self.execute(job)
+        initial = self.snapshot(job, self.gpo(job))
+        post = self.linked_state(job, initial)
+        mutations = [lambda s: s['gpo'].update(links=[]), lambda s: s['ous'][0].update(links=[]),
+                     lambda s: s['gpo'].update(computer_enabled=True), lambda s: s['gpo'].update(name='Wrong'),
+                     lambda s: s['gpo'].update(description='Unmanaged')]
+        for mutation in mutations:
+            malformed = copy.deepcopy(post)
+            mutation(malformed)
+            with self.assertRaises(ValidationError), transaction.atomic():
+                self.report_success(job, malformed)
+        with self.assertRaises(ValidationError), transaction.atomic():
+            self.report_success(job, post, backup=True)
+        for artifact in ('', '0' * 64):
+            evidence = {'schema': 3, 'operation': IMPORT_LINK, 'managed_id': job['managed_id'], 'state': post,
+                        'prepared_artifact_sha256': artifact, 'backup_id': '', 'backup_manifest_sha256': ''}
+            with self.assertRaises(ValidationError), transaction.atomic():
+                self.report_success(job, post, evidence=evidence)
+        self.managed.refresh_from_db()
+        self.assertEqual(self.managed.revision, 1)
+        self.assertEqual(self.managed.gpo_guid, '')
+        self.assertIsNone(self.managed.staged_job_id)
+        self.assertEqual(GpoImportJob.objects.get(pk=job['job_id']).status, 'running')
+        self.report_success(job, post)
+
+    def test_combined_existing_disabled_policy_prepares_revision_without_importing_it(self):
+        previous, state = self.combined()
+        inspected = self.inspect(IMPORT_LINK, version='2.0.0')
+        self.report_success(inspected, state)
+        job = self.change(inspected)
+        self.execute(job)
+        post = self.linked_state(job, state)
+        changed_content = copy.deepcopy(post)
+        changed_content['gpo'].update(name=job['pilot_display_name'], computer_ds=2, computer_sysvol=2)
+        with self.assertRaises(ValidationError), transaction.atomic():
+            self.report_success(job, changed_content)
+        self.report_success(job, post)
+        self.managed.refresh_from_db()
+        self.assertEqual(self.managed.gpo_guid, PILOT_GUID)
+        self.assertEqual(self.managed.version, '2.0.0')
+        self.assertEqual(self.managed.display_name, job['pilot_display_name'])
+        self.assertEqual(post['gpo']['name'], previous['pilot_display_name'])
+        self.assertEqual(str(self.managed.staged_job_id), job['job_id'])
+        self.assertEqual(str(self.managed.origin_job_id), previous['job_id'])
+
+    def test_combined_rejects_active_gpo_before_creating_write_job(self):
+        self.agent_036()
+        active, state = self.activated()
+        inspected = self.inspect(IMPORT_LINK)
+        self.report_success(inspected, state)
+        count = GpoImportJob.objects.count()
+        response = self.client.post(self.base + 'managed-gpos/', {'preflight_id': inspected['job_id'],
+            'idempotency_key': str(uuid.uuid4()), 'safety_review': {'management_access': False, 'recovery_access': False}}, format='json')
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(GpoImportJob.objects.count(), count)
+        self.managed.refresh_from_db()
+        self.assertEqual(self.managed.state, 'active')
+
+    def test_combined_requires_agent_036_while_035_keeps_old_operations(self):
+        response = self.client.post(self.base + 'gpo-preflights/', {**self.selection,
+            'idempotency_key': str(uuid.uuid4()), 'operation': IMPORT_LINK, 'managed_id': None, 'adopt_job_id': None}, format='json')
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data['error']['code'], 'security_gpo_executor_unavailable')
+        self.assertFalse(GpoImportJob.objects.exists())
+        self.imported()
+
+    def test_combined_adopts_only_exact_legacy_receipt_then_links_same_guid(self):
+        legacy = approval_tests.PortalApprovalTests.queue(self)
+        self.assertEqual(self.approve(legacy).status_code, 200)
+        self.assertTrue(self.exchange(legacy, 'claim')['gpo_claim']['authorized'])
+        self.result(legacy, status='staged', code='gpo_staged_unlinked', guid=PILOT_GUID, evidence={
+            'computer_enabled': False, 'user_enabled': False, 'unlinked': True,
+            'domain_dns_name': DOMAIN, 'domain_guid': DOMAIN_GUID, 'dc_fqdn': self.system.fqdn})
+        self.agent_036()
+        inspected = self.inspect(IMPORT_LINK, adopt_job_id=legacy['job_id'])
+        gpo = self.gpo(inspected)
+        gpo.update(name=legacy['pilot_display_name'], description=inspected['owner_marker'])
+        before = self.snapshot(inspected, gpo)
+        self.report_success(inspected, before)
+        job = self.change(inspected)
+        self.execute(job)
+        post = self.linked_state(job, before)
+        post['gpo'].update(name=job['pilot_display_name'], description='IPMS managed GPO; id=' + job['managed_id'])
+        self.report_success(job, post)
+        self.managed.refresh_from_db()
+        self.assertEqual(self.managed.gpo_guid, PILOT_GUID)
+        self.assertEqual(str(self.managed.origin_job_id), legacy['job_id'])
+        self.assertEqual(str(self.managed.staged_job_id), job['job_id'])
+        self.assertEqual(self.managed.state, 'linked')
 
     def test_nonactivation_receipts_reject_recovery_backup_metadata(self):
         state = None
@@ -614,7 +780,7 @@ class ProductionGpoTests(TestCase):
         self.use_domain_component()
         self.imported()
         before = GpoImportJob.objects.count()
-        for operation in (LINK, ACTIVATE, DEACTIVATE):
+        for operation in (IMPORT_LINK, LINK, ACTIVATE, DEACTIVATE):
             for flag in ({}, {'domain_root_confirmed': False}):
                 response = self.client.post(self.base + 'gpo-preflights/', {**self.selection,
                     'idempotency_key': str(uuid.uuid4()), 'operation': operation,

@@ -5,6 +5,7 @@
  * Purpose: Bound production GPO observations and managed policy projections.
  */
 export const GPO_OPERATIONS = [
+  "import_and_link_managed_gpo",
   "import_managed_gpo",
   "link_managed_gpo",
   "activate_managed_gpo",

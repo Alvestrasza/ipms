@@ -606,9 +606,12 @@ test("legacy import API remains scoped and new Portal controls require the produ
       name: "Executing domain controller",
       exact: true,
     }),
-  ).toContainText("No eligible Agent 0.2.35 or newer");
+  ).toContainText("No eligible Agent 0.2.36 or newer");
   await expect(
-    workflow.getByRole("button", { name: "Inspect AD state", exact: true }),
+    workflow.getByRole("button", {
+      name: "Create approval request",
+      exact: true,
+    }),
   ).toBeDisabled();
   const available = await (
     await page.request.get(`${api}${settings.id}/gpo-imports/`, { headers })

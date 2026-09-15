@@ -10,7 +10,7 @@ const en = {
   title: "GPO distribution",
   activeUnverified: "Active version not verified",
   description:
-    "Import, linking and activation each require their own reviewed request. Existing GPOs keep their GUID; preparing an update does not change active settings.",
+    "Import and linking use one request. The GPO and its links remain disabled until a separate activation is approved. Existing GPOs keep their GUID; preparing an update does not change active settings.",
   policy: "Managed GPO",
   create: "New GPO",
   operation: "Action",
@@ -28,6 +28,9 @@ const en = {
   preparing:
     "The Agent is checking GPO identity, OU identities and existing links. This check does not change AD.",
   prepare: "Create approval request",
+  retry: "Retry the same request",
+  createHint:
+    "The Agent checks AD first, then IPMS prepares this exact action for review in Logs. Nothing is approved automatically.",
   prepared: "Request created. Review and approve this exact action in Logs.",
   logs: "Review request in Logs",
   unavailable: "The GPO state could not be loaded. Reload before continuing.",
@@ -70,9 +73,11 @@ const en = {
   confirmDomainRoot:
     "I confirm the domain root as the target for this domain-wide account policy. This confirmation does not approve its execution.",
   actionHint: "Approval authorizes only the action and targets shown below.",
-  noExecutor: "No eligible Agent 0.2.35 or newer is currently available.",
+  noExecutor: "No eligible Agent 0.2.36 or newer is currently available.",
+  noLegacyExecutor: "No eligible Agent 0.2.35 or newer is currently available.",
   actions: {
-    import_managed_gpo: "Import / prepare version",
+    import_and_link_managed_gpo: "Import and link",
+    import_managed_gpo: "Prepare version",
     link_managed_gpo: "Link targets",
     activate_managed_gpo: "Activate",
     deactivate_managed_gpo: "Deactivate",
@@ -91,7 +96,7 @@ const de: typeof en = {
   title: "GPO-Verteilung",
   activeUnverified: "Aktiver Stand nicht bestätigt",
   description:
-    "Import, Verknüpfung und Aktivierung erhalten jeweils einen eigenen geprüften Auftrag. Bestehende GPOs behalten ihre GUID; die Vorbereitung eines Updates ändert keine aktiven Einstellungen.",
+    "Import und Verknüpfung erfolgen in einem Auftrag. GPO und Verknüpfungen bleiben bis zur separaten Aktivierungsfreigabe deaktiviert. Bestehende GPOs behalten ihre GUID; die Vorbereitung eines Updates ändert keine aktiven Einstellungen.",
   policy: "Verwaltete GPO",
   create: "Neue GPO",
   operation: "Aktion",
@@ -109,6 +114,9 @@ const de: typeof en = {
   preparing:
     "Der Agent prüft GPO-Identität, OU-Identitäten und vorhandene Verknüpfungen. Diese Prüfung ändert nichts im AD.",
   prepare: "Freigabeauftrag erstellen",
+  retry: "Denselben Auftrag erneut versuchen",
+  createHint:
+    "Der Agent prüft zuerst das AD. Danach bereitet IPMS diese konkrete Aktion zur Prüfung unter Logs vor. Es erfolgt keine automatische Freigabe.",
   prepared:
     "Auftrag erstellt. Diese konkrete Aktion unter Logs prüfen und freigeben.",
   logs: "Auftrag unter Logs prüfen",
@@ -156,9 +164,12 @@ const de: typeof en = {
     "Ich bestätige die Domänenwurzel als Ziel dieser domänenweiten Kontorichtlinie. Diese Bestätigung gibt die Ausführung noch nicht frei.",
   actionHint:
     "Die Freigabe gilt ausschließlich für die unten angezeigte Aktion und ihre Ziele.",
-  noExecutor: "Derzeit ist kein geeigneter Agent ab Version 0.2.35 verfügbar.",
+  noExecutor: "Derzeit ist kein geeigneter Agent ab Version 0.2.36 verfügbar.",
+  noLegacyExecutor:
+    "Derzeit ist kein geeigneter Agent ab Version 0.2.35 verfügbar.",
   actions: {
-    import_managed_gpo: "Import / Version vorbereiten",
+    import_and_link_managed_gpo: "Importieren und verknüpfen",
+    import_managed_gpo: "Version vorbereiten",
     link_managed_gpo: "Ziele verknüpfen",
     activate_managed_gpo: "Aktivieren",
     deactivate_managed_gpo: "Deaktivieren",

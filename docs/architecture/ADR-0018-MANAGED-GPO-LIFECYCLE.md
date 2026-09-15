@@ -1,24 +1,27 @@
-# ADR-0018: Separately approved managed GPO lifecycle
+# ADR-0018: Approval-bound managed GPO lifecycle
 
-Version: 1.0.0 | Date: 2026-09-15
+Version: 1.1.0 | Date: 2026-09-15
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
 Status: Accepted design; live domain acceptance tracked separately
 
 ## Decision
 
-Use stable managed GPO identities and separate Portal requests for import,
-linking, activation and deactivation. This supersedes the new-pilot-only product
+Use stable managed GPO identities. Since Portal 0.2.56, import and linking form
+one approved request; activation and deactivation remain separate. This replaces
+the earlier requirement to request import and linking separately and supersedes the new-pilot-only product
 flow in ADR-0016 while retaining the schema-1/2 wire contracts and history.
 ADR-0017 domain/tier authorization and optional tenant four-eyes approval apply
 to every write. No interactive domain-controller login is required for approval.
 
-An initial import creates a disabled, unlinked GPO with its configured short
-name. Subsequent imports validate and stage pinned content without writing the
+The combined operation creates a disabled GPO with its configured short name and
+links it disabled and non-enforced to the approved targets. Subsequent imports validate and stage pinned content without writing the
 existing GPO, including its active name. Activation backs up and updates that
 same GUID. Updating an active GPO during an import would immediately change
 effective policy and would violate the separation between import and activation.
 
-Each write starts with a separate read-only inspection job. The result contains
+Each write starts with an internal read-only inspection job. For import and link,
+the Portal automatically proceeds from a successful inspection to one approval
+request; the administrator does not manually create the intermediate jobs. The result contains
 the actual GPO identity, versions, flags, security digest, WMI filter, links and
 the target object GUIDs, USNs, inheritance and link order. A new immutable
 write assignment binds that snapshot. Its maximum lifetime is the inspection's
@@ -42,7 +45,7 @@ Computer and user components target configured tier OUs. Compiled Domain Securit
 components instead target only the root derived from the selected domain and
 require Tier 0 authority plus explicit domain-wide target confirmation. The root
 object GUID must equal the approved domain GUID. The immutable assignment binds
-that root and component; import, link and activation remain separate. Default
+that root and component; combined import/link and activation remain separate. Default
 policies are excluded by GUID and their existing flags are preserved.
 
 Before mutation, the native provider checks the complete forest domain inventory
@@ -72,12 +75,20 @@ every resulting endpoint setting is reversible. Activation requires explicit
 management-access and independent recovery-access review. These reviews do not
 replace testing the effective firewall, logon rights and connectivity on targets.
 
+The combined executor retains the newly created GUID before proceeding to links.
+It rereads the approved scope after import, allowing only the known creation or
+adoption changes. Target drift or a partial failure stops execution and retains
+the GUID for reconciliation. It does not renew the claim, replay creation or
+activate the GPO. This is one approval, not a claim of transactional AD writes.
+
 ## Compatibility
 
 The migration adds managed identities without changing existing job columns.
 The legacy name uniqueness constraint applies to schema-1/2 assignments; managed
 identities have their own domain/tenant uniqueness constraints. Deploy the receiver
-before Agent 0.2.35. Existing assignments are immutable and are not upgraded.
+before Agent 0.2.36. Existing assignments are immutable and are not upgraded.
+The new combined operation uses the existing schema-3 fields and requires Agent
+0.2.36; historical separate operations retain their existing interpretation.
 Only a confirmed active managed revision can identify production baseline content;
 endpoint application still requires the Agent's separate Windows processing
 evidence. A prepared version or successful import does not count as application.

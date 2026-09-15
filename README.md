@@ -9,12 +9,13 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-Candidate `0.2.55` and Windows Agent `0.2.35` add separately approved GPO import,
-linking, activation and deactivation. Names use readable component aliases
+Candidate `0.2.56` and Windows Agent `0.2.36` combine GPO import and linking in
+one approved request. The read-only inspection runs automatically before that
+request is presented for approval. Activation remains separate. Names use readable component aliases
 and the configured naming template; managed GPOs retain their GUID. Each action
 starts with a read-only directory inspection. Approval binds that exact state,
 content, domain and tier; the Agent checks it again before writing. Initial
-imports remain disabled and unlinked. Importing a later version stages its
+imports and their target links remain disabled. Preparing a later version stages its
 package without changing active settings; activation takes a protected backup
 and applies that prepared version. Tenant-wide four-eyes approval remains
 optional. Domain Security components use explicitly confirmed Tier 0 actions at

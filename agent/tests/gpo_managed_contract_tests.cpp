@@ -6,6 +6,8 @@
 #include <iostream>
 #include <algorithm>
 #include <cstdio>
+#include <fstream>
+#include <iterator>
 #include <stdexcept>
 
 namespace gpo=ipms::agent::gpo;
@@ -36,7 +38,7 @@ void target(json::object& state,bool active=false) {
 json::object document(std::string op="import_managed_gpo",json::object state=snapshot()) {
   const auto& component=gpo::components.front();const bool read=op=="inspect_managed_gpo";
   const bool exists=!state.at("gpo").get_if<std::nullptr_t>();
-  json::array ous,orders;if(!state.at("ous").as<json::array>().empty()){ous.push_back(dn);orders.push_back(1);}
+  json::array ous,orders;for(const auto& item:state.at("ous").as<json::array>()){ous.push_back(item.as<json::object>().at("dn"));orders.push_back(1);}
   json::object j{{"schema",3},{"job_id","11111111-1111-4111-8111-111111111111"},{"input_digest",""},{"operation",op},
     {"domain_dns_name","example.invalid"},{"domain_guid","22222222-2222-4222-8222-222222222222"},{"forest_dns_name","example.invalid"},
     {"executor_dc_fqdn","dc.example.invalid"},{"scope_id","33333333-3333-4333-8333-333333333333"},{"scope_revision",1},{"target_tier",1},
@@ -59,17 +61,26 @@ gpo::journal record(json::object doc) {
 }
 class provider final:public gpo::managed_provider {
  public:
-  json::object state;std::vector<std::string> calls;std::string failure;std::string failure_code="gpo_provider_failed";int inspections{};bool drift{};
+  json::object state;std::vector<std::string> calls;std::string failure;std::string failure_code="gpo_provider_failed";int inspections{};bool drift{};bool drift_after_import{};bool partial_link_failure{};
   explicit provider(json::object s):state(std::move(s)){}
   void call(const char* op){calls.emplace_back(op);if(failure==op)throw gpo::operation_error(failure_code);}
-  json::object inspect()override{call("inspect");++inspections;if(drift&&inspections==2)state["name_available"]=false;return state;}
+  json::object inspect()override{call("inspect");++inspections;if(drift&&inspections==2)state["name_available"]=false;if(drift_after_import&&inspections==3)state.at("ous").as<json::array>()[0].as<json::object>()["usn"]="124";return state;}
   void prepare()override{call("prepare");}
-  std::string create()override{call("create");state=snapshot();return id;}
+  std::string create()override{call("create");state["gpo"]=snapshot().at("gpo");return id;}
   void initialize(std::string_view)override{call("initialize");state.at("gpo").as<json::object>()["name"]="1-C-ALL-MS-WS2025_V2.0.0";}
   void adopt(std::string_view)override{call("adopt");state.at("gpo").as<json::object>()["description"]=std::string("IPMS managed GPO; id=")+managed;state.at("gpo").as<json::object>()["name"]="1-C-ALL-MS-WS2025_V2.0.0";}
   std::pair<std::string,std::string> backup(std::string_view)override{call("backup");return {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",std::string(64,'b')};}
-  void link(std::string_view)override{call("link");for(auto& v:state.at("gpo").as<json::object>().at("links").as<json::array>())v.as<json::object>()["enabled"]=false;
-    for(auto& ou:state.at("ous").as<json::array>())for(auto& v:ou.as<json::object>().at("links").as<json::array>())if(v.as<json::object>().at("guid").as<std::string>()==id)v.as<json::object>()["enabled"]=false;}
+  void link(std::string_view)override{
+    call("link");json::array own_links;
+    for(auto& value:state.at("ous").as<json::array>()) {
+      auto& ou=value.as<json::object>();auto& direct=ou.at("links").as<json::array>();
+      direct.erase(std::remove_if(direct.begin(),direct.end(),[](const auto& v){return v.template as<json::object>().at("guid").template as<std::string>()==id;}),direct.end());
+      auto own=::link(id,false,1);own["dn"]=ou.at("dn");own["kind"]=ou.at("dn").as<std::string>().starts_with("DC=")?"domain":"ou";
+      direct.insert(direct.begin(),own);for(std::size_t n=0;n<direct.size();++n)direct[n].as<json::object>()["order"]=n+1;
+      own_links.push_back(own);state.at("gpo").as<json::object>()["links"]=own_links;
+      if(partial_link_failure)throw gpo::operation_error("gpo_provider_failed");
+    }
+  }
   void activate(std::string_view)override{call("activate");state.at("gpo").as<json::object>()["computer_enabled"]=gpo::components.front().scope=="machine";state.at("gpo").as<json::object>()["user_enabled"]=gpo::components.front().scope=="user";state.at("gpo").as<json::object>()["name"]="1-C-ALL-MS-WS2025_V2.0.0";}
   void deactivate(std::string_view)override{call("deactivate");state.at("gpo").as<json::object>()["computer_enabled"]=false;state.at("gpo").as<json::object>()["user_enabled"]=false;}
 };
@@ -83,8 +94,25 @@ void save(const gpo::journal& j) {
 int main() {
  try {
   const auto now=std::chrono::sys_days(std::chrono::year(2030)/1/1);
+  // Architectural regression: the managed provider runs inside a Job Object
+  // with ActiveProcessLimit=1. It must consume the worker's direct local read,
+  // never invoke the public probe that creates another isolated process.
+  const auto source=[](const char* relative) {std::ifstream stream(std::string(IPMS_AGENT_SOURCE_ROOT)+relative);require(stream.good(),"Missing worker-boundary source fixture");return std::string(std::istreambuf_iterator<char>(stream),{});};
+  const auto managed_source=source("/src/windows/windows_gpo_managed.cpp");
+  for(const auto* nested:{"probe_gpo_executor(","worker_call(","CreateProcess", "invoke_gpo_inspection_worker(","invoke_gpo_pilot_worker("})
+    require(managed_source.find(nested)==std::string::npos,"Managed provider attempts forbidden nested process dispatch");
+  const auto worker_source=source("/src/windows/windows_gpo_management.cpp");
+  const std::string direct_factory="make_managed_gpo_provider(record->assignment,executor_identity())";
+  const auto first_factory=worker_source.find(direct_factory);require(first_factory!=std::string::npos&&worker_source.find(direct_factory,first_factory+direct_factory.size())!=std::string::npos,"Inspection and execution workers must supply direct local executor identity");
+  require(worker_source.find("limits.BasicLimitInformation.ActiveProcessLimit=1")!=std::string::npos,"GPO worker process isolation was weakened");
   auto d=document();require(gpo::parse_job(d).number("schema")==3,"Schema3 rejected");
   require(gpo::unexpired(gpo::parse_job(d),now),"Valid short job rejected");
+  json::object exact_executor{{"role","writable-domain-controller"},{"gpmc_available",true},{"domain_dns_name",d.at("domain_dns_name")},
+    {"domain_guid",d.at("domain_guid")},{"forest_dns_name",d.at("forest_dns_name")},{"dc_fqdn",d.at("executor_dc_fqdn")}};
+  require(gpo::executor_matches(gpo::parse_job(d),exact_executor),"Exact direct local executor identity rejected");
+  for(const auto* key:{"role","domain_dns_name","domain_guid","forest_dns_name","dc_fqdn"}) {auto wrong=exact_executor;wrong[key]="mismatch";require(!gpo::executor_matches(gpo::parse_job(d),wrong),"Direct identity path weakened a binding check");}
+  auto no_gpmc=exact_executor;no_gpmc["gpmc_available"]=false;require(!gpo::executor_matches(gpo::parse_job(d),no_gpmc),"Direct identity path ignored GPMC availability");
+
   auto long_lived=d;long_lived["expires_at"]="2030-01-01T00:20:00Z";long_lived["input_digest"]=gpo::input_digest(long_lived);
   require(!gpo::unexpired(gpo::parse_job(long_lived),now),"Overlong schema3 grant accepted");
   for(const auto* key:{"command","script","destination_path","acl","url"}) {auto bad=d;bad[key]="unexpected";bad["input_digest"]=gpo::input_digest(bad);rejects([&]{gpo::parse_job(bad);});}
@@ -201,6 +229,64 @@ int main() {
   auto domain_import=domain_document("import_managed_gpo",snapshot(false));require(gpo::parse_job(domain_import).fields.at("target_ous").as<json::array>().empty(),"Domain import requires root link prematurely");
   auto unexpected_root=document("activate_managed_gpo",root_state);unexpected_root["target_ous"]=json::array{"DC=example,DC=invalid"};unexpected_root["input_digest"]=gpo::input_digest(unexpected_root);
   rejects([&]{gpo::parse_job(unexpected_root);});
+  // Combined import/link has one claim and never enables policy content.
+  const auto unlinked_targets=[](json::object state,bool exists) {
+    for(auto& item:state.at("ous").as<json::array>()) {
+      auto& links=item.as<json::object>().at("links").as<json::array>();
+      links.erase(std::remove_if(links.begin(),links.end(),[](const auto& v){return v.template as<json::object>().at("guid").template as<std::string>()==id;}),links.end());
+      for(std::size_t n=0;n<links.size();++n)links[n].as<json::object>()["order"]=n+1;
+    }
+    if(!exists)state["gpo"]=json::value{};
+    else {auto& policy=state.at("gpo").as<json::object>();policy["computer_enabled"]=false;policy["user_enabled"]=false;policy["links"]=json::array{};}
+    return state;
+  };
+  auto combined_before=unlinked_targets(linked_state,false);
+  auto combined_inspection=document("inspect_managed_gpo",combined_before);combined_inspection["intended_operation"]="import_and_link_managed_gpo";combined_inspection["input_digest"]=gpo::input_digest(combined_inspection);
+  j=record(combined_inspection);provider combined_reader(combined_before);
+  require(gpo::inspect_managed(j,combined_reader,save,[]{return true;}).at("status").as<std::string>()=="inspected"&&combined_reader.calls==std::vector<std::string>{"inspect"},"Combined inspection acquired write authority");
+  j=record(document("import_and_link_managed_gpo",combined_before));provider combined(combined_before);unsigned claims{};
+  const auto combined_result=gpo::execute_managed(j,combined,save,[]{return true;},[&]{++claims;});
+  require(combined_result.at("status").as<std::string>()=="linked"&&claims==1&&j.gpo_guid==id,"Combined initial OU operation failed or consumed multiple claims");
+  require(combined.calls==std::vector<std::string>{"inspect","prepare","inspect","create","initialize","inspect","link","inspect"},"Combined operation does not reread between import and link");
+  const auto combined_calls=combined.calls;gpo::execute_managed(j,combined,save,[]{return true;},[&]{++claims;});
+  require(combined.calls==combined_calls&&claims==1,"Combined successful receipt replayed a write");
+  require(!combined.state.at("gpo").as<json::object>().at("computer_enabled").as<bool>()&&!combined.state.at("gpo").as<json::object>().at("user_enabled").as<bool>(),"Combined operation activated policy");
+  auto wrong_artifact=gpo::journal_document(j);wrong_artifact.at("result").as<json::object>().at("evidence").as<json::object>()["prepared_artifact_sha256"]=std::string(64,'e');
+  rejects([&]{gpo::parse_journal(wrong_artifact);});
+  for(const auto* failure:{"initialize","link"}) {
+    j=record(document("import_and_link_managed_gpo",combined_before));provider interrupted(combined_before);interrupted.failure=failure;
+    const auto failed=gpo::execute_managed(j,interrupted,save,[]{return true;},[]{});
+    require(failed.at("status").as<std::string>()=="requires_reconciliation"&&failed.at("gpo_guid").as<std::string>()==id,"Partial combined import lost exact GUID or retry fence");
+    const auto calls=interrupted.calls;gpo::execute_managed(j,interrupted,save,[]{return true;},[]{});require(interrupted.calls==calls,"Partial combined result retried creation or linking");
+  }
+  j=record(document("import_and_link_managed_gpo",combined_before));provider drift_between(combined_before);drift_between.drift_after_import=true;
+  require(gpo::execute_managed(j,drift_between,save,[]{return true;},[]{}).at("result_code").as<std::string>()=="gpo_state_changed"&&
+    std::find(drift_between.calls.begin(),drift_between.calls.end(),"link")==drift_between.calls.end()&&j.gpo_guid==id,"Target drift after import reached linking");
+  j=record(document("import_and_link_managed_gpo",combined_before));provider expired_between(combined_before);
+  require(gpo::execute_managed(j,expired_between,save,[&]{return expired_between.inspections<3;},[]{}).at("result_code").as<std::string>()=="gpo_authority_expired"&&j.gpo_guid==id&&
+    std::find(expired_between.calls.begin(),expired_between.calls.end(),"link")==expired_between.calls.end(),"Expired whole-operation grant permitted linking after import");
+  auto multiple_targets=combined_before;auto extra_target=multiple_targets.at("ous").as<json::array>()[0].as<json::object>();
+  extra_target["dn"]="OU=Additional,DC=example,DC=invalid";extra_target["guid"]="abababab-abab-4bab-8bab-abababababab";
+  for(auto& value:extra_target.at("links").as<json::array>())value.as<json::object>()["dn"]=extra_target.at("dn");
+  multiple_targets.at("ous").as<json::array>().push_back(extra_target);
+  j=record(document("import_and_link_managed_gpo",multiple_targets));provider partial_link(multiple_targets);partial_link.partial_link_failure=true;
+  require(gpo::execute_managed(j,partial_link,save,[]{return true;},[]{}).at("status").as<std::string>()=="requires_reconciliation"&&j.gpo_guid==id&&
+    partial_link.state.at("gpo").as<json::object>().at("links").as<json::array>().size()==1&&partial_link.state.at("ous").as<json::array>().size()==2,"Partial link effect was reported as success or lost identity");
+  auto combined_existing=unlinked_targets(linked_state,true);j=record(document("import_and_link_managed_gpo",combined_existing));provider existing_combined(combined_existing);
+  require(gpo::execute_managed(j,existing_combined,save,[]{return true;},[]{}).at("status").as<std::string>()=="linked","Existing disabled GPO preparation/link failed");
+  require(existing_combined.state.at("gpo").as<json::object>().at("name")==combined_existing.at("gpo").as<json::object>().at("name")&&
+    std::find(existing_combined.calls.begin(),existing_combined.calls.end(),"initialize")==existing_combined.calls.end(),"Combined preparation applied new content/name before activation");
+  j=record(document("import_and_link_managed_gpo",linked_state));provider active_combined(linked_state);
+  require(gpo::execute_managed(j,active_combined,save,[]{return true;},[]{}).at("result_code").as<std::string>()=="gpo_requires_disabled"&&active_combined.calls.size()==1,"Combined operation changed active policy");
+  auto combined_adoption=combined_existing;combined_adoption.at("gpo").as<json::object>()["description"]=adoption.at("gpo").as<json::object>().at("description");
+  j=record(document("import_and_link_managed_gpo",combined_adoption));provider adopted_combined(combined_adoption);
+  require(gpo::execute_managed(j,adopted_combined,save,[]{return true;},[]{}).at("status").as<std::string>()=="linked"&&j.gpo_guid==id&&
+    std::find(adopted_combined.calls.begin(),adopted_combined.calls.end(),"create")==adopted_combined.calls.end(),"Exact legacy adoption duplicated GPO during combined operation");
+  auto combined_root=unlinked_targets(root_state,false);j=record(domain_document("import_and_link_managed_gpo",combined_root));provider root_combined(combined_root);
+  require(gpo::execute_managed(j,root_combined,save,[]{return true;},[]{}).at("status").as<std::string>()=="linked"&&
+    root_combined.state.at("gpo").as<json::object>().at("links").as<json::array>()[0].as<json::object>().at("kind").as<std::string>()=="domain","Combined Tier0 domain root operation failed");
+  auto wrong_combined_tier=domain_document("import_and_link_managed_gpo",combined_root);wrong_combined_tier["target_tier"]=1;wrong_combined_tier["input_digest"]=gpo::input_digest(wrong_combined_tier);rejects([&]{gpo::parse_job(wrong_combined_tier);});
+  auto no_combined_targets=document("import_and_link_managed_gpo",snapshot(false));rejects([&]{gpo::parse_job(no_combined_targets);});
   auto large=snapshot(true,true);target(large,true);
   auto& many=large.at("ous").as<json::array>()[0].as<json::object>().at("links").as<json::array>();
   for(long n=3;n<=128;++n) {

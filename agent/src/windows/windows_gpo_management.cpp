@@ -245,7 +245,7 @@ int run_gpo_worker() {
     if(action=="inspect")response=executor_identity();
     else if(action=="inspect_managed") {
       auto record=load_gpo_journal();if(!record||!gpo::inspection(record->assignment))return 1;
-      auto provider=make_managed_gpo_provider(record->assignment);
+      auto provider=make_managed_gpo_provider(record->assignment,executor_identity());
       response=gpo::inspect_managed(*record,*provider,save_gpo_journal,[&]{return gpo::unexpired(record->assignment)&&gpo_enrollment_matches(record->device_uri);});
     }
     else if(action=="execute") {
@@ -257,7 +257,7 @@ int run_gpo_worker() {
       const auto consume=[&]{if(record->assignment.number("schema")>=2)consume_gpo_portal_approval(*record);
         else consume_gpo_local_approval(record->assignment,record->device_uri);};
       if(record->assignment.number("schema")==3) {
-        auto provider=make_managed_gpo_provider(record->assignment);
+        auto provider=make_managed_gpo_provider(record->assignment,executor_identity());
         response=gpo::execute_managed(*record,*provider,save_gpo_journal,authority,consume);
       }else {
         native_provider provider(record->assignment);

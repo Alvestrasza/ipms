@@ -26,7 +26,7 @@ int approve_gpo_pilot(const std::filesystem::path& document);
 gpo::json::object probe_gpo_executor(const std::function<bool()>& cancelled = {});
 gpo::json::object invoke_gpo_pilot_worker(const std::function<bool()>& cancelled = {});
 int run_gpo_worker();
-std::unique_ptr<gpo::managed_provider> make_managed_gpo_provider(const gpo::job& job);
+std::unique_ptr<gpo::managed_provider> make_managed_gpo_provider(const gpo::job& job, const gpo::json::object& executor_identity);
 gpo::json::object invoke_gpo_inspection_worker(const std::function<bool()>& cancelled = {});
 
 // Storage primitives are public only to allow real filesystem boundary tests in

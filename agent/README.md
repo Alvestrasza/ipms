@@ -1,6 +1,15 @@
 # IPMS Agent
 
-Windows candidate **0.2.35** adds schema-3 managed GPO operations: read-only
+Windows candidate **0.2.36** combines import and linking in one approved
+`import_and_link_managed_gpo` request. It creates or explicitly adopts the GPO,
+then creates disabled, non-enforced links at the approved targets. Activation
+remains separate. The Agent checks the scope again between creation and linking;
+partial failure retains the concrete GUID for reconciliation without recreating
+or automatically enabling the GPO. Existing separate operations remain compatible.
+The managed worker reads its executor identity directly inside its existing
+isolated process, avoiding a nested worker launch that prevented inspections.
+
+Windows **0.2.35** added schema-3 managed GPO operations: read-only
 inspection, import, link, activation and deactivation. Each write requires its
 own exact Portal approval and a fresh directory snapshot. Initial imports use
 the final readable name but remain disabled and unlinked. Later imports only

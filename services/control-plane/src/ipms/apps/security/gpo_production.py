@@ -27,13 +27,14 @@ from .views import SecurityReadView, query
 
 INSPECT = 'inspect_managed_gpo'
 IMPORT = 'import_managed_gpo'
+IMPORT_LINK = 'import_and_link_managed_gpo'
 LINK = 'link_managed_gpo'
 ACTIVATE = 'activate_managed_gpo'
 DEACTIVATE = 'deactivate_managed_gpo'
-WRITES = (IMPORT, LINK, ACTIVATE, DEACTIVATE)
+WRITES = (IMPORT, IMPORT_LINK, LINK, ACTIVATE, DEACTIVATE)
 SUCCESS = {INSPECT: ('inspected', 'gpo_inspected'), IMPORT: ('staged', 'gpo_prepared'),
            LINK: ('linked', 'gpo_linked'), ACTIVATE: ('activated', 'gpo_activated'),
-           DEACTIVATE: ('deactivated', 'gpo_deactivated')}
+           DEACTIVATE: ('deactivated', 'gpo_deactivated'), IMPORT_LINK: ('linked', 'gpo_linked')}
 FIELDS = set('schema approval_mode job_id operation domain_dns_name domain_guid forest_dns_name executor_dc_fqdn '
              'scope_id scope_revision target_tier baseline_id profile backup_id artifact_sha256 pilot_display_name '
              'expires_at input_digest managed_id managed_revision gpo_guid owner_marker target_ous link_orders '
@@ -48,6 +49,10 @@ def production(job):
 
 def inspecting(job):
     return production(job) and job.assignment.get('operation') == INSPECT
+
+
+def minimum_agent(operation):
+    return (0, 2, 36) if operation == IMPORT_LINK else (0, 2, 35)
 
 
 def _invalid(message='Invalid managed GPO state.'):
@@ -284,8 +289,8 @@ def _selection(tenant, user, config, data):
     enrollment = AgentEnrollment.objects.filter(tenant=tenant, device_uri=system.source_id).first() if system else None
     report = GpoExecutorReport.objects.filter(enrollment=enrollment).first() if enrollment else None
     if (not _ready(system, enrollment, report, config.domain_name, portal=True)
-            or tuple(map(int, system.agent_version.split('.'))) < (0, 2, 35)
-            or tuple(map(int, report.agent_version.split('.'))) < (0, 2, 35)):
+            or tuple(map(int, system.agent_version.split('.'))) < minimum_agent(data['operation'])
+            or tuple(map(int, report.agent_version.split('.'))) < minimum_agent(data['operation'])):
         raise PublicApiError('security_gpo_executor_unavailable', status_code=409)
     try:
         artifact_bytes(component)
@@ -357,7 +362,7 @@ def create_preflight(tenant, user, config, data):
         if policy.domain_guid != report.domain_guid or policy.logical_key != logical:
             raise PublicApiError('security_gpo_unmanaged_target', status_code=409)
     else:
-        if data['operation'] != IMPORT:
+        if data['operation'] not in (IMPORT, IMPORT_LINK):
             raise ParseError('Create or select a managed GPO before linking or activation.')
         policy = ManagedGpoPolicy.objects.select_for_update().filter(tenant=tenant, domain_guid=report.domain_guid, logical_key=logical).first()
         if policy:
@@ -372,9 +377,9 @@ def create_preflight(tenant, user, config, data):
             version=data['version'], backup_id=data['backup_id'], gpo_guid=origin.gpo_guid if origin else '', origin_job=origin)
     if policy.state == 'reconciliation_required':
         raise PublicApiError('security_gpo_reconciliation_required', status_code=409)
-    if data['operation'] != IMPORT and (not policy.gpo_guid or not policy.staged_job_id):
+    if data['operation'] not in (IMPORT, IMPORT_LINK) and (not policy.gpo_guid or not policy.staged_job_id):
         raise PublicApiError('security_gpo_preflight_required', status_code=409)
-    if data['operation'] != IMPORT and (policy.backup_id != data['backup_id'] or policy.version != data['version'] or policy.display_name != name):
+    if data['operation'] not in (IMPORT, IMPORT_LINK) and (policy.backup_id != data['backup_id'] or policy.version != data['version'] or policy.display_name != name):
         raise PublicApiError('security_gpo_prepared_content_changed', status_code=409)
     owner = 'IPMS managed GPO; id=' + str(policy.pk) if policy.gpo_guid else ''
     if policy.origin_job_id and policy.origin_job.assignment.get('schema') in (1, 2) and policy.staged_job_id is None:
@@ -412,17 +417,17 @@ def _safe_before(assignment, state):
     if not state['name_available']:
         _invalid('The requested name is occupied.')
     if gpo is None:
-        if assignment['gpo_guid'] or operation != IMPORT:
+        if assignment['gpo_guid'] or operation not in (IMPORT, IMPORT_LINK):
             _invalid()
         return
     if (gpo['guid'] != assignment['gpo_guid'] or gpo['description'] != assignment['owner_marker'] or gpo['wmi_filter']):
         _invalid('The target is not the inspected managed policy.')
     if assignment['owner_marker'].startswith('IPMS disabled, unlinked pilot;'):
-        if operation != IMPORT or gpo['links'] or gpo['computer_enabled'] or gpo['user_enabled']:
+        if operation not in (IMPORT, IMPORT_LINK) or gpo['links'] or gpo['computer_enabled'] or gpo['user_enabled']:
             _invalid()
-    if operation == LINK and (gpo['computer_enabled'] or gpo['user_enabled']):
+    if operation in (LINK, IMPORT_LINK) and (gpo['computer_enabled'] or gpo['user_enabled']):
         _invalid('Disable the managed GPO before changing links.')
-    if operation in (LINK, ACTIVATE, DEACTIVATE):
+    if operation in (IMPORT_LINK, LINK, ACTIVATE, DEACTIVATE):
         if any(link['kind'] != ('domain' if component['scope'] == 'domain' else 'ou') or link['domain'] != assignment['domain_dns_name']
                or not _target_ou(link['dn'], assignment) or link['enforced'] for link in gpo['links']):
             _invalid('The GPO has links outside the approved OU set.')
@@ -507,7 +512,7 @@ def create_change(tenant, user, config, data):
         raise PublicApiError('security_gpo_name_collision', status_code=409)
     assignment.update(job_id=data['idempotency_key'], operation=operation, approval_mode='portal',
                       preflight_id=str(preflight.pk), expected_state=state, safety_review=data['safety_review'])
-    if operation == LINK:
+    if operation in (IMPORT_LINK, LINK):
         assignment['link_orders'] = _orders(policy, config, state)
     elif operation in (ACTIVATE, DEACTIVATE):
         assignment['link_orders'] = [next(link['order'] for link in ou['links'] if link['guid'] == policy.gpo_guid)
@@ -560,8 +565,8 @@ def scope_current(job, enrollment, tenant, *, lock=True):
                 or config.revision != a['scope_revision'] or config.domain_name != a['domain_dns_name']
                 or not scoped(job.requested_by, tenant, config, a['target_tier'])
                 or not _ready(system, enrollment, report, config.domain_name, portal=True)
-                or tuple(map(int, system.agent_version.split('.'))) < (0, 2, 35)
-                or tuple(map(int, report.agent_version.split('.'))) < (0, 2, 35)
+                or tuple(map(int, system.agent_version.split('.'))) < minimum_agent(a['intended_operation'])
+                or tuple(map(int, report.agent_version.split('.'))) < minimum_agent(a['intended_operation'])
                 or report.domain_guid != a['domain_guid'] or report.forest_dns_name != a['forest_dns_name']
                 or report.dc_fqdn != a['executor_dc_fqdn']):
             return False
@@ -634,7 +639,7 @@ def _postcondition(job, evidence, guid):
     gpo = state['gpo']
     if guid != (gpo['guid'] if gpo else None):
         _invalid()
-    if evidence['prepared_artifact_sha256'] != (a['artifact_sha256'] if operation in (IMPORT, ACTIVATE) else ''):
+    if evidence['prepared_artifact_sha256'] != (a['artifact_sha256'] if operation in (IMPORT, IMPORT_LINK, ACTIVATE) else ''):
         _invalid()
     if evidence['backup_id'] == '' and evidence['backup_manifest_sha256'] == '':
         backed_up = False
@@ -668,14 +673,21 @@ def _postcondition(job, evidence, guid):
         elif gpo != old:
             _invalid('Preparing a revision must not change the live GPO.')
         return
-    if not old:
+    if not old and operation != IMPORT_LINK:
         _invalid()
     if operation == DEACTIVATE:
         _fixed_gpo(old, gpo, flags=True)
         if gpo['computer_enabled'] or gpo['user_enabled'] or state['ous'] != before['ous']:
             _invalid()
         return
-    if operation == ACTIVATE:
+    if operation == IMPORT_LINK:
+        adoption = a['owner_marker'].startswith('IPMS disabled, unlinked pilot;')
+        if old:
+            _fixed_gpo(old, gpo, links=True, name=adoption, adoption=adoption)
+        if ((not old or adoption) and gpo['name'] != a['pilot_display_name']
+                or gpo['computer_enabled'] or gpo['user_enabled']):
+            _invalid('Import and linking must leave the policy disabled.')
+    elif operation == ACTIVATE:
         if not backed_up:
             _invalid('Activation requires the protected backup receipt.')
         _fixed_gpo(old, gpo, content=True, name=True, flags=True, links=True)
@@ -743,10 +755,12 @@ def receive_success(job, document):
     job.save()
     if operation != INSPECT:
         policy.gpo_guid = job.gpo_guid
-        if operation == IMPORT:
+        if operation in (IMPORT, IMPORT_LINK):
             policy.origin_job = policy.origin_job or job
             policy.staged_job = job
-            if policy.state != 'active':
+            if operation == IMPORT_LINK:
+                policy.state = 'linked'
+            elif policy.state != 'active':
                 policy.state = 'prepared'
             policy.display_name = job.pilot_display_name
             policy.name_key = job.pilot_name_key
@@ -816,6 +830,7 @@ class ManagedGposView(DomainSettingsView):
         options = executor_options(request.tenant, config)
         for option in options:
             option['eligible'] = option['eligible'] and tuple(map(int, option['agent_version'].split('.'))) >= (0, 2, 35)
+            option['combined_eligible'] = option['eligible'] and tuple(map(int, option['agent_version'].split('.'))) >= (0, 2, 36)
         jobs = visible_jobs(request.user, request.tenant, GpoImportJob.objects.filter(tenant=request.tenant, domain=config))
         policies = ManagedGpoPolicy.objects.filter(tenant=request.tenant, domain=config).select_related(
             'active_job', 'active_job__domain', 'active_job__system', 'active_job__enrollment')

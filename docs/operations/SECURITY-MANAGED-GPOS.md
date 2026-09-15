@@ -1,8 +1,8 @@
 # Managed GPO operations
 
-Version: 1.0.0 | Date: 2026-09-15
+Version: 1.1.0 | Date: 2026-09-15
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
-Applies to: Portal 0.2.55 / Windows Agent 0.2.35
+Applies to: Portal 0.2.56 / Windows Agent 0.2.36
 
 ## Configuration
 
@@ -16,39 +16,41 @@ GUID is the stable identity; its active name changes when a version is activated
 Grant the requesting and approving administrators explicit domain/tier access.
 Four-eyes approval is optional per tenant. When enabled, the approver must be a
 different authorized principal. The enrolled writable domain controller must
-report the matching domain identity, GPMC prerequisites and Agent 0.2.35 or later.
+report the matching domain identity, GPMC prerequisites and Agent 0.2.36 or later.
 The service identity needs the corresponding AD permissions. IPMS installs no
 service account or directory permissions as part of these actions.
 
-## Separate requests
+## Import and link with one request
 
 In **Security → Baseline**, select the domain, managed GPO (or new GPO), baseline
-component, tier and executor. Select the action and request a read-only inspection.
-Review the returned directory state, target scope and intended name. Create the
-separate write request, then open its entry in **Logs → Baselines** to review and
-approve that exact action. Creating or viewing a request does not approve it.
+component, tier and executor. Choose **Import and link** and create the request.
+The Portal runs the read-only inspection in the background and prepares one
+approval request covering both import and the exact target links. Review and
+approve it in **Logs → Baselines**. No separate import or link request is needed.
+Creating or viewing a request does not approve it. Activation remains separate.
 
 | Action | Result |
 | --- | --- |
-| Import, first version | Final short name; disabled and unlinked GPO |
-| Import, later version | Pinned package prepared; active GPO unchanged |
+| Import and link, new GPO | Final short name and stable GUID; GPO and target links disabled, links non-enforced |
+| Import and link, existing disabled GPO | Pinned version prepared and disabled target links arranged; content applied during activation |
+| Prepare a version | Pinned package prepared; active GPO unchanged |
 | Link | Managed links placed on the approved OUs or domain root, disabled and non-enforced |
 | Activate | Protected backup, prepared content applied to stable GUID, intended half and approved links enabled |
 | Deactivate | Both GPO halves disabled; existing links retained |
 
-Import, link and activation must each have a fresh successful inspection and a
-separate approval. Inspections expire after 15 minutes. Changed configuration,
+The combined import and link uses one approval. Each action must have a fresh
+successful inspection, which expires after 15 minutes. Changed configuration,
 permissions, managed revision or directory state require a new inspection.
 Changes to baseline order are applied only through another approved link action.
 An active GPO must first be deactivated before its links can be changed.
 
 Microsoft **Domain Security** components use the selected domain's root and
-require Tier 0 authorization. Before each link, activation or deactivation
-inspection, explicitly confirm this domain-wide target. The Portal derives the
+require Tier 0 authorization. Before requesting import and link, linking,
+activation or deactivation, explicitly confirm this domain-wide target. The Portal derives the
 root from the configured domain; the Agent verifies its domain object GUID.
 Tier OU mappings are not required for this scope. Regular computer and user
 components continue to use configured tier OUs. The target confirmation does
-not approve a write: inspection, request creation and approval remain separate.
+not approve a write: the combined request still needs explicit approval.
 Neither Default Domain Policy nor Default Domain Controllers Policy is modified.
 Managed links are inserted before default-policy links while preserving the
 relative order and flags of unrelated links.
@@ -79,6 +81,8 @@ state before proceeding. Do not delete the journal, resubmit a replacement job
 or restore a backup automatically. Activation stores a protected GPMC backup and
 manifest before mutation; restoration remains an operator-led recovery action.
 Endpoint settings can persist after deactivation and may need explicit recovery.
+If import succeeds but linking cannot complete, the recorded GPO GUID is retained
+for reconciliation. The Agent never creates a replacement GPO automatically.
 
 Logs show the individual inspection and write outcomes and retain the existing
 sort, filter and CSV export controls. A successful activation is not by itself

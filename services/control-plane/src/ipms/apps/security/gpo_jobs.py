@@ -567,13 +567,13 @@ def security_gpo_exchange(enrollment, document, *, artifact=False):
         return {**response, 'gpo_job': job.assignment if job.status in ACTIVE else None,
                 'gpo_approval': approval_object(job) if job.status in ACTIVE and approval_current(job, tenant) else None}
     current = _scope_current(job, enrollment, tenant) and timezone.now() < job.expires_at
-    from .gpo_production import inspecting, production, IMPORT, ACTIVATE
+    from .gpo_production import inspecting, production, IMPORT, IMPORT_LINK, ACTIVATE
     if inspecting(job):
         _reject()  # Inspections can neither claim write authority nor fetch artifacts.
     if not current:
         _invalidate(job)
     if action == 'artifact':
-        if production(job) and job.assignment['operation'] not in (IMPORT, ACTIVATE):
+        if production(job) and job.assignment['operation'] not in (IMPORT, IMPORT_LINK, ACTIVATE):
             _reject()
         if not current or job.status not in (*PRE_EXECUTION, 'running') or (is_portal(job) and not approval_current(job, tenant)):
             _reject()

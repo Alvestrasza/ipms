@@ -1,8 +1,8 @@
 /**
  * File Name: domain-gpo-imports.tsx
- * Version: v0.3.0 | Created: 2026-09-14 | Modified: 2026-09-15
+ * Version: v0.4.0 | Created: 2026-09-14 | Modified: 2026-09-15
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
- * Purpose: Prepare separate, snapshot-bound GPO import, link and activation requests.
+ * Purpose: Prepare snapshot-bound import/link requests in one action while keeping activation separately approved.
  */
 "use client";
 import { RefreshCw } from "lucide-react";
@@ -12,6 +12,7 @@ import {
   type FormEvent,
   useCallback,
   useEffect,
+  useEffectEvent,
   useRef,
   useState,
 } from "react";
@@ -98,8 +99,11 @@ function ProductionWorkflow({
   const [target, setTarget] = useState("ALL");
   const [version, setVersion] = useState("1.0.0");
   const [adoptJobId, setAdoptJobId] = useState("");
-  const [operation, setOperation] =
-    useState<GpoOperation>("import_managed_gpo");
+  const [operation, setOperation] = useState<GpoOperation>(
+    "import_and_link_managed_gpo",
+  );
+  const [automaticRequest, setAutomaticRequest] = useState(false);
+  const writeStarted = useRef(false);
   const [inspectionId, setInspectionId] = useState("");
   const [receiptId, setReceiptId] = useState("");
   const [management, setManagement] = useState(false);
@@ -150,9 +154,21 @@ function ProductionWorkflow({
       const existing =
         pending.current &&
         payload.jobs.find((j) => j.id === pending.current?.id);
-      if (existing) {
-        if (pending.current?.kind === "inspect") setInspectionId(existing.id);
-        else setReceiptId(existing.id);
+      if (
+        existing &&
+        existing.operation ===
+          (pending.current?.kind === "inspect"
+            ? "inspect_managed_gpo"
+            : operation)
+      ) {
+        if (pending.current?.kind === "inspect") {
+          setInspectionId(existing.id);
+          if (existing.managed_id) setPolicyId(existing.managed_id);
+        } else {
+          setReceiptId(existing.id);
+          setAutomaticRequest(false);
+          setNotice(c.prepared);
+        }
         pending.current = null;
       }
     } catch {
@@ -166,7 +182,7 @@ function ProductionWorkflow({
         setLoading(false);
       }
     }
-  }, [endpoint, tenantId, c.unavailable]);
+  }, [endpoint, tenantId, c.unavailable, c.prepared, operation]);
   useEffect(() => {
     void refresh();
     return () => read.current?.abort();
@@ -198,11 +214,14 @@ function ProductionWorkflow({
         (Number(e.agent_version.split(".")[0]) > 0 ||
           Number(e.agent_version.split(".")[1]) > 2 ||
           (Number(e.agent_version.split(".")[1]) === 2 &&
-            Number(e.agent_version.split(".")[2]) >= 35)),
+            Number(e.agent_version.split(".")[2]) >=
+              (operation === "import_and_link_managed_gpo" ? 36 : 35))),
     ) ?? [];
   const executor =
     executors.find((e) => e.system_id === systemId) ?? executors[0];
   const resetInspection = () => {
+    setAutomaticRequest(false);
+    writeStarted.current = false;
     setInspectionId("");
     setReceiptId("");
     setManagement(false);
@@ -221,7 +240,12 @@ function ProductionWorkflow({
       setTier(selected.tier);
       setTarget(selected.target);
       setVersion(selected.version);
-    } else setOperation("import_managed_gpo");
+      setOperation(
+        selected.state === "active"
+          ? "import_managed_gpo"
+          : "import_and_link_managed_gpo",
+      );
+    } else setOperation("import_and_link_managed_gpo");
   };
   const legacy =
     data?.jobs.filter(
@@ -234,7 +258,8 @@ function ProductionWorkflow({
         j.tier === tier,
     ) ?? [];
   const disabled = busy || loading || !canImport || configurationDirty;
-  const lockedSelection = disabled || pending.current !== null;
+  const lockedSelection =
+    disabled || pending.current !== null || automaticRequest;
   const domainRootAction =
     component?.scope === "domain" && operation !== "import_managed_gpo";
   const domainRootDn = settings.domain_name
@@ -327,12 +352,12 @@ function ProductionWorkflow({
       );
       if (kind === "inspect") {
         setInspectionId(payload.id);
+        if (payload.managed_id) setPolicyId(payload.managed_id);
         setReceiptId("");
-        setManagement(false);
-        setRecovery(false);
         setNotice(c.preparing);
       } else {
         setReceiptId(payload.id);
+        setAutomaticRequest(false);
         setNotice(c.prepared);
       }
     } catch {
@@ -351,7 +376,11 @@ function ProductionWorkflow({
     baseline &&
     component?.available &&
     (!domainRootAction || domainRootConfirmed) &&
-    (operation === "import_managed_gpo" || policy?.gpo_guid) &&
+    (operation === "import_managed_gpo" ||
+      operation === "import_and_link_managed_gpo" ||
+      policy?.gpo_guid) &&
+    (component.scope !== "domain" || tier === "0") &&
+    (operation !== "activate_managed_gpo" || (management && recovery)) &&
     /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(target) &&
     /^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(version);
   const fresh =
@@ -359,11 +388,34 @@ function ProductionWorkflow({
     inspection.preflight_state &&
     inspection.inspection_expires_at &&
     Date.parse(inspection.inspection_expires_at) > Date.now();
-  const canPrepare =
-    !disabled &&
+  const completeInspection = useEffectEvent(() => {
+    void submit("write");
+  });
+  useEffect(() => {
+    if (
+      !automaticRequest ||
+      busy ||
+      loading ||
+      pending.current ||
+      writeStarted.current ||
+      !inspection ||
+      receiptId
+    )
+      return;
+    if (checking) return;
+    if (!fresh) {
+      setAutomaticRequest(false);
+      return;
+    }
+    writeStarted.current = true;
+    completeInspection();
+  }, [automaticRequest, busy, loading, inspection, receiptId, checking, fresh]);
+  const canCreate =
     !receiptId &&
-    fresh &&
-    (operation !== "activate_managed_gpo" || (management && recovery));
+    !busy &&
+    !loading &&
+    Boolean(data) &&
+    (pending.current !== null || (!automaticRequest && canInspect));
   const logsUrl = (id: string) =>
     `/${locale}/logs/baselines?job=${encodeURIComponent(id)}` as Route;
   return (
@@ -399,7 +451,14 @@ function ProductionWorkflow({
         className={styles.form}
         onSubmit={(event: FormEvent) => {
           event.preventDefault();
-          if (canInspect) void submit("inspect");
+          if (!canCreate) return;
+          if (pending.current) {
+            void submit(pending.current.kind);
+            return;
+          }
+          setAutomaticRequest(true);
+          writeStarted.current = false;
+          void submit("inspect");
         }}
       >
         <div className={styles.fields}>
@@ -436,11 +495,19 @@ function ProductionWorkflow({
                 setOperation(e.target.value as GpoOperation);
               }}
             >
-              {GPO_OPERATIONS.map((op) => (
+              {GPO_OPERATIONS.filter(
+                (op) => op !== "import_managed_gpo" || Boolean(policy),
+              ).map((op) => (
                 <option
                   key={op}
                   value={op}
-                  disabled={op !== "import_managed_gpo" && !policy?.gpo_guid}
+                  disabled={
+                    (op !== "import_managed_gpo" &&
+                      op !== "import_and_link_managed_gpo" &&
+                      !policy?.gpo_guid) ||
+                    (op === "import_and_link_managed_gpo" &&
+                      policy?.state === "active")
+                  }
                 >
                   {c.actions[op]}
                 </option>
@@ -458,7 +525,11 @@ function ProductionWorkflow({
               }}
             >
               {!executors.length ? (
-                <option value="">{c.noExecutor}</option>
+                <option value="">
+                  {operation === "import_and_link_managed_gpo"
+                    ? c.noExecutor
+                    : c.noLegacyExecutor}
+                </option>
               ) : (
                 executors.map((e) => (
                   <option key={e.system_id} value={e.system_id}>
@@ -544,7 +615,11 @@ function ProductionWorkflow({
               maxLength={14}
               pattern="[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}"
               required
-              disabled={lockedSelection || operation !== "import_managed_gpo"}
+              disabled={
+                lockedSelection ||
+                (operation !== "import_managed_gpo" &&
+                  operation !== "import_and_link_managed_gpo")
+              }
               onChange={(e) => {
                 resetInspection();
                 setVersion(e.target.value);
@@ -592,6 +667,29 @@ function ProductionWorkflow({
             </label>
           </div>
         ) : null}
+        {operation === "activate_managed_gpo" ? (
+          <div className={styles.checks}>
+            <p>{c.activation}</p>
+            <label>
+              <input
+                type="checkbox"
+                checked={management}
+                disabled={lockedSelection || Boolean(receiptId)}
+                onChange={(event) => setManagement(event.target.checked)}
+              />
+              {c.management}
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={recovery}
+                disabled={lockedSelection || Boolean(receiptId)}
+                onChange={(event) => setRecovery(event.target.checked)}
+              />
+              {c.recovery}
+            </label>
+          </div>
+        ) : null}
         {operation === "link_managed_gpo" ? (
           <p>{c.linkBoundary}</p>
         ) : operation === "deactivate_managed_gpo" ? (
@@ -601,11 +699,11 @@ function ProductionWorkflow({
           <button
             type="submit"
             className="primary-button"
-            disabled={!canInspect || checking}
+            disabled={!canCreate}
           >
-            {c.inspect}
+            {pending.current ? c.retry : c.prepare}
           </button>
-          <span>{c.inspectOnly}</span>
+          <span>{c.createHint}</span>
         </div>
       </form>
       {checking ? <p role="status">{c.preparing}</p> : null}
@@ -623,39 +721,8 @@ function ProductionWorkflow({
             }
             locale={locale}
           />
-          {operation === "activate_managed_gpo" ? (
-            <div className={styles.checks}>
-              <p>{c.activation}</p>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={management}
-                  disabled={busy || Boolean(receiptId)}
-                  onChange={(e) => setManagement(e.target.checked)}
-                />
-                {c.management}
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={recovery}
-                  disabled={busy || Boolean(receiptId)}
-                  onChange={(e) => setRecovery(e.target.checked)}
-                />
-                {c.recovery}
-              </label>
-            </div>
-          ) : null}
           {!fresh && !receiptId ? <p role="alert">{c.expiry}</p> : null}
           <div className={styles.actions}>
-            <button
-              type="button"
-              className="primary-button"
-              disabled={!canPrepare}
-              onClick={() => void submit("write")}
-            >
-              {c.prepare}
-            </button>
             {receiptId ? (
               <Link className="outline-button" href={logsUrl(receiptId)}>
                 {c.logs}

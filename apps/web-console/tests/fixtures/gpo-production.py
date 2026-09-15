@@ -60,7 +60,7 @@ with transaction.atomic():
         domain_name = f"production-{suffix}.example.invalid"
         # Reuse an unclassified fixture DC so baseline fleet denominators remain unchanged.
         system = WindowsServer.objects.get(tenant=tenant, hostname="gpo-ui-dc")
-        system.domain_name, system.fqdn, system.agent_version = domain_name, f"gpo-ui-dc.{domain_name}", "0.2.35"
+        system.domain_name, system.fqdn, system.agent_version = domain_name, f"gpo-ui-dc.{domain_name}", "0.2.36"
         system.save(update_fields=("domain_name", "fqdn", "agent_version"))
         enrollment = AgentEnrollment.objects.get(tenant=tenant, device_uri=system.source_id)
         enrollment.last_heartbeat_at = timezone.now()
@@ -68,7 +68,7 @@ with transaction.atomic():
         enrollment.certificate_not_after = timezone.now() + timedelta(days=1)
         enrollment.save()
         GpoExecutorReport.objects.update_or_create(enrollment=enrollment, defaults={
-            "agent_version": "0.2.35", "domain_dns_name": domain_name, "domain_guid": str(uuid.uuid4()),
+            "agent_version": "0.2.36", "domain_dns_name": domain_name, "domain_guid": str(uuid.uuid4()),
             "forest_dns_name": domain_name, "dc_fqdn": system.fqdn, "role": "writable-domain-controller",
             "gpmc_available": True, "result_code": "ready_for_approval", "observed_at": timezone.now()})
         suffix_dn = ",".join("DC=" + part for part in domain_name.split("."))
@@ -78,6 +78,22 @@ with transaction.atomic():
         actor = get_user_model().objects.get(username="e2e-admin")
         GpoDomainAuthorization.objects.create(domain=domain, grants=[{"user_id": str(actor.pk), "tiers": ["0", "1", "2"]}])
         result = {"domain_id": str(domain.pk), "domain_name": domain_name, "system_id": str(system.pk)}
+    elif mode == "agent-035":
+        domain = DomainSecuritySettings.objects.get(pk=uuid.UUID(sys.argv[2]), tenant=tenant,
+            domain_name__startswith="production-", domain_name__endswith=".example.invalid")
+        system = WindowsServer.objects.get(tenant=tenant, domain_name=domain.domain_name, hostname="gpo-ui-dc")
+        system.agent_version = "0.2.35"
+        system.save(update_fields=("agent_version",))
+        GpoExecutorReport.objects.filter(enrollment__device_uri=system.source_id).update(agent_version="0.2.35")
+        result = {"version": system.agent_version}
+    elif mode == "fail":
+        job = GpoImportJob.objects.get(pk=uuid.UUID(sys.argv[2]), tenant=tenant,
+            domain__domain_name__startswith="production-", domain__domain_name__endswith=".example.invalid")
+        if job.assignment.get("operation") != "inspect_managed_gpo" or job.claimed_at:
+            raise RuntimeError("Only an unclaimed synthetic inspection may fail here.")
+        exchange(job, "result", status="failed", result_code="gpo_provider_failed", gpo_guid=None, evidence=None)
+        job.refresh_from_db()
+        result = {"job_id": str(job.pk), "status": job.status}
     elif mode in ("inspect", "complete"):
         job = GpoImportJob.objects.get(pk=uuid.UUID(sys.argv[2]), tenant=tenant,
             domain__domain_name__startswith="production-", domain__domain_name__endswith=".example.invalid")
@@ -96,14 +112,14 @@ with transaction.atomic():
             if not claim["authorized"] or claim["mode"] != "execute":
                 raise RuntimeError("The real backend did not authorize the synthetic claim.")
             state = copy.deepcopy(assignment["expected_state"])
-            if assignment["operation"] == "import_managed_gpo":
+            if assignment["operation"] in ("import_managed_gpo", "import_and_link_managed_gpo"):
                 if state["gpo"] is None:
                     state["gpo"] = {"guid": str(uuid.uuid4()), "name": assignment["pilot_display_name"],
                         "description": "IPMS managed GPO; id=" + assignment["managed_id"],
                         "computer_enabled": False, "user_enabled": False, "computer_ds": 1, "computer_sysvol": 1,
                         "user_ds": 1, "user_sysvol": 1, "security_digest": "b" * 64, "wmi_filter": "", "links": []}
                 status, code = "staged", "gpo_prepared"
-            elif assignment["operation"] in ("link_managed_gpo", "activate_managed_gpo"):
+            if assignment["operation"] in ("link_managed_gpo", "activate_managed_gpo", "import_and_link_managed_gpo"):
                 activating = assignment["operation"] == "activate_managed_gpo"
                 if activating:
                     # Synthetic native boundary only: no AD or real backup is created.
@@ -122,11 +138,11 @@ with transaction.atomic():
                     state["gpo"]["links"].append(copy.deepcopy(link))
                     ou["usn"] = str(int(ou["usn"]) + 1)
                 status, code = ("activated", "gpo_activated") if activating else ("linked", "gpo_linked")
-            else:
+            elif assignment["operation"] != "import_managed_gpo":
                 raise RuntimeError("Unsupported synthetic fixture operation.")
         evidence = {"schema": 3, "operation": assignment["operation"], "managed_id": assignment["managed_id"],
             "state": state, "prepared_artifact_sha256": assignment["artifact_sha256"] if mode == "complete"
-                and assignment["operation"] in ("import_managed_gpo", "activate_managed_gpo") else "", "backup_id": "", "backup_manifest_sha256": ""}
+                and assignment["operation"] in ("import_managed_gpo", "activate_managed_gpo", "import_and_link_managed_gpo") else "", "backup_id": "", "backup_manifest_sha256": ""}
         if mode == "complete" and assignment["operation"] == "activate_managed_gpo":
             # Placeholder receipt represents the fake provider, never a backup of real directory data.
             evidence["backup_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, "synthetic-backup-" + str(job.pk)))

@@ -229,7 +229,7 @@ journal parse_journal(const json::value& v) {
       if(!valid_managed_result(receipt)) invalid();
       const auto& e=receipt.at("evidence").as<json::object>();
       if(e.at("operation").as<std::string>()!=j.assignment.text("operation")||e.at("managed_id").as<std::string>()!=j.assignment.text("managed_id")) invalid();
-      if((status=="staged"||status=="activated")&&e.at("prepared_artifact_sha256").as<std::string>()!=j.assignment.text("artifact_sha256")) invalid();
+      if((status=="staged"||status=="activated"||j.assignment.text("operation")=="import_and_link_managed_gpo")&&e.at("prepared_artifact_sha256").as<std::string>()!=j.assignment.text("artifact_sha256")) invalid();
     }
     if(status=="inspected"&&!inspection(j.assignment)) invalid();
     if(inspection(j.assignment)&&status!="inspected"&&status!="failed") invalid();

@@ -225,14 +225,14 @@ json::array without_own(json::array links,std::string_view id) {
 }
 
 class native_managed final:public gpo::managed_provider {
-  const gpo::job& job_;ComPtr<IGPM> gpm_;ComPtr<IGPMDomain> domain_;ComPtr<IGPMGPO> target_;ComPtr<IGPMBackup> source_;
+  const gpo::job& job_;const json::object executor_;ComPtr<IGPM> gpm_;ComPtr<IGPMDomain> domain_;ComPtr<IGPMGPO> target_;ComPtr<IGPMBackup> source_;
   std::string current_guid_;const gpo::component_descriptor* component_{};
   std::map<std::string,std::pair<std::string,std::string>> read_dcs_;
   void connect() {
     if(gpm_)return;
-    // Reuse the isolated exact-role probe; this public probe starts a separate
-    // read-only worker and cannot confer write authority.
-    if(!gpo::executor_matches(job_,probe_gpo_executor()))fail("gpo_identity_mismatch");
+    // The already isolated worker supplies its direct local identity read.
+    // Starting another process here would violate its one-process Job Object.
+    if(!gpo::executor_matches(job_,executor_))fail("gpo_identity_mismatch");
     check(CoCreateInstance(__uuidof(GPM),nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&gpm_)));
     bstr domain(job_.text("domain_dns_name")),dc(job_.text("executor_dc_fqdn"));check(gpm_->GetDomain(domain.value,dc.value,0,&domain_));
     if(lower(property([&](BSTR* p){return domain_->get_Domain(p);}))!=job_.text("domain_dns_name")||
@@ -346,7 +346,7 @@ class native_managed final:public gpo::managed_provider {
     return std::all_of(found.begin(),found.end(),[&](const auto& g){return guid(property([&](BSTR* p){return g->get_ID(p);}))==current_guid_;});
   }
  public:
-  explicit native_managed(const gpo::job& j):job_(j),current_guid_(j.text("gpo_guid")){}
+  native_managed(const gpo::job& j,const json::object& executor):job_(j),executor_(executor),current_guid_(j.text("gpo_guid")){}
   json::object inspect() override {
     connect();open_target();json::array ous;
     for(const auto& item:job_.fields.at("target_ous").as<json::array>()) {
@@ -454,5 +454,5 @@ class native_managed final:public gpo::managed_provider {
   void deactivate(std::string_view id) override {same(id);disable();}
 };
 }
-std::unique_ptr<gpo::managed_provider> make_managed_gpo_provider(const gpo::job& job) {return std::make_unique<native_managed>(job);}
+std::unique_ptr<gpo::managed_provider> make_managed_gpo_provider(const gpo::job& job,const gpo::json::object& executor_identity) {return std::make_unique<native_managed>(job,executor_identity);}
 }  // namespace ipms::agent::windows
