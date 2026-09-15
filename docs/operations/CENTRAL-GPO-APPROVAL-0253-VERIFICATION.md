@@ -1,10 +1,10 @@
 <!--
 File Name: CENTRAL-GPO-APPROVAL-0253-VERIFICATION.md
-Version: v0.2.0 | Created: 2026-09-15 | Last Modified: 2026-09-15
+Version: v0.3.0 | Created: 2026-09-15 | Last Modified: 2026-09-15
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
 Description: Evidence and acceptance boundaries for central GPO approval.
 -->
-# Central GPO approval: Portal 0.2.53 / Windows Agent 0.2.34
+# Central GPO approval: Portal 0.2.54 / Windows Agent 0.2.34
 
 The owner-approved workflow is defined in
 [ADR-0017](../architecture/ADR-0017-PORTAL-GPO-APPROVAL.md).
@@ -63,6 +63,31 @@ Acceptance then identified their prepared Agent journals repeatedly requesting
 the now-missing jobs. Portal 0.2.54 addresses this with a separately audited,
 strictly bound retirement receipt; it does not restore the jobs or clear an
 ambiguous or claimed journal. Its final evidence is recorded separately below.
+
+## Portal 0.2.54 retirement follow-up
+
+Immutable source `1751c388050410dbfd29f87accf999e65ce28c89` passed all 616
+backend tests under Python 3.14.4 and PostgreSQL 18.6. The isolated cluster
+was stopped after testing and never contacted the active database. The
+production web build and TypeScript checks passed. No migration, dependency,
+native Agent or vendor policy content changed from the preceding candidate.
+
+Code-only DEV activation verified unchanged existing rows, schema, privileges,
+configuration and packages before reopening writers. Recovery material was
+retained. Two retirement receipts were then appended under the tenant lock,
+after checking the protected deletion backup, original immutable digests,
+unclaimed status, enrollment identities and retained deletion audit events.
+No job was restored, no local journal was reset, and no execution authority
+was granted. Unknown, mismatched, duplicate and claimed requests remain fenced.
+
+At 2026-09-15 11:19 UTC, both affected DCs had fresh Agent 0.2.34 reports;
+all 12 writable DC executors reported ready for approval. All 26 Windows
+updates were confirmed successful. No pending GPO request or staged import
+existed; one earlier expired request remained as history. All eight checked
+services were active, and the Linux Agent process remained unchanged.
+The live Portal displayed 0.2.54, four-eyes off and no domain/tier grants.
+Applied-GPO reports were present but incomplete on all 26 Windows systems;
+this is not proof of baseline application.
 
 ## Acceptance boundaries
 
