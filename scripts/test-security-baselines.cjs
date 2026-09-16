@@ -83,7 +83,9 @@ const front = http.createServer((req, res) => {
     console.log(`Synthetic evidence directory: ${output}`);
     const selected = process.env.IPMS_TEST_SECURITY_SPEC;
     if (selected && !["security-baselines.spec.ts", "domain-security.spec.ts", "job-logs.spec.ts", "gpo-approval.spec.ts", "gpo-production.spec.ts"].includes(selected)) throw new Error("Unknown bounded Security test selection.");
-    await run(process.execPath, ["node_modules/@playwright/test/cli.js", "test", "--config=playwright.security.config.ts", `--output=${path.join(output, "results")}`, ...(selected ? [selected] : [])], web);
+    const grep = process.env.IPMS_TEST_SECURITY_GREP;
+    if (grep && (grep.length > 200 || /[\r\n\0]/.test(grep))) throw new Error("Invalid bounded Security test filter.");
+    await run(process.execPath, ["node_modules/@playwright/test/cli.js", "test", "--config=playwright.security.config.ts", `--output=${path.join(output, "results")}`, ...(selected ? [selected] : []), ...(grep ? ["--grep", grep] : [])], web);
   } catch (error) { console.error(error.message); process.exitCode = 1; }
   finally {
     front.closeAllConnections(); front.close();

@@ -1,5 +1,5 @@
 # File Name: gpo_production.py
-# Version: v0.1.0 | Created: 2026-09-15 | Last Modified: 2026-09-15
+# Version: v0.2.0 | Created: 2026-09-15 | Last Modified: 2026-09-16
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
 # Description: Snapshot-bound production GPO preparation and separately approved changes.
 import copy
@@ -19,10 +19,10 @@ from ipms.apps.core.exceptions import PublicApiError
 from ipms.apps.discovery.models import WindowsServer
 from ipms.apps.tenancy.models import Tenant
 from .domains import DomainSettingsView, domain_name, ou_identity, render_name, validate_settings
-from .gpo_approvals import authorization_for, fresh_actor, policy_for, scoped, visible_jobs
+from .gpo_approvals import approve_on_creation, authorization_for, fresh_actor, policy_for, scoped, visible_jobs
 from .gpo_jobs import (ACTIVE, DEFAULT_GPO_IDS, _audit, _content, _ready, artifact_bytes, canonical, digest,
                        executor_options, expire_jobs, job_projection, uuid_text)
-from .models import DomainSecuritySettings, GpoExecutorReport, GpoImportJob, ManagedGpoPolicy
+from .models import DomainSecuritySettings, GpoExecutorReport, GpoImportJob, GpoReconciliation, ManagedGpoPolicy, GpoOverride
 from .views import SecurityReadView, query
 
 INSPECT = 'inspect_managed_gpo'
@@ -44,15 +44,33 @@ HEX = re.compile('[a-f0-9]{64}')
 
 
 def production(job):
-    return isinstance(job.assignment, dict) and type(job.assignment.get('schema')) is int and job.assignment['schema'] == 3
+    return isinstance(job.assignment, dict) and type(job.assignment.get('schema')) is int and job.assignment['schema'] in (3, 4)
 
 
 def inspecting(job):
     return production(job) and job.assignment.get('operation') == INSPECT
 
 
-def minimum_agent(operation):
+def minimum_agent(operation, override=False):
+    if override:
+        return (0, 2, 43)
     return (0, 2, 36) if operation == IMPORT_LINK else (0, 2, 35)
+
+
+def assignment_fields(assignment):
+    from .gpo_overrides import OVERRIDE_FIELDS
+    return FIELDS | (OVERRIDE_FIELDS if assignment.get('schema') == 4 else set())
+
+
+def owner_marker(assignment):
+    if assignment.get('schema') == 4:
+        return 'IPMS managed override; id=' + assignment['managed_id'] + '; definition=' + assignment['override_id']
+    return 'IPMS managed GPO; id=' + assignment['managed_id']
+
+
+def override_purpose(row):
+    readable = re.sub('[^A-Za-z0-9-]', '', row.name.replace(' ', '-'))[:48].strip('-') or 'Override'
+    return 'OVR-' + readable
 
 
 def _invalid(message='Invalid managed GPO state.'):
@@ -172,7 +190,7 @@ def _links(value):
         seen.add(identity)
 
 
-def validate_snapshot(value, assignment):
+def validate_snapshot(value, assignment, *, allow_inconsistent=False):
     """Validate exact bounded wire types and directory identity; never trust browser state."""
     try:
         size = len(canonical(value))
@@ -222,7 +240,7 @@ def validate_snapshot(value, assignment):
                 or not _sha(gpo['security_digest']) or _guid(gpo['guid']) in DEFAULT_GPO_IDS):
             _invalid()
         _links(gpo['links'])
-        if gpo['computer_ds'] != gpo['computer_sysvol'] or gpo['user_ds'] != gpo['user_sysvol']:
+        if not allow_inconsistent and (gpo['computer_ds'] != gpo['computer_sysvol'] or gpo['user_ds'] != gpo['user_sysvol']):
             _invalid('Directory and SYSVOL versions disagree.')
     return value
 
@@ -237,7 +255,8 @@ def managed_projection(policy):
             'backup_id': policy.backup_id, 'profile': policy.profile, 'target': policy.target, 'version': policy.version,
             'state': policy.state, 'origin_job_id': str(policy.origin_job_id) if policy.origin_job_id else None,
             'staged_job_id': str(policy.staged_job_id) if policy.staged_job_id else None,
-            'active_job_id': str(policy.active_job_id) if policy.active_job_id else None}
+            'active_job_id': str(policy.active_job_id) if policy.active_job_id else None,
+            'override_id': str(policy.override_id) if policy.override_id else None}
 
 
 def policy_for_job(job, *, lock=False):
@@ -248,16 +267,21 @@ def policy_for_job(job, *, lock=False):
 
 def _selection(tenant, user, config, data):
     fields = set('revision system_id baseline_id backup_id tier target version idempotency_key operation managed_id adopt_job_id'.split())
-    if (not isinstance(data, dict) or set(data) not in (fields, fields | {'domain_root_confirmed'}) or type(data['revision']) is not int
+    if (not isinstance(data, dict) or not fields <= set(data) or set(data) - fields - {'domain_root_confirmed', 'override_id', 'override_revision', 'override_sha256'} or type(data['revision']) is not int
             or any(not isinstance(data[key], str) for key in fields - {'revision', 'managed_id', 'adopt_job_id'})
             or type(data.get('domain_root_confirmed', False)) is not bool
             or data['tier'] not in ('0', '1', '2') or data['operation'] not in WRITES):
         raise ParseError('Supply exactly the documented managed GPO selection.')
+    if data.get('override_id'):
+        if type(data.get('override_revision')) is not int or not _sha(data.get('override_sha256')):
+            raise ParseError('Supply the displayed override revision and digest.')
+    elif 'override_revision' in data or 'override_sha256' in data:
+        raise ParseError('Override revision fields require an override identity.')
     try:
         for key in ('system_id', 'idempotency_key'):
             uuid_text(data[key])
-        for key in ('managed_id', 'adopt_job_id'):
-            if data[key] is not None:
+        for key in ('managed_id', 'adopt_job_id', 'override_id'):
+            if data.get(key) is not None:
                 uuid_text(data[key])
     except (ValueError, TypeError):
         raise ParseError('Invalid managed GPO identity.')
@@ -283,20 +307,32 @@ def _selection(tenant, user, config, data):
     if not candidates or (candidates == ['domain-controller'] or component['scope'] == 'domain') and data['tier'] != '0':
         raise ParseError('DC and domain components require Tier 0.')
     profile = candidates[0]
+    override = None
+    if data.get('override_id'):
+        from .gpo_overrides import normalize_entries, component_for, patch_document
+        override = get_object_or_404(GpoOverride, pk=data['override_id'], tenant=tenant)
+        if override.revision != data['override_revision'] or digest(patch_document(override)) != data['override_sha256']:
+            raise PublicApiError('security_override_revision_changed', status_code=409)
+        if (override.baseline_id != data['baseline_id'] or override.backup_id != data['backup_id']
+                or override.artifact_sha256 != component['artifact_sha256'] or data['adopt_job_id']
+                or (data['operation'] != DEACTIVATE and (not override.enabled or not override.entries))):
+            raise PublicApiError('security_override_unavailable', status_code=409)
+        if normalize_entries(component_for(override.baseline_id, override.backup_id), override.entries) != override.entries:
+            raise PublicApiError('security_override_artifact_changed', status_code=409)
     name = render_name(config.gpo_name_template, data['tier'], 'U' if component['scope'] == 'user' else 'C',
-                       data['target'], compact_purpose(data['baseline_id'], component), data['version'])
+                       data['target'], override_purpose(override) if override else compact_purpose(data['baseline_id'], component), data['version'])
     system = WindowsServer.objects.select_for_update().filter(pk=data['system_id'], tenant=tenant).first()
     enrollment = AgentEnrollment.objects.filter(tenant=tenant, device_uri=system.source_id).first() if system else None
     report = GpoExecutorReport.objects.filter(enrollment=enrollment).first() if enrollment else None
     if (not _ready(system, enrollment, report, config.domain_name, portal=True)
-            or tuple(map(int, system.agent_version.split('.'))) < minimum_agent(data['operation'])
-            or tuple(map(int, report.agent_version.split('.'))) < minimum_agent(data['operation'])):
+            or tuple(map(int, system.agent_version.split('.'))) < minimum_agent(data['operation'], bool(override))
+            or tuple(map(int, report.agent_version.split('.'))) < minimum_agent(data['operation'], bool(override))):
         raise PublicApiError('security_gpo_executor_unavailable', status_code=409)
     try:
         artifact_bytes(component)
     except ValidationError as exc:
         raise PublicApiError('security_gpo_artifact_unavailable', status_code=409) from exc
-    return component, profile, name, system, enrollment, report
+    return component, profile, name, system, enrollment, report, override
 
 
 def _idle(tenant, domain_guid):
@@ -348,18 +384,20 @@ def _origin(tenant, config, data, report, component):
 
 
 def create_preflight(tenant, user, config, data):
-    component, profile, name, system, enrollment, report = _selection(tenant, user, config, data)
+    component, profile, name, system, enrollment, report, override = _selection(tenant, user, config, data)
     request_digest = digest({'domain_id': str(config.pk), **data})
     retry = _retry(tenant, user, data['idempotency_key'], request_digest)
     if retry:
         return retry
     _idle(tenant, report.domain_guid)
     logical = digest({'tier': data['tier'], 'baseline': data['baseline_id'], 'profile': profile,
-                      'purpose': semantic_purpose(data['baseline_id'], component), 'target': data['target'].casefold()})
+                      'purpose': semantic_purpose(data['baseline_id'], component), 'target': data['target'].casefold(),
+                      **({'override_id': str(override.pk)} if override else {})})
     origin = None
     if data['managed_id']:
         policy = get_object_or_404(ManagedGpoPolicy.objects.select_for_update(), pk=data['managed_id'], tenant=tenant, domain=config)
-        if policy.domain_guid != report.domain_guid or policy.logical_key != logical:
+        if (policy.domain_guid != report.domain_guid or policy.logical_key != logical
+                or policy.override_id != (override.pk if override else None)):
             raise PublicApiError('security_gpo_unmanaged_target', status_code=409)
     else:
         if data['operation'] not in (IMPORT, IMPORT_LINK):
@@ -372,23 +410,29 @@ def create_preflight(tenant, user, config, data):
         if ManagedGpoPolicy.objects.filter(tenant=tenant, domain_guid=report.domain_guid, name_key=name.casefold()).exists():
             raise PublicApiError('security_gpo_name_collision', status_code=409)
         policy = ManagedGpoPolicy.objects.create(tenant=tenant, domain=config, domain_guid=report.domain_guid,
-            logical_key=logical, tier=int(data['tier']), baseline_id=data['baseline_id'], profile=profile,
+            logical_key=logical, override=override, tier=int(data['tier']), baseline_id=data['baseline_id'], profile=profile,
             purpose=semantic_purpose(data['baseline_id'], component), target=data['target'], display_name=name, name_key=name.casefold(),
             version=data['version'], backup_id=data['backup_id'], gpo_guid=origin.gpo_guid if origin else '', origin_job=origin)
+    if override and data['operation'] == DEACTIVATE:
+        name = policy.display_name
     if policy.state == 'reconciliation_required':
         raise PublicApiError('security_gpo_reconciliation_required', status_code=409)
     if data['operation'] not in (IMPORT, IMPORT_LINK) and (not policy.gpo_guid or not policy.staged_job_id):
         raise PublicApiError('security_gpo_preflight_required', status_code=409)
     if data['operation'] not in (IMPORT, IMPORT_LINK) and (policy.backup_id != data['backup_id'] or policy.version != data['version'] or policy.display_name != name):
         raise PublicApiError('security_gpo_prepared_content_changed', status_code=409)
-    owner = 'IPMS managed GPO; id=' + str(policy.pk) if policy.gpo_guid else ''
-    if policy.origin_job_id and policy.origin_job.assignment.get('schema') in (1, 2) and policy.staged_job_id is None:
+    owner = (owner_marker({'schema': 4 if override else 3, 'managed_id': str(policy.pk),
+                           **({'override_id': str(override.pk)} if override else {})}) if policy.gpo_guid else '')
+    reconciled_owner = (policy.gpo_guid and GpoReconciliation.objects.filter(tenant=tenant, status='accepted',
+        job__assignment__managed_id=str(policy.pk), observation__gpo_guid=policy.gpo_guid).exists())
+    if (policy.origin_job_id and policy.origin_job.assignment.get('schema') in (1, 2)
+            and policy.staged_job_id is None and not reconciled_owner):
         origin = policy.origin_job
         owner = 'IPMS disabled, unlinked pilot; job=' + str(origin.pk) + '; digest=' + origin.input_digest
     expires = (timezone.now() + timedelta(minutes=15)).replace(microsecond=0)
     targets = [] if data['operation'] == IMPORT else ([domain_root(config.domain_name)]
               if component['scope'] == 'domain' else list(config.tier_ous[data['tier']]))
-    assignment = {'schema': 3, 'approval_mode': 'inspection', 'job_id': data['idempotency_key'], 'operation': INSPECT,
+    assignment = {'schema': 4 if override else 3, 'approval_mode': 'inspection', 'job_id': data['idempotency_key'], 'operation': INSPECT,
         'domain_dns_name': config.domain_name, 'domain_guid': report.domain_guid, 'forest_dns_name': report.forest_dns_name,
         'executor_dc_fqdn': report.dc_fqdn, 'scope_id': str(config.pk), 'scope_revision': config.revision,
         'target_tier': int(data['tier']), 'baseline_id': data['baseline_id'], 'profile': profile,
@@ -396,6 +440,17 @@ def create_preflight(tenant, user, config, data):
         'expires_at': expires.strftime('%Y-%m-%dT%H:%M:%SZ'), 'managed_id': str(policy.pk), 'managed_revision': policy.revision,
         'gpo_guid': policy.gpo_guid, 'owner_marker': owner, 'target_ous': targets, 'link_orders': [1] * len(targets),
         'preflight_id': '', 'expected_state': None, 'intended_operation': data['operation'], 'safety_review': dict(FALSE_REVIEW)}
+    if override:
+        from .gpo_overrides import assignment_patch, OVERRIDE_FIELDS
+        if data['operation'] == DEACTIVATE:
+            if not policy.staged_job or policy.staged_job.assignment.get('override_id') != str(override.pk):
+                raise PublicApiError('security_gpo_prepared_content_changed', status_code=409)
+            assignment.update({key: policy.staged_job.assignment[key] for key in OVERRIDE_FIELDS})
+        else:
+            assignment.update(assignment_patch(override))
+            if data['operation'] in (ACTIVATE, LINK) and (not policy.staged_job or any(
+                    policy.staged_job.assignment.get(key) != assignment[key] for key in OVERRIDE_FIELDS)):
+                raise PublicApiError('security_gpo_prepared_content_changed', status_code=409)
     assignment['input_digest'] = digest(assignment)
     if len(canonical(assignment)) > 24576:
         raise ParseError('The selected OU scope exceeds the bounded GPO transport budget.')
@@ -443,10 +498,10 @@ def _safe_before(assignment, state):
             _invalid('Link the policy to every approved OU before activation.')
 
 
-def _orders(policy, config, state):
+def _orders(policy, config, state, *, preserve_override_order=False):
     managed = {row.gpo_guid: row for row in ManagedGpoPolicy.objects.filter(tenant=policy.tenant, domain_guid=policy.domain_guid).exclude(gpo_guid='')}
     ranks = {baseline: index for index, baseline in enumerate(config.baseline_order)}
-    selected = ranks[policy.baseline_id]
+    selected = (bool(policy.override_id), ranks[policy.baseline_id])
     result = []
     for ou in state['ous']:
         others = [link for link in ou['links'] if link['guid'] != policy.gpo_guid]
@@ -454,8 +509,34 @@ def _orders(policy, config, state):
         # unmanaged links keep their exact relative order, flags and identities.
         if len(others) >= 128:
             raise PublicApiError('security_gpo_link_conflict', status_code=409)
-        index = next((i for i, link in enumerate(others) if link['guid'] in DEFAULT_GPO_IDS or (link['guid'] in managed
-                      and ranks.get(managed[link['guid']].baseline_id, -1) <= selected)), len(others))
+        if preserve_override_order and policy.override_id:
+            before = [link for link in ou['links'][:next(i for i, link in enumerate(ou['links']) if link['guid'] == policy.gpo_guid)]
+                      if link['guid'] in managed and managed[link['guid']].override_id]
+            # Activation may move this override above baseline links, but must
+            # not silently change the precedence of another override.
+            index = next((i for i, link in enumerate(others) if link['guid'] in DEFAULT_GPO_IDS or (
+                link['guid'] in managed and not managed[link['guid']].override_id)), len(others))
+            current = next(i for i, link in enumerate(ou['links']) if link['guid'] == policy.gpo_guid)
+            index = min(index, current)
+            if any(next(i for i, link in enumerate(others) if link['guid'] == prior['guid']) >= index for prior in before):
+                raise PublicApiError('security_gpo_link_conflict', status_code=409)
+        else:
+            lower, upper = 0, len(others)
+            for i, link in enumerate(others):
+                if link['guid'] in DEFAULT_GPO_IDS:
+                    upper = min(upper, i)
+                elif link['guid'] in managed:
+                    other = managed[link['guid']]
+                    priority = (bool(other.override_id), ranks.get(other.baseline_id, -1))
+                    if priority > selected:
+                        lower = max(lower, i + 1)
+                    else:
+                        upper = min(upper, i)
+            # A pre-existing inversion cannot be repaired by inserting only this
+            # GPO. Never place a baseline above an override to preserve that drift.
+            if lower > upper:
+                raise PublicApiError('security_gpo_link_conflict', status_code=409)
+            index = upper
         result.append(index + 1)
     return result
 
@@ -514,11 +595,20 @@ def create_change(tenant, user, config, data):
                       preflight_id=str(preflight.pk), expected_state=state, safety_review=data['safety_review'])
     if operation in (IMPORT_LINK, LINK):
         assignment['link_orders'] = _orders(policy, config, state)
+    elif operation == ACTIVATE and policy.override_id:
+        assignment['link_orders'] = _orders(policy, config, state, preserve_override_order=True)
     elif operation in (ACTIVATE, DEACTIVATE):
         assignment['link_orders'] = [next(link['order'] for link in ou['links'] if link['guid'] == policy.gpo_guid)
                                      for ou in state['ous']] if operation == ACTIVATE else [
                                          next((link['order'] for link in ou['links'] if link['guid'] == policy.gpo_guid), 1)
                                          for ou in state['ous']]
+        if operation == ACTIVATE:
+            override_guids = set(ManagedGpoPolicy.objects.filter(tenant=tenant, domain_guid=policy.domain_guid,
+                override__isnull=False).exclude(gpo_guid='').values_list('gpo_guid', flat=True))
+            if any(link['guid'] in override_guids and link['order'] > selected_order
+                   for ou, selected_order in zip(state['ous'], assignment['link_orders'], strict=True)
+                   for link in ou['links']):
+                raise PublicApiError('security_gpo_link_conflict', status_code=409)
     assignment['input_digest'] = digest({key: value for key, value in assignment.items() if key != 'input_digest'})
     if len(canonical(assignment)) > 24576:
         raise ParseError('The inspected scope exceeds the bounded GPO transport budget.')
@@ -529,6 +619,7 @@ def create_change(tenant, user, config, data):
         policy_revision=preflight.policy_revision, four_eyes_required=preflight.four_eyes_required,
         authorization_revision=preflight.authorization_revision, status='awaiting_approval', expires_at=preflight.expires_at)
     _audit(job, 'security.gpo_change_requested')
+    approve_on_creation(job, user)
     return job
 
 
@@ -537,7 +628,7 @@ def scope_current(job, enrollment, tenant, *, lock=True):
     from .gpo_approvals import approval_current, policy_current
     a = job.assignment
     try:
-        if (set(a) != FIELDS or len(canonical(a)) > 24576 or type(a['schema']) is not int or a['schema'] != 3 or a['operation'] not in (INSPECT, *WRITES)
+        if (set(a) != assignment_fields(a) or len(canonical(a)) > 24576 or type(a['schema']) is not int or a['schema'] not in (3, 4) or a['operation'] not in (INSPECT, *WRITES)
                 or a['approval_mode'] != ('inspection' if a['operation'] == INSPECT else 'portal')
                 or a['intended_operation'] not in WRITES or a['operation'] != INSPECT and a['intended_operation'] != a['operation']
                 or a['job_id'] != str(job.pk) or a['scope_id'] != str(job.domain_id) or a['domain_guid'] != job.domain_guid
@@ -565,8 +656,8 @@ def scope_current(job, enrollment, tenant, *, lock=True):
                 or config.revision != a['scope_revision'] or config.domain_name != a['domain_dns_name']
                 or not scoped(job.requested_by, tenant, config, a['target_tier'])
                 or not _ready(system, enrollment, report, config.domain_name, portal=True)
-                or tuple(map(int, system.agent_version.split('.'))) < minimum_agent(a['intended_operation'])
-                or tuple(map(int, report.agent_version.split('.'))) < minimum_agent(a['intended_operation'])
+                or tuple(map(int, system.agent_version.split('.'))) < minimum_agent(a['intended_operation'], a['schema'] == 4)
+                or tuple(map(int, report.agent_version.split('.'))) < minimum_agent(a['intended_operation'], a['schema'] == 4)
                 or report.domain_guid != a['domain_guid'] or report.forest_dns_name != a['forest_dns_name']
                 or report.dc_fqdn != a['executor_dc_fqdn']):
             return False
@@ -582,6 +673,15 @@ def scope_current(job, enrollment, tenant, *, lock=True):
                 or semantic_purpose(a['baseline_id'], component) != policy.purpose or component['artifact_sha256'] != a['artifact_sha256']
                 or a['backup_id'] not in _content()[1].get((a['baseline_id'], a['profile']), ())):
             return False
+        if bool(policy.override_id) != (a['schema'] == 4):
+            return False
+        if a['schema'] == 4:
+            from .gpo_overrides import current_patch, OVERRIDE_FIELDS
+            if str(policy.override_id) != a['override_id'] or not current_patch(a, tenant, allow_historical=a['intended_operation'] == DEACTIVATE):
+                return False
+            if a['intended_operation'] in (ACTIVATE, DEACTIVATE, LINK):
+                if (not policy.staged_job or any(policy.staged_job.assignment.get(key) != a[key] for key in OVERRIDE_FIELDS)):
+                    return False
         if a['operation'] == INSPECT:
             return (a['preflight_id'] == '' and a['expected_state'] is None and a['safety_review'] == FALSE_REVIEW
                     and job.approved_at is None and job.approved_by_id is None and job.claimed_at is None)
@@ -590,7 +690,7 @@ def scope_current(job, enrollment, tenant, *, lock=True):
             enrollment=enrollment, status='inspected').first()
         if (not preflight or not inspecting(preflight) or not preflight.completed_at
                 or preflight.expires_at != job.expires_at or preflight.result_evidence.get('state') != a['expected_state']
-                or any(preflight.assignment.get(key) != a[key] for key in FIELDS - {
+                or any(preflight.assignment.get(key) != a[key] for key in assignment_fields(a) - {
                     'job_id', 'operation', 'approval_mode', 'preflight_id', 'expected_state', 'safety_review', 'input_digest', 'link_orders'})):
             return False
         if digest({'status': 'inspected', 'result_code': 'gpo_inspected', 'gpo_guid': preflight.gpo_guid or None,
@@ -612,6 +712,8 @@ def extend_projection(job, user, projection):
         approval_mode=a['approval_mode'],
         preflight_state=job.result_evidence.get('state') if inspecting(job) and job.status == 'inspected' else None,
         can_prepare=inspection_current(job, user), inspection_expires_at=job.expires_at.isoformat() if inspecting(job) else None)
+    if a['schema'] == 4:
+        projection.update(override_id=a['override_id'], override_revision=a['override_revision'], override_sha256=a['override_sha256'])
     return projection
 
 
@@ -631,10 +733,12 @@ def _postcondition(job, evidence, guid):
     if not component or component['scope'] == 'domain' and a['target_tier'] != 0:
         _invalid('Domain-scoped settings require Tier 0 authority.')
     if (not isinstance(evidence, dict) or set(evidence) != {'schema', 'operation', 'managed_id', 'state',
-            'prepared_artifact_sha256', 'backup_id', 'backup_manifest_sha256'}
-            or type(evidence['schema']) is not int or evidence['schema'] != 3
+            'prepared_artifact_sha256', 'backup_id', 'backup_manifest_sha256'} | ({'override_sha256'} if a['schema'] == 4 else set())
+            or type(evidence['schema']) is not int or evidence['schema'] != a['schema']
             or evidence['operation'] != operation or evidence['managed_id'] != a['managed_id']):
         _invalid()
+    if a['schema'] == 4 and evidence.get('override_sha256') != a['override_sha256']:
+        _invalid('Override evidence differs from the approved patch.')
     state = validate_snapshot(evidence['state'], a)
     gpo = state['gpo']
     if guid != (gpo['guid'] if gpo else None):
@@ -658,7 +762,7 @@ def _postcondition(job, evidence, guid):
     old = before['gpo']
     if not gpo or not state['name_available'] or gpo['wmi_filter']:
         _invalid()
-    if gpo['description'] != 'IPMS managed GPO; id=' + a['managed_id']:
+    if gpo['description'] != owner_marker(a):
         _invalid()
     if old and gpo['guid'] != old['guid']:
         _invalid()
@@ -771,7 +875,7 @@ def receive_success(job, document):
             marker = '__IPMS_VERSION__'
             component = _content()[0][(job.assignment['baseline_id'], job.assignment['backup_id'])]
             rendered = template.format(tier=str(policy.tier), scope='U' if component['scope'] == 'user' else 'C',
-                target=policy.target, purpose=compact_purpose(policy.baseline_id, component), version=marker)
+                target=policy.target, purpose=override_purpose(policy.override) if policy.override_id else compact_purpose(policy.baseline_id, component), version=marker)
             left, right = rendered.split(marker)
             policy.version = job.pilot_display_name[len(left):len(job.pilot_display_name)-len(right) if right else None]
         elif operation == LINK:
@@ -795,7 +899,7 @@ def active_binding(policy, now, *, computer_only=True):
             return None
         a = job.assignment
         approval = approval_object(job)
-        if (set(a) != FIELDS or a['operation'] != ACTIVATE or a['managed_id'] != str(policy.pk)
+        if (set(a) != assignment_fields(a) or a['operation'] != ACTIVATE or a['managed_id'] != str(policy.pk)
                 or a['domain_guid'] != policy.domain_guid or job.gpo_guid != policy.gpo_guid
                 or job.tenant_id != policy.tenant_id or job.domain_id != policy.domain_id
                 or job.domain.tenant_id != policy.tenant_id or job.system.tenant_id != policy.tenant_id

@@ -1,5 +1,5 @@
 # File Name: tests.py
-# Version: v0.2.56 | Created: 2026-08-31 | Last Modified: 2026-09-15
+# Version: v0.2.61 | Created: 2026-08-31 | Last Modified: 2026-09-16
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
 # Description: Public endpoint and request-correlation regression checks.
 import uuid
@@ -20,7 +20,7 @@ class PublicEndpointTests(TestCase):
             {
                 "name": "IPMS Control Plane API",
                 "version": "v1",
-                "application_version": "0.2.56",
+                "application_version": "0.2.61",
             },
         )
 

@@ -1,6 +1,19 @@
 # IPMS Agent
 
-Windows candidate **0.2.36** combines import and linking in one approved
+Windows candidate **0.2.43** validates schema-4 sparse override jobs against a
+compiled Microsoft baseline catalog. It renders only the selected Registry.pol,
+security template and audit records into a separate managed GPO. Caller-provided
+paths, types and structured AppLocker XML are never accepted. The base GPO stays
+unchanged and activation preserves the server-approved higher link priority.
+
+Windows **0.2.42** adds a separate read-only GPO reconciliation worker.
+It observes the directory using the original protected job identity, retains the
+original receipt, and binds observations and acceptance to that exact journal.
+After Portal acceptance it checks the directory again before acknowledging the
+resolution. Reconciliation cannot import, link, enable or repair a GPO. See
+[the reconciliation workflow](../docs/operations/SECURITY-GPO-RECONCILIATION.md).
+
+Windows **0.2.36** combines import and linking in one approved
 `import_and_link_managed_gpo` request. It creates or explicitly adopts the GPO,
 then creates disabled, non-enforced links at the approved targets. Activation
 remains separate. The Agent checks the scope again between creation and linking;
@@ -167,7 +180,7 @@ remain stopped-only in IPMS. Static hot-memory prerequisites are not yet atteste
 The backend and native Agent independently validate every changed field; no
 generic command interface is added. Deploy a schema-2-capable control plane
 before upgrading an Agent. See the [field matrix](../docs/architecture/HYPERV-LIVE-SETTINGS-MATRIX.md)
-and [0.2.38 verification boundary](../docs/operations/HYPERV-SETTINGS-0238-ACCEPTANCE.md).
+and [0.2.39 verification boundary](../docs/operations/HYPERV-SETTINGS-0238-ACCEPTANCE.md).
 
 ## Heartbeat and scheduling isolation
 

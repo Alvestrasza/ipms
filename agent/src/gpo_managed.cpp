@@ -1,8 +1,9 @@
 // File Name: gpo_managed.cpp
-// Version: v0.1.0 | Created: 2026-09-15 | Last Modified: 2026-09-15
+// Version: v0.1.1 | Created: 2026-09-15 | Last Modified: 2026-09-16
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Exact managed-GPO contracts, inspection isolation and durable write ordering.
 #include "ipms/agent/gpo_managed.hpp"
+#include "ipms/agent/gpo_override.hpp"
 #include <algorithm>
 #include <set>
 
@@ -57,7 +58,7 @@ std::string target_kind(const job& j) {return domain_scope(j)?"domain":"ou";}
 std::string state_guid(const json::object& state) {
   const auto& g=state.at("gpo");return g.get_if<std::nullptr_t>()?std::string{}:g.as<json::object>().at("guid").as<std::string>();
 }
-std::string managed_marker(const job& j) {return "IPMS managed GPO; id="+j.text("managed_id");}
+std::string managed_marker(const job& j) {return override_job(j)?"IPMS managed override; id="+j.text("managed_id")+"; definition="+j.text("override_id"):"IPMS managed GPO; id="+j.text("managed_id");}
 bool import_operation(std::string_view op) {return op=="import_managed_gpo"||op=="import_and_link_managed_gpo";}
 bool link_operation(std::string_view op) {return op=="link_managed_gpo"||op=="import_and_link_managed_gpo";}
 
@@ -138,6 +139,15 @@ std::optional<std::uint32_t> matching_gpo_link(std::string_view links,std::strin
   }
   return match;
 }
+void merge_forest_link_locations(std::map<std::string,std::uint32_t>& complete,
+    const std::map<std::string,std::uint32_t>& observed) {
+  // Separate authenticated naming-context reads may repeat a location.
+  // Equal evidence is idempotent; conflicting flags remain a hard failure.
+  for(const auto& [dn,flags]:observed) {
+    const auto [existing,inserted]=complete.emplace(dn,flags);
+    if((!inserted&&existing->second!=flags)||complete.size()>128)fail("gpo_preflight_required");
+  }
+}
 void verify_forest_link_census(const json::array& observed,const std::map<std::string,std::uint32_t>& complete) {
   if(observed.size()!=complete.size()||observed.size()>128)fail("gpo_preflight_required");std::set<std::string> seen;
   for(const auto& v:observed) {
@@ -149,7 +159,16 @@ void verify_forest_link_census(const json::array& observed,const std::map<std::s
 bool managed_operation(std::string_view op) {
   return import_operation(op)||op=="link_managed_gpo"||op=="activate_managed_gpo"||op=="deactivate_managed_gpo";
 }
-bool inspection(const job& j) {return j.number("schema")==3&&j.text("operation")=="inspect_managed_gpo";}
+bool inspection(const job& j) {return j.number("schema")>=3&&j.text("operation")=="inspect_managed_gpo";}
+std::pair<std::string,std::string> ace_object_types(std::int64_t flags,
+    const std::function<std::string()>& object_type,const std::function<std::string()>& inherited_object_type) {
+  // ADS_FLAG_OBJECT_TYPE_PRESENT=1, ADS_FLAG_INHERITED_OBJECT_TYPE_PRESENT=2.
+  // Absent GUID fields are not physically present in ordinary ACEs. Querying
+  // them unconditionally can fail instead of returning an empty GUID string.
+  if(flags<0||(flags&~3LL)!=0||!object_type||!inherited_object_type)fail("gpo_state_changed");
+  return {(flags&1)?object_type():std::string{},(flags&2)?inherited_object_type():std::string{}};
+}
+bool valid_gpo_links(const json::value& value) {try {links(value);return true;}catch(...){return false;}}
 bool valid_snapshot(const json::value& value) {try {
   if(json::serialize(value).size()>16384)return false;
   const auto& s=value.as<json::object>();constexpr const char* sk[]{"schema","gpo","ous","name_available"};
@@ -190,6 +209,7 @@ void validate_managed_job(const job& j) {
   const auto& marker=j.text("owner_marker");
   if(id.empty()) {if(!marker.empty())fail();}
   else if(marker!=managed_marker(j)) {
+    if(override_job(j))fail("gpo_unmanaged_target");
     constexpr std::string_view prefix="IPMS disabled, unlinked pilot; job=";
     if(!import_operation(j.text("intended_operation"))||!marker.starts_with(prefix)||
         marker.size()!=prefix.size()+36+9+64||!valid_uuid(std::string_view(marker).substr(prefix.size(),36))||
@@ -259,20 +279,23 @@ void validate_managed_state(const job& j,const json::object& state) {
       seen.insert(dn);
     }
     if(op=="activate_managed_gpo"&&seen.size()!=targets.size())fail("gpo_link_conflict");
-    if(!inspection(j)&&op=="activate_managed_gpo")for(std::size_t n=0;n<targets.size();++n) {
+    if(!inspection(j)&&!override_job(j)&&op=="activate_managed_gpo")for(std::size_t n=0;n<targets.size();++n) {
       const auto found=std::find_if(existing.begin(),existing.end(),[&](const auto& v){return lower(v.template as<json::object>().at("dn").template as<std::string>())==lower(targets[n].as<std::string>());});
       if(found==existing.end()||found->as<json::object>().at("order")!=j.fields.at("link_orders").as<json::array>()[n])fail("gpo_link_conflict");
     }
   }
 }
 json::object managed_evidence(const job& j,json::object state,std::string_view backup_id,std::string_view backup_hash) {
-  return {{"schema",3},{"operation",j.text("operation")},{"managed_id",j.text("managed_id")},{"state",std::move(state)},
+  json::object evidence{{"schema",j.number("schema")},{"operation",j.text("operation")},{"managed_id",j.text("managed_id")},{"state",std::move(state)},
     {"prepared_artifact_sha256",import_operation(j.text("operation"))||j.text("operation")=="activate_managed_gpo"?j.text("artifact_sha256"):""},
     {"backup_id",backup_id},{"backup_manifest_sha256",backup_hash}};
+  if(override_job(j))evidence.emplace("override_sha256",j.text("override_sha256"));return evidence;
 }
 bool valid_managed_result(const json::object& r) {try {
   const auto& e=r.at("evidence").as<json::object>();constexpr const char* names[]{"schema","operation","managed_id","state","prepared_artifact_sha256","backup_id","backup_manifest_sha256"};
-  if(!keys(e,names)||e.at("schema").as<std::int64_t>()!=3||!valid_uuid(e.at("managed_id").as<std::string>())||!valid_snapshot(e.at("state")))return false;
+  const auto schema=e.at("schema").as<std::int64_t>();
+  auto base=e; if(schema==4){if(!hash(e.at("override_sha256").as<std::string>()))return false;base.erase("override_sha256");}
+  if(!keys(base,names)||(schema!=3&&schema!=4)||!valid_uuid(e.at("managed_id").as<std::string>())||!valid_snapshot(e.at("state")))return false;
   const auto& op=e.at("operation").as<std::string>();const auto& s=r.at("status").as<std::string>();const auto& c=r.at("result_code").as<std::string>();
   if(!((op=="inspect_managed_gpo"&&s=="inspected"&&c=="gpo_inspected")||(op=="import_managed_gpo"&&s=="staged"&&c=="gpo_prepared")||
     (link_operation(op)&&s=="linked"&&c=="gpo_linked")||(op=="activate_managed_gpo"&&s=="activated"&&c=="gpo_activated")||
@@ -297,7 +320,7 @@ json::object inspect_managed(journal& j,managed_provider& provider,const persist
   }
 }
 json::object execute_managed(journal& j,managed_provider& provider,const persist& save,const std::function<bool()>& authority,const std::function<void()>& consume) {
-  if(j.assignment.number("schema")!=3||inspection(j.assignment)||!save||!authority||!consume)fail("gpo_journal_invalid");
+  if((j.assignment.number("schema")<3||j.assignment.number("schema")>4)||inspection(j.assignment)||!save||!authority||!consume)fail("gpo_journal_invalid");
   if(j.state==phase::terminal||j.state==phase::reconciliation)return j.result.as<json::object>();
   if(j.state!=phase::granted)fail("gpo_journal_invalid");
   bool write_intent=false;

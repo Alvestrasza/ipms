@@ -1,5 +1,5 @@
 // File Name: windows_transport.cpp
-// Version: v0.2.36 | Created: 2026-08-31 | Last Modified: 2026-09-15
+// Version: v0.2.43 | Created: 2026-08-31 | Last Modified: 2026-09-16
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Authenticated fixed Agent channels with durable, exact-job GPO execution grants.
 #include "ipms/agent/windows_transport.hpp"
@@ -46,7 +46,7 @@
 namespace {
 using Microsoft::WRL::ComPtr;
 constexpr std::size_t k_max_document_bytes = 65'536;
-constexpr wchar_t k_agent_version[] = L"0.2.36";
+constexpr wchar_t k_agent_version[] = L"0.2.43";
 constexpr std::size_t k_max_artifact_bytes = 64 * 1024 * 1024;
 std::mutex identity_mutex;
 std::mutex management_cycle_mutex;
@@ -491,7 +491,7 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
     ~failure_reset() { if (cache && !succeeded) cache->reset(); }
   } guard{reusable ? &console_transport : nullptr};
   if (!transport->session) {
-    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.36", WINHTTP_ACCESS_TYPE_NO_PROXY,
+    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.43", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
     if (!transport->session) throw std::runtime_error("The Agent HTTP session could not be created.");
     if (input_channel || security_channel || path == L"/v1/heartbeat" || path == L"/v1/hyperv-management") {
@@ -582,7 +582,7 @@ http_response post_binary(const state& identity, const std::string& body, PCCERT
   const auto check_deadline = [&] { if (gpo_artifact && ((cancelled && cancelled()) || std::chrono::steady_clock::now() >= deadline))
     throw std::runtime_error("The GPO artifact transfer stopped."); };
   check_deadline();
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.36", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.43", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent artifact session could not be created.");
   if (gpo_artifact) WinHttpSetTimeouts(session.get(), 2'000, 2'000, 2'000, 2'000);
@@ -1470,11 +1470,54 @@ TransportResult run_gpo_cycle(const std::function<bool()>& cancelled) {
     };
     if (record && record->device_uri != identity.device_uri) throw gpo::operation_error("gpo_enrollment_changed");
     if (record && record->state == gpo::phase::terminal) report(*record, record->result.as<json::object>());
-    if (record && record->state != gpo::phase::prepared && record->state != gpo::phase::terminal) {
+    if (record && record->state != gpo::phase::prepared && record->state != gpo::phase::terminal &&
+        !(record->state == gpo::phase::reconciliation && has_gpo_reconciliation_release(*record))) {
       if (record->state != gpo::phase::reconciliation) {
         record->state = gpo::phase::reconciliation;
         record->result = gpo::result("requires_reconciliation", "gpo_reconciliation_required", record->gpo_guid);
         save_gpo_journal(*record);
+      }
+      if (record->assignment.number("schema") >= 3) {
+        // A separate sidecar conversation is available while the executable
+        // journal is fenced. It cannot offer jobs, artifacts or write grants.
+        const auto journal_hash = gpo_journal_sha256(*record);
+        const auto binding = [&](const char* action) {
+          return json::object{{"action",action},{"job_id",record->assignment.text("job_id")},
+            {"input_digest",record->assignment.text("input_digest")},{"journal_sha256",journal_hash}};
+        };
+        auto poll = binding("reconciliation_poll");
+        poll.emplace("agent_version",utf8(k_agent_version));poll.emplace("executor",probe_gpo_executor(stopping));
+        const auto response = exchange(std::move(poll));const auto& offered = response.at("reconciliation");
+        if (!offered.get_if<std::nullptr_t>()) {
+          const auto challenge = gpo::parse_reconciliation(offered,*record,journal_hash);
+          const auto id = challenge.at("id").as<std::string>();
+          const auto& mode = challenge.at("mode").as<std::string>();
+          if (mode == "released") {
+            const auto pending = load_gpo_reconciliation_pending(*record,id);
+            save_gpo_reconciliation_release(*record,gpo::reconciliation_sidecar(challenge,pending.at("observation").as<json::object>()));
+            return {true,L"The accepted directory observation was durably reconciled."};
+          }
+          save_gpo_reconciliation_request(*record,challenge);
+          const auto observed = invoke_gpo_reconciliation_worker(stopping);
+          // Recheck expiry, enrollment and immutable original bytes after the
+          // bounded read; the old execution expiry is deliberately irrelevant.
+          (void)gpo::parse_reconciliation(challenge,*record,gpo_journal_sha256(*record));
+          if (!same_identity()) throw gpo::operation_error("gpo_enrollment_changed");
+          const auto observed_hash = gpo::sha256(json::serialize(observed));
+          if (mode == "accept" && observed_hash == challenge.at("observation_digest").as<std::string>()) {
+            if (!gpo::acceptable_reconciliation_observation(*record,observed))throw gpo::operation_error("gpo_journal_invalid");
+            save_gpo_reconciliation_pending(*record,gpo::reconciliation_sidecar(challenge,observed));
+            auto ack = binding("reconciliation_ack");ack.emplace("reconciliation_id",id);ack.emplace("observation_digest",observed_hash);
+            const auto acknowledged = exchange(std::move(ack));
+            const auto released = gpo::parse_reconciliation(acknowledged.at("reconciliation"),*record,journal_hash);
+            if (released.at("mode").as<std::string>() != "released")throw gpo::operation_error("gpo_journal_invalid");
+            save_gpo_reconciliation_release(*record,gpo::reconciliation_sidecar(released,observed));
+            return {true,L"The accepted directory observation was durably reconciled."};
+          }
+          auto message = binding("reconciliation_result");message.emplace("reconciliation_id",id);
+          message.emplace("observation_digest",observed_hash);message.emplace("observation",observed);
+          exchange(std::move(message));
+        }
       }
       report(*record, record->result.as<json::object>());
       return {false, L"The previous GPO operation requires reconciliation."};

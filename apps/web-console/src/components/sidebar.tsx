@@ -30,6 +30,7 @@ import { getDictionary } from "@/i18n/dictionaries";
 import { getDomainSecurityCopy } from "@/i18n/domain-security-copy";
 import { getJobLogsCopy } from "@/i18n/job-logs-copy";
 import { getSecurityCopy } from "@/i18n/security-copy";
+import { getSecurityOverrideCopy } from "@/i18n/security-override-copy";
 import { resolveLocale } from "@/i18n/server";
 import { getWsusCopy } from "@/i18n/wsus-copy";
 import type {
@@ -59,6 +60,7 @@ export type ActiveSection =
   | "network"
   | "updates-wsus"
   | "security-baseline"
+  | "security-override"
   | "admin-users"
   | "admin-service-accounts"
   | "admin-wsus"
@@ -97,6 +99,10 @@ export async function Sidebar({
   const dictionary = getDictionary(locale);
   const securityCopy = getSecurityCopy(locale);
   const logsCopy = getJobLogsCopy(locale);
+  const securityExpanded =
+    activeSection === "security-baseline" ||
+    activeSection === "security-override";
+  const overrideCopy = getSecurityOverrideCopy(locale);
   const logsExpanded = activeSection.startsWith("logs-");
   const physicalExpanded = [
     "physical",
@@ -217,7 +223,7 @@ export async function Sidebar({
             <li key={label}>
               {item.enabled ? (
                 <Link
-                  className={`nav-item ${item.section === activeSection || (item.section === "physical" && physicalExpanded) || (item.section === "virtual" && virtualExpanded) ? "nav-item--active" : ""}`}
+                  className={`nav-item ${item.section === activeSection || (item.section === "security-baseline" && securityExpanded) || (item.section === "physical" && physicalExpanded) || (item.section === "virtual" && virtualExpanded) ? "nav-item--active" : ""}`}
                   href={item.href as Route}
                   aria-current={
                     item.section === activeSection ? "page" : undefined
@@ -238,19 +244,38 @@ export async function Sidebar({
                   </span>
                 </span>
               )}
-              {item.section === "security-baseline" &&
-              activeSection === "security-baseline" ? (
+              {item.section === "security-baseline" && securityExpanded ? (
                 <ul className="nav-tree">
                   <li>
                     <Link
-                      className="nav-subitem nav-subitem--active"
+                      className={`nav-subitem ${activeSection === "security-baseline" ? "nav-subitem--active" : ""}`}
                       href={`/${locale}/security/baseline` as Route}
-                      aria-current="page"
+                      aria-current={
+                        activeSection === "security-baseline"
+                          ? "page"
+                          : undefined
+                      }
                     >
                       <ShieldCheck aria-hidden="true" size={15} />
                       <span>{securityCopy.baselineNavigation}</span>
                     </Link>
                   </li>
+                  {canManageSecurityBaselines ? (
+                    <li>
+                      <Link
+                        className={`nav-subitem ${activeSection === "security-override" ? "nav-subitem--active" : ""}`}
+                        href={`/${locale}/security/override` as Route}
+                        aria-current={
+                          activeSection === "security-override"
+                            ? "page"
+                            : undefined
+                        }
+                      >
+                        <ShieldCheck aria-hidden="true" size={15} />
+                        <span>{overrideCopy.navigation}</span>
+                      </Link>
+                    </li>
+                  ) : null}
                 </ul>
               ) : null}
               {item.section === "physical" && physicalExpanded ? (

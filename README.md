@@ -9,7 +9,26 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-Candidate `0.2.56` and Windows Agent `0.2.36` combine GPO import and linking in
+Candidate `0.2.61` adds typed sparse baseline overrides. Administrators select a
+compiled Microsoft baseline component and change only settings already present in
+that component. Each definition produces a separate managed GPO above baseline
+GPOs; the source GPO remains unchanged. Windows Agent `0.2.43` validates the same
+immutable setting catalog and renders only selected policy records.
+
+Application `0.2.60` directly approves newly submitted managed GPO actions when
+four-eyes review is disabled and the requester has domain/tier approval rights.
+Failed inspection details remain visible. Agent `0.2.42` reports bounded forest
+preflight phases and merges identical directory observations without accepting
+conflicting link flags. Agent transport and installer versions are checked together.
+
+Portal `0.2.58` and Windows Agent `0.2.39` added a read-only directory reconciliation
+workflow to the affected GPO log entry. A scoped administrator can request an
+observation and accept a verified disabled state; the Agent checks it again before
+the domain fence is released. Original failure receipts remain unchanged and
+reconciliation never establishes successful baseline import or application.
+See [GPO reconciliation](docs/operations/SECURITY-GPO-RECONCILIATION.md).
+
+Application `0.2.56` and Windows Agent `0.2.36` combine GPO import and linking in
 one approved request. The read-only inspection runs automatically before that
 request is presented for approval. Activation remains separate. Names use readable component aliases
 and the configured naming template; managed GPOs retain their GUID. Each action

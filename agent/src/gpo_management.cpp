@@ -1,9 +1,10 @@
 // File Name: gpo_management.cpp
-// Version: v0.2.0 | Created: 2026-09-14 | Last Modified: 2026-09-15
+// Version: v0.2.1 | Created: 2026-09-14 | Last Modified: 2026-09-16
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Validate pinned pilot inputs, artifact bytes and non-retryable native write ordering.
 #include "ipms/agent/gpo_management.hpp"
 #include "ipms/agent/gpo_managed.hpp"
+#include "ipms/agent/gpo_override.hpp"
 
 #include <algorithm>
 #include <array>
@@ -53,7 +54,12 @@ bool known_code(std::string_view code) {
     "gpo_portal_approval_required", "gpo_portal_approval_invalid",
     "gpo_inspected", "gpo_prepared", "gpo_linked", "gpo_activated", "gpo_deactivated",
     "gpo_state_changed", "gpo_requires_disabled", "gpo_unmanaged_target", "gpo_target_invalid",
-    "gpo_link_conflict", "gpo_backup_failed", "gpo_preflight_required"};
+    "gpo_link_conflict", "gpo_backup_failed", "gpo_preflight_required",
+    "gpo_preflight_inventory_failed", "gpo_preflight_controller_failed", "gpo_preflight_directory_failed",
+    "gpo_preflight_domain_visibility_failed", "gpo_preflight_domain_search_failed",
+    "gpo_preflight_site_visibility_failed", "gpo_preflight_site_search_failed", "gpo_preflight_census_mismatch",
+    "gpo_preflight_domain_open_failed", "gpo_preflight_domain_identity_failed", "gpo_preflight_domain_query_failed",
+    "gpo_preflight_domain_links_failed", "gpo_preflight_domain_merge_failed"};
   return std::find(std::begin(codes), std::end(codes), code) != std::end(codes);
 }
 }  // namespace
@@ -115,7 +121,7 @@ job parse_job(const json::value& value) {
   constexpr const char* keys[]{"schema","job_id","input_digest","operation","domain_dns_name","domain_guid","forest_dns_name",
     "executor_dc_fqdn","scope_id","scope_revision","target_tier","baseline_id","profile","backup_id","artifact_sha256","pilot_display_name","expires_at"};
   const auto schema=f.at("schema").as<std::int64_t>();
-  if((schema!=1&&schema!=2&&schema!=3)||f.size()!=std::size(keys)+(schema==1?0:schema==2?1:11)) invalid();
+  if((schema!=1&&schema!=2&&schema!=3&&schema!=4)||f.size()!=std::size(keys)+(schema==1?0:schema==2?1:schema==3?11:15)) invalid();
   for(const auto* key:keys) if(!f.contains(key)) invalid();
   if(schema==2&&f.at("approval_mode").as<std::string>()!="portal") invalid();
   job j{f};
@@ -131,12 +137,13 @@ job parse_job(const json::value& value) {
   if(!valid_uuid(lower) || protected_gpo(id)) invalid();
   if(j.text("pilot_display_name")=="Default Domain Policy" || j.text("pilot_display_name")=="Default Domain Controllers Policy") invalid();
   (void)expiry(j.text("expires_at"));
-  if(schema==3) validate_managed_job(j);
+  if(schema>=3) validate_managed_job(j);
+  if(schema==4) validate_override_job(j);
   if(input_digest(f)!=j.text("input_digest")) invalid();
   return j;
 }
 bool unexpired(const job& j,std::chrono::system_clock::time_point now) { try {
-  const auto t=expiry(j.text("expires_at")); return t>now && t<=now+(j.number("schema")==3?std::chrono::minutes(15):std::chrono::minutes(60));
+  const auto t=expiry(j.text("expires_at")); return t>now && t<=now+(j.number("schema")>=3?std::chrono::minutes(15):std::chrono::minutes(60));
 } catch(...) { return false; } }
 json::object local_approval_document(const job& j,std::string_view uri) {
   if(j.number("schema")!=1||!clean(uri,512)) throw operation_error("gpo_local_approval_invalid");
@@ -147,7 +154,7 @@ json::object parse_portal_approval(const json::value& value,const job& j,std::st
     const auto& a=value.as<json::object>();
     constexpr const char* keys[]{"schema","job_id","input_digest","device_uri","domain_guid","target_tier","operation",
       "requested_by","approved_by","approved_at","expires_at","policy_revision","four_eyes_required"};
-    if((j.number("schema")!=2&&j.number("schema")!=3)||j.text("approval_mode")!="portal"||a.size()!=std::size(keys)||!clean(uri,512)) invalid();
+    if((j.number("schema")<2||j.number("schema")>4)||j.text("approval_mode")!="portal"||a.size()!=std::size(keys)||!clean(uri,512)) invalid();
     for(const auto* key:keys) if(!a.contains(key)) invalid();
     if(a.at("schema").as<std::int64_t>()!=1||a.at("device_uri").as<std::string>()!=uri||
         a.at("policy_revision").as<std::int64_t>()<1||a.at("target_tier").as<std::int64_t>()!=j.number("target_tier")) invalid();
@@ -197,7 +204,7 @@ json::object journal_document(const journal& j) {
 }
 journal parse_journal(const json::value& v) {
   const auto& f=v.as<json::object>(); const auto schema=f.at("schema").as<std::int64_t>();
-  if((schema!=1&&schema!=2&&schema!=3)||f.size()!=(schema>=2?8:7)) invalid();
+  if((schema!=1&&schema!=2&&schema!=3&&schema!=4)||f.size()!=(schema>=2?8:7)) invalid();
   journal j{parse_job(f.at("job")),f.at("device_uri").as<std::string>()};
   if(j.assignment.number("schema")!=schema) invalid();
   if(schema>=2) {
@@ -225,9 +232,10 @@ journal parse_journal(const json::value& v) {
     if(j.state==phase::reconciliation ? status!="requires_reconciliation" : status!="staged"&&status!="failed"&&status!="inspected"&&status!="linked"&&status!="activated"&&status!="deactivated") invalid();
     if(schema<3&&(status=="inspected"||status=="linked"||status=="activated"||status=="deactivated")) invalid();
     if(schema<3&&receipt.at("evidence").get_if<json::object>()&&receipt.at("evidence").as<json::object>().contains("schema")) invalid();
-    if(schema==3&&status!="failed"&&status!="requires_reconciliation") {
+    if(schema>=3&&status!="failed"&&status!="requires_reconciliation") {
       if(!valid_managed_result(receipt)) invalid();
       const auto& e=receipt.at("evidence").as<json::object>();
+      if(e.at("schema").as<std::int64_t>()!=schema||(schema==4&&e.at("override_sha256").as<std::string>()!=j.assignment.text("override_sha256"))) invalid();
       if(e.at("operation").as<std::string>()!=j.assignment.text("operation")||e.at("managed_id").as<std::string>()!=j.assignment.text("managed_id")) invalid();
       if((status=="staged"||status=="activated"||j.assignment.text("operation")=="import_and_link_managed_gpo")&&e.at("prepared_artifact_sha256").as<std::string>()!=j.assignment.text("artifact_sha256")) invalid();
     }
@@ -238,7 +246,7 @@ journal parse_journal(const json::value& v) {
   return j;
 }
 json::object portal_approval_receipt(const journal& j) {
-  if((j.assignment.number("schema")!=2&&j.assignment.number("schema")!=3)||inspection(j.assignment)||j.state!=phase::granted||j.grant_deadline_tick==0||!j.gpo_guid.empty()||
+  if((j.assignment.number("schema")<2||j.assignment.number("schema")>4)||inspection(j.assignment)||j.state!=phase::granted||j.grant_deadline_tick==0||!j.gpo_guid.empty()||
       !j.result.get_if<std::nullptr_t>()) throw operation_error("gpo_portal_approval_invalid");
   const auto approved=parse_portal_approval(j.portal_approval,j.assignment,j.device_uri);
   return {{"schema",1},{"purpose","portal_gpo_claim"},{"job",j.assignment.fields},{"device_uri",j.device_uri},
@@ -255,7 +263,7 @@ bool valid_result(const json::value& v) { try {
   const auto& f=v.as<json::object>(); if(f.size()!=4 || !known_code(f.at("result_code").as<std::string>())) return false;
   const auto& s=f.at("status").as<std::string>();
   const auto& code=f.at("result_code").as<std::string>();
-  if(const auto* evidence=f.at("evidence").get_if<json::object>();evidence&&evidence->contains("schema")&&evidence->at("schema").get_if<std::int64_t>()&&evidence->at("schema").as<std::int64_t>()==3) return valid_managed_result(f);
+  if(const auto* evidence=f.at("evidence").get_if<json::object>();evidence&&evidence->contains("schema")&&evidence->at("schema").get_if<std::int64_t>()&&(evidence->at("schema").as<std::int64_t>()==3||evidence->at("schema").as<std::int64_t>()==4)) return valid_managed_result(f);
   if(s!="staged"&&s!="failed"&&s!="awaiting_local_approval"&&s!="awaiting_portal_approval"&&s!="requires_reconciliation") return false;
   const auto* id=f.at("gpo_guid").get_if<std::string>(); if(id&&(!valid_uuid(*id)||protected_gpo(*id))) return false;
   if(!id&&!f.at("gpo_guid").get_if<std::nullptr_t>()) return false;

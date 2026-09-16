@@ -3,6 +3,7 @@
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Protected exact-job approval, immutable package staging and durable GPO fences.
 #include "ipms/agent/windows_gpo_management.hpp"
+#include "ipms/agent/gpo_override.hpp"
 #include <windows.h>
 #include <aclapi.h>
 #include <sddl.h>
@@ -221,6 +222,9 @@ std::filesystem::path expand_gpo_artifact(const gpo::job& j) {
   const auto* c=gpo::component(j); if(!c) throw gpo::operation_error("gpo_unsupported_component");
   const auto root=job_directory(j); const auto artifact=read_protected_gpo_file(root/L"artifact.bin",gpo::maximum_artifact_bytes);
   const auto files=gpo::decode_artifact(*c,{reinterpret_cast<const std::uint8_t*>(artifact.data()),artifact.size()});
+  // Validate the original compiled bytes first. The immutable typed patch may
+  // replace only payload/report files selected by the compiled descriptor.
+  const auto sparse=gpo::override_job(j)?gpo::render_override_files(j):std::map<std::string,std::string>{};
   const auto backups=root/L"backups"; ensure_gpo_directory(backups);
   const auto component_root=backups/wide(c->backup_id); ensure_gpo_directory(component_root);
   std::set<std::filesystem::path> expected;
@@ -240,7 +244,8 @@ std::filesystem::path expand_gpo_artifact(const gpo::job& j) {
     for(const auto& part:relative.parent_path()) { if(part==L".."||part==L".") unsafe(); current/=part; ensure_gpo_directory(current); }
     const auto path=component_root/relative;
     expected.insert(relative);
-    const std::string_view content(reinterpret_cast<const char*>(files[i].data()),files[i].size());
+    const auto replacement=sparse.find(std::string(c->files[i].relative_path));
+    const std::string_view content=replacement==sparse.end()?std::string_view(reinterpret_cast<const char*>(files[i].data()),files[i].size()):std::string_view(replacement->second);
     if(GetFileAttributesW(path.c_str())!=INVALID_FILE_ATTRIBUTES) {
       if(read_protected_gpo_file(path,gpo::maximum_file_bytes)!=content) throw gpo::operation_error("gpo_artifact_invalid");
     } else write_protected_gpo_file(path,content,false);
@@ -259,6 +264,60 @@ void* acquire_gpo_cycle_lock() {
   const auto sd=descriptor(); SECURITY_ATTRIBUTES sa{sizeof(sa),sd.get(),FALSE};
   handle h(CreateFileW((root/L"current.lock").c_str(),GENERIC_READ|GENERIC_WRITE|READ_CONTROL,0,&sa,OPEN_ALWAYS,FILE_FLAG_OPEN_REPARSE_POINT,nullptr));
   if(h.get()==INVALID_HANDLE_VALUE) return nullptr; protected_handle(h.get(),false); return h.release();
+}
+void* acquire_gpo_worker_lock() {
+  const auto root=gpo_storage_directory();ensure_gpo_directory(root);
+  const auto sd=descriptor();SECURITY_ATTRIBUTES sa{sizeof(sa),sd.get(),FALSE};
+  handle h(CreateFileW((root/L"worker.lock").c_str(),GENERIC_READ|GENERIC_WRITE|READ_CONTROL,0,&sa,OPEN_ALWAYS,FILE_FLAG_OPEN_REPARSE_POINT,nullptr));
+  if(h.get()==INVALID_HANDLE_VALUE)return nullptr;protected_handle(h.get(),false);return h.release();
+}
+std::string gpo_journal_sha256(const gpo::journal& j) {
+  if(j.state!=gpo::phase::reconciliation)unsafe();
+  const auto bytes=read_protected_gpo_file(job_directory(j.assignment)/L"receipt.json",65536);
+  if(json::parse(bytes)!=gpo::journal_document(j))unsafe();return gpo::sha256(bytes);
+}
+void save_gpo_reconciliation_request(const gpo::journal& j,const json::object& c) {
+  (void)gpo::parse_reconciliation(c,j,gpo_journal_sha256(j));
+  write_protected_gpo_file(job_directory(j.assignment)/L"reconciliation-request.json",json::serialize(c),true);
+}
+json::object load_gpo_reconciliation_request(const gpo::journal& j) {
+  return gpo::parse_reconciliation(json::parse(read_protected_gpo_file(job_directory(j.assignment)/L"reconciliation-request.json",4096)),j,gpo_journal_sha256(j));
+}
+namespace {
+std::filesystem::path reconciliation_directory(const gpo::journal& j,std::string_view id) {
+  if(!gpo::valid_uuid(id))unsafe();auto path=job_directory(j.assignment)/L"reconciliation";ensure_gpo_directory(path);
+  path/=wide(id);ensure_gpo_directory(path);return path;
+}
+void immutable_sidecar(const std::filesystem::path& path,const json::object& s) {
+  const auto bytes=json::serialize(s);if(bytes.size()>65536)unsafe();
+  if(GetFileAttributesW(path.c_str())!=INVALID_FILE_ATTRIBUTES) {if(read_protected_gpo_file(path,65536)!=bytes)unsafe();}
+  else write_protected_gpo_file(path,bytes,false);
+  if(read_protected_gpo_file(path,65536)!=bytes)unsafe();
+}
+}
+void save_gpo_reconciliation_pending(const gpo::journal& j,const json::object& s) {
+  if(!gpo::valid_reconciliation_sidecar(s,j,gpo_journal_sha256(j),"accept"))unsafe();
+  const auto& id=s.at("reconciliation").as<json::object>().at("id").as<std::string>();
+  immutable_sidecar(reconciliation_directory(j,id)/L"pending.json",s);
+}
+json::object load_gpo_reconciliation_pending(const gpo::journal& j,std::string_view id) {
+  auto s=json::parse(read_protected_gpo_file(reconciliation_directory(j,id)/L"pending.json",65536)).as<json::object>();
+  if(!gpo::valid_reconciliation_sidecar(s,j,gpo_journal_sha256(j),"accept"))unsafe();return s;
+}
+void save_gpo_reconciliation_release(const gpo::journal& j,const json::object& s) {
+  if(!gpo::valid_reconciliation_sidecar(s,j,gpo_journal_sha256(j),"released"))unsafe();
+  const auto& c=s.at("reconciliation").as<json::object>();const auto pending=load_gpo_reconciliation_pending(j,c.at("id").as<std::string>());
+  if(gpo::reconciliation_release(c,pending,j,gpo_journal_sha256(j))!=s)unsafe();
+  immutable_sidecar(job_directory(j.assignment)/L"reconciliation-release.json",s);
+}
+bool has_gpo_reconciliation_release(const gpo::journal& j) {
+  const auto path=job_directory(j.assignment)/L"reconciliation-release.json";
+  if(GetFileAttributesW(path.c_str())==INVALID_FILE_ATTRIBUTES) {if(GetLastError()==ERROR_FILE_NOT_FOUND)return false;unsafe();}
+  const auto s=json::parse(read_protected_gpo_file(path,65536));
+  if(!gpo::valid_reconciliation_sidecar(s,j,gpo_journal_sha256(j),"released"))unsafe();
+  const auto& c=s.as<json::object>().at("reconciliation").as<json::object>();
+  const auto pending=load_gpo_reconciliation_pending(j,c.at("id").as<std::string>());
+  if(gpo::reconciliation_release(c,pending,j,gpo_journal_sha256(j))!=s.as<json::object>())unsafe();return true;
 }
 int approve_gpo_pilot(const std::filesystem::path& document) {
   try {

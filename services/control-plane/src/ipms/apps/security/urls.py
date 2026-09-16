@@ -10,8 +10,16 @@ from .domains import DomainSettingsView, DomainSettingView
 from .gpo_views import DomainGpoImportsView
 from .gpo_production import ManagedGposView, GpoPreflightsView, ManagedJobDetailView
 from .gpo_approvals import GpoApprovalPolicyView, GpoDomainAuthorizationView, GpoApproveView
+from .gpo_reconciliation import GpoReconciliationsView, GpoReconciliationAcceptView
+
+from .gpo_overrides import OverrideView, OverrideDetailView, OverrideCatalogView
 
 urlpatterns = [
+    path('overrides/', OverrideView.as_view(), name='security-overrides'),
+    path('overrides/<uuid:override_id>/', OverrideDetailView.as_view(), name='security-override'),
+    path('override-catalog/', OverrideCatalogView.as_view(), name='security-override-catalog'),
+    path('gpo-imports/<uuid:job_id>/reconciliations/', GpoReconciliationsView.as_view(), name='security-gpo-reconciliations'),
+    path('gpo-imports/<uuid:job_id>/reconciliations/<uuid:reconciliation_id>/accept/', GpoReconciliationAcceptView.as_view(), name='security-gpo-reconciliation-accept'),
     path('domain-settings/<uuid:domain_id>/managed-gpos/', ManagedGposView.as_view(), name='security-managed-gpos'),
     path('domain-settings/<uuid:domain_id>/gpo-preflights/', GpoPreflightsView.as_view(), name='security-gpo-preflights'),
     path('gpo-imports/<uuid:job_id>/', ManagedJobDetailView.as_view(), name='security-gpo-job-detail'),

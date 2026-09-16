@@ -14,6 +14,7 @@ import type {
   SecurityTier,
 } from "./domain-security-types";
 import { GPO_OPERATIONS, isGpoSnapshot } from "./gpo-production-types";
+import { isOverrideReview } from "./security-override-types";
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -140,6 +141,7 @@ export function isGpoImportJob(value: unknown): value is GpoImportJob {
       "linked",
       "activated",
       "deactivated",
+      "reconciled",
       "blocked",
       "failed",
       "expired",
@@ -189,6 +191,7 @@ export function isGpoImportReview(value: unknown): value is GpoImportReview {
     typeof digest === "string" && /^[0-9a-f]{64}$/.test(digest);
   return (
     record(value) &&
+    (value.override === undefined || isOverrideReview(value.override)) &&
     typeof value.component_name === "string" &&
     sha256(value.artifact_sha256) &&
     typeof value.report_xml === "string" &&
@@ -213,6 +216,7 @@ export function isGpoImportReview(value: unknown): value is GpoImportReview {
       (change) => typeof change === "string" && change.length <= 128,
     ) &&
     (value.expected_state === undefined ||
+      value.expected_state === null ||
       isGpoSnapshot(value.expected_state)) &&
     (value.target_ous === undefined ||
       (Array.isArray(value.target_ous) &&

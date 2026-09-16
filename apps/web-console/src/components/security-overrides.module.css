@@ -1,0 +1,94 @@
+.workspace {
+  display: grid;
+  gap: 1.25rem;
+  min-width: 0;
+}
+.panel {
+  background: var(--surface-panel);
+  border: 1px solid var(--border-default);
+  border-radius: 1rem;
+  padding: 1.25rem;
+  min-width: 0;
+}
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 1rem;
+}
+.fields label {
+  display: grid;
+  gap: 0.4rem;
+}
+.fields input,
+.fields select,
+.table input,
+.table select,
+.table textarea {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.4rem;
+  color: inherit;
+  background: var(--surface-panel);
+}
+.check {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-block: 0.8rem;
+}
+.check input {
+  width: auto;
+  min-height: auto;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-block: 1rem;
+}
+.scroll {
+  overflow-x: auto;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.table th,
+.table td {
+  padding: 0.8rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-default);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.table th:first-child {
+  width: 40%;
+}
+.table th:nth-child(2) {
+  width: 23%;
+}
+.table small {
+  display: block;
+  margin-top: 0.3rem;
+  opacity: 0.8;
+}
+.value {
+  white-space: pre-wrap;
+  font: inherit;
+  margin: 0;
+}
+.error {
+  color: var(--color-critical);
+}
+.changed {
+  background: color-mix(in srgb, var(--color-accent-blue) 7%, transparent);
+}
+@media (max-width: 800px) {
+  .table {
+    min-width: 730px;
+  }
+}

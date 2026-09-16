@@ -33,6 +33,7 @@ export const JOB_LOG_STATUSES = [
   "linked",
   "activated",
   "deactivated",
+  "reconciled",
   "blocked",
   "reconciliation_required",
   "requires_reconciliation",

@@ -1,7 +1,7 @@
 # File Name: gpo_approvals.py
-# Version: v0.1.0 | Created: 2026-09-15 | Last Modified: 2026-09-15
+# Version: v0.2.0 | Created: 2026-09-15 | Last Modified: 2026-09-16
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
-# Description: Tenant-configurable, immutable domain/tier scoped pilot approval authority.
+# Description: Tenant-configurable immutable domain/tier approval and direct production submission.
 import hashlib
 import re
 import struct
@@ -80,7 +80,7 @@ def visible_jobs(user, tenant, jobs):
 
 def is_portal(job):
     return (isinstance(job.assignment, dict) and type(job.assignment.get('schema')) is int
-            and job.assignment['schema'] in (2, 3) and job.assignment.get('approval_mode') == 'portal')
+            and job.assignment['schema'] in (2, 3, 4) and job.assignment.get('approval_mode') == 'portal')
 
 
 def approval_object(job):
@@ -169,6 +169,16 @@ def review_document(job):
     if production(job):
         result.update(changes=[job.assignment['operation']], expected_state=job.assignment['expected_state'],
                       target_ous=job.assignment['target_ous'], safety_review=job.assignment['safety_review'])
+    if job.assignment.get('schema') == 4:
+        from .gpo_overrides import patch_valid, component_for
+        if not patch_valid(job.assignment):
+            raise ValidationError('The immutable override content is invalid.')
+        settings = {row['setting_id']: row for row in component_for(job.assignment['baseline_id'], job.assignment['backup_id'])['settings']}
+        result['override'] = {key: job.assignment[key] for key in ('override_id', 'override_revision', 'override_sha256', 'override_entries')}
+        result['override']['settings'] = [{'setting_id': entry['setting_id'],
+            'label': settings[entry['setting_id']]['label'], 'category': settings[entry['setting_id']]['category'],
+            'baseline_value': settings[entry['setting_id']]['baseline_value'], 'value': entry['value']}
+            for entry in job.assignment['override_entries']]
     return result
 
 
@@ -180,7 +190,7 @@ def _revision(data, fields):
 
 def _withdraw(tenant, *, domain=None):
     from .gpo_jobs import ACTIVE, _invalidate
-    jobs = GpoImportJob.objects.select_for_update().filter(tenant=tenant, status__in=ACTIVE, assignment__schema__in=(2, 3))
+    jobs = GpoImportJob.objects.select_for_update().filter(tenant=tenant, status__in=ACTIVE, assignment__schema__in=(2, 3, 4))
     if domain:
         jobs = jobs.filter(domain=domain)
     for job in jobs:
@@ -267,6 +277,47 @@ class GpoDomainAuthorizationView(GpoApprovalPolicyView):
         return self.get(request, domain_id)
 
 
+def approve_job(job, user):
+    """Approve one immutable job while the caller holds its tenant transaction lock."""
+    from .gpo_jobs import _scope_current, digest
+    if not transaction.get_connection().in_atomic_block:
+        raise ValidationError('GPO approval requires a transaction.')
+    blocker = approval_blocker(job, user)
+    if blocker:
+        raise PublicApiError('security_gpo_' + blocker, status_code=403 if blocker in (
+            'domain_tier_not_authorized', 'four_eyes_required') else 409)
+    if not _scope_current(job, job.enrollment, job.tenant):
+        raise PublicApiError('security_gpo_scope_changed', status_code=409)
+    try:
+        review_document(job)
+    except ValidationError as exc:
+        raise PublicApiError('security_gpo_artifact_unavailable', status_code=409) from exc
+    approved_at = timezone.now().replace(microsecond=0)
+    if approved_at >= job.expires_at:
+        raise PublicApiError('security_gpo_job_expired', status_code=409)
+    job.approved_by = user
+    job.approved_at = approved_at
+    job.approval_digest = digest(approval_object(job))
+    job.error_code = ''
+    job.status = 'queued'
+    job.save(update_fields=('approved_by', 'approved_at', 'approval_digest', 'error_code', 'status'))
+    _audit(job.tenant, user, 'security.gpo_import_approved', job.pk, job.policy_revision)
+
+
+def approve_on_creation(job, user):
+    """The explicit production submission also approves it under single-admin policy.
+
+    Call only for a newly persisted job, never for an idempotent replay. Legacy
+    pilot jobs and read-only inspections retain their existing approval contract.
+    """
+    from .gpo_production import production
+    if (not production(job) or not is_portal(job) or job.four_eyes_required
+            or job.requested_by_id != user.pk or job.approved_at is not None
+            or not scoped(user, job.tenant, job.domain, job.assignment['target_tier'], approve=True)):
+        return
+    approve_job(job, user)
+
+
 class GpoApproveView(SecurityReadView):
     authentication_classes = (SessionAuthentication,)
     parser_classes = (DomainJSONParser,)
@@ -274,7 +325,7 @@ class GpoApproveView(SecurityReadView):
 
     @transaction.atomic
     def post(self, request, job_id):
-        from .gpo_jobs import _scope_current, digest, job_projection
+        from .gpo_jobs import job_projection
         query(request, set())
         request.tenant = Tenant.objects.select_for_update().get(pk=request.tenant.pk)
         fresh_actor(request)
@@ -290,24 +341,5 @@ class GpoApproveView(SecurityReadView):
             raise ParseError('Supply the reviewed immutable digest and policy revision.')
         if data['input_digest'] != job.input_digest or data['policy_revision'] != job.policy_revision:
             raise PublicApiError('security_gpo_approval_changed', status_code=409)
-        blocker = approval_blocker(job, request.user)
-        if blocker:
-            raise PublicApiError('security_gpo_' + blocker, status_code=403 if blocker in (
-                'domain_tier_not_authorized', 'four_eyes_required') else 409)
-        if not _scope_current(job, job.enrollment, request.tenant):
-            raise PublicApiError('security_gpo_scope_changed', status_code=409)
-        try:
-            review_document(job)
-        except ValidationError as exc:
-            raise PublicApiError('security_gpo_artifact_unavailable', status_code=409) from exc
-        approved_at = timezone.now().replace(microsecond=0)
-        if approved_at >= job.expires_at:
-            raise PublicApiError('security_gpo_job_expired', status_code=409)
-        job.approved_by = request.user
-        job.approved_at = approved_at
-        job.approval_digest = digest(approval_object(job))
-        job.error_code = ''
-        job.status = 'queued'
-        job.save(update_fields=('approved_by', 'approved_at', 'approval_digest', 'error_code', 'status'))
-        _audit(request.tenant, request.user, 'security.gpo_import_approved', job.pk, job.policy_revision)
+        approve_job(job, request.user)
         return Response(job_projection(job, user=request.user))

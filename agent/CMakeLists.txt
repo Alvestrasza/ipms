@@ -1,13 +1,13 @@
 # File Name: CMakeLists.txt
-# Version: v0.2.36
+# Version: v0.2.43
 # Created: 2026-08-31
-# Last Modified: 2026-09-15
+# Last Modified: 2026-09-16
 # Author: Alice Endelgard
 # Organization: Alvestrasza Corporation
 # Description: Native Agent build with bounded scans, GPO processing evidence and protected unlinked pilots.
 cmake_minimum_required(VERSION 3.24)
 
-project(ipms_agent VERSION 0.2.36 LANGUAGES CXX)
+project(ipms_agent VERSION 0.2.43 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,7 +20,7 @@ if(MSVC)
   add_compile_options(/EHsc)
 endif()
 
-add_library(ipms_agent_core STATIC src/configuration.cpp src/gateway_contract.cpp src/management_pack.cpp src/management_json.cpp src/hyperv_management_journal.cpp src/security_baseline.cpp src/gpo_management.cpp src/gpo_managed.cpp)
+add_library(ipms_agent_core STATIC src/configuration.cpp src/gateway_contract.cpp src/management_pack.cpp src/management_json.cpp src/hyperv_management_journal.cpp src/security_baseline.cpp src/gpo_management.cpp src/gpo_managed.cpp src/gpo_reconciliation.cpp src/gpo_override.cpp)
 target_include_directories(ipms_agent_core PUBLIC include)
 target_compile_features(ipms_agent_core PUBLIC cxx_std_20)
 

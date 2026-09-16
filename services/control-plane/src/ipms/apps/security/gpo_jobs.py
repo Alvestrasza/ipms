@@ -30,7 +30,7 @@ from .models import DomainSecuritySettings, GpoExecutorReport, GpoImportJob
 
 ACTIVE = ('queued', 'awaiting_approval', 'running', 'reconciliation_required')
 PRE_EXECUTION = ('queued', 'awaiting_approval')
-TERMINAL = ('staged', 'failed', 'expired', 'inspected', 'linked', 'activated', 'deactivated')
+TERMINAL = ('staged', 'failed', 'expired', 'inspected', 'linked', 'activated', 'deactivated', 'reconciled')
 MAX_ARTIFACT = 1024 * 1024
 DEFAULT_GPO_IDS = {'31b2f340-016d-11d2-945f-00c04fb984f9', '6ac1786c-016f-11d2-945f-00c04fb984f9'}
 RESULT_CODES = set('gpo_staged_unlinked gpo_local_approval_required gpo_job_expired gpo_invalid_job '
@@ -41,7 +41,12 @@ RESULT_CODES = set('gpo_staged_unlinked gpo_local_approval_required gpo_job_expi
                    'gpo_worker_timeout gpo_worker_failed gpo_journal_invalid gpo_claim_uncertain '
                    'gpo_authority_expired gpo_enrollment_changed gpo_portal_approval_invalid gpo_portal_approval_required '
                    'gpo_state_changed gpo_requires_disabled gpo_unmanaged_target gpo_target_invalid gpo_link_conflict '
-                   'gpo_backup_failed gpo_preflight_required'.split())
+                   'gpo_backup_failed gpo_preflight_required '
+                   'gpo_preflight_inventory_failed gpo_preflight_controller_failed gpo_preflight_directory_failed '
+                   'gpo_preflight_domain_visibility_failed gpo_preflight_domain_search_failed '
+                   'gpo_preflight_domain_open_failed gpo_preflight_domain_identity_failed '
+                   'gpo_preflight_domain_query_failed gpo_preflight_domain_links_failed gpo_preflight_domain_merge_failed '
+                   'gpo_preflight_site_visibility_failed gpo_preflight_site_search_failed gpo_preflight_census_mismatch'.split())
 EXECUTOR_CODES = {'ready_for_approval', 'not_writable_domain_controller', 'domain_identity_unavailable',
                   'gpmc_unavailable', 'executor_probe_failed'}
 
@@ -408,6 +413,13 @@ def withdraw_gpo_jobs(*, tenant_id, actor_id=None, enrollment_id=None, reason):
 
 def _result(job, document):
     from .gpo_production import production, receive_success, SUCCESS, policy_for_job
+    if job.status == 'reconciled':
+        if digest({key: document[key] for key in ('status', 'result_code', 'gpo_guid', 'evidence')}) != job.result_digest:
+            _reject()
+        return  # Exact original terminal receipt replay cannot reacquire the released fence.
+    if job.status == 'reconciliation_required' and job.result_digest and digest({
+            key: document[key] for key in ('status', 'result_code', 'gpo_guid', 'evidence')}) == job.result_digest:
+        return  # Preserve a newer server-side authority-withdrawal reason.
     if production(job) and document.get('status') in {item[0] for item in SUCCESS.values()}:
         receive_success(job, document)
         return
@@ -516,10 +528,11 @@ def _retired_unclaimed_exchange(tenant, enrollment, document):
 
 @transaction.atomic
 def security_gpo_exchange(enrollment, document, *, artifact=False):
+    from .gpo_reconciliation import ACTION_FIELDS, exchange as reconciliation_exchange
     base = {'type', 'schema_version', 'device_uri', 'correlation_id', 'action'}
     action_fields = {'poll': {'agent_version', 'executor'}, 'lookup': {'job_id', 'input_digest', 'agent_version', 'executor'},
                      'claim': {'job_id', 'input_digest'}, 'artifact': {'job_id', 'input_digest'},
-                     'result': {'job_id', 'input_digest', 'status', 'result_code', 'gpo_guid', 'evidence'}}
+                     'result': {'job_id', 'input_digest', 'status', 'result_code', 'gpo_guid', 'evidence'}, **ACTION_FIELDS}
     if not isinstance(document, dict) or not isinstance(document.get('action'), str):
         _reject()
     action = document['action']
@@ -536,7 +549,7 @@ def security_gpo_exchange(enrollment, document, *, artifact=False):
     response = {'status': 'accepted', 'correlation_id': document['correlation_id']}
     if action != 'result':
         expire_jobs(tenant)
-    if action in ('poll', 'lookup'):
+    if action in ('poll', 'lookup', 'reconciliation_poll'):
         _executor_report(enrollment, document['executor'], document['agent_version'])
     if action == 'poll':
         job = GpoImportJob.objects.select_for_update(of=('self',)).filter(tenant=tenant, enrollment=enrollment, status__in=PRE_EXECUTION).select_related('requested_by').order_by('requested_at').first()
@@ -558,6 +571,8 @@ def security_gpo_exchange(enrollment, document, *, artifact=False):
         _reject()
     if document['input_digest'] != job.input_digest:
         _reject()
+    if action in ACTION_FIELDS:
+        return {**response, 'reconciliation': reconciliation_exchange(job, document)}
     if action == 'result':
         _result(job, document)
         return response

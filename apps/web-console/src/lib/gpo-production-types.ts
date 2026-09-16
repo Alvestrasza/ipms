@@ -48,6 +48,7 @@ export type GpoSnapshot = {
   }[];
 };
 export type ManagedGpo = {
+  override_id?: string | null;
   id: string;
   revision: number;
   display_name: string;
@@ -82,7 +83,7 @@ const integer = (v: unknown, min = 0) =>
 const keys = (v: Record<string, unknown>, expected: string[]) =>
   Object.keys(v).length === expected.length &&
   expected.every((k) => Object.hasOwn(v, k));
-function links(v: unknown): v is GpoLink[] {
+export function isGpoLinks(v: unknown): v is GpoLink[] {
   return (
     Array.isArray(v) &&
     v.length <= 128 &&
@@ -128,8 +129,8 @@ export function isGpoSnapshot(v: unknown): v is GpoSnapshot {
         typeof o.usn === "string" &&
         /^\d{1,20}$/.test(o.usn) &&
         typeof o.blocked === "boolean" &&
-        links(o.links) &&
-        links(o.inherited_links),
+        isGpoLinks(o.links) &&
+        isGpoLinks(o.inherited_links),
     )
   )
     return false;
@@ -162,13 +163,16 @@ export function isGpoSnapshot(v: unknown): v is GpoSnapshot {
       typeof g.security_digest === "string" &&
       /^[a-f0-9]{64}$/.test(g.security_digest) &&
       text(g.wmi_filter) &&
-      links(g.links))
+      isGpoLinks(g.links))
   );
 }
 export function isManagedGpo(v: unknown): v is ManagedGpo {
   return (
     object(v) &&
     uuid(v.id) &&
+    (v.override_id === undefined ||
+      v.override_id === null ||
+      uuid(v.override_id)) &&
     integer(v.revision, 1) &&
     text(v.display_name, 240) &&
     (v.active_display_name === undefined ||

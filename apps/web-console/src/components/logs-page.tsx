@@ -128,7 +128,9 @@ export async function LogsPage({
             />
           ) : (
             <p className={styles.notice} role="alert">
-              {copy.detailUnavailable}
+              {!canViewPilot || [403, 404].includes(detail.status)
+                ? copy.detailUnavailable
+                : copy.detailLoadFailed}
             </p>
           )}
         </section>

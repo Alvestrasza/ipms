@@ -1,14 +1,19 @@
 // File Name: gpo_managed_contract_tests.cpp
-// Version: v0.1.0 | Created: 2026-09-15 | Last Modified: 2026-09-15
+// Version: v0.1.1 | Created: 2026-09-15 | Last Modified: 2026-09-16
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Managed GPO inspection, stable identity and irreversible boundary regressions without AD.
 #include "ipms/agent/gpo_managed.hpp"
+#include "ipms/agent/gpo_reconciliation.hpp"
+#include "ipms/agent/gpo_override.hpp"
+#include "ipms/agent/security_gpo_override_content.hpp"
+#include <ctime>
 #include <iostream>
 #include <algorithm>
 #include <cstdio>
 #include <fstream>
 #include <iterator>
 #include <stdexcept>
+#include <set>
 
 namespace gpo=ipms::agent::gpo;
 namespace json=gpo::json;
@@ -59,9 +64,42 @@ gpo::journal record(json::object doc) {
     {"requested_by","1"},{"approved_by","1"},{"approved_at","2030-01-01T00:00:00Z"},{"expires_at",j.assignment.text("expires_at")},
     {"policy_revision",1},{"four_eyes_required",false}};return j;
 }
+json::object override_document(const gpo::override_component_descriptor& component,json::array entries,
+    std::string op="inspect_managed_gpo",json::object state=snapshot()) {
+  constexpr const char* definition="abababab-abab-4bab-8bab-abababababab";
+  const auto marker=std::string("IPMS managed override; id=")+managed+"; definition="+definition;
+  if(!state.at("gpo").get_if<std::nullptr_t>())state.at("gpo").as<json::object>()["description"]=marker;
+  auto doc=document(op,state);doc["schema"]=4;doc["baseline_id"]=component.baseline_id;
+  doc["backup_id"]=component.backup_id;doc["artifact_sha256"]=component.artifact_sha256;
+  for(const auto& source:gpo::components)if(source.baseline_id==component.baseline_id&&source.backup_id==component.backup_id&&source.scope=="domain")doc["target_tier"]=0;
+  doc["override_id"]=definition;doc["override_revision"]=1;doc["override_entries"]=entries;doc["override_sha256"]="";
+  doc["override_sha256"]=gpo::override_digest(gpo::job{doc});doc["input_digest"]=gpo::input_digest(doc);return doc;
+}
+json::value changed_value(const json::object& metadata) {
+  const auto& original=metadata.at("baseline_value");const auto& options=metadata.at("enum_options").as<json::array>();
+  for(const auto& option:options)if(option.as<json::object>().at("value")!=original)return option.as<json::object>().at("value");
+  const auto& type=metadata.at("value_type").as<std::string>();
+  if(type=="integer"){const auto minimum=metadata.at("min").as<std::int64_t>();return original==json::value(minimum)?metadata.at("max"):json::value(minimum);}
+  if(type=="string")return original==json::value("IPMS \xc3\xbc override \"test\", value")?json::value("Alternative"):json::value("IPMS \xc3\xbc override \"test\", value");
+  return original==json::value(json::array{"S-1-5-32-544"})?json::value(json::array{}):json::value(json::array{"S-1-5-32-544"});
+}
+std::string hex(std::string_view bytes){constexpr char digits[]="0123456789abcdef";std::string out;out.reserve(bytes.size()*2);for(unsigned char b:bytes){out+=digits[b>>4];out+=digits[b&15];}return out;}
+void override_roundtrip() {
+  for(const auto& component:gpo::override_components) {
+    json::array entries;
+    const auto emit=[&]{if(entries.empty())return;std::sort(entries.begin(),entries.end(),[](const auto& a,const auto& b){return a.template as<json::object>().at("setting_id").template as<std::string>()<b.template as<json::object>().at("setting_id").template as<std::string>();});
+      auto doc=override_document(component,entries);const auto job=gpo::parse_job(doc);json::object files;
+      for(const auto& [name,bytes]:gpo::render_override_files(job))files.emplace(name,hex(bytes));
+      std::cout<<"{\"job\":"<<json::serialize(doc)<<",\"files\":{";bool first=true;for(const auto& [path,data]:files){if(!first)std::cout<<',';first=false;std::cout<<json::serialize(path)<<":\""<<data.as<std::string>()<<'"';}std::cout<<"}}\n";entries.clear();};
+    for(const auto& descriptor:component.settings) {const auto metadata=json::parse(descriptor.metadata_json).as<json::object>();if(!metadata.at("editable").as<bool>())continue;
+      entries.push_back(json::object{{"setting_id",descriptor.setting_id},{"value",changed_value(metadata)}});if(entries.size()==8)emit();}
+    emit();
+  }
+}
+
 class provider final:public gpo::managed_provider {
  public:
-  json::object state;std::vector<std::string> calls;std::string failure;std::string failure_code="gpo_provider_failed";int inspections{};bool drift{};bool drift_after_import{};bool partial_link_failure{};
+  json::object state;std::vector<std::string> calls;std::string failure;std::string failure_code="gpo_provider_failed";int inspections{};bool drift{};bool drift_after_import{};bool partial_link_failure{};bool override_activation{};
   explicit provider(json::object s):state(std::move(s)){}
   void call(const char* op){calls.emplace_back(op);if(failure==op)throw gpo::operation_error(failure_code);}
   json::object inspect()override{call("inspect");++inspections;if(drift&&inspections==2)state["name_available"]=false;if(drift_after_import&&inspections==3)state.at("ous").as<json::array>()[0].as<json::object>()["usn"]="124";return state;}
@@ -81,7 +119,7 @@ class provider final:public gpo::managed_provider {
       if(partial_link_failure)throw gpo::operation_error("gpo_provider_failed");
     }
   }
-  void activate(std::string_view)override{call("activate");state.at("gpo").as<json::object>()["computer_enabled"]=gpo::components.front().scope=="machine";state.at("gpo").as<json::object>()["user_enabled"]=gpo::components.front().scope=="user";state.at("gpo").as<json::object>()["name"]="1-C-ALL-MS-WS2025_V2.0.0";}
+  void activate(std::string_view)override{call("activate");if(override_activation){link(id);for(auto& own:state.at("gpo").as<json::object>().at("links").as<json::array>())own.as<json::object>()["enabled"]=true;for(auto& ou:state.at("ous").as<json::array>())for(auto& own:ou.as<json::object>().at("links").as<json::array>())if(own.as<json::object>().at("guid").as<std::string>()==id)own.as<json::object>()["enabled"]=true;}state.at("gpo").as<json::object>()["computer_enabled"]=gpo::components.front().scope=="machine";state.at("gpo").as<json::object>()["user_enabled"]=gpo::components.front().scope=="user";state.at("gpo").as<json::object>()["name"]="1-C-ALL-MS-WS2025_V2.0.0";}
   void deactivate(std::string_view)override{call("deactivate");state.at("gpo").as<json::object>()["computer_enabled"]=false;state.at("gpo").as<json::object>()["user_enabled"]=false;}
 };
 void save(const gpo::journal& j) {
@@ -91,13 +129,27 @@ void save(const gpo::journal& j) {
   require(restored.assignment==j.assignment&&restored.result==j.result,"Journal round-trip lost authority/state");
 }
 }
-int main() {
+int main(int argc,char** argv) {
  try {
+  if(argc==2&&std::string_view(argv[1])=="--override-roundtrip"){override_roundtrip();return 0;}
   const auto now=std::chrono::sys_days(std::chrono::year(2030)/1/1);
   // Architectural regression: the managed provider runs inside a Job Object
   // with ActiveProcessLimit=1. It must consume the worker's direct local read,
   // never invoke the public probe that creates another isolated process.
   const auto source=[](const char* relative) {std::ifstream stream(std::string(IPMS_AGENT_SOURCE_ROOT)+relative);require(stream.good(),"Missing worker-boundary source fixture");return std::string(std::istreambuf_iterator<char>(stream),{});};
+  const auto cmake=source("/CMakeLists.txt");const std::string version_marker="project(ipms_agent VERSION ";
+  const auto version_start=cmake.find(version_marker);require(version_start!=std::string::npos,"Agent release version missing");
+  const auto start=version_start+version_marker.size();const auto version=cmake.substr(start,cmake.find(' ',start)-start);
+  const auto transport=source("/src/windows/windows_transport.cpp");
+  require(transport.find("k_agent_version[] = L\""+version+"\";")!=std::string::npos,"Agent transport reports a different release version");
+  std::size_t agents=0,position=0;const std::string user_agent="IPMS-Agent/";
+  while((position=transport.find(user_agent,position))!=std::string::npos) {
+    position+=user_agent.size();const auto end=transport.find('"',position);
+    require(end!=std::string::npos&&transport.substr(position,end-position)==version,"WinHTTP User-Agent reports a different release version");
+    ++agents;
+  }
+  require(agents==2,"Expected both WinHTTP transport release identifiers");
+  require(source("/scripts/install-windows-agent.ps1").find("$AgentVersion = '"+version+"'")!=std::string::npos,"Installer default differs from the Agent release version");
   const auto managed_source=source("/src/windows/windows_gpo_managed.cpp");
   for(const auto* nested:{"probe_gpo_executor(","worker_call(","CreateProcess", "invoke_gpo_inspection_worker(","invoke_gpo_pilot_worker("})
     require(managed_source.find(nested)==std::string::npos,"Managed provider attempts forbidden nested process dispatch");
@@ -105,6 +157,100 @@ int main() {
   const std::string direct_factory="make_managed_gpo_provider(record->assignment,executor_identity())";
   const auto first_factory=worker_source.find(direct_factory);require(first_factory!=std::string::npos&&worker_source.find(direct_factory,first_factory+direct_factory.size())!=std::string::npos,"Inspection and execution workers must supply direct local executor identity");
   require(worker_source.find("limits.BasicLimitInformation.ActiveProcessLimit=1")!=std::string::npos,"GPO worker process isolation was weakened");
+  {
+  const auto observe_begin=managed_source.find("json::object observe() {");
+  const auto observe_end=managed_source.find("json::object inspect() override",observe_begin);
+  require(observe_begin!=std::string::npos&&observe_end!=std::string::npos,"Missing separate reconciliation read boundary");
+  const auto read_source=managed_source.substr(observe_begin,observe_end-observe_begin);
+  for(const auto* write:{"CreateGPO(","->Import(","->SetUserEnabled(","->SetComputerEnabled(","put_Description(","put_DisplayName(","provider.prepare(","provider.link("})
+    require(read_source.find(write)==std::string::npos,"Reconciliation reader can mutate AD");
+  const auto reconcile_worker=worker_source.find("else if(action==\"reconcile\")");
+  const auto execute_worker=worker_source.find("else if(action==\"execute\")");
+  require(worker_source.substr(reconcile_worker,execute_worker-reconcile_worker).find("acquire_gpo_worker_lock()")!=std::string::npos&&
+    worker_source.substr(execute_worker).find("acquire_gpo_worker_lock()")!=std::string::npos,"Read/write worker exclusion is missing");
+  require(worker_source.find("OpenServiceW(manager,L\"IPMS Agent\",SERVICE_QUERY_STATUS)")!=std::string::npos&&
+    worker_source.find("CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS,0)")!=std::string::npos,"Legacy worker quiescence lost exact service/process census");
+  int ace_object_calls=0,ace_inherited_calls=0;
+  const auto object_getter=[&]{++ace_object_calls;return std::string("object");};
+  const auto inherited_getter=[&]{++ace_inherited_calls;return std::string("inherited");};
+  require(gpo::ace_object_types(0,object_getter,inherited_getter)==std::pair<std::string,std::string>{"",""}&&ace_object_calls==0&&ace_inherited_calls==0,"Absent ACE GUID invoked an optional getter");
+  require(gpo::ace_object_types(1,object_getter,inherited_getter).first=="object"&&ace_object_calls==1&&ace_inherited_calls==0,"Object ACE presence flag ignored");
+  require(gpo::ace_object_types(2,object_getter,inherited_getter).second=="inherited"&&ace_object_calls==1&&ace_inherited_calls==1,"Inherited ACE presence flag ignored");
+  require(gpo::ace_object_types(3,object_getter,inherited_getter)==std::pair<std::string,std::string>{"object","inherited"},"Present ACE GUID dropped");
+  rejects([&]{gpo::ace_object_types(4,object_getter,inherited_getter);});
+  auto original=record(document());original.state=gpo::phase::reconciliation;original.gpo_guid=id;
+  original.result=gpo::result("requires_reconciliation","gpo_provider_failed",id);
+  const auto original_bytes=json::serialize(gpo::journal_document(original));const auto original_hash=gpo::sha256(original_bytes);
+  auto observation=gpo::unavailable_observation(id,"gpo_reconciliation_state_unavailable",true);
+  require(gpo::valid_reconciliation_observation(observation)&&!gpo::acceptable_reconciliation_observation(original,observation),"Incomplete observation released a fence");
+  observation["state"]=snapshot();observation["gpo_presence"]="present";observation["forest_complete"]=true;observation["acl_consistent"]=true;observation["issues"]=json::array{};
+  require(gpo::acceptable_reconciliation_observation(original,observation),"Fully read disabled managed GPO rejected");
+  for(const auto* flag:{"computer_enabled","user_enabled"}) {auto active=observation;active.at("state").as<json::object>().at("gpo").as<json::object>()[flag]=true;
+    require(!gpo::acceptable_reconciliation_observation(original,active),"Active GPO accepted during reconciliation");}
+  auto inconsistent=observation;inconsistent.at("state").as<json::object>().at("gpo").as<json::object>()["computer_sysvol"]=2;
+  require(gpo::valid_reconciliation_observation(inconsistent)&&!gpo::acceptable_reconciliation_observation(original,inconsistent),"Partial DS/SYSVOL state hidden or accepted");
+  for(const auto* flag:{"forest_complete","quiescent","acl_consistent"}) {auto incomplete=observation;incomplete[flag]=false;require(!gpo::acceptable_reconciliation_observation(original,incomplete),"Incomplete acceptance proof accepted");}
+  auto bad_marker=observation;bad_marker.at("state").as<json::object>().at("gpo").as<json::object>()["description"]="";
+  require(gpo::valid_reconciliation_observation(bad_marker)&&!gpo::acceptable_reconciliation_observation(original,bad_marker),"Unidentified partial creation adopted");
+  auto foreign=observation;auto foreign_link=link();foreign_link["domain"]="foreign.invalid";foreign_link["dn"]="CN=Site,CN=Sites,CN=Configuration,DC=example,DC=invalid";foreign_link["kind"]="site";
+  foreign["forest_links"]=json::array{foreign_link};foreign.at("state").as<json::object>().at("gpo").as<json::object>()["links"]=json::array{foreign_link};
+  require(gpo::valid_reconciliation_observation(foreign)&&!gpo::acceptable_reconciliation_observation(original,foreign),"Foreign site link hidden or accepted");
+  auto linked_observation=observation;auto linked_snapshot=snapshot();target(linked_snapshot,true);linked_observation["state"]=linked_snapshot;
+  linked_observation["forest_links"]=linked_snapshot.at("gpo").as<json::object>().at("links");
+  auto linked_original=record(document("link_managed_gpo",linked_snapshot));linked_original.state=gpo::phase::reconciliation;linked_original.gpo_guid=id;
+  require(gpo::acceptable_reconciliation_observation(linked_original,linked_observation),"Enabled own link of disabled GPO cannot be accepted");
+  auto mismatched_direct=linked_observation;mismatched_direct.at("state").as<json::object>().at("ous").as<json::array>()[0].as<json::object>().at("links").as<json::array>()[0].as<json::object>()["enabled"]=false;
+  require(!gpo::acceptable_reconciliation_observation(linked_original,mismatched_direct),"Direct links and forest proof disagree");
+  auto bounded=gpo::unavailable_observation(id,"gpo_reconciliation_state_unavailable",true);bounded["gpo_presence"]="present";bounded["forest_complete"]=true;
+  auto& observed_links=bounded.at("forest_links").as<json::array>();
+  for(int n=0;n<128;++n) {auto item=link();item["dn"]="OU="+std::to_string(n)+std::string(110,'x')+",DC=example,DC=invalid";observed_links.push_back(item);
+    if(json::serialize(bounded).size()>32700) {observed_links.pop_back();break;}}
+  require(json::serialize(bounded).size()>32000&&gpo::valid_reconciliation_observation(bounded),"Near-boundary forest observation rejected or undersized");
+  const json::object observed_envelope{{"action","reconciliation_result"},{"job_id",original.assignment.text("job_id")},{"input_digest",original.assignment.text("input_digest")},
+    {"journal_sha256",original_hash},{"reconciliation_id","bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"},{"observation_digest",gpo::sha256(json::serialize(bounded))},{"observation",bounded},
+    {"type","security_gpo"},{"schema_version","1"},{"device_uri",uri},{"correlation_id","fixture"}};
+  require(json::parse(json::serialize(observed_envelope))==json::value(observed_envelope),"Near-boundary observation envelope failed gateway parser roundtrip");
+  observed_links.front().as<json::object>()["dn"]=std::string(1500,'x');require(!gpo::valid_reconciliation_observation(bounded),"Oversized observation accepted");
+  auto unknown=original;unknown.gpo_guid="";require(!gpo::acceptable_reconciliation_observation(unknown,observation),"Unknown created GUID released");
+  auto invalid_issue=observation;invalid_issue["issues"]=json::array{"arbitrary"};require(!gpo::valid_reconciliation_observation(invalid_issue),"Arbitrary error text accepted");
+  for(const auto* code:{"gpo_reconciliation_domain_open_failed","gpo_reconciliation_gpo_open_failed",
+      "gpo_reconciliation_metadata_failed","gpo_reconciliation_worker_failed","gpo_reconciliation_worker_timeout",
+      "gpo_reconciliation_result_invalid","gpo_permission_denied","gpo_reconciliation_hresult_80070005"}) {
+    auto diagnostic=observation;diagnostic["issues"]=json::array{code};
+    require(gpo::valid_reconciliation_observation(diagnostic),"Bounded diagnostic rejected");
+    require(!gpo::acceptable_reconciliation_observation(original,diagnostic),"Diagnostic released reconciliation fence");
+  }
+  for(const auto* code:{"gpo_reconciliation_hresult_80070005 extra","gpo_reconciliation_hresult_00000000",
+      "gpo_reconciliation_hresult_8007000g","gpo_reconciliation_hresult_800700050"})
+    require(!gpo::reconciliation_issue(code),"Invalid HRESULT diagnostic accepted");
+  const auto future=std::time(nullptr)+300;char expiry_text[32]{};std::strftime(expiry_text,sizeof(expiry_text),"%Y-%m-%dT%H:%M:%SZ",std::gmtime(&future));
+  json::object challenge{{"schema",1},{"id","bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"},{"job_id",original.assignment.text("job_id")},
+    {"input_digest",original.assignment.text("input_digest")},{"journal_sha256",original_hash},{"device_uri",uri},{"expires_at",expiry_text},{"mode","observe"},{"observation_digest",""}};
+  require(gpo::parse_reconciliation(challenge,original,original_hash)==challenge,"Fresh independent challenge rejected");
+  for(const auto* field:{"job_id","input_digest","journal_sha256","device_uri"}) {auto wrong=challenge;wrong[field]="mismatch";rejects([&]{gpo::parse_reconciliation(wrong,original,original_hash);});}
+  auto expired=challenge;expired["expires_at"]="2020-01-01T00:00:00Z";rejects([&]{gpo::parse_reconciliation(expired,original,original_hash);});
+  challenge["mode"]="accept";challenge["observation_digest"]=gpo::sha256(json::serialize(observation));
+  const auto pending=gpo::reconciliation_sidecar(challenge,observation);
+  require(gpo::valid_reconciliation_sidecar(json::parse(json::serialize(pending)),original,original_hash,"accept"),"Pending acceptance failed bounded roundtrip");
+  auto released_challenge=challenge;released_challenge["mode"]="released";
+  require(gpo::valid_reconciliation_sidecar(gpo::reconciliation_release(released_challenge,pending,original,original_hash),original,original_hash,"released"),"Matching durable pending acceptance did not release");
+  rejects([&]{gpo::reconciliation_release(released_challenge,nullptr,original,original_hash);});
+  auto unsolicited=released_challenge;unsolicited["id"]="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  rejects([&]{gpo::reconciliation_release(unsolicited,pending,original,original_hash);});
+  unsolicited=released_challenge;unsolicited["observation_digest"]=std::string(64,'0');rejects([&]{gpo::reconciliation_release(unsolicited,pending,original,original_hash);});
+  auto altered=pending;altered.at("observation").as<json::object>()["quiescent"]=false;require(!gpo::valid_reconciliation_sidecar(altered,original,original_hash,"accept"),"Changed acceptance observation retained authority");
+  challenge["mode"]="released";challenge["expires_at"]="2020-01-01T00:00:00Z";
+  require(gpo::parse_reconciliation(challenge,original,original_hash)==challenge,"Lost-ack release recovery incorrectly requires current expiry");
+  auto invalid_date=challenge;invalid_date["expires_at"]="2020-02-31T00:00:00Z";rejects([&]{gpo::parse_reconciliation(invalid_date,original,original_hash);});
+  auto expired_original=original;expired_original.assignment.fields["expires_at"]="2020-01-01T00:00:00Z";
+  expired_original.assignment.fields["input_digest"]=gpo::input_digest(expired_original.assignment.fields);
+  auto independent_challenge=challenge;independent_challenge["expires_at"]=expiry_text;independent_challenge["mode"]="observe";independent_challenge["observation_digest"]="";
+  independent_challenge["input_digest"]=expired_original.assignment.text("input_digest");
+  require(gpo::parse_reconciliation(independent_challenge,expired_original,original_hash)==independent_challenge,"Expired original execution blocked a fresh read challenge");
+  require(json::serialize(gpo::journal_document(original))==original_bytes,"Reconciliation mutated original failed journal");
+  const json::object unicode{{"dn","OU=Gr\xc3\xb6\xc3\x9f" "e,DC=example,DC=invalid"},{"enabled",false},{"guid",nullptr},{"order",2}};
+  require(gpo::sha256(json::serialize(unicode))=="b6d894cdf630a556e0816d2a85d1e1dc6249e9d214373efbc0ef608b86f7fc28","Unicode canonical JSON differs from Python ensure_ascii=False sorted compact encoding");
+  }
   auto d=document();require(gpo::parse_job(d).number("schema")==3,"Schema3 rejected");
   require(gpo::unexpired(gpo::parse_job(d),now),"Valid short job rejected");
   json::object exact_executor{{"role","writable-domain-controller"},{"gpmc_available",true},{"domain_dns_name",d.at("domain_dns_name")},
@@ -172,6 +318,25 @@ int main() {
   require(gpo::execute_managed(j,approved_order,save,[]{return true;},[]{}).at("status").as<std::string>()=="activated","Approved second-priority link rejected");
   // A complete multi-domain forest census is required, not a successful
   // security-trimmed local query. Hidden/unavailable locations stop all writes.
+  {
+    const std::map<std::string,std::uint32_t> primary{{"dc=child,dc=example,dc=invalid",1}};
+    std::map<std::string,std::uint32_t> complete;
+    gpo::merge_forest_link_locations(complete,primary);
+    gpo::merge_forest_link_locations(complete,primary);
+    require(complete==primary,"Repeated identical naming-context observation was not merged");
+    const std::map<std::string,std::uint32_t> conflict{{"dc=child,dc=example,dc=invalid",0}};
+    rejects([&]{gpo::merge_forest_link_locations(complete,conflict);});
+    require(complete==primary,"Conflicting link observation replaced authoritative flags");
+    complete.clear();gpo::merge_forest_link_locations(complete,conflict);
+    gpo::merge_forest_link_locations(complete,conflict);
+    require(complete==conflict,"Repeated enabled link was mistaken for absent evidence");
+    std::map<std::string,std::uint32_t> limit;
+    for(int n=0;n<128;++n)limit.emplace("ou="+std::to_string(n)+",dc=example,dc=invalid",1);
+    complete.clear();gpo::merge_forest_link_locations(complete,limit);
+    gpo::merge_forest_link_locations(complete,limit);
+    require(complete.size()==128,"Identical observations consumed the unique-location bound");
+    rejects([&]{gpo::merge_forest_link_locations(complete,{{"ou=overflow,dc=example,dc=invalid",1}});});
+  }
   const auto census_job=gpo::parse_job(document());
   const std::vector<gpo::forest_domain> forest{{"example.invalid",census_job.text("domain_guid"),true},
     {"child.example.invalid","aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",false}};
@@ -202,6 +367,23 @@ int main() {
   }
   j=record(document("activate_managed_gpo",linked_state));provider incomplete(linked_state);incomplete.failure="inspect";incomplete.failure_code="gpo_preflight_required";
   require(gpo::execute_managed(j,incomplete,save,[]{return true;},[]{}).at("result_code").as<std::string>()=="gpo_preflight_required"&&incomplete.calls.size()==1,"Incomplete forest visibility reached mutation");
+  for(const auto* code:{"gpo_preflight_inventory_failed","gpo_preflight_controller_failed","gpo_preflight_directory_failed",
+      "gpo_preflight_domain_visibility_failed","gpo_preflight_domain_search_failed","gpo_preflight_site_visibility_failed",
+      "gpo_preflight_site_search_failed","gpo_preflight_census_mismatch",
+      "gpo_preflight_domain_open_failed","gpo_preflight_domain_identity_failed","gpo_preflight_domain_query_failed",
+      "gpo_preflight_domain_links_failed","gpo_preflight_domain_merge_failed"}) {
+    auto inspection=document("inspect_managed_gpo",linked_state);inspection["intended_operation"]="activate_managed_gpo";
+    inspection["input_digest"]=gpo::input_digest(inspection);j=record(inspection);provider failed_read(linked_state);
+    failed_read.failure="inspect";failed_read.failure_code=code;
+    const auto failure=gpo::inspect_managed(j,failed_read,save,[]{return true;});
+    require(failure.at("status").as<std::string>()=="failed"&&failure.at("result_code").as<std::string>()==code&&
+      failed_read.calls==std::vector<std::string>{"inspect"},"Read-only preflight lost bounded failure phase");
+    j=record(document("activate_managed_gpo",linked_state));provider failed_write(linked_state);
+    failed_write.failure="inspect";failed_write.failure_code=code;
+    const auto blocked=gpo::execute_managed(j,failed_write,save,[]{return true;},[]{});
+    require(blocked.at("status").as<std::string>()=="failed"&&blocked.at("result_code").as<std::string>()==code&&
+      failed_write.calls==std::vector<std::string>{"inspect"},"Preflight phase failure reached mutation");
+  }
   auto case_document=document("activate_managed_gpo",linked_state);case_document["target_ous"]=json::array{"ou=servers,dc=example,dc=invalid"};case_document["input_digest"]=gpo::input_digest(case_document);
   j=record(case_document);provider case_provider(linked_state);require(gpo::execute_managed(j,case_provider,save,[]{return true;},[]{}).at("status").as<std::string>()=="activated","AD DN capitalization rejected equivalent configured target");
   const auto domain_component=std::find_if(gpo::components.begin(),gpo::components.end(),[](const auto& c){return c.scope=="domain";});
@@ -287,6 +469,57 @@ int main() {
     root_combined.state.at("gpo").as<json::object>().at("links").as<json::array>()[0].as<json::object>().at("kind").as<std::string>()=="domain","Combined Tier0 domain root operation failed");
   auto wrong_combined_tier=domain_document("import_and_link_managed_gpo",combined_root);wrong_combined_tier["target_tier"]=1;wrong_combined_tier["input_digest"]=gpo::input_digest(wrong_combined_tier);rejects([&]{gpo::parse_job(wrong_combined_tier);});
   auto no_combined_targets=document("import_and_link_managed_gpo",snapshot(false));rejects([&]{gpo::parse_job(no_combined_targets);});
+
+  const auto& override_component=gpo::override_components.front();json::array patch;
+  for(const auto& descriptor:override_component.settings){const auto meta=json::parse(descriptor.metadata_json).as<json::object>();if(meta.at("editable").as<bool>()){patch.push_back(json::object{{"setting_id",descriptor.setting_id},{"value",changed_value(meta)}});break;}}
+  require(!patch.empty(),"Override fixture has no editable setting");
+  auto override_doc=override_document(override_component,patch,"import_managed_gpo");
+  auto override_state=override_doc.at("expected_state").as<json::object>();
+  j=record(override_doc);provider sparse_stage(override_state);
+  const auto sparse_result=gpo::execute_managed(j,sparse_stage,save,[]{return true;},[]{});
+  require(sparse_result.at("status").as<std::string>()=="staged"&&sparse_stage.calls==std::vector<std::string>{"inspect","prepare","inspect"},"Override staging wrote existing GPO");
+  require(sparse_result.at("evidence").as<json::object>().at("override_sha256")==override_doc.at("override_sha256"),"Override result lost patch binding");
+  auto corrupt_override_receipt=gpo::journal_document(j);corrupt_override_receipt.at("result").as<json::object>().at("evidence").as<json::object>()["override_sha256"]=std::string(64,'c');
+  rejects([&]{gpo::parse_journal(corrupt_override_receipt);});
+
+  auto override_live=override_state;target(override_live,true);
+  auto& override_live_links=override_live.at("ous").as<json::array>()[0].as<json::object>().at("links").as<json::array>();
+  std::swap(override_live_links[0],override_live_links[1]);override_live_links[0].as<json::object>()["order"]=1;override_live_links[1].as<json::object>()["order"]=2;
+  override_live.at("gpo").as<json::object>().at("links").as<json::array>()[0].as<json::object>()["order"]=2;
+  auto activate_override=override_document(override_component,patch,"activate_managed_gpo",override_live);
+  j=record(activate_override);provider sparse_activate(override_live);sparse_activate.override_activation=true;
+  const auto activation_result=gpo::execute_managed(j,sparse_activate,save,[]{return true;},[]{});
+  require(activation_result.at("status").as<std::string>()=="activated","Override activation did not restore approved precedence");
+  const auto backed_up=std::find(sparse_activate.calls.begin(),sparse_activate.calls.end(),"backup"),written=std::find(sparse_activate.calls.begin(),sparse_activate.calls.end(),"activate");
+  require(backed_up!=sparse_activate.calls.end()&&written!=sparse_activate.calls.end()&&backed_up<written,"Override mutation preceded protected backup");
+  require(activation_result.at("evidence").as<json::object>().at("override_sha256")==activate_override.at("override_sha256"),"Activation receipt lost patch revision");
+  auto reject_patch=[&](json::array entries){auto invalid=override_document(override_component,std::move(entries));rejects([&]{gpo::parse_job(invalid);});};
+  reject_patch({});reject_patch({patch[0],patch[0]});
+  auto bad_entry=patch[0].as<json::object>();bad_entry["setting_id"]="not-compiled";reject_patch({bad_entry});
+  bad_entry=patch[0].as<json::object>();bad_entry["path"]="caller-path";reject_patch({bad_entry});
+  bad_entry=patch[0].as<json::object>();bad_entry["value"]=true;reject_patch({bad_entry});
+  auto invalid_override=override_doc;invalid_override["override_sha256"]=std::string(64,'c');invalid_override["input_digest"]=gpo::input_digest(invalid_override);rejects([&]{gpo::parse_job(invalid_override);});
+  invalid_override=override_doc;invalid_override["owner_marker"]=std::string("IPMS managed GPO; id=")+managed;invalid_override["input_digest"]=gpo::input_digest(invalid_override);rejects([&]{gpo::parse_job(invalid_override);});
+  std::set<std::string> rendered_kinds, validated_types;
+  for(const auto& component:gpo::override_components)for(const auto& descriptor:component.settings) {
+    const auto metadata=json::parse(descriptor.metadata_json).as<json::object>();
+    if(!metadata.at("editable").as<bool>()){auto invalid=override_document(component,{json::object{{"setting_id",descriptor.setting_id},{"value",metadata.at("baseline_value")}}});rejects([&]{gpo::parse_job(invalid);});continue;}
+    auto unchanged=override_document(component,{json::object{{"setting_id",descriptor.setting_id},{"value",metadata.at("baseline_value")}}});rejects([&]{gpo::parse_job(unchanged);});
+
+    const auto type=metadata.at("value_type").as<std::string>();
+    if(validated_types.insert(type).second){
+      json::value invalid_value=type=="integer"?json::value(true):type=="string"?json::value("bad\r\n[Section]"):json::value(json::array{"S-1-5-32-544","S-1-5-32-544"});
+      auto invalid=override_document(component,{json::object{{"setting_id",descriptor.setting_id},{"value",invalid_value}}});rejects([&]{gpo::parse_job(invalid);});
+    }
+    const auto kind=metadata.at("kind").as<std::string>()+(metadata.at("file").as<std::string>().ends_with("registry.pol")?"_pol":"");
+    if(!rendered_kinds.insert(kind).second)continue;
+    auto sample=override_document(component,{json::object{{"setting_id",descriptor.setting_id},{"value",changed_value(metadata)}}});
+    const auto parsed=gpo::parse_job(sample);const auto rendered=gpo::render_override_files(parsed);
+    require(rendered.contains(metadata.at("file").as<std::string>()),"Sparse renderer missed selected file");
+    if(metadata.at("value_type").as<std::string>()=="string") {auto injected=sample;injected.at("override_entries").as<json::array>()[0].as<json::object>()["value"]="bad\r\n[Injected]";injected["override_sha256"]=gpo::override_digest(gpo::job{injected});injected["input_digest"]=gpo::input_digest(injected);rejects([&]{gpo::parse_job(injected);});}
+    if(kind=="privilege_right")for(const char* invalid_sid:{"Administrators","*S-1-5-32-544","S-1-05-32-544","S-1-5-4294967296","S-1-281474976710656-1"}){auto injected=sample;injected.at("override_entries").as<json::array>()[0].as<json::object>()["value"]=json::array{invalid_sid};injected["override_sha256"]=gpo::override_digest(gpo::job{injected});injected["input_digest"]=gpo::input_digest(injected);rejects([&]{gpo::parse_job(injected);});}
+  }
+  require(rendered_kinds.size()==6,"Sparse renderer did not exercise all payload kinds");
   auto large=snapshot(true,true);target(large,true);
   auto& many=large.at("ous").as<json::array>()[0].as<json::object>().at("links").as<json::array>();
   for(long n=3;n<=128;++n) {

@@ -1,5 +1,5 @@
 # File Name: test_gpo_approvals.py
-# Version: v0.1.0 | Created: 2026-09-15 | Last Modified: 2026-09-15
+# Version: v0.2.0 | Created: 2026-09-15 | Last Modified: 2026-09-16
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
 # Description: Public approval policy, domain scopes, immutable reviews and one-use authority.
 import copy
@@ -450,3 +450,145 @@ class PortalApprovalRaceTests(TransactionTestCase):
         self.assertIn(approval, (200, 409))
         self.assertEqual(changed, 200)
         self.assertEqual(GpoImportJob.objects.get().status, 'failed')
+
+
+class DirectProductionApprovalTests(TestCase):
+    """Public production submissions carry authority without a second log action."""
+    draft = PortalApprovalTests.draft
+    create = PortalApprovalTests.create
+    envelope = PortalApprovalTests.envelope
+    exchange = PortalApprovalTests.exchange
+    result = PortalApprovalTests.result
+    approve = PortalApprovalTests.approve
+    grants = PortalApprovalTests.grants
+    policy = PortalApprovalTests.policy
+    poll = PortalApprovalTests.poll
+
+    def setUp(self):
+        # Reuse the independent directory observation fixture, not approval mocks.
+        from .test_gpo_production import ProductionGpoTests
+        for name in ('inspect', 'snapshot', 'report_success'):
+            setattr(self, name, getattr(ProductionGpoTests, name).__get__(self))
+        ProductionGpoTests.setUp(self)
+
+    def prepare(self):
+        inspected = self.inspect()
+        self.report_success(inspected, self.snapshot(inspected))
+        return {'preflight_id': inspected['job_id'], 'idempotency_key': str(uuid.uuid4()),
+                'safety_review': {'management_access': False, 'recovery_access': False}}
+
+    def submit(self, data):
+        return self.client.post(self.base + 'managed-gpos/', data, format='json')
+
+    def test_single_admin_submission_is_digest_bound_audited_and_claimed_once(self):
+        data = self.prepare()
+        response = self.submit(data)
+        self.assertEqual(response.status_code, 202, response.data)
+        self.assertEqual(response.data['status'], 'queued')
+        row = GpoImportJob.objects.get(pk=response.data['id'])
+        self.assertEqual(row.approved_by_id, self.user.pk)
+        self.assertEqual(row.requested_by_id, self.user.pk)
+        self.assertEqual(row.approval_digest, digest(approval_object(row)))
+        self.assertFalse(row.four_eyes_required)
+        self.assertFalse(response.data['can_approve'])
+        self.assertEqual(AuditEvent.objects.get(action='security.gpo_import_approved').actor, str(self.user.pk))
+        approval_digest, approved_at = row.approval_digest, row.approved_at
+        replay = self.submit(data)
+        self.assertEqual(replay.status_code, 202, replay.data)
+        row.refresh_from_db()
+        self.assertEqual((row.approval_digest, row.approved_at), (approval_digest, approved_at))
+        self.assertEqual(AuditEvent.objects.filter(action='security.gpo_import_approved').count(), 1)
+        claim = self.exchange(row.assignment, 'claim')['gpo_claim']
+        self.assertTrue(claim['authorized'])
+        self.assertEqual(claim['approval']['input_digest'], row.input_digest)
+        self.assertEqual(claim['approval']['operation'], row.assignment['operation'])
+        self.assertEqual(self.exchange(row.assignment, 'claim')['gpo_claim']['mode'], 'observe')
+
+    def test_four_eyes_submission_still_requires_another_scoped_approver(self):
+        self.grants()
+        self.policy(True)
+        response = self.submit(self.prepare())
+        self.assertEqual(response.status_code, 202, response.data)
+        self.assertEqual(response.data['status'], 'awaiting_approval')
+        row = GpoImportJob.objects.get(pk=response.data['id'])
+        self.assertIsNone(row.approved_at)
+        self.assertFalse(AuditEvent.objects.filter(action='security.gpo_import_approved').exists())
+        self.assertEqual(self.approve(row.assignment).status_code, 403)
+        self.client.force_authenticate(self.approver)
+        self.assertEqual(self.approve(row.assignment).status_code, 200)
+        self.assertEqual(self.exchange(row.assignment, 'claim')['gpo_claim']['approval']['approved_by'], str(self.approver.pk))
+
+    def test_replay_of_existing_pending_job_does_not_add_approval(self):
+        from .gpo_production import create_change
+        data = self.prepare()
+        # A previously persisted job predates the direct-submission workflow.
+        with transaction.atomic(), patch('ipms.apps.security.gpo_production.approve_on_creation'):
+            row = create_change(self.tenant, self.user, DomainSecuritySettings.objects.get(pk=self.config['id']), data)
+        response = self.submit(data)
+        self.assertEqual(response.status_code, 202, response.data)
+        self.assertEqual(response.data['status'], 'awaiting_approval')
+        row.refresh_from_db()
+        self.assertIsNone(row.approved_at)
+        self.assertFalse(AuditEvent.objects.filter(action='security.gpo_import_approved').exists())
+
+    def test_missing_approval_permission_never_creates_authority(self):
+        from .gpo_approvals import scoped
+        data = self.prepare()
+        def run_only(user, tenant, config, tier, *, approve=False):
+            return False if approve else scoped(user, tenant, config, tier)
+        # Current standard tenant-admin roles include approval. This boundary
+        # models a future run-only role without weakening the real grant check.
+        with patch('ipms.apps.security.gpo_approvals.scoped', side_effect=run_only):
+            response = self.submit(data)
+        self.assertEqual(response.status_code, 202, response.data)
+        self.assertEqual(response.data['status'], 'awaiting_approval')
+        self.assertIsNone(GpoImportJob.objects.get(pk=response.data['id']).approved_at)
+
+    def test_revoked_domain_grant_rejects_submission(self):
+        data = self.prepare()
+        self.grants([])
+        response = self.submit(data)
+        self.assertEqual(response.status_code, 403, response.data)
+        self.assertFalse(GpoImportJob.objects.filter(pk=data['idempotency_key']).exists())
+        self.assertFalse(AuditEvent.objects.filter(action='security.gpo_import_approved').exists())
+
+    def test_changed_artifact_rolls_back_submission_and_approval(self):
+        data = self.prepare()
+        self.artifact_mock.return_value = self.bundle + b'changed'
+        response = self.submit(data)
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertEqual(response.data['error']['code'], 'security_gpo_artifact_unavailable')
+        self.assertFalse(GpoImportJob.objects.filter(pk=data['idempotency_key']).exists())
+        self.assertFalse(AuditEvent.objects.filter(action='security.gpo_import_approved').exists())
+
+    def test_changed_assignment_cannot_use_direct_approval(self):
+        response = self.submit(self.prepare())
+        self.assertEqual(response.status_code, 202, response.data)
+        row = GpoImportJob.objects.get(pk=response.data['id'])
+        row.assignment['pilot_display_name'] += '-changed'
+        row.save(update_fields=('assignment',))
+        self.assertFalse(self.exchange(row.assignment, 'claim')['gpo_claim']['authorized'])
+
+    def test_policy_change_withdraws_direct_approval_before_claim(self):
+        response = self.submit(self.prepare())
+        self.assertEqual(response.status_code, 202, response.data)
+        row = GpoImportJob.objects.get(pk=response.data['id'])
+        self.policy(True)
+        row.refresh_from_db()
+        self.assertEqual(row.status, 'failed')
+        self.assertEqual(self.exchange(row.assignment, 'claim')['gpo_claim']['mode'], 'cancelled')
+
+    def test_expiry_crossed_during_direct_review_rolls_back_new_job(self):
+        data = self.prepare()
+        clock = [timezone.now()]
+        def reviewed_then_expired(row):
+            result = review_document(row)
+            clock[0] = row.expires_at
+            return result
+        with patch('ipms.apps.security.gpo_approvals.review_document', side_effect=reviewed_then_expired), \
+                patch('ipms.apps.security.gpo_approvals.timezone.now', side_effect=lambda: clock[0]):
+            response = self.submit(data)
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertEqual(response.data['error']['code'], 'security_gpo_job_expired')
+        self.assertFalse(GpoImportJob.objects.filter(pk=data['idempotency_key']).exists())
+        self.assertFalse(AuditEvent.objects.filter(action='security.gpo_import_approved').exists())

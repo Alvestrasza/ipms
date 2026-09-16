@@ -13,6 +13,7 @@ import type {
   DomainSecurityCatalog,
   GpoImportJob,
 } from "../src/lib/domain-security-types";
+import type { OverrideCatalog } from "../src/lib/security-override-types";
 
 const domainsApi = "/api/v1/security/domain-settings/";
 const managementCheck =
@@ -44,7 +45,7 @@ function nativeFixture(mode: string, jobId?: string) {
   );
 }
 
-async function setup(page: Page) {
+async function setup(page: Page, fourEyes = false) {
   const fixture: Fixture = nativeFixture("setup");
   await page.goto("/en/login");
   await page.getByLabel("Username", { exact: true }).fill("e2e-admin");
@@ -61,6 +62,20 @@ async function setup(page: Page) {
     "X-CSRFToken": session.csrf_token,
     "X-IPMS-Tenant-ID": tenant.id,
   };
+  const approvalPolicyUrl = "/api/v1/security/gpo-approval-policy/";
+  const approvalPolicy = await (
+    await page.request.get(approvalPolicyUrl, { headers })
+  ).json();
+  if (approvalPolicy.four_eyes_required !== fourEyes) {
+    const updated = await page.request.put(approvalPolicyUrl, {
+      headers,
+      data: {
+        expected_revision: approvalPolicy.revision,
+        four_eyes_required: fourEyes,
+      },
+    });
+    expect(updated.status()).toBe(200);
+  }
   const catalog: DomainSecurityCatalog = await (
     await page.request.get(domainsApi, { headers })
   ).json();
@@ -100,7 +115,7 @@ async function openWorkflow(page: Page, context: Context) {
     .selectOption(context.fixture.domain_id);
   await expect(
     panel(page).getByRole("button", {
-      name: "Create approval request",
+      name: "Submit action",
       exact: true,
     }),
   ).toBeEnabled();
@@ -110,21 +125,12 @@ async function openWorkflow(page: Page, context: Context) {
 }
 
 async function approveAndCompleteFixture(
-  page: Page,
-  context: Context,
+  _page: Page,
+  _context: Context,
   job: GpoImportJob,
 ) {
-  const approved = await page.request.post(
-    `/api/v1/security/gpo-imports/${job.id}/approve/`,
-    {
-      headers: context.headers,
-      data: {
-        input_digest: job.input_digest,
-        policy_revision: job.policy_revision,
-      },
-    },
-  );
-  expect(approved.status()).toBe(200);
+  expect(job.approved_at).toBeTruthy();
+  expect(job.approved_by).toBeTruthy();
   return nativeFixture("complete", job.id);
 }
 
@@ -216,7 +222,7 @@ async function beginRequest(page: Page, context: Context) {
       response.request().method() === "POST",
   );
   await panel(page)
-    .getByRole("button", { name: "Create approval request", exact: true })
+    .getByRole("button", { name: "Submit action", exact: true })
     .click();
   const response = await pending;
   expect(response.status()).toBe(202);
@@ -255,8 +261,8 @@ async function finishInspection(
   expect(job.id).toBe(body.idempotency_key);
   expect(job.id).not.toBe(inspection.id);
   expect(job.operation).toBe(operation);
-  expect(job.status).toBe("awaiting_approval");
-  expect(job.approved_at).toBeNull();
+  expect(job.status).toBe("queued");
+  expect(job.approved_at).toBeTruthy();
   expect(job.approval_mode).toBe("portal");
   await expect(
     panel(page).getByRole("link", {
@@ -288,7 +294,7 @@ async function activationChecks(page: Page) {
     .check();
 }
 
-test("one create action prepares exactly one combined import/link request and never approves or activates it", async ({
+test("one submit action approves exactly one combined import/link request without a second approval or activation", async ({
   page,
 }) => {
   const context = await setup(page);
@@ -318,6 +324,9 @@ test("one create action prepares exactly one combined import/link request and ne
     /^0-C-ALL-MS-WS2025-[A-Za-z0-9-]+_V1\.0\.0$/,
   );
   expect(created.write.display_name?.length).toBeLessThan(80);
+  await expect(panel(page)).toContainText(
+    "No additional approval in Logs is needed",
+  );
   const linked = await approveAndCompleteFixture(page, context, created.write);
   expect(linked.status).toBe("linked");
   expect(linked.state.gpo.computer_enabled).toBe(false);
@@ -368,7 +377,7 @@ test("domain-root confirmation precedes combined creation and activation is a se
   context.component = component;
   await openWorkflow(page, context);
   const create = panel(page).getByRole("button", {
-    name: "Create approval request",
+    name: "Submit action",
     exact: true,
   });
   await expect(create).toBeDisabled();
@@ -427,7 +436,7 @@ test("domain-root confirmation precedes combined creation and activation is a se
     state: "linked",
     active_job_id: null,
   });
-  expect(activation.write.approved_at).toBeNull();
+  expect(activation.write.approved_at).toBeTruthy();
 });
 
 test("Agent 0.2.35 remains available for existing operations but cannot import and link", async ({
@@ -443,7 +452,7 @@ test("Agent 0.2.35 remains available for existing operations but cannot import a
     .getByRole("combobox", { name: "Configured domain", exact: true })
     .selectOption(context.fixture.domain_id);
   const create = panel(page).getByRole("button", {
-    name: "Create approval request",
+    name: "Submit action",
     exact: true,
   });
   await expect(create).toBeDisabled();
@@ -459,7 +468,7 @@ test("Agent 0.2.35 remains available for existing operations but cannot import a
     context,
     "import_managed_gpo",
   );
-  expect(imported.write.status).toBe("awaiting_approval");
+  expect(imported.write.status).toBe("queued");
 });
 
 test("preparing V2 keeps V1 visibly active until its separately approved activation", async ({
@@ -566,7 +575,7 @@ test("a lost inspection response resumes the same ID and creates only one combin
     await route.abort("connectionreset");
   });
   await panel(page)
-    .getByRole("button", { name: "Create approval request", exact: true })
+    .getByRole("button", { name: "Submit action", exact: true })
     .click();
   await expect(panel(page).getByRole("alert")).toContainText(
     "request result is uncertain",
@@ -647,7 +656,7 @@ test("a lost write response only retries explicitly with the same request ID", a
   expect(listing.jobs).toHaveLength(2);
   expect(
     listing.jobs.find((job: GpoImportJob) => job.id === writeId),
-  ).toMatchObject({ status: "awaiting_approval", approved_at: null });
+  ).toMatchObject({ status: "queued" });
 });
 
 for (const failure of ["malformed", "expired"] as const) {
@@ -708,9 +717,15 @@ test("a failed inspection creates no write and an explicit retry uses the reserv
   const inspection = await beginRequest(page, context);
   nativeFixture("fail", inspection.job.id);
   await expect(panel(page).getByRole("alert")).toContainText(
-    "gpo_provider_failed",
+    "check AD connectivity, GPMC and the Agent service account",
     { timeout: 15000 },
   );
+  await expect(
+    panel(page).getByRole("link", {
+      name: "Review request in Logs",
+      exact: true,
+    }),
+  ).toHaveAttribute("href", `/en/logs/baselines?job=${inspection.job.id}`);
   const retry = await createAutomatically(page, context);
   expect(retry.selection.managed_id).toBe(inspection.job.managed_id);
   const listing = await (
@@ -751,7 +766,7 @@ test("authorization withdrawal between inspection and automatic write blocks the
   const inspection = await beginRequest(page, context);
   nativeFixture("inspect", inspection.job.id);
   await expect(panel(page).getByRole("alert")).toContainText(
-    "request was rejected",
+    "request was not authorized",
     { timeout: 15000 },
   );
   await expect(
@@ -767,6 +782,203 @@ test("authorization withdrawal between inspection and automatic write blocks the
       (job: GpoImportJob) => job.operation === "inspect_managed_gpo",
     ),
   ).toBe(true);
+});
+
+test("an unresolved write explains the domain lock and links its exact existing request", async ({
+  page,
+}) => {
+  const context = await setup(page);
+  await openWorkflow(page, context);
+  const { write } = await createAutomatically(page, context);
+  expect(write.approved_at).toBeTruthy();
+  expect(nativeFixture("reconcile", write.id).status).toBe(
+    "reconciliation_required",
+  );
+  let listingReads = 0;
+  await page.route(`**${context.endpoint}/managed-gpos/`, async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    listingReads += 1;
+    const response = await route.fetch();
+    const body = await response.json();
+    if (listingReads === 1)
+      body.jobs.find((job: GpoImportJob) => job.id === write.id).status =
+        "queued";
+    await route.fulfill({ response, json: body });
+  });
+  await openWorkflow(page, context);
+  await panel(page)
+    .getByRole("button", { name: "Submit action", exact: true })
+    .click();
+  await expect(panel(page).getByRole("alert")).toContainText(
+    "changes may already have occurred",
+  );
+  const link = panel(page).getByRole("link", {
+    name: "Review request in Logs",
+    exact: true,
+  });
+  await expect(link).toHaveAttribute(
+    "href",
+    `/en/logs/baselines?job=${write.id}`,
+  );
+  expect(listingReads).toBe(2);
+  await link.click();
+  await expect(page).toHaveURL(
+    new RegExp(`/en/logs/baselines\\?job=${write.id}$`),
+  );
+  await expect(
+    page.getByRole("heading", {
+      name: write.display_name ?? write.pilot_display_name,
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "compare the actual GPO content and links with the approved request",
+  );
+  const listing = await (
+    await page.request.get(`${context.endpoint}/managed-gpos/`, {
+      headers: context.headers,
+    })
+  ).json();
+  expect(listing.jobs).toHaveLength(2);
+  expect(
+    listing.jobs.find((job: GpoImportJob) => job.id === write.id).status,
+  ).toBe("reconciliation_required");
+});
+
+test("API rejection codes explain causes and next steps without exposing backend details", async ({
+  page,
+}) => {
+  const context = await setup(page);
+  await openWorkflow(page, context);
+  let status = 409;
+  let code = "security_gpo_domain_busy";
+  let contextualReads = 0;
+  page.on("request", (request) => {
+    if (
+      request.method() === "GET" &&
+      request.url().endsWith(`${context.endpoint}/managed-gpos/`)
+    )
+      contextualReads += 1;
+  });
+  await page.route(`**${context.endpoint}/gpo-preflights/`, (route) =>
+    route.fulfill({
+      status,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: {
+          code,
+          message: "PRIVATE_BACKEND_DETAILS <script>private()</script>",
+          correlation_id: "PRIVATE_CORRELATION",
+        },
+      }),
+    }),
+  );
+  for (const [nextStatus, nextCode, expected] of [
+    [409, "security_gpo_domain_busy", "Another GPO request is pending"],
+    [
+      409,
+      "security_gpo_executor_unavailable",
+      "import and link requires 0.2.36",
+    ],
+    [
+      409,
+      "security_gpo_artifact_unavailable",
+      "integrity of this baseline package on the Appliance",
+    ],
+    [
+      409,
+      "security_gpo_job_limit",
+      "tenant has reached its total GPO request limit",
+    ],
+    [409, "security_domain_revision_changed", "domain configuration changed"],
+    [409, "security_gpo_name_collision", "configured naming scheme"],
+    [409, "security_gpo_preflight_required", "new read-only inspection"],
+    [403, "security_gpo_domain_busy", "An expired session or CSRF check"],
+    [401, "authentication_failed", "Sign in again"],
+    [429, "rate_limited", "Wait briefly"],
+    [409, "__proto__", "could not accept this request"],
+  ] as const) {
+    status = nextStatus;
+    code = nextCode;
+    const beforeReads = contextualReads;
+    await panel(page)
+      .getByRole("button", { name: "Submit action", exact: true })
+      .click();
+    await expect(panel(page).getByRole("alert")).toContainText(expected);
+    await expect(panel(page)).not.toContainText("PRIVATE_");
+    await expect(panel(page)).not.toContainText("private()");
+    expect(contextualReads - beforeReads).toBe(
+      status === 409 && code === "security_gpo_domain_busy" ? 1 : 0,
+    );
+  }
+  await page.goto(
+    "/de/security/baseline?baseline=microsoft-windows-server-2025",
+  );
+  await page
+    .getByRole("combobox", { name: "Konfigurierte Domäne", exact: true })
+    .selectOption(context.fixture.domain_id);
+  const german = page.getByRole("region", {
+    name: "GPO-Verteilung",
+    exact: true,
+  });
+  status = 409;
+  code = "security_gpo_domain_busy";
+  await german
+    .getByRole("button", { name: "Aktion beauftragen", exact: true })
+    .click();
+  await expect(german.getByRole("alert")).toContainText(
+    "Öffne die Baseline-Logs",
+  );
+  await expect(german).not.toContainText("PRIVATE_");
+});
+
+test("a 5xx response retains the request ID and ignores misleading backend error details", async ({
+  page,
+}) => {
+  const context = await setup(page);
+  await openWorkflow(page, context);
+  const keys: string[] = [];
+  let contextualReads = 0;
+  page.on("request", (request) => {
+    if (
+      request.method() === "GET" &&
+      request.url().endsWith(`${context.endpoint}/managed-gpos/`)
+    )
+      contextualReads += 1;
+  });
+  await page.route(`**${context.endpoint}/gpo-preflights/`, (route) => {
+    keys.push(route.request().postDataJSON().idempotency_key);
+    return route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: {
+          code: "security_gpo_domain_busy",
+          message: "PRIVATE_BACKEND_DETAILS",
+        },
+      }),
+    });
+  });
+  await panel(page)
+    .getByRole("button", { name: "Submit action", exact: true })
+    .click();
+  await expect(panel(page).getByRole("alert")).toContainText(
+    "request result is uncertain",
+  );
+  await expect(panel(page)).not.toContainText("already occupied");
+  await expect(panel(page)).not.toContainText("PRIVATE_");
+  await panel(page)
+    .getByRole("button", { name: "Retry the same request", exact: true })
+    .click();
+  await expect(
+    panel(page).getByRole("button", {
+      name: "Retry the same request",
+      exact: true,
+    }),
+  ).toBeEnabled();
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+  expect(contextualReads).toBe(0);
 });
 
 test("switching tenants during inspection aborts continuation and cannot create a cross-tenant write", async ({
@@ -798,4 +1010,620 @@ test("switching tenants during inspection aborts continuation and cannot create 
       })
     ).status(),
   ).toBe(404);
+});
+
+async function failedWriteForReconciliation(page: Page) {
+  const context = await setup(page);
+  await openWorkflow(page, context);
+  const { write } = await createAutomatically(page, context);
+  expect(write.approved_at).toBeTruthy();
+  expect(nativeFixture("reconcile", write.id).status).toBe(
+    "reconciliation_required",
+  );
+  await page.goto(`/en/logs/baselines?job=${write.id}`);
+  const region = page.getByRole("region", {
+    name: "Directory reconciliation",
+    exact: true,
+  });
+  await expect(
+    region.getByRole("button", { name: "Reconcile directory", exact: true }),
+  ).toBeEnabled();
+  return {
+    ...context,
+    write,
+    region,
+    reconciliationUrl: `/api/v1/security/gpo-imports/${write.id}/reconciliations/`,
+  };
+}
+async function requestObservation(
+  page: Page,
+  context: Awaited<ReturnType<typeof failedWriteForReconciliation>>,
+) {
+  const response = page.waitForResponse(
+    (r) =>
+      r.url().endsWith(context.reconciliationUrl) &&
+      r.request().method() === "POST",
+  );
+  await context.region
+    .getByRole("button", { name: "Reconcile directory", exact: true })
+    .click();
+  const result = await response;
+  expect(result.status()).toBe(202);
+  const body = await result.json();
+  expect(body.latest.id).toBe(result.request().postDataJSON().idempotency_key);
+  expect(body.latest.status).toBe("requested");
+  return body.latest;
+}
+test("directory reconciliation waits for observation, explicit acceptance and Agent acknowledgement without claiming import success", async ({
+  page,
+}) => {
+  const context = await failedWriteForReconciliation(page);
+  const mutations: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "POST") mutations.push(r.url());
+  });
+  const request = await requestObservation(page, context);
+  expect(nativeFixture("observe-reconciliation", context.write.id).status).toBe(
+    "observed",
+  );
+  const accept = context.region.getByRole("button", {
+    name: "Accept reconciliation",
+    exact: true,
+  });
+  await expect(accept).toBeEnabled({ timeout: 15000 });
+  await expect(context.region).toContainText("Approved target link missing");
+  await expect(context.region).toContainText(
+    "Baseline content import is not confirmed",
+  );
+  expect(mutations).toHaveLength(1);
+  const acceptedResponse = page.waitForResponse((r) =>
+    r.url().endsWith(`${context.reconciliationUrl}${request.id}/accept/`),
+  );
+  await accept.click();
+  const accepted = await acceptedResponse;
+  expect(accepted.status()).toBe(202);
+  expect((await accepted.json()).latest.status).toBe("accept_requested");
+  await expect(context.region).toContainText(
+    "Awaiting Agent verification and acknowledgement",
+  );
+  const detail = await (
+    await page.request.get(`/api/v1/logs/gpo-imports/${context.write.id}/`, {
+      headers: context.headers,
+    })
+  ).json();
+  expect(detail.status).toBe("reconciliation_required");
+  const ack = nativeFixture("ack-reconciliation", context.write.id);
+  expect(ack).toMatchObject({
+    status: "accepted",
+    job_status: "reconciled",
+    error_code: "gpo_provider_failed",
+    staged_job_id: null,
+    active_job_id: null,
+  });
+  await expect(context.region).toContainText("Reconciliation accepted", {
+    timeout: 15000,
+  });
+  await expect(page.getByRole("main")).toContainText(
+    "Directory reconciled; import not confirmed",
+  );
+  expect(mutations).toHaveLength(2);
+  await page.goto(
+    `/en/logs/baselines?domain=${context.fixture.domain_name}&kind=gpo_import&status=reconciled`,
+  );
+  const table = page.getByRole("table", { name: "Baseline logs", exact: true });
+  await expect(table.locator("tbody tr")).toHaveCount(1);
+  await expect(table).toContainText(
+    "Directory reconciled; import not confirmed",
+  );
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export CSV", exact: true }).click();
+  const csv = await readFile((await (await download).path()) as string, "utf8");
+  expect(csv).toContain("reconciled");
+  expect(csv).toContain("gpo_provider_failed");
+});
+
+test("incomplete or malformed directory observations cannot be accepted or displayed as an absence of links", async ({
+  page,
+}) => {
+  const context = await failedWriteForReconciliation(page);
+  await requestObservation(page, context);
+  nativeFixture("observe-unverifiable", context.write.id);
+  const accept = context.region.getByRole("button", {
+    name: "Accept reconciliation",
+    exact: true,
+  });
+  await expect(accept).toBeDisabled({ timeout: 15000 });
+  await expect(context.region).toContainText("Not fully determinable");
+  await expect(context.region).not.toContainText(
+    "Approved target link missing",
+  );
+  await expect(context.region).toContainText(
+    "could not inspect all forest links",
+  );
+  await page.route(`**${context.reconciliationUrl}`, async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    payload.latest.observation.forest_complete = "true";
+    payload.latest.can_accept = true;
+    await route.fulfill({ response, json: payload });
+  });
+  await context.region
+    .getByRole("button", { name: "Refresh reconciliation", exact: true })
+    .click();
+  await expect(context.region.getByRole("alert")).toContainText(
+    "response is invalid",
+  );
+  await expect(accept).toHaveCount(0);
+});
+
+test("lost reconciliation responses retry the same request ID and exact observation digest", async ({
+  page,
+}) => {
+  const context = await failedWriteForReconciliation(page);
+  const keys: string[] = [];
+  const digests: string[] = [];
+  await page.route(`**${context.reconciliationUrl}**`, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    const body = route.request().postDataJSON();
+    const values = route.request().url().endsWith("/accept/") ? digests : keys;
+    values.push(body.observation_digest ?? body.idempotency_key);
+    const response = await route.fetch();
+    expect(response.status()).toBe(202);
+    if (values.length === 1) await route.abort("connectionreset");
+    else await route.fulfill({ response });
+  });
+  await context.region
+    .getByRole("button", { name: "Reconcile directory", exact: true })
+    .click();
+  const retry = context.region.getByRole("button", {
+    name: "Retry the same request",
+    exact: true,
+  });
+  await expect(context.region.getByRole("alert")).toContainText(
+    "request result is uncertain",
+  );
+  await retry.click();
+  await expect(context.region.getByRole("status")).toContainText(
+    "Agent observation requested",
+  );
+  expect(keys).toEqual([keys[0], keys[0]]);
+  nativeFixture("observe-reconciliation", context.write.id);
+  const accept = context.region.getByRole("button", {
+    name: "Accept reconciliation",
+    exact: true,
+  });
+  await expect(accept).toBeEnabled({ timeout: 15000 });
+  await accept.click();
+  await expect(context.region.getByRole("alert")).toContainText(
+    "request result is uncertain",
+  );
+  await retry.click();
+  await expect(context.region).toContainText(
+    "Awaiting Agent verification and acknowledgement",
+  );
+  expect(digests).toEqual([digests[0], digests[0]]);
+  const result = await (
+    await page.request.get(context.reconciliationUrl, {
+      headers: context.headers,
+    })
+  ).json();
+  expect(result.latest.id).toBe(keys[0]);
+  expect(result.latest.status).toBe("accept_requested");
+});
+
+test("reconciliation prerequisite and acceptance errors remain actionable and localized", async ({
+  page,
+}) => {
+  const context = await failedWriteForReconciliation(page);
+  nativeFixture("agent-035", context.fixture.domain_id);
+  await context.region
+    .getByRole("button", { name: "Refresh reconciliation", exact: true })
+    .click();
+  await expect(context.region).toContainText("version 0.2.37 or newer");
+  await expect(
+    context.region.getByRole("button", {
+      name: "Reconcile directory",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  nativeFixture("agent-037", context.fixture.domain_id);
+  await context.region
+    .getByRole("button", { name: "Refresh reconciliation", exact: true })
+    .click();
+  const request = await requestObservation(page, context);
+  nativeFixture("observe-reconciliation", context.write.id);
+  const accept = context.region.getByRole("button", {
+    name: "Accept reconciliation",
+    exact: true,
+  });
+  await expect(accept).toBeEnabled({ timeout: 15000 });
+  await page.route(
+    `**${context.reconciliationUrl}${request.id}/accept/`,
+    (route) =>
+      route.fulfill({
+        status: 403,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: {
+            code: "security_gpo_reconciliation_four_eyes_required",
+            message: "PRIVATE_BACKEND_DETAILS",
+          },
+        }),
+      }),
+  );
+  await accept.click();
+  await expect(context.region.getByRole("alert")).toContainText(
+    "different administrator authorized for this domain and tier",
+  );
+  await expect(context.region).not.toContainText("PRIVATE_");
+  const record = await (
+    await page.request.get(context.reconciliationUrl, {
+      headers: context.headers,
+    })
+  ).json();
+  expect(record.latest.status).toBe("observed");
+  await page.goto(`/de/logs/baselines?job=${context.write.id}`);
+  const german = page.getByRole("region", {
+    name: "Verzeichnisabgleich",
+    exact: true,
+  });
+  await expect(
+    german.getByRole("button", { name: "Abgleich übernehmen", exact: true }),
+  ).toBeEnabled();
+  await expect(german).toContainText(
+    "Import des Baseline-Inhalts ist nicht bestätigt",
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(() =>
+      page.evaluate(() => ({
+        width: document.documentElement.scrollWidth,
+        viewport: window.innerWidth,
+        overflowing: [...document.querySelectorAll("body *")]
+          .filter(
+            (element) =>
+              !element.closest(".table-scroll") &&
+              element.getBoundingClientRect().right > window.innerWidth + 1,
+          )
+          .slice(0, 8)
+          .map((element) => ({
+            tag: element.tagName,
+            class: element.className,
+            right: element.getBoundingClientRect().right,
+            text: element.textContent?.slice(0, 100),
+          })),
+      })),
+    )
+    .toEqual({ width: 390, viewport: 390, overflowing: [] });
+});
+
+test("an Agent-observed change after acceptance keeps the original domain fence", async ({
+  page,
+}) => {
+  const context = await failedWriteForReconciliation(page);
+  await requestObservation(page, context);
+  nativeFixture("observe-reconciliation", context.write.id);
+  const accept = context.region.getByRole("button", {
+    name: "Accept reconciliation",
+    exact: true,
+  });
+  await expect(accept).toBeEnabled({ timeout: 15000 });
+  await accept.click();
+  await expect(context.region).toContainText(
+    "Awaiting Agent verification and acknowledgement",
+  );
+  expect(nativeFixture("drift-reconciliation", context.write.id).status).toBe(
+    "stale",
+  );
+  await expect(context.region).toContainText("Observation no longer current", {
+    timeout: 15000,
+  });
+  const detail = await (
+    await page.request.get(`/api/v1/logs/gpo-imports/${context.write.id}/`, {
+      headers: context.headers,
+    })
+  ).json();
+  expect(detail.status).toBe("reconciliation_required");
+  expect(detail.error_code).toBe("gpo_provider_failed");
+});
+
+test("switching tenant during reconciliation polling cannot continue the previous tenant action", async ({
+  page,
+}) => {
+  const context = await failedWriteForReconciliation(page);
+  await requestObservation(page, context);
+  let requestsAfterSwitch = 0;
+  const other = context.session.tenants.find(
+    (tenant: { slug: string }) => tenant.slug === "service-accounts-e2e",
+  );
+  await page
+    .getByRole("combobox", { name: "Active tenant", exact: true })
+    .selectOption(other.id);
+  await expect(context.region).toHaveCount(0);
+  page.on("request", (request) => {
+    if (request.url().includes(context.reconciliationUrl))
+      requestsAfterSwitch += 1;
+  });
+  nativeFixture("observe-reconciliation", context.write.id);
+  await page.waitForTimeout(4500);
+  expect(requestsAfterSwitch).toBe(0);
+  const status = await page.request.get(context.reconciliationUrl, {
+    headers: { ...context.headers, "X-IPMS-Tenant-ID": other.id },
+  });
+  expect(status.status()).toBe(404);
+});
+
+test("four-eyes policy keeps submission pending for another administrator", async ({
+  page,
+}) => {
+  const context = await setup(page, true);
+  await openWorkflow(page, context);
+  const inspection = await beginRequest(page, context);
+  const pending = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`${context.endpoint}/managed-gpos/`) &&
+      response.request().method() === "POST",
+  );
+  nativeFixture("inspect", inspection.job.id);
+  const response = await pending;
+  expect(response.status()).toBe(202);
+  const job = await response.json();
+  expect(job.status).toBe("awaiting_approval");
+  expect(job.approved_at).toBeNull();
+  expect(job.can_approve).toBe(false);
+  await expect(panel(page)).toContainText(
+    "Review and approve this exact action in Logs",
+  );
+  await expect(panel(page)).not.toContainText(
+    "No additional approval in Logs is needed",
+  );
+});
+
+test("failed inspection log detail shows the recorded cause instead of an access error", async ({
+  page,
+}) => {
+  const context = await setup(page);
+  await openWorkflow(page, context);
+  const inspection = await beginRequest(page, context);
+  nativeFixture("fail", inspection.job.id);
+  await page.goto(`/en/logs/baselines?job=${inspection.job.id}`);
+  await expect(
+    page.getByText("Read-only inspection; no change approval is required.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Legacy local approval", exact: true }),
+  ).toHaveCount(0);
+
+  await expect(
+    page.getByRole("heading", { name: "GPO request details", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("gpo_provider_failed", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "This GPO request is unavailable for the selected tenant or your account.",
+      { exact: true },
+    ),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText(
+      "The Agent could not complete the AD inspection or GPO operation.",
+      { exact: false },
+    ),
+  ).toBeVisible();
+});
+
+test("override editor persists only deviations, restores baseline and deploys a separate scoped GPO", async ({
+  page,
+}) => {
+  const context = await setup(page);
+  const originalPolicy = await seedPrepared(page, context);
+  nativeFixture("agent-043", context.fixture.domain_id);
+  const catalogResponse = await page.request.get(
+    `/api/v1/security/override-catalog/?${new URLSearchParams({ baseline_id: context.baseline.id, backup_id: context.component.id })}`,
+    { headers: context.headers },
+  );
+  expect(catalogResponse.status()).toBe(200);
+  const catalog: OverrideCatalog = await catalogResponse.json();
+  const setting = catalog.settings.find(
+    (s) =>
+      s.editable &&
+      s.value_type === "integer" &&
+      !s.enum_options.length &&
+      typeof s.baseline_value === "number" &&
+      s.max > s.min,
+  );
+  if (!setting || typeof setting.baseline_value !== "number")
+    throw new Error("An editable original integer setting is required.");
+  const changed =
+    setting.baseline_value === setting.min ? setting.min + 1 : setting.min;
+  const name = `Browser override ${randomUUID().slice(0, 8)}`;
+  await page.goto("/en/security/override");
+  await expect(
+    page.getByRole("link", { name: "Override", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  await page
+    .getByRole("combobox", { name: "Override", exact: true })
+    .selectOption("");
+  const editor = page.getByRole("region", {
+    name: "Baseline overrides",
+    exact: true,
+  });
+  await editor
+    .getByRole("combobox", { name: "Baseline", exact: true })
+    .selectOption(context.baseline.id);
+  await editor
+    .getByRole("combobox", { name: "Component", exact: true })
+    .selectOption(context.component.id);
+  await editor.getByLabel("Name", { exact: true }).fill(name);
+  await editor
+    .getByLabel("Search settings", { exact: true })
+    .fill(setting.label);
+  const row = editor
+    .getByRole("row")
+    .filter({ has: page.getByText(setting.label, { exact: true }) })
+    .filter({ hasText: setting.category })
+    .first();
+  await row
+    .getByRole("button", { name: "Override this setting", exact: true })
+    .click();
+  await row.getByRole("spinbutton").fill(String(changed));
+  const saved = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/security/overrides/") &&
+      r.request().method() === "POST",
+  );
+  await editor
+    .getByRole("button", { name: "Save override", exact: true })
+    .click();
+  const response = await saved;
+  expect(response.status()).toBe(201);
+  const override = await response.json();
+  expect(response.request().postDataJSON().entries).toEqual([
+    { setting_id: setting.setting_id, value: changed },
+  ]);
+  expect(override.entries).toEqual([
+    { setting_id: setting.setting_id, value: changed },
+  ]);
+  await expect(
+    page.getByText("Override saved. Saving does not change AD.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    editor.getByRole("combobox", { name: "Baseline", exact: true }),
+  ).toBeDisabled();
+  const deployment = page.getByRole("region", {
+    name: "Deploy saved override",
+    exact: true,
+  });
+  await deployment
+    .getByRole("combobox", { name: "Domain", exact: true })
+    .selectOption(context.fixture.domain_id);
+  await expect(
+    deployment
+      .getByRole("combobox", { name: "Managed GPO", exact: true })
+      .locator(`option[value="${originalPolicy.managed_id}"]`),
+  ).toHaveCount(0);
+  const inspectionResponse = page.waitForResponse(
+    (r) =>
+      r.url().endsWith(`${context.endpoint}/gpo-preflights/`) &&
+      r.request().method() === "POST",
+  );
+  await deployment
+    .getByRole("button", { name: "Submit action", exact: true })
+    .click();
+  const inspection = await inspectionResponse;
+  expect(inspection.status()).toBe(202);
+  expect(inspection.request().postDataJSON()).toMatchObject({
+    override_id: override.id,
+    override_revision: override.revision,
+    override_sha256: override.sha256,
+  });
+  const job = await inspection.json();
+  expect(job.override_id).toBe(override.id);
+  const writeResponse = page.waitForResponse(
+    (r) =>
+      r.url().endsWith(`${context.endpoint}/managed-gpos/`) &&
+      r.request().method() === "POST",
+  );
+  expect(nativeFixture("inspect", job.id).status).toBe("inspected");
+  const write = await writeResponse;
+  expect(write.status()).toBe(202);
+  const writeJob = await write.json();
+  expect(writeJob.override_id).toBe(override.id);
+  expect(writeJob.status).toBe("queued");
+  expect(writeJob.display_name).toContain("OVR-");
+  expect(nativeFixture("complete", writeJob.id).status).toBe("linked");
+  // Reopening then resetting removes the entry; it does not submit Not Configured.
+  await page.goto(`/en/logs/baselines?job=${writeJob.id}`);
+  const review = page.getByRole("region", {
+    name: "Baseline overrides",
+    exact: true,
+  });
+  await expect(
+    review.getByRole("row").filter({ hasText: setting.label }),
+  ).toBeVisible();
+  await expect(review).toContainText(JSON.stringify(changed));
+  await page.goto("/en/security/override");
+  await page
+    .getByRole("combobox", { name: "Override", exact: true })
+    .selectOption(override.id);
+  await editor
+    .getByLabel("Search settings", { exact: true })
+    .fill(setting.label);
+  await editor
+    .getByRole("button", { name: "Use baseline", exact: true })
+    .click();
+  const patched = page.waitForResponse(
+    (r) =>
+      r.url().endsWith(`/overrides/${override.id}/`) &&
+      r.request().method() === "PATCH",
+  );
+  await editor
+    .getByRole("button", { name: "Save override", exact: true })
+    .click();
+  const patch = await patched;
+  expect(patch.status()).toBe(200);
+  expect(patch.request().postDataJSON().entries).toEqual([]);
+  expect((await patch.json()).entries).toEqual([]);
+});
+
+test("structured baseline values remain read-only with localized explanations", async ({
+  page,
+}) => {
+  const context = await setup(page);
+  const component = context.baseline.components.find(
+    (c) => c.available && c.name.includes("Domain Controller"),
+  );
+  if (!component)
+    throw new Error("Domain Controller baseline component required.");
+  const response = await page.request.get(
+    `/api/v1/security/override-catalog/?${new URLSearchParams({ baseline_id: context.baseline.id, backup_id: component.id })}`,
+    { headers: context.headers },
+  );
+  expect(response.status()).toBe(200);
+  const catalog: OverrideCatalog = await response.json();
+  const setting = catalog.settings.find(
+    (s) => s.readonly_reason === "structured_registry_value",
+  );
+  if (!setting) throw new Error("Structured original setting required.");
+  for (const locale of ["en", "de"] as const) {
+    await page.goto(`/${locale}/security/override`);
+    await page
+      .getByRole("combobox", { name: "Override", exact: true })
+      .selectOption("");
+    const editor = page.getByRole("region", {
+      name: locale === "de" ? "Baseline-Overrides" : "Baseline overrides",
+      exact: true,
+    });
+    await editor
+      .getByRole("combobox", { name: "Baseline", exact: true })
+      .selectOption(context.baseline.id);
+    await editor
+      .getByRole("combobox", {
+        name: locale === "de" ? "Komponente" : "Component",
+        exact: true,
+      })
+      .selectOption(component.id);
+    await editor
+      .getByLabel(
+        locale === "de" ? "Einstellungen suchen" : "Search settings",
+        { exact: true },
+      )
+      .fill(setting.category);
+    const row = editor
+      .getByRole("row")
+      .filter({ hasText: setting.category })
+      .first();
+    await expect(row).toContainText(
+      locale === "de" ? "eigener Editor" : "dedicated editor",
+    );
+    await expect(row).not.toContainText("structured_registry_value");
+    await expect(row.getByRole("button")).toHaveCount(0);
+    await expect(row.getByRole("textbox")).toHaveCount(0);
+  }
 });

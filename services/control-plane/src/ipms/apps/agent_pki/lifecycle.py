@@ -1,3 +1,7 @@
+# File Name: lifecycle.py
+# Version: v0.1.0 | Created: 2026-09-15 | Last Modified: 2026-09-15
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Pinned Agent maintenance with terminal GPO recovery upgrade isolation.
 import hashlib
 import re
 import zipfile
@@ -61,15 +65,44 @@ def current_windows_agent_artifact() -> tuple[str, bytes, str]:
     return settings.AGENT_WINDOWS_VERSION, binary, hashlib.sha256(binary).hexdigest()
 
 
+def _gpo_maintenance_allowed(enrollment, action, target_version='', artifact_sha256=''):
+    """Only a forward recovery update may cross an Agent-reported terminal GPO fence."""
+    from ipms.apps.security.gpo_jobs import active_gpo_jobs, digest, RESULT_CODES
+    from ipms.apps.security.gpo_production import production
+    jobs = list(active_gpo_jobs(enrollment.tenant_id, enrollment_id=enrollment.id).select_related('system'))
+    if not jobs:
+        return True
+    if action != AgentLifecycleJob.Action.UPDATE:
+        return False
+    try:
+        version, _, pinned_hash = current_windows_agent_artifact()
+        if (not re.fullmatch(r'\d+\.\d+\.\d+', version) or version != target_version
+                or pinned_hash != artifact_sha256 or not SHA256_PATTERN.fullmatch(artifact_sha256)):
+            return False
+        target = tuple(map(int, version.split('.')))
+        if target < (0, 2, 37):
+            return False
+        for job in jobs:
+            if (job.status != 'reconciliation_required' or not production(job) or not job.claimed_at
+                    or job.result_evidence
+                    or not SHA256_PATTERN.fullmatch(job.result_digest)
+                    or not re.fullmatch(r'\d+\.\d+\.\d+', job.system.agent_version)
+                    or target <= tuple(map(int, job.system.agent_version.split('.')))
+                    or digest({key: value for key, value in job.assignment.items() if key != 'input_digest'}) != job.input_digest
+                    or not any(job.result_digest == digest({'status': 'requires_reconciliation', 'result_code': code,
+                        'gpo_guid': job.gpo_guid or None, 'evidence': None}) for code in RESULT_CODES)):
+                return False
+    except (ValidationError, ValueError, TypeError, OSError):
+        return False
+    return True
+
+
 @transaction.atomic
 def create_lifecycle_job(*, enrollment, action: str, actor: str) -> AgentLifecycleJob:
     require_active_tenant(enrollment.tenant_id, lock=True)
     from .hyperv_management import active_management_jobs
     if active_management_jobs(enrollment.tenant_id, enrollment_id=enrollment.id).exists():
         raise ValidationError("A Hyper-V management operation must finish before Agent maintenance.")
-    from ipms.apps.security.gpo_jobs import active_gpo_jobs
-    if active_gpo_jobs(enrollment.tenant_id, enrollment_id=enrollment.id).exists():
-        raise ValidationError("A GPO pilot operation must settle before Agent maintenance.")
     if enrollment.status != AgentEnrollment.Status.ACTIVE:
         raise ValidationError("The Agent enrollment is not active.")
     if action not in AgentLifecycleJob.Action.values:
@@ -83,6 +116,8 @@ def create_lifecycle_job(*, enrollment, action: str, actor: str) -> AgentLifecyc
     artifact_sha256 = ""
     if action == AgentLifecycleJob.Action.UPDATE:
         target_version, _, artifact_sha256 = current_windows_agent_artifact()
+    if not _gpo_maintenance_allowed(enrollment, action, target_version, artifact_sha256):
+        raise ValidationError("A GPO operation must settle before Agent maintenance.")
     return AgentLifecycleJob.objects.create(
         tenant=enrollment.tenant,
         enrollment=enrollment,
@@ -96,9 +131,6 @@ def create_lifecycle_job(*, enrollment, action: str, actor: str) -> AgentLifecyc
 @transaction.atomic
 def offer_lifecycle_job(enrollment) -> dict | None:
     Tenant.objects.select_for_update(no_key=True).get(pk=enrollment.tenant_id)
-    from ipms.apps.security.gpo_jobs import active_gpo_jobs
-    if active_gpo_jobs(enrollment.tenant_id, enrollment_id=enrollment.id).exists():
-        return None
     job = (
         AgentLifecycleJob.objects.select_for_update()
         .filter(
@@ -114,6 +146,8 @@ def offer_lifecycle_job(enrollment) -> dict | None:
         .first()
     )
     if job is None:
+        return None
+    if not _gpo_maintenance_allowed(enrollment, job.action, job.target_version, job.artifact_sha256):
         return None
     if not queued_actor_allowed(
         enrollment.tenant_id, job.requested_by, Permission.AGENTS_MANAGE
@@ -149,6 +183,7 @@ def record_lifecycle_result(
     result: str,
     result_code: str,
 ) -> AgentLifecycleJob:
+    Tenant.objects.select_for_update(no_key=True).get(pk=enrollment.tenant_id)
     if result not in RESULT_STATUSES:
         raise ValidationError("The Agent lifecycle result is invalid.")
     job = AgentLifecycleJob.objects.select_for_update().filter(
@@ -162,6 +197,8 @@ def record_lifecycle_result(
         AgentLifecycleJob.Status.DELIVERED,
     ):
         raise ValidationError("The Agent lifecycle job transition is invalid.")
+    if result == 'running' and not _gpo_maintenance_allowed(enrollment, job.action, job.target_version, job.artifact_sha256):
+        raise ValidationError("A GPO operation must settle before Agent maintenance.")
     if result in {"succeeded", "failed"} and job.status != AgentLifecycleJob.Status.RUNNING:
         raise ValidationError("The Agent lifecycle job transition is invalid.")
     if not RESULT_CODE_PATTERN.fullmatch(result_code):
@@ -192,9 +229,10 @@ def record_lifecycle_result(
     return job
 
 
+@transaction.atomic
 def lifecycle_artifact(enrollment, *, job_id: str) -> tuple[bytes, str]:
-    require_active_tenant(enrollment.tenant_id)
-    job = AgentLifecycleJob.objects.filter(
+    require_active_tenant(enrollment.tenant_id, lock=True)
+    job = AgentLifecycleJob.objects.select_for_update().filter(
         id=job_id,
         enrollment=enrollment,
         tenant=enrollment.tenant,
@@ -214,7 +252,8 @@ def lifecycle_artifact(enrollment, *, job_id: str) -> tuple[bytes, str]:
             locked = AgentLifecycleJob.objects.select_for_update().get(pk=job.pk)
             withdraw_agent_job(locked)
         raise ValidationError("The Agent lifecycle artifact is unavailable.")
-    _, binary, digest = current_windows_agent_artifact()
-    if digest != job.artifact_sha256:
+    version, binary, digest = current_windows_agent_artifact()
+    if version != job.target_version or digest != job.artifact_sha256 or not _gpo_maintenance_allowed(
+            enrollment, job.action, job.target_version, job.artifact_sha256):
         raise ValidationError("The Agent lifecycle artifact changed after assignment.")
     return binary, digest

@@ -11,13 +11,16 @@ import { useEffect, useRef, useState } from "react";
 import { documentLocale, type Locale } from "@/i18n/config";
 import { getDomainSecurityCopy } from "@/i18n/domain-security-copy";
 import { getGpoApprovalCopy } from "@/i18n/gpo-approval-copy";
+import { gpoAgentError } from "@/i18n/gpo-error-copy";
 import { getGpoProductionCopy } from "@/i18n/gpo-production-copy";
 import { getJobLogsCopy } from "@/i18n/job-logs-copy";
+import { getSecurityOverrideCopy } from "@/i18n/security-override-copy";
 import { isGpoImportJob } from "@/lib/domain-security-validation";
 import {
   type GpoImportLogDetail,
   isGpoImportLogDetail,
 } from "@/lib/job-log-types";
+import { GpoReconciliation } from "./gpo-reconciliation";
 import { GpoStateReview } from "./gpo-state-review";
 import styles from "./logs-page.module.css";
 
@@ -36,6 +39,7 @@ export function LogsGpoDetail({
   const approval = getGpoApprovalCopy(locale);
   const logs = getJobLogsCopy(locale);
   const production = getGpoProductionCopy(locale);
+  const overrideCopy = getSecurityOverrideCopy(locale);
   const router = useRouter();
   const [job, setJob] = useState<GpoImportLogDetail | null>(initialJob);
   const [notice, setNotice] = useState("");
@@ -65,6 +69,7 @@ export function LogsGpoDetail({
     job?.approval_mode === "portal" &&
       job.can_approve &&
       job.review &&
+      (!job.managed_id || job.review.expected_state) &&
       job.approval_document &&
       /^[0-9a-f]{64}$/.test(job.input_digest) &&
       !busy,
@@ -319,6 +324,28 @@ export function LogsGpoDetail({
               </div>
             ) : null}
           </dl>
+          {job.managed_id &&
+          ["reconciliation_required", "reconciled"].includes(job.status) ? (
+            <GpoReconciliation
+              job={job}
+              tenantId={tenantId}
+              csrfToken={csrfToken}
+              locale={locale}
+              onAccepted={() => void refresh()}
+            />
+          ) : null}
+          {["failed", "expired", "reconciliation_required"].includes(
+            job.status,
+          ) ? (
+            <p role="alert">
+              {gpoAgentError(
+                job.status === "reconciliation_required"
+                  ? "gpo_reconciliation_required"
+                  : job.error_code,
+                locale,
+              )}
+            </p>
+          ) : null}
           {job.status === "staged" ? (
             <p>{job.managed_id ? production.description : copy.staged}</p>
           ) : null}
@@ -334,6 +361,41 @@ export function LogsGpoDetail({
               <p>
                 {job.managed_id ? production.actionHint : approval.centralHint}
               </p>
+              {job.review?.override ? (
+                <section aria-label={overrideCopy.title}>
+                  <h4>{overrideCopy.title}</h4>
+                  <p>{overrideCopy.priority}</p>
+                  <code>{job.review.override.override_sha256}</code>
+                  <table className={styles.table}>
+                    <thead>
+                      <tr>
+                        <th scope="col">{overrideCopy.setting}</th>
+                        <th scope="col">{overrideCopy.original}</th>
+                        <th scope="col">{overrideCopy.override}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {job.review.override.settings.map((setting) => (
+                        <tr key={setting.setting_id}>
+                          <td>
+                            {setting.label}
+                            <br />
+                            <small>{setting.category}</small>
+                          </td>
+                          <td>
+                            <code>
+                              {JSON.stringify(setting.baseline_value)}
+                            </code>
+                          </td>
+                          <td>
+                            <code>{JSON.stringify(setting.value)}</code>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </section>
+              ) : null}
               {job.operation === "activate_managed_gpo" ? (
                 <p>{production.activation}</p>
               ) : null}
@@ -439,7 +501,7 @@ export function LogsGpoDetail({
                 </button>
               ) : null}
             </section>
-          ) : (
+          ) : job.approval_mode === "local" ? (
             <section
               className={styles.approval}
               aria-labelledby="legacy-gpo-review-heading"
@@ -464,7 +526,7 @@ export function LogsGpoDetail({
                 <p>{logs.noApproval}</p>
               )}
             </section>
-          )}
+          ) : null}
         </>
       ) : !error ? (
         <p role="status">{approval.reviewUnavailable}</p>

@@ -18,7 +18,13 @@ import {
 } from "react";
 import type { Locale } from "@/i18n/config";
 import type { DomainSecurityCopy } from "@/i18n/domain-security-copy";
+import {
+  gpoAgentError,
+  gpoApiError,
+  gpoApiErrorCode,
+} from "@/i18n/gpo-error-copy";
 import { getGpoProductionCopy } from "@/i18n/gpo-production-copy";
+import { getSecurityOverrideCopy } from "@/i18n/security-override-copy";
 import type {
   DomainSecurityCatalog,
   DomainSecuritySettings,
@@ -36,10 +42,13 @@ import {
   isManagedGpo,
   type ManagedGpo,
 } from "@/lib/gpo-production-types";
+import type { SecurityOverride } from "@/lib/security-override-types";
 import styles from "./gpo-production.module.css";
 import { GpoStateReview } from "./gpo-state-review";
 
 type Props = {
+  override?: SecurityOverride;
+  onWorkflowLocked?: (locked: boolean) => void;
   settings: DomainSecuritySettings;
   catalog: DomainSecurityCatalog;
   tenantId: string;
@@ -68,12 +77,14 @@ function listing(v: unknown): v is Listing {
 export function DomainGpoImports(props: Props) {
   return (
     <ProductionWorkflow
-      key={`${props.tenantId}:${props.settings.id}:${props.settings.revision}:${props.csrfToken}:${props.canImport}`}
+      key={`${props.tenantId}:${props.settings.id}:${props.settings.revision}:${props.csrfToken}:${props.canImport}:${props.override?.id ?? "baseline"}:${props.override?.revision ?? 0}`}
       {...props}
     />
   );
 }
 function ProductionWorkflow({
+  override,
+  onWorkflowLocked,
   settings,
   catalog,
   tenantId,
@@ -88,13 +99,16 @@ function ProductionWorkflow({
   const endpoint = `/api/v1/security/domain-settings/${encodeURIComponent(settings.id)}`;
   const [data, setData] = useState<Listing | null>(null);
   const [loading, setLoading] = useState(true);
+  const [errorJobId, setErrorJobId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [policyId, setPolicyId] = useState("");
   const [systemId, setSystemId] = useState("");
-  const [baselineId, setBaselineId] = useState(preferredBaselineId ?? "");
-  const [backupId, setBackupId] = useState("");
+  const [baselineId, setBaselineId] = useState(
+    override?.baseline_id ?? preferredBaselineId ?? "",
+  );
+  const [backupId, setBackupId] = useState(override?.backup_id ?? "");
   const [tier, setTier] = useState<SecurityTier>("0");
   const [target, setTarget] = useState("ALL");
   const [version, setVersion] = useState("1.0.0");
@@ -167,7 +181,11 @@ function ProductionWorkflow({
         } else {
           setReceiptId(existing.id);
           setAutomaticRequest(false);
-          setNotice(c.prepared);
+          setNotice(
+            existing.approved_at && existing.approved_by
+              ? c.submitted
+              : c.prepared,
+          );
         }
         pending.current = null;
       }
@@ -182,12 +200,15 @@ function ProductionWorkflow({
         setLoading(false);
       }
     }
-  }, [endpoint, tenantId, c.unavailable, c.prepared, operation]);
+  }, [endpoint, tenantId, c.unavailable, c.prepared, c.submitted, operation]);
   useEffect(() => {
     void refresh();
     return () => read.current?.abort();
   }, [refresh]);
-  const policy = data?.results.find((p) => p.id === policyId);
+  const policies = data?.results.filter(
+    (p) => (p.override_id ?? null) === (override?.id ?? null),
+  );
+  const policy = policies?.find((p) => p.id === policyId);
   const inspection = data?.jobs.find((j) => j.id === inspectionId);
   const checking =
     inspection?.operation === "inspect_managed_gpo" &&
@@ -199,12 +220,12 @@ function ProductionWorkflow({
   }, [checking, busy, refresh]);
   const baselines = settings.baseline_order.flatMap((id) => {
     const b = catalog.baseline_options.find((b) => b.id === id);
-    return b ? [b] : [];
+    return b && (!override || b.id === override.baseline_id) ? [b] : [];
   });
   const baseline = baselines.find((b) => b.id === baselineId) ?? baselines[0];
   const component =
     baseline?.components.find((b) => b.id === backupId) ??
-    baseline?.components.find((b) => b.available);
+    (override ? undefined : baseline?.components.find((b) => b.available));
   const executors =
     data?.executors.filter(
       (e) =>
@@ -215,11 +236,16 @@ function ProductionWorkflow({
           Number(e.agent_version.split(".")[1]) > 2 ||
           (Number(e.agent_version.split(".")[1]) === 2 &&
             Number(e.agent_version.split(".")[2]) >=
-              (operation === "import_and_link_managed_gpo" ? 36 : 35))),
+              (override
+                ? 43
+                : operation === "import_and_link_managed_gpo"
+                  ? 36
+                  : 35))),
     ) ?? [];
   const executor =
     executors.find((e) => e.system_id === systemId) ?? executors[0];
   const resetInspection = () => {
+    setErrorJobId("");
     setAutomaticRequest(false);
     writeStarted.current = false;
     setInspectionId("");
@@ -233,7 +259,7 @@ function ProductionWorkflow({
     resetInspection();
     setPolicyId(id);
     setAdoptJobId("");
-    const selected = data?.results.find((p) => p.id === id);
+    const selected = policies?.find((p) => p.id === id);
     if (selected) {
       setBaselineId(selected.baseline_id);
       setBackupId(selected.backup_id);
@@ -250,6 +276,7 @@ function ProductionWorkflow({
   const legacy =
     data?.jobs.filter(
       (j) =>
+        !override &&
         !j.managed_id &&
         j.status === "staged" &&
         j.gpo_guid &&
@@ -267,6 +294,13 @@ function ProductionWorkflow({
     .map((part) => `DC=${part}`)
     .join(",");
   const actionSelection = {
+    ...(override
+      ? {
+          override_id: override.id,
+          override_revision: override.revision,
+          override_sha256: override.sha256,
+        }
+      : {}),
     revision: settings.revision,
     system_id: executor?.system_id ?? "",
     baseline_id: baseline?.id ?? "",
@@ -305,6 +339,7 @@ function ProductionWorkflow({
     mutation.current = controller;
     setBusy(true);
     setError("");
+    setErrorJobId("");
     setNotice("");
     const current = () => mounted.current && mutation.current === controller;
     try {
@@ -326,14 +361,57 @@ function ProductionWorkflow({
           ]),
         },
       );
-      const payload: unknown = response.ok ? await response.json() : null;
+      const payload: unknown = await response.json().catch(() => null);
       if (!current()) return;
       if (!response.ok) {
         if (response.status < 500) {
           pending.current = null;
           resetInspection();
         }
-        setError(response.status >= 500 ? c.uncertain : c.rejected);
+        const code = gpoApiErrorCode(payload);
+        let blocked: GpoImportJob | undefined;
+        if (response.status === 409 && code === "security_gpo_domain_busy") {
+          // A visible old job is not proof that it is still the domain blocker.
+          try {
+            const latest = await fetch(`${endpoint}/managed-gpos/`, {
+              credentials: "same-origin",
+              cache: "no-store",
+              headers: { "X-IPMS-Tenant-ID": tenantId },
+              signal: AbortSignal.any([
+                controller.signal,
+                AbortSignal.timeout(10000),
+              ]),
+            });
+            const state: unknown = latest.ok ? await latest.json() : null;
+            if (!current()) return;
+            if (listing(state)) {
+              setData(state);
+              blocked = state.jobs.find((job) =>
+                [
+                  "queued",
+                  "awaiting_approval",
+                  "running",
+                  "reconciliation_required",
+                ].includes(job.status),
+              );
+            }
+          } catch {
+            // The write was definitively rejected; an unavailable contextual read
+            // must not turn it into an uncertain mutation or use stale links.
+          }
+          if (!current()) return;
+        }
+        setErrorJobId(blocked?.id ?? "");
+        setError(
+          response.status >= 500
+            ? c.uncertain
+            : gpoApiError(
+                response.status,
+                payload,
+                locale,
+                blocked?.status === "reconciliation_required",
+              ),
+        );
         return;
       }
       if (
@@ -358,7 +436,9 @@ function ProductionWorkflow({
       } else {
         setReceiptId(payload.id);
         setAutomaticRequest(false);
-        setNotice(c.prepared);
+        setNotice(
+          payload.approved_at && payload.approved_by ? c.submitted : c.prepared,
+        );
       }
     } catch {
       if (current()) setError(c.uncertain);
@@ -372,6 +452,9 @@ function ProductionWorkflow({
   }
   const canInspect =
     !disabled &&
+    (!override ||
+      operation === "deactivate_managed_gpo" ||
+      (override.enabled && override.entries.length > 0)) &&
     executor &&
     baseline &&
     component?.available &&
@@ -410,6 +493,11 @@ function ProductionWorkflow({
     writeStarted.current = true;
     completeInspection();
   }, [automaticRequest, busy, loading, inspection, receiptId, checking, fresh]);
+  const workflowLocked = busy || automaticRequest || pending.current !== null;
+  useEffect(() => {
+    onWorkflowLocked?.(workflowLocked);
+    return () => onWorkflowLocked?.(false);
+  }, [onWorkflowLocked, workflowLocked]);
   const canCreate =
     !receiptId &&
     !busy &&
@@ -438,9 +526,14 @@ function ProductionWorkflow({
       <p>{c.description}</p>
       {configurationDirty ? <p>{copy.saveFirst}</p> : null}
       {error ? (
-        <p className={styles.error} role="alert">
-          {error}
-        </p>
+        <div className={styles.error} role="alert">
+          <p>{error}</p>
+          {errorJobId ? (
+            <Link className="outline-button" href={logsUrl(errorJobId)}>
+              {c.logs}
+            </Link>
+          ) : null}
+        </div>
       ) : null}
       {notice ? (
         <p className={styles.notice} role="status">
@@ -470,7 +563,7 @@ function ProductionWorkflow({
               onChange={(e) => selectPolicy(e.target.value)}
             >
               <option value="">{c.create}</option>
-              {data?.results.map((p) => (
+              {policies?.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.state === "active"
                     ? p.active_display_name
@@ -526,9 +619,11 @@ function ProductionWorkflow({
             >
               {!executors.length ? (
                 <option value="">
-                  {operation === "import_and_link_managed_gpo"
-                    ? c.noExecutor
-                    : c.noLegacyExecutor}
+                  {override
+                    ? getSecurityOverrideCopy(locale).agent
+                    : operation === "import_and_link_managed_gpo"
+                      ? c.noExecutor
+                      : c.noLegacyExecutor}
                 </option>
               ) : (
                 executors.map((e) => (
@@ -543,7 +638,7 @@ function ProductionWorkflow({
             {c.baseline}
             <select
               value={baseline?.id ?? ""}
-              disabled={lockedSelection || Boolean(policy)}
+              disabled={lockedSelection || Boolean(policy) || Boolean(override)}
               onChange={(e) => {
                 resetInspection();
                 setBaselineId(e.target.value);
@@ -562,7 +657,7 @@ function ProductionWorkflow({
             {c.component}
             <select
               value={component?.id ?? ""}
-              disabled={lockedSelection || Boolean(policy)}
+              disabled={lockedSelection || Boolean(policy) || Boolean(override)}
               onChange={(e) => {
                 resetInspection();
                 setBackupId(e.target.value);
@@ -708,9 +803,15 @@ function ProductionWorkflow({
       </form>
       {checking ? <p role="status">{c.preparing}</p> : null}
       {inspection && !checking && inspection.status !== "inspected" ? (
-        <p role="alert">
-          {copy.states[inspection.status]} {inspection.error_code}
-        </p>
+        <div>
+          <p role="alert">
+            {copy.states[inspection.status]}:{" "}
+            {gpoAgentError(inspection.error_code, locale)}
+          </p>
+          <Link className="outline-button" href={logsUrl(inspection.id)}>
+            {c.logs}
+          </Link>
+        </div>
       ) : null}
       {inspection?.preflight_state ? (
         <>

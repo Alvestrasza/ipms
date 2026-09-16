@@ -6,6 +6,7 @@
 #include <windows.h>
 #include <dsrole.h>
 #include <gpmgmt.h>
+#include <tlhelp32.h>
 #include <wrl/client.h>
 #include <algorithm>
 #include <array>
@@ -234,6 +235,41 @@ json::object invoke_gpo_inspection_worker(const std::function<bool()>& cancelled
     return record->result.as<json::object>();
   }
 }
+bool gpo_worker_quiescent() {
+  // current.lock is held by the caller throughout this census and the read.
+  // Unlike a newly introduced worker.lock, this also detects pre-upgrade
+  // workers which did not participate in the new exclusion protocol.
+  const auto manager=OpenSCManagerW(nullptr,nullptr,SC_MANAGER_CONNECT);if(!manager)return false;
+  struct service_close {SC_HANDLE h;~service_close(){if(h)CloseServiceHandle(h);}} manager_lifetime{manager};
+  const auto service=OpenServiceW(manager,L"IPMS Agent",SERVICE_QUERY_STATUS);if(!service)return false;service_close service_lifetime{service};
+  SERVICE_STATUS_PROCESS status{};DWORD bytes{};
+  if(!QueryServiceStatusEx(service,SC_STATUS_PROCESS_INFO,reinterpret_cast<LPBYTE>(&status),sizeof(status),&bytes)||
+      status.dwCurrentState!=SERVICE_RUNNING||status.dwProcessId!=GetCurrentProcessId())return false;
+  std::array<wchar_t,32768> executable{};const auto size=GetModuleFileNameW(nullptr,executable.data(),static_cast<DWORD>(executable.size()));
+  if(!size||size>=executable.size()||_wcsicmp(std::filesystem::path(executable.data()).filename().c_str(),L"ipms-agent.exe")!=0)return false;
+  handle snapshot(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS,0));if(snapshot.get()==INVALID_HANDLE_VALUE)return false;
+  PROCESSENTRY32W item{};item.dwSize=sizeof(item);if(!Process32FirstW(snapshot.get(),&item))return false;
+  std::size_t count{},own{};
+  do {
+    if(++count>65536)return false;
+    if(_wcsicmp(item.szExeFile,L"ipms-agent.exe")==0) {if(item.th32ProcessID!=GetCurrentProcessId())return false;++own;}
+  }while(Process32NextW(snapshot.get(),&item));
+  return GetLastError()==ERROR_NO_MORE_FILES&&own==1;
+}
+json::object invoke_gpo_reconciliation_worker(const std::function<bool()>& cancelled) {
+  const auto record=load_gpo_journal();if(!record||record->state!=gpo::phase::reconciliation)fail("gpo_journal_invalid");
+  if(!gpo_worker_quiescent())return gpo::unavailable_observation(record->gpo_guid,"gpo_reconciliation_quiescence_unavailable");
+  try {
+    auto observed=worker_call("reconcile",std::chrono::seconds(120),cancelled);
+    if(!gpo_worker_quiescent())return gpo::unavailable_observation(record->gpo_guid,"gpo_reconciliation_quiescence_unavailable");
+    observed["quiescent"]=true;
+    if(!gpo::valid_reconciliation_observation(observed))return gpo::unavailable_observation(record->gpo_guid,"gpo_reconciliation_result_invalid",true);
+    return observed;
+  }catch(const std::exception& error) {
+    return gpo::unavailable_observation(record->gpo_guid,std::string_view(error.what())=="gpo_worker_timeout"?
+      "gpo_reconciliation_worker_timeout":"gpo_reconciliation_worker_failed",gpo_worker_quiescent());
+  }catch(...) {return gpo::unavailable_observation(record->gpo_guid,"gpo_reconciliation_worker_failed",gpo_worker_quiescent());}
+}
 int run_gpo_worker() {
   try {
     const HANDLE input=GetStdHandle(STD_INPUT_HANDLE),output=GetStdHandle(STD_OUTPUT_HANDLE);std::string document;
@@ -248,7 +284,16 @@ int run_gpo_worker() {
       auto provider=make_managed_gpo_provider(record->assignment,executor_identity());
       response=gpo::inspect_managed(*record,*provider,save_gpo_journal,[&]{return gpo::unexpired(record->assignment)&&gpo_enrollment_matches(record->device_uri);});
     }
+    else if(action=="reconcile") {
+      handle exclusive(acquire_gpo_worker_lock());if(!exclusive)return 1;
+      auto record=load_gpo_journal();if(!record||record->state!=gpo::phase::reconciliation)return 1;
+      const auto challenge=load_gpo_reconciliation_request(*record);
+      if(challenge.at("mode").as<std::string>()=="released"||!gpo_enrollment_matches(record->device_uri))return 1;
+      response=observe_gpo_reconciliation(*record,executor_identity());
+      if(load_gpo_reconciliation_request(*record)!=challenge||!gpo_enrollment_matches(record->device_uri))return 1;
+    }
     else if(action=="execute") {
+      handle exclusive(acquire_gpo_worker_lock());if(!exclusive)return 1;
       auto record=load_gpo_journal();if(!record)return 1;
       const auto authority=[&]{return gpo::unexpired(record->assignment)&&
         gpo::grant_current(*record,GetTickCount64())&&gpo_enrollment_matches(record->device_uri)&&
@@ -256,7 +301,7 @@ int run_gpo_worker() {
           gpo::portal_approval_current(record->portal_approval,record->assignment,record->device_uri));};
       const auto consume=[&]{if(record->assignment.number("schema")>=2)consume_gpo_portal_approval(*record);
         else consume_gpo_local_approval(record->assignment,record->device_uri);};
-      if(record->assignment.number("schema")==3) {
+      if(record->assignment.number("schema")>=3) {
         auto provider=make_managed_gpo_provider(record->assignment,executor_identity());
         response=gpo::execute_managed(*record,*provider,save_gpo_journal,authority,consume);
       }else {

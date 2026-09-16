@@ -7,6 +7,19 @@
   gap: 1.25rem;
   min-width: 0;
 }
+.comparison {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  white-space: normal;
+}
+.comparison th,
+.comparison td {
+  text-align: left;
+  padding: 0.6rem;
+  border-bottom: 1px solid var(--border, #273c47);
+  overflow-wrap: anywhere;
+}
 .heading,
 .actions {
   display: flex;

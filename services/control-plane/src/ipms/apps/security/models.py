@@ -102,6 +102,24 @@ class GpoImportJob(models.Model):
         indexes = [models.Index(fields=('enrollment', 'status'), name='security_gpo_agent_status')]
 
 
+class GpoOverride(models.Model):
+    """Tenant-owned sparse changes to one pinned baseline component."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey('tenancy.Tenant', on_delete=models.CASCADE)
+    name = models.CharField(max_length=80)
+    baseline_id = models.CharField(max_length=96)
+    backup_id = models.CharField(max_length=38)
+    artifact_sha256 = models.CharField(max_length=64)
+    revision = models.PositiveIntegerField(default=1)
+    enabled = models.BooleanField(default=True)
+    entries = models.JSONField(default=list)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ('name', 'id')
+
+
 class ManagedGpoPolicy(models.Model):
     """Stable directory identity; immutable jobs retain prepared and active content."""
 
@@ -109,6 +127,7 @@ class ManagedGpoPolicy(models.Model):
     tenant = models.ForeignKey('tenancy.Tenant', on_delete=models.CASCADE)
     domain = models.ForeignKey(DomainSecuritySettings, on_delete=models.PROTECT)
     domain_guid = models.CharField(max_length=36)
+    override = models.ForeignKey(GpoOverride, on_delete=models.PROTECT, null=True, related_name='policies')
     logical_key = models.CharField(max_length=64)
     tier = models.PositiveSmallIntegerField()
     baseline_id = models.CharField(max_length=96)
@@ -133,6 +152,41 @@ class ManagedGpoPolicy(models.Model):
             models.UniqueConstraint(fields=('tenant', 'domain_guid', 'gpo_guid'), condition=~models.Q(gpo_guid=''),
                                     name='security_managed_gpo_guid'),
         ]
+
+
+class GpoReconciliation(models.Model):
+    """Immutable observations and scoped decisions; the original job retains its fence."""
+
+    id = models.UUIDField(primary_key=True, editable=False)
+    tenant = models.ForeignKey('tenancy.Tenant', on_delete=models.CASCADE)
+    job = models.ForeignKey(GpoImportJob, on_delete=models.PROTECT, related_name='reconciliations')
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='+')
+    accepted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='+')
+    accepted_actor = models.CharField(max_length=64, blank=True)
+    status = models.CharField(max_length=24, default='requested')
+    request_digest = models.CharField(max_length=64)
+    job_result_digest = models.CharField(max_length=64, blank=True)
+    journal_sha256 = models.CharField(max_length=64, blank=True)
+    scope_revision = models.PositiveIntegerField()
+    policy_revision = models.PositiveIntegerField()
+    authorization_revision = models.PositiveIntegerField()
+    managed_revision = models.PositiveIntegerField()
+    four_eyes_required = models.BooleanField(default=False)
+    observation = models.JSONField(null=True)
+    observation_digest = models.CharField(max_length=64, blank=True)
+    drift_observation = models.JSONField(null=True)
+    drift_digest = models.CharField(max_length=64, blank=True)
+    decision_digest = models.CharField(max_length=64, blank=True)
+    requested_at = models.DateTimeField(default=timezone.now)
+    expires_at = models.DateTimeField()
+    observed_at = models.DateTimeField(null=True)
+    accepted_at = models.DateTimeField(null=True)
+    finalized_at = models.DateTimeField(null=True)
+
+    class Meta:
+        ordering = ('-requested_at', '-id')
+        constraints = [models.UniqueConstraint(fields=('job',), condition=models.Q(
+            status__in=('requested', 'observed', 'accept_requested')), name='security_gpo_one_reconcile')]
 
 
 class BaselinePreference(models.Model):

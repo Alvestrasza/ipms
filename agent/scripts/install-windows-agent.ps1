@@ -1,7 +1,7 @@
 # File Name: install-windows-agent.ps1
-# Version: v0.2.36
+# Version: v0.2.43
 # Created: 2026-08-31
-# Last Modified: 2026-09-15
+# Last Modified: 2026-09-16
 # Author: Alice Endelgard
 # Organization: Alvestrasza Corporation
 # Description: Install the packaged Windows Agent and register its release version.
@@ -19,7 +19,7 @@ param(
 
     [string]$DisplayName = 'IPMS Agent',
 
-    [string]$AgentVersion = '0.2.36',
+    [string]$AgentVersion = '0.2.43',
 
     [string]$Publisher = 'Alvestrasza Corporation',
 

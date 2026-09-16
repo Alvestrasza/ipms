@@ -1,8 +1,8 @@
 # Managed GPO operations
 
-Version: 1.1.0 | Date: 2026-09-15
+Version: 1.3.0 | Date: 2026-09-16
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
-Applies to: Portal 0.2.56 / Windows Agent 0.2.36
+Applies to: Portal 0.2.61 / Windows Agent 0.2.43
 
 ## Configuration
 
@@ -20,14 +20,33 @@ report the matching domain identity, GPMC prerequisites and Agent 0.2.36 or late
 The service identity needs the corresponding AD permissions. IPMS installs no
 service account or directory permissions as part of these actions.
 
+## Sparse baseline overrides
+
+In **Security → Override**, select a Microsoft baseline component and change only
+settings already contained in that component. IPMS stores the setting identities
+and typed values, never caller-provided registry paths or policy file names. The
+original value remains visible; **Use baseline** removes the sparse entry. Complex
+structured values that cannot be changed safely as one typed field remain read-only.
+
+Saving an override does not change AD. Deployment uses the existing domain, tier,
+executor and approval workflow and creates a separate managed GPO. Its link is
+placed above managed baseline GPOs so it has higher precedence. The selected
+baseline GPO is not edited. Import and link remain one approved action; activation
+remains separate. Changing or disabling the definition invalidates pending jobs.
+The Portal and Agent independently bind the definition revision, component backup,
+artifact hash, sorted entries and override digest. At most 128 deviations and
+8,192 canonical UTF-8 bytes are accepted per definition.
+
 ## Import and link with one request
 
 In **Security → Baseline**, select the domain, managed GPO (or new GPO), baseline
 component, tier and executor. Choose **Import and link** and create the request.
 The Portal runs the read-only inspection in the background and prepares one
-approval request covering both import and the exact target links. Review and
-approve it in **Logs → Baselines**. No separate import or link request is needed.
-Creating or viewing a request does not approve it. Activation remains separate.
+request covering both import and the exact target links. With four-eyes review
+disabled, submission directly approves a new request when the requester has
+approval rights for its domain and tier. Otherwise an authorized administrator
+reviews and approves it in **Logs → Baselines**. No separate import or link request
+is needed. Viewing a request never approves it. Activation remains separate.
 
 | Action | Result |
 | --- | --- |
@@ -50,7 +69,8 @@ activation or deactivation, explicitly confirm this domain-wide target. The Port
 root from the configured domain; the Agent verifies its domain object GUID.
 Tier OU mappings are not required for this scope. Regular computer and user
 components continue to use configured tier OUs. The target confirmation does
-not approve a write: the combined request still needs explicit approval.
+not by itself approve a write: submitting the action follows the tenant approval
+rule and activation still requires management and independent recovery checks.
 Neither Default Domain Policy nor Default Domain Controllers Policy is modified.
 Managed links are inserted before default-policy links while preserving the
 relative order and flags of unrelated links.
@@ -76,9 +96,14 @@ GPOs or adopt unrelated objects automatically. Historical records retain their
 original protocol and names.
 
 A timed-out, failed or uncertain directory write can require reconciliation.
-Inspect the recorded job GUID, protected Agent receipt and actual directory
-state before proceeding. Do not delete the journal, resubmit a replacement job
-or restore a backup automatically. Activation stores a protected GPMC backup and
+Open the affected entry in Baseline Logs and request a directory reconciliation.
+The Agent reads the original protected journal and actual directory state. A
+domain/tier-authorized administrator can accept an eligible observation in the
+same entry; the domain remains fenced until the Agent confirms an unchanged
+observation and records the resolution. Incomplete observations and unsafe states
+remain blocked with explicit findings. See [the complete workflow](SECURITY-GPO-RECONCILIATION.md).
+Do not delete the journal, resubmit a replacement job or restore a backup
+automatically. Activation stores a protected GPMC backup and
 manifest before mutation; restoration remains an operator-led recovery action.
 Endpoint settings can persist after deactivation and may need explicit recovery.
 If import succeeds but linking cannot complete, the recorded GPO GUID is retained

@@ -5,6 +5,7 @@
  * Purpose: Define tenant domain configuration and bounded unlinked pilot import contracts.
  */
 import type { GpoOperation, GpoSnapshot } from "./gpo-production-types";
+import type { OverrideReview } from "./security-override-types";
 export type SecurityTier = "0" | "1" | "2";
 export const SECURITY_TIERS: SecurityTier[] = ["0", "1", "2"];
 
@@ -57,6 +58,7 @@ export type GpoImportStatus =
   | "linked"
   | "activated"
   | "deactivated"
+  | "reconciled"
   | "blocked"
   | "failed"
   | "expired"
@@ -98,12 +100,13 @@ export type GpoImportJob = {
 };
 
 export type GpoImportReview = {
+  override?: OverrideReview;
   component_name: string;
   artifact_sha256: string;
   files: { path: string; bytes: number; sha256: string }[];
   report_xml: string;
   changes: string[];
-  expected_state?: GpoSnapshot;
+  expected_state?: GpoSnapshot | null;
   target_ous?: string[];
   safety_review?: { management_access: boolean; recovery_access: boolean };
 };

@@ -23,8 +23,8 @@ from django.utils import timezone
 from ipms.apps.agent_pki.models import AgentEnrollment
 from ipms.apps.discovery.models import WindowsServer
 from ipms.apps.security.catalog import BASELINES
-from ipms.apps.security.gpo_jobs import security_gpo_exchange
-from ipms.apps.security.models import DomainSecuritySettings, GpoDomainAuthorization, GpoExecutorReport, GpoImportJob, ManagedGpoPolicy
+from ipms.apps.security.gpo_jobs import security_gpo_exchange, digest
+from ipms.apps.security.models import DomainSecuritySettings, GpoDomainAuthorization, GpoExecutorReport, GpoImportJob, GpoReconciliation, ManagedGpoPolicy
 from ipms.apps.tenancy.models import Tenant
 
 tenant = Tenant.objects.get(slug="console-e2e")
@@ -60,7 +60,7 @@ with transaction.atomic():
         domain_name = f"production-{suffix}.example.invalid"
         # Reuse an unclassified fixture DC so baseline fleet denominators remain unchanged.
         system = WindowsServer.objects.get(tenant=tenant, hostname="gpo-ui-dc")
-        system.domain_name, system.fqdn, system.agent_version = domain_name, f"gpo-ui-dc.{domain_name}", "0.2.36"
+        system.domain_name, system.fqdn, system.agent_version = domain_name, f"gpo-ui-dc.{domain_name}", "0.2.37"
         system.save(update_fields=("domain_name", "fqdn", "agent_version"))
         enrollment = AgentEnrollment.objects.get(tenant=tenant, device_uri=system.source_id)
         enrollment.last_heartbeat_at = timezone.now()
@@ -68,7 +68,7 @@ with transaction.atomic():
         enrollment.certificate_not_after = timezone.now() + timedelta(days=1)
         enrollment.save()
         GpoExecutorReport.objects.update_or_create(enrollment=enrollment, defaults={
-            "agent_version": "0.2.36", "domain_dns_name": domain_name, "domain_guid": str(uuid.uuid4()),
+            "agent_version": "0.2.37", "domain_dns_name": domain_name, "domain_guid": str(uuid.uuid4()),
             "forest_dns_name": domain_name, "dc_fqdn": system.fqdn, "role": "writable-domain-controller",
             "gpmc_available": True, "result_code": "ready_for_approval", "observed_at": timezone.now()})
         suffix_dn = ",".join("DC=" + part for part in domain_name.split("."))
@@ -78,28 +78,75 @@ with transaction.atomic():
         actor = get_user_model().objects.get(username="e2e-admin")
         GpoDomainAuthorization.objects.create(domain=domain, grants=[{"user_id": str(actor.pk), "tiers": ["0", "1", "2"]}])
         result = {"domain_id": str(domain.pk), "domain_name": domain_name, "system_id": str(system.pk)}
-    elif mode == "agent-035":
+    elif mode in ("agent-035", "agent-037", "agent-043"):
         domain = DomainSecuritySettings.objects.get(pk=uuid.UUID(sys.argv[2]), tenant=tenant,
             domain_name__startswith="production-", domain_name__endswith=".example.invalid")
         system = WindowsServer.objects.get(tenant=tenant, domain_name=domain.domain_name, hostname="gpo-ui-dc")
-        system.agent_version = "0.2.35"
+        system.agent_version = {"agent-035": "0.2.35", "agent-037": "0.2.37", "agent-043": "0.2.43"}[mode]
         system.save(update_fields=("agent_version",))
-        GpoExecutorReport.objects.filter(enrollment__device_uri=system.source_id).update(agent_version="0.2.35")
+        GpoExecutorReport.objects.filter(enrollment__device_uri=system.source_id).update(agent_version=system.agent_version)
         result = {"version": system.agent_version}
-    elif mode == "fail":
+    elif mode in ("fail", "reconcile"):
         job = GpoImportJob.objects.get(pk=uuid.UUID(sys.argv[2]), tenant=tenant,
             domain__domain_name__startswith="production-", domain__domain_name__endswith=".example.invalid")
-        if job.assignment.get("operation") != "inspect_managed_gpo" or job.claimed_at:
-            raise RuntimeError("Only an unclaimed synthetic inspection may fail here.")
-        exchange(job, "result", status="failed", result_code="gpo_provider_failed", gpo_guid=None, evidence=None)
+        if mode == "fail":
+            if job.assignment.get("operation") != "inspect_managed_gpo" or job.claimed_at:
+                raise RuntimeError("Only an unclaimed synthetic inspection may fail here.")
+        else:
+            if not job.approved_at or job.status != "queued":
+                raise RuntimeError("Synthetic write failure requires explicit Portal approval.")
+            claim = exchange(job, "claim")["gpo_claim"]
+            if not claim["authorized"] or claim["mode"] != "execute":
+                raise RuntimeError("Synthetic write claim was not authorized.")
+        exchange(job, "result", status="failed", result_code="gpo_provider_failed",
+            gpo_guid=str(uuid.uuid5(uuid.NAMESPACE_DNS, "synthetic-partial-" + str(job.pk))) if mode == "reconcile" else None, evidence=None)
         job.refresh_from_db()
         result = {"job_id": str(job.pk), "status": job.status}
+    elif mode in ("observe-reconciliation", "observe-unverifiable", "ack-reconciliation", "drift-reconciliation"):
+        job = GpoImportJob.objects.get(pk=uuid.UUID(sys.argv[2]), tenant=tenant,
+            domain__domain_name__startswith="production-", domain__domain_name__endswith=".example.invalid")
+        record = GpoReconciliation.objects.get(job=job)
+        a = job.assignment
+        report = GpoExecutorReport.objects.get(enrollment=job.enrollment)
+        executor = {"schema": 1, **{key: getattr(report, key) for key in
+            ("domain_dns_name", "domain_guid", "forest_dns_name", "dc_fqdn", "role", "gpmc_available", "result_code")}}
+        control = exchange(job, "reconciliation_poll", journal_sha256="d" * 64, agent_version="0.2.37", executor=executor)["reconciliation"]
+        if not control or control["id"] != str(record.pk):
+            raise RuntimeError("The real backend did not request this synthetic observation.")
+        if mode == "ack-reconciliation":
+            if control["mode"] != "accept":
+                raise RuntimeError("Only explicitly accepted observations may be acknowledged.")
+            value = record.observation
+        elif mode == "drift-reconciliation":
+            value = copy.deepcopy(record.observation)
+            value["state"]["gpo"]["computer_ds"] += 1
+            value["state"]["gpo"]["computer_sysvol"] += 1
+        else:
+            state = copy.deepcopy(a["expected_state"])
+            state["gpo"] = {"guid": job.gpo_guid, "name": a["pilot_display_name"],
+                "description": "IPMS managed GPO; id=" + a["managed_id"], "computer_enabled": False,
+                "user_enabled": False, "computer_ds": 0, "computer_sysvol": 0, "user_ds": 0,
+                "user_sysvol": 0, "security_digest": "b" * 64, "wmi_filter": "", "links": []}
+            value = {"schema": 1, "state": state, "forest_links": [], "forest_complete": mode != "observe-unverifiable",
+                "acl_consistent": True, "gpo_presence": "present", "issues": [], "gpo_guid": job.gpo_guid, "quiescent": True}
+        observed_digest = digest(value)
+        exchange(job, "reconciliation_result", journal_sha256="d" * 64, reconciliation_id=str(record.pk),
+            observation_digest=observed_digest, observation=value)
+        if mode == "ack-reconciliation":
+            exchange(job, "reconciliation_ack", journal_sha256="d" * 64, reconciliation_id=str(record.pk), observation_digest=observed_digest)
+        record.refresh_from_db()
+        job.refresh_from_db()
+        policy = ManagedGpoPolicy.objects.get(pk=a["managed_id"])
+        result = {"id": str(record.pk), "status": record.status, "job_status": job.status,
+            "error_code": job.error_code, "observation": record.observation, "observation_digest": record.observation_digest,
+            "staged_job_id": str(policy.staged_job_id) if policy.staged_job_id else None,
+            "active_job_id": str(policy.active_job_id) if policy.active_job_id else None}
     elif mode in ("inspect", "complete"):
         job = GpoImportJob.objects.get(pk=uuid.UUID(sys.argv[2]), tenant=tenant,
             domain__domain_name__startswith="production-", domain__domain_name__endswith=".example.invalid")
         assignment = job.assignment
-        if assignment.get("schema") != 3:
-            raise RuntimeError("Only schema 3 synthetic fixture requests are supported.")
+        if assignment.get("schema") not in (3, 4):
+            raise RuntimeError("Only schema 3/4 synthetic fixture requests are supported.")
         if mode == "inspect":
             if assignment["operation"] != "inspect_managed_gpo" or job.approved_at or job.claimed_at:
                 raise RuntimeError("Inspection must be read-only and unapproved.")
@@ -115,7 +162,8 @@ with transaction.atomic():
             if assignment["operation"] in ("import_managed_gpo", "import_and_link_managed_gpo"):
                 if state["gpo"] is None:
                     state["gpo"] = {"guid": str(uuid.uuid4()), "name": assignment["pilot_display_name"],
-                        "description": "IPMS managed GPO; id=" + assignment["managed_id"],
+                        "description": ("IPMS managed override; id=" + assignment["managed_id"] + "; definition=" + assignment["override_id"]
+                            if assignment["schema"] == 4 else "IPMS managed GPO; id=" + assignment["managed_id"]),
                         "computer_enabled": False, "user_enabled": False, "computer_ds": 1, "computer_sysvol": 1,
                         "user_ds": 1, "user_sysvol": 1, "security_digest": "b" * 64, "wmi_filter": "", "links": []}
                 status, code = "staged", "gpo_prepared"
@@ -140,9 +188,11 @@ with transaction.atomic():
                 status, code = ("activated", "gpo_activated") if activating else ("linked", "gpo_linked")
             elif assignment["operation"] != "import_managed_gpo":
                 raise RuntimeError("Unsupported synthetic fixture operation.")
-        evidence = {"schema": 3, "operation": assignment["operation"], "managed_id": assignment["managed_id"],
+        evidence = {"schema": assignment["schema"], "operation": assignment["operation"], "managed_id": assignment["managed_id"],
             "state": state, "prepared_artifact_sha256": assignment["artifact_sha256"] if mode == "complete"
                 and assignment["operation"] in ("import_managed_gpo", "activate_managed_gpo", "import_and_link_managed_gpo") else "", "backup_id": "", "backup_manifest_sha256": ""}
+        if assignment["schema"] == 4:
+            evidence["override_sha256"] = assignment["override_sha256"]
         if mode == "complete" and assignment["operation"] == "activate_managed_gpo":
             # Placeholder receipt represents the fake provider, never a backup of real directory data.
             evidence["backup_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, "synthetic-backup-" + str(job.pk)))

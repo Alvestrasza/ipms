@@ -1,9 +1,10 @@
 // File Name: windows_gpo_managed.cpp
-// Version: v0.1.0 | Created: 2026-09-15 | Last Modified: 2026-09-15
+// Version: v0.1.1 | Created: 2026-09-15 | Last Modified: 2026-09-16
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Exact-DC ADSI inspection and bounded native managed GPO lifecycle.
 #include "ipms/agent/windows_gpo_management.hpp"
 #include "ipms/agent/gpo_managed.hpp"
+#include "ipms/agent/gpo_override.hpp"
 #include <windows.h>
 #include <ole2.h>
 #include <activeds.h>
@@ -16,6 +17,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <cstdio>
 #include <set>
 #include <tuple>
 
@@ -24,7 +26,11 @@ namespace {
 namespace json=gpo::json;
 using Microsoft::WRL::ComPtr;
 [[noreturn]] void fail(const char* code="gpo_provider_failed") {throw gpo::operation_error(code);}
-void check(HRESULT hr) {if(FAILED(hr))fail(hr==E_ACCESSDENIED||hr==HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED)?"gpo_permission_denied":"gpo_provider_failed");}
+struct hresult_error : gpo::operation_error {
+  HRESULT value;
+  explicit hresult_error(HRESULT hr):gpo::operation_error(hr==E_ACCESSDENIED?"gpo_permission_denied":"gpo_provider_failed"),value(hr){}
+};
+void check(HRESULT hr) {if(FAILED(hr))throw hresult_error(hr);}
 std::wstring wide(std::string_view s) {
   if(s.empty())return {};const auto n=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,s.data(),static_cast<int>(s.size()),nullptr,0);
   if(!n)fail();std::wstring out(n,L'\0');if(MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,s.data(),static_cast<int>(s.size()),out.data(),n)!=n)fail();return out;
@@ -242,13 +248,15 @@ class native_managed final:public gpo::managed_provider {
   void open_target() {
     if(current_guid_.empty()){target_.Reset();return;}
     if(gpo::protected_gpo(current_guid_))fail("gpo_unmanaged_target");
-    bstr id(current_guid_);target_.Reset();check(domain_->GetGPO(id.value,&target_));same(current_guid_);
+    // GPMC addresses the directory GPO by its curly-braced GUID string.
+    // The journal keeps the canonical unbraced UUID; identity stays unchanged.
+    bstr id("{"+current_guid_+"}");target_.Reset();check(domain_->GetGPO(id.value,&target_));same(current_guid_);
   }
   void same(std::string_view id) {
     if(!target_||gpo::protected_gpo(id)||guid(property([&](BSTR* p){return target_->get_ID(p);}))!=id||
       lower(property([&](BSTR* p){return target_->get_DomainName(p);}))!=job_.text("domain_dns_name"))fail("gpo_unmanaged_target");
   }
-  std::string marker()const{return "IPMS managed GPO; id="+job_.text("managed_id");}
+  std::string marker()const{return gpo::override_job(job_)?"IPMS managed override; id="+job_.text("managed_id")+"; definition="+job_.text("override_id"):"IPMS managed GPO; id="+job_.text("managed_id");}
   void disable() {check(target_->SetUserEnabled(VARIANT_FALSE));check(target_->SetComputerEnabled(VARIANT_FALSE));}
   void identify() {
     bstr name(job_.text("pilot_display_name")),description(marker());check(target_->put_DisplayName(name.value));
@@ -287,9 +295,11 @@ class native_managed final:public gpo::managed_provider {
       // Callback/resource/conditional ACE payloads are not represented by
       // IADsAccessControlEntry and must never silently disappear from a hash.
       if(type!=ACCESS_ALLOWED_ACE_TYPE&&type!=ACCESS_DENIED_ACE_TYPE&&type!=ACCESS_ALLOWED_OBJECT_ACE_TYPE&&type!=ACCESS_DENIED_OBJECT_ACE_TYPE)fail("gpo_state_changed");
+      const auto object_types=gpo::ace_object_types(object_flags,
+        [&]{return property([&](BSTR* p){return ace->get_ObjectType(p);});},
+        [&]{return property([&](BSTR* p){return ace->get_InheritedObjectType(p);});});
       entries.push_back(json::object{{"mask",mask},{"type",type},{"flags",flags},{"object_flags",object_flags},
-        {"object_type",property([&](BSTR* p){return ace->get_ObjectType(p);})},
-        {"inherited_object_type",property([&](BSTR* p){return ace->get_InheritedObjectType(p);})},
+        {"object_type",object_types.first},{"inherited_object_type",object_types.second},
         {"trustee",property([&](BSTR* p){return ace->get_Trustee(p);})}});
     }
     variant extra;ULONG fetched{};if(enumeration->Next(1,&extra.value,&fetched)!=S_FALSE||fetched)fail("gpo_state_changed");
@@ -299,6 +309,9 @@ class native_managed final:public gpo::managed_provider {
     if(document.size()>262144)fail("gpo_target_invalid");return gpo::sha256(document);
   }
   json::array all_links() {
+    // Keep a bounded phase instead of discarding the first failing boundary.
+    // No directory names, LDAP payloads or raw exceptions leave the worker.
+    const char* phase="gpo_preflight_inventory_failed";
     try {
       const auto inventory=forest_domains(job_);json::array out;std::map<std::string,std::uint32_t> complete;
       const auto source="cn={"+(target_?current_guid_:job_.text("managed_id"))+"},cn=policies,cn=system,"+domain_dn(job_.text("domain_dns_name"));
@@ -308,37 +321,50 @@ class native_managed final:public gpo::managed_provider {
         const auto& link=v.as<json::object>();if(link.at("guid").as<std::string>()==current_guid_&&link.at("domain").as<std::string>()==job_.text("domain_dns_name"))out.push_back(v);
         if(out.size()>128)fail("gpo_preflight_required");
       }};
-      const auto merge=[&](const auto& locations){for(const auto& [dn,flags]:locations)if(!complete.emplace(dn,flags).second||complete.size()>128)fail("gpo_preflight_required");};
+      const auto merge=[&](const auto& locations){gpo::merge_forest_link_locations(complete,locations);};
       for(const auto& item:inventory) {
+        phase="gpo_preflight_controller_failed";
         auto cached=read_dcs_.find(item.dns_name);
         if(cached==read_dcs_.end())cached=read_dcs_.emplace(item.dns_name,std::make_pair(item.guid,discover_dc(job_,item))).first;
         if(cached->second.first!=item.guid)fail("gpo_preflight_required");const auto& controller=cached->second.second;
-        link_visibility_reader reader(job_,item,controller);const auto locations=reader.links(reader.naming_context,source);
+        phase="gpo_preflight_directory_failed";
+        link_visibility_reader reader(job_,item,controller);
+        phase="gpo_preflight_domain_visibility_failed";
+        const auto locations=reader.links(reader.naming_context,source);
         if(target_) {
+          phase="gpo_preflight_domain_open_failed";
           // This domain object is scoped to read-only census code. The mutation
           // provider keeps its original exact approved domain/DC object.
           ComPtr<IGPMDomain> read_domain;bstr dns(item.dns_name),dc(controller);check(gpm_->GetDomain(dns.value,dc.value,0,&read_domain));
+          phase="gpo_preflight_domain_identity_failed";
           if(lower(property([&](BSTR* p){return read_domain->get_Domain(p);}))!=item.dns_name||
             lower(property([&](BSTR* p){return read_domain->get_DomainController(p);}))!=controller)fail("gpo_preflight_required");
-          ComPtr<IGPMSOMCollection> matches;check(read_domain->SearchSOMs(criteria.Get(),&matches));append(matches.Get());merge(locations);
+          phase="gpo_preflight_domain_query_failed";
+          ComPtr<IGPMSOMCollection> matches;check(read_domain->SearchSOMs(criteria.Get(),&matches));
+          phase="gpo_preflight_domain_links_failed";append(matches.Get());
+          phase="gpo_preflight_domain_merge_failed";merge(locations);
         }
         if(item.primary) {
+          phase="gpo_preflight_site_visibility_failed";
           const auto sites_found=reader.links(reader.configuration_context,source);
           if(target_) {
+            phase="gpo_preflight_site_search_failed";
             ComPtr<IGPMSitesContainer> sites;bstr forest(job_.text("forest_dns_name")),dns(item.dns_name),dc(controller);
             check(gpm_->GetSitesContainer(forest.value,dns.value,dc.value,0,&sites));ComPtr<IGPMSOMCollection> matches;
             check(sites->SearchSites(criteria.Get(),&matches));append(matches.Get());merge(sites_found);
           }
         }
       }
+      phase="gpo_preflight_inventory_failed";
       if(forest_domains(job_)!=inventory)fail("gpo_preflight_required");
       // Initial imports perform the same capability/completeness query using
       // the immutable managed UUID as a read-only probe before any GPO exists.
+      phase="gpo_preflight_census_mismatch";
       if(target_)gpo::verify_forest_link_census(out,complete);
       std::sort(out.begin(),out.end(),[](const auto& a,const auto& b){const auto& x=a.template as<json::object>();const auto& y=b.template as<json::object>();
         return std::tuple(x.at("kind").template as<std::string>(),lower(x.at("dn").template as<std::string>()),x.at("order").template as<std::int64_t>())<
                std::tuple(y.at("kind").template as<std::string>(),lower(y.at("dn").template as<std::string>()),y.at("order").template as<std::int64_t>());});return out;
-    }catch(...){fail("gpo_preflight_required");}
+    }catch(...){fail(phase);}
   }
   bool name_available() {
     ComPtr<IGPMSearchCriteria> criteria;check(gpm_->CreateSearchCriteria(&criteria));bstr name(job_.text("pilot_display_name"));VARIANT query{};query.vt=VT_BSTR;query.bstrVal=name.value;check(criteria->Add(gpoDisplayName,opEquals,query));
@@ -347,6 +373,56 @@ class native_managed final:public gpo::managed_provider {
   }
  public:
   native_managed(const gpo::job& j,const json::object& executor):job_(j),executor_(executor),current_guid_(j.text("gpo_guid")){}
+  json::object observe() {
+    auto observation=gpo::unavailable_observation(current_guid_,"gpo_reconciliation_state_unavailable");
+    observation["issues"]=json::array{};
+    const auto issue=[&](const char* code){auto& list=observation.at("issues").as<json::array>();
+      if(std::none_of(list.begin(),list.end(),[&](const auto& v){return v.template as<std::string>()==code;}))list.push_back(code);};
+    const auto diagnostic=[&](const char* stage,const std::exception& error){
+      issue(stage);
+      if(std::string_view(error.what())=="gpo_permission_denied")issue("gpo_permission_denied");
+      if(const auto* failure=dynamic_cast<const hresult_error*>(&error)) {
+        char code[64]{};std::snprintf(code,sizeof(code),"gpo_reconciliation_hresult_%08lx",static_cast<unsigned long>(failure->value));issue(code);
+      }
+    };
+    try {connect();}catch(const std::exception& e) {
+      diagnostic(std::string_view(e.what())=="gpo_identity_mismatch"?"gpo_identity_mismatch":"gpo_reconciliation_domain_open_failed",e);return observation;
+    }
+    // Known receipt GUID only. A missing/inaccessible GPMC object does not
+    // prove absence and must never be replaced by a name search or a create.
+    try {open_target();}catch(const std::exception& e) {diagnostic("gpo_reconciliation_gpo_open_failed",e);return observation;}
+    if(!target_) {issue("gpo_reconciliation_guid_unknown");return observation;}
+    observation["gpo_presence"]="present";
+    try {observation["forest_links"]=all_links();observation["forest_complete"]=true;}
+    catch(const std::exception& e) {diagnostic("gpo_preflight_required",e);}
+    try {
+      json::array ous;
+      for(const auto& item:job_.fields.at("target_ous").as<json::array>()) {
+        const auto& dn=item.as<std::string>();auto ads=directory_object(job_,dn);
+        if(lower(property([&](BSTR* p){return ads->get_Class(p);}))!=(component_->scope=="domain"?"domaindns":"organizationalunit"))fail("gpo_target_invalid");
+        const auto actual=object_text(ads.Get(),L"distinguishedName");if(lower(actual)!=lower(dn))fail("gpo_target_invalid");
+        auto som=ou(actual);VARIANT_BOOL blocked{};check(som->get_GPOInheritanceBlocked(&blocked));
+        ous.push_back(json::object{{"dn",actual},{"guid",object_guid(ads.Get())},{"usn",object_usn(ads.Get())},{"blocked",blocked!=VARIANT_FALSE},
+          {"links",som_links(som.Get())},{"inherited_links",component_->scope=="domain"?json::array{}:som_links(som.Get(),true)}});
+      }
+      VARIANT_BOOL computer{},user{},consistent{};long cds{},css{},uds{},uss{};
+      check(target_->IsComputerEnabled(&computer));check(target_->IsUserEnabled(&user));check(target_->IsACLConsistent(&consistent));
+      observation["acl_consistent"]=consistent!=VARIANT_FALSE;
+      if(consistent!=VARIANT_TRUE)issue("gpo_reconciliation_acl_inconsistent");
+      check(target_->get_ComputerDSVersionNumber(&cds));check(target_->get_ComputerSysvolVersionNumber(&css));
+      check(target_->get_UserDSVersionNumber(&uds));check(target_->get_UserSysvolVersionNumber(&uss));
+      if(cds!=css||uds!=uss)issue("gpo_state_changed");
+      ComPtr<IGPMGPO2> metadata;check(target_.As(&metadata));ComPtr<IGPMWMIFilter> filter;check(target_->GetWMIFilter(&filter));
+      json::object g{{"guid",current_guid_},{"name",property([&](BSTR* p){return target_->get_DisplayName(p);})},
+        {"description",property([&](BSTR* p){return metadata->get_Description(p);})},{"computer_enabled",computer!=VARIANT_FALSE},{"user_enabled",user!=VARIANT_FALSE},
+        {"computer_ds",cds},{"computer_sysvol",css},{"user_ds",uds},{"user_sysvol",uss},{"security_digest",security_digest()},
+        {"wmi_filter",filter?property([&](BSTR* p){return filter->get_Path(p);}):""},{"links",observation.at("forest_links")}};
+      json::object state{{"schema",1},{"gpo",std::move(g)},{"ous",std::move(ous)},{"name_available",name_available()}};
+      if(!gpo::valid_snapshot(state))fail("gpo_target_invalid");observation["state"]=std::move(state);
+    }catch(const std::exception& e) {diagnostic(std::string_view(e.what())=="gpo_target_invalid"?"gpo_target_invalid":"gpo_reconciliation_metadata_failed",e);}
+    if(!gpo::valid_reconciliation_observation(observation))return gpo::unavailable_observation(current_guid_,"gpo_reconciliation_result_invalid");
+    return observation;
+  }
   json::object inspect() override {
     connect();open_target();json::array ous;
     for(const auto& item:job_.fields.at("target_ous").as<json::array>()) {
@@ -411,7 +487,7 @@ class native_managed final:public gpo::managed_provider {
       if(read_protected_gpo_file(manifest,65536)!=document)fail("gpo_backup_failed");return {backup_id,gpo::sha256(document)};
     }catch(...){fail("gpo_backup_failed");}
   }
-  void link(std::string_view id) override {
+  void update_links(std::string_view id,bool enable) {
     same(id);VARIANT_BOOL computer{},user{};check(target_->IsComputerEnabled(&computer));check(target_->IsUserEnabled(&user));
     if(computer!=VARIANT_FALSE||user!=VARIANT_FALSE)fail("gpo_requires_disabled");
     const auto& targets=job_.fields.at("target_ous").as<json::array>();const auto& orders=job_.fields.at("link_orders").as<json::array>();
@@ -426,19 +502,22 @@ class native_managed final:public gpo::managed_provider {
         VARIANT_BOOL enabled{},enforced{};long order{};check(own->get_Enabled(&enabled));check(own->get_Enforced(&enforced));check(own->get_SOMLinkOrder(&order));
         if(enforced!=VARIANT_FALSE)fail("gpo_link_conflict");
         if(enabled!=VARIANT_FALSE)check(own->put_Enabled(VARIANT_FALSE));
-        if(order==position)continue;
+        if(order==position){if(enable)check(own->put_Enabled(VARIANT_TRUE));continue;}
         // No GPMC order setter exists. Only our already disabled link is
         // replaced, while both halves are disabled; unrelated links stay put.
         check(own->Delete());own.Reset();
       }
-      check(som->CreateGPOLink(position,target_.Get(),&own));check(own->put_Enabled(VARIANT_FALSE));check(own->put_Enforced(VARIANT_FALSE));
+      check(som->CreateGPOLink(position,target_.Get(),&own));check(own->put_Enabled(enable?VARIANT_TRUE:VARIANT_FALSE));check(own->put_Enforced(VARIANT_FALSE));
       const auto after=som_links(som.Get());if(without_own(before,id)!=without_own(after,id))fail("gpo_state_changed");
-      const auto created=link_state(own.Get());if(created.at("order").as<std::int64_t>()!=position||created.at("enabled").as<bool>()||created.at("enforced").as<bool>())fail("gpo_verification_failed");
+      const auto created=link_state(own.Get());if(created.at("order").as<std::int64_t>()!=position||created.at("enabled").as<bool>()!=enable||created.at("enforced").as<bool>())fail("gpo_verification_failed");
     }
   }
+  void link(std::string_view id) override {update_links(id,false);}
   void activate(std::string_view id) override {
     same(id);const bool machine=component_->scope=="machine"||component_->scope=="domain",user=component_->scope=="user";
     if(!machine&&!user)fail("gpo_unsupported_component");
+    if(gpo::override_job(job_)){disable();import();disable();identify();update_links(id,true);
+      check(target_->SetComputerEnabled(machine?VARIANT_TRUE:VARIANT_FALSE));check(target_->SetUserEnabled(user?VARIANT_TRUE:VARIANT_FALSE));return;}
     import();identify();
     check(target_->SetComputerEnabled(machine?VARIANT_TRUE:VARIANT_FALSE));check(target_->SetUserEnabled(user?VARIANT_TRUE:VARIANT_FALSE));
     const auto& targets=job_.fields.at("target_ous").as<json::array>();
@@ -455,4 +534,12 @@ class native_managed final:public gpo::managed_provider {
 };
 }
 std::unique_ptr<gpo::managed_provider> make_managed_gpo_provider(const gpo::job& job,const gpo::json::object& executor_identity) {return std::make_unique<native_managed>(job,executor_identity);}
+gpo::json::object observe_gpo_reconciliation(const gpo::journal& record,const gpo::json::object& executor) {
+  if(record.state!=gpo::phase::reconciliation||(record.assignment.number("schema")<3||record.assignment.number("schema")>4))fail("gpo_journal_invalid");
+  if(record.gpo_guid.empty())return gpo::unavailable_observation({},"gpo_reconciliation_guid_unknown");
+  // Internal read target comes exclusively from the protected original receipt;
+  // this copy is never parsed, saved, approved or sent as an executable job.
+  auto read_target=record.assignment;read_target.fields["gpo_guid"]=record.gpo_guid;
+  native_managed provider(read_target,executor);return provider.observe();
+}
 }  // namespace ipms::agent::windows

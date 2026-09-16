@@ -162,6 +162,8 @@ class BaselineApplications:
             if not ambiguous:
                 bindings[identity].append((latest.gpo_guid, latest.completed_at))
         for policy in managed:
+            if policy.override_id:
+                continue  # Sparse overrides never prove assignment of the source baseline.
             identity = active_binding(policy, self.now)
             if identity:
                 bindings[identity].append((policy.gpo_guid, policy.active_job.completed_at))

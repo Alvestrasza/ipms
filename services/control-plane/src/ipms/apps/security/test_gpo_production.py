@@ -85,8 +85,10 @@ class ProductionGpoTests(TestCase):
         return GpoImportJob.objects.get(pk=response.data['id']).assignment
 
     def execute(self, job):
-        response = self.approve(job)
-        self.assertEqual(response.status_code, 200, response.data)
+        row = GpoImportJob.objects.get(pk=job['job_id'])
+        self.assertEqual(row.status, 'queued')
+        self.assertEqual(row.approved_by_id, row.requested_by_id)
+        self.assertIsNotNone(row.approved_at)
         claim = self.exchange(job, 'claim')['gpo_claim']
         self.assertTrue(claim['authorized'])
         self.assertEqual(claim['approval']['operation'], job['operation'])
@@ -860,7 +862,7 @@ class ProductionGpoRaceTests(TransactionTestCase):
         inspection = self.inspect()
         self.report_success(inspection, self.snapshot(inspection))
         job = self.change(inspection)
-        self.assertEqual(self.approve(job).status_code, 200)
+        self.assertIsNotNone(GpoImportJob.objects.get(pk=job['job_id']).approved_at)
         def claim():
             return self.exchange(job, 'claim')['gpo_claim']['mode']
         self.assertEqual(sorted(self._parallel(claim, claim)), ['execute', 'observe'])

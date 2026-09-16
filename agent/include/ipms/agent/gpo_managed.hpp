@@ -1,5 +1,5 @@
 // File Name: gpo_managed.hpp
-// Version: v0.1.0 | Created: 2026-09-15 | Last Modified: 2026-09-15
+// Version: v0.1.1 | Created: 2026-09-15 | Last Modified: 2026-09-16
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Snapshot-bound managed GPO operations and read-only inspection seam.
 #pragma once
@@ -14,10 +14,15 @@ struct forest_domain {
 };
 void validate_forest_domains(const job& assignment, const std::vector<forest_domain>& domains);
 std::optional<std::uint32_t> matching_gpo_link(std::string_view links, std::string_view policy_dn);
+void merge_forest_link_locations(std::map<std::string,std::uint32_t>& complete_locations,
+    const std::map<std::string,std::uint32_t>& observed_locations);
 void verify_forest_link_census(const json::array& links, const std::map<std::string,std::uint32_t>& complete_locations);
+std::pair<std::string,std::string> ace_object_types(std::int64_t flags,
+    const std::function<std::string()>& object_type, const std::function<std::string()>& inherited_object_type);
 bool managed_operation(std::string_view operation);
 bool inspection(const job& assignment);
 bool valid_snapshot(const json::value& state);
+bool valid_gpo_links(const json::value& links);
 void validate_managed_job(const job& assignment);
 bool valid_managed_result(const json::object& document);
 void validate_managed_state(const job& assignment, const json::object& state);

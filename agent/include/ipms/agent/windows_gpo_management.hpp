@@ -5,6 +5,7 @@
 #pragma once
 #include "ipms/agent/gpo_management.hpp"
 #include "ipms/agent/gpo_managed.hpp"
+#include "ipms/agent/gpo_reconciliation.hpp"
 #include <memory>
 #include <filesystem>
 
@@ -22,6 +23,17 @@ std::filesystem::path expand_gpo_artifact(const gpo::job& job);
 bool gpo_enrollment_matches(std::string_view device_uri);
 // Caller closes the returned native handle. Sharing is disabled across processes.
 void* acquire_gpo_cycle_lock();
+void* acquire_gpo_worker_lock();
+std::string gpo_journal_sha256(const gpo::journal& record);
+void save_gpo_reconciliation_request(const gpo::journal& record, const gpo::json::object& challenge);
+gpo::json::object load_gpo_reconciliation_request(const gpo::journal& record);
+void save_gpo_reconciliation_pending(const gpo::journal& record, const gpo::json::object& sidecar);
+gpo::json::object load_gpo_reconciliation_pending(const gpo::journal& record, std::string_view id);
+void save_gpo_reconciliation_release(const gpo::journal& record, const gpo::json::object& sidecar);
+bool has_gpo_reconciliation_release(const gpo::journal& record);
+bool gpo_worker_quiescent();
+gpo::json::object invoke_gpo_reconciliation_worker(const std::function<bool()>& cancelled = {});
+gpo::json::object observe_gpo_reconciliation(const gpo::journal& record, const gpo::json::object& executor);
 int approve_gpo_pilot(const std::filesystem::path& document);
 gpo::json::object probe_gpo_executor(const std::function<bool()>& cancelled = {});
 gpo::json::object invoke_gpo_pilot_worker(const std::function<bool()>& cancelled = {});
