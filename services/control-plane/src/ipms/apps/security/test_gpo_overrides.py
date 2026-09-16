@@ -51,6 +51,13 @@ class OverrideTests(TestCase):
         return response
 
     def inspect(self, operation=IMPORT, **changes):
+        if operation == DELETE:
+            selection = {'revision': self.config['revision'], 'system_id': self.selection['system_id'],
+                         'idempotency_key': str(uuid.uuid4()), 'operation': DELETE,
+                         'managed_id': str(self.managed.pk), 'domain_root_confirmed': False, **changes}
+            response = self.client.post(self.base + 'gpo-preflights/', selection, format='json')
+            self.assertEqual(response.status_code, 202, response.data)
+            return GpoImportJob.objects.get(pk=response.data['id']).assignment
         selection = {'override_id': self.override['id'], 'override_revision': self.override['revision'],
                      'override_sha256': self.override['sha256'], **changes}
         return production_tests.ProductionGpoTests.inspect(self, operation, **selection)
@@ -145,8 +152,8 @@ class OverrideTests(TestCase):
         _, state = self.activated()
         managed_id = self.managed.pk
         self.assertEqual(self.update_override(entries=[]).status_code, 200)
-        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.44')
-        self.system.agent_version = '0.2.44'
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.45')
+        self.system.agent_version = '0.2.45'
         self.system.save(update_fields=('agent_version',))
         inspection = self.inspect(DELETE)
         self.report_success(inspection, state)
@@ -176,23 +183,19 @@ class OverrideTests(TestCase):
         self.assertEqual(blocked.status_code, 409)
         self.assertEqual(blocked.data['error']['code'], 'security_override_in_use')
 
-    def test_delete_requires_agent_0244_and_is_override_only(self):
+    def test_delete_requires_agent_0245(self):
         self.linked()
-        response = self.client.post(self.base + 'gpo-preflights/', {**self.selection,
-            'idempotency_key': str(uuid.uuid4()), 'operation': DELETE, 'managed_id': str(self.managed.pk),
-            'adopt_job_id': None, 'override_id': self.override['id'], 'override_revision': self.override['revision'],
-            'override_sha256': self.override['sha256']}, format='json')
+        response = self.client.post(self.base + 'gpo-preflights/', {'revision': self.config['revision'],
+            'system_id': self.selection['system_id'], 'idempotency_key': str(uuid.uuid4()),
+            'operation': DELETE, 'managed_id': str(self.managed.pk), 'domain_root_confirmed': False}, format='json')
         self.assertEqual(response.status_code, 409)
-        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.44')
-        self.system.agent_version = '0.2.44'
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.45')
+        self.system.agent_version = '0.2.45'
         self.system.save(update_fields=('agent_version',))
-        self.managed.override = None
-        self.managed.save(update_fields=('override',))
-        response = self.client.post(self.base + 'gpo-preflights/', {**self.selection,
-            'idempotency_key': str(uuid.uuid4()), 'operation': DELETE, 'managed_id': str(self.managed.pk),
-            'adopt_job_id': None}, format='json')
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.data['error']['code'], 'security_override_unavailable')
+        response = self.client.post(self.base + 'gpo-preflights/', {'revision': self.config['revision'],
+            'system_id': self.selection['system_id'], 'idempotency_key': str(uuid.uuid4()),
+            'operation': DELETE, 'managed_id': str(self.managed.pk), 'domain_root_confirmed': False}, format='json')
+        self.assertEqual(response.status_code, 202, response.data)
 
     def test_changed_override_withdraws_pending_authority_and_blocks_old_activation(self):
         inspection = self.inspect()

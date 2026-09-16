@@ -54,8 +54,10 @@ def inspecting(job):
 
 
 def minimum_agent(operation, override=False):
+    if operation == DELETE:
+        return (0, 2, 45)
     if override:
-        return (0, 2, 44) if operation == DELETE else (0, 2, 43)
+        return (0, 2, 43)
     return (0, 2, 36) if operation == IMPORT_LINK else (0, 2, 35)
 
 
@@ -334,8 +336,6 @@ def _selection(tenant, user, config, data):
             raise PublicApiError('security_override_unavailable', status_code=409)
         if normalize_entries(component_for(override.baseline_id, override.backup_id), override.entries) != override.entries:
             raise PublicApiError('security_override_artifact_changed', status_code=409)
-    if data['operation'] == DELETE and override is None:
-        raise PublicApiError('security_override_unavailable', status_code=409)
     name = render_name(config.gpo_name_template, data['tier'], 'U' if component['scope'] == 'user' else 'C',
                        data['target'], override_purpose(override) if override else compact_purpose(data['baseline_id'], component), data['version'])
     system = WindowsServer.objects.select_for_update().filter(pk=data['system_id'], tenant=tenant).first()
@@ -350,6 +350,68 @@ def _selection(tenant, user, config, data):
     except ValidationError as exc:
         raise PublicApiError('security_gpo_artifact_unavailable', status_code=409) from exc
     return component, profile, name, system, enrollment, report, override, selected_targets
+
+
+def _delete_selection(tenant, user, config, data):
+    """Resolve deletion exclusively from the selected managed identity.
+
+    Import inputs such as target tokens, versions and catalog selections are not
+    accepted for deletion. They are properties of the immutable managed policy
+    and must never be allowed to retarget the destructive operation.
+    """
+    required = {'revision', 'system_id', 'idempotency_key', 'operation', 'managed_id'}
+    allowed = required | {'domain_root_confirmed'}
+    if (not isinstance(data, dict) or set(data) - allowed or not required <= set(data)
+            or type(data['revision']) is not int or data['operation'] != DELETE
+            or any(not isinstance(data[key], str) for key in required - {'revision'})
+            or type(data.get('domain_root_confirmed', False)) is not bool):
+        raise ParseError('Supply exactly the selected managed GPO identity for deletion.')
+    try:
+        for key in ('system_id', 'idempotency_key', 'managed_id'):
+            uuid_text(data[key])
+    except (ValueError, TypeError):
+        raise ParseError('Invalid managed GPO deletion identity.')
+    if config.revision != data['revision']:
+        raise PublicApiError('security_domain_revision_changed', status_code=409)
+    validate_settings({key: getattr(config, key) for key in ('domain_name', 'tier_ous', 'gpo_name_template', 'baseline_order')})
+    policy = get_object_or_404(ManagedGpoPolicy.objects.select_for_update(),
+        pk=data['managed_id'], tenant=tenant, domain=config)
+    if not scoped(user, tenant, config, str(policy.tier)):
+        raise PermissionDenied('An explicit domain/tier grant is required.')
+    if (not policy.gpo_guid or not policy.staged_job_id or policy.state == 'reconciliation_required'
+            or policy.gpo_guid in DEFAULT_GPO_IDS or _guid(policy.gpo_guid) != policy.gpo_guid):
+        raise PublicApiError('security_gpo_unmanaged_target', status_code=409)
+    components, profiles = _content()
+    component = components.get((policy.baseline_id, policy.backup_id))
+    if (not component or policy.backup_id not in profiles.get((policy.baseline_id, policy.profile), ())
+            or semantic_purpose(policy.baseline_id, component) != policy.purpose):
+        raise PublicApiError('security_gpo_prepared_content_changed', status_code=409)
+    root = component['scope'] == 'domain'
+    if root and policy.tier != 0:
+        raise PublicApiError('security_gpo_unmanaged_target', status_code=409)
+    if root != data.get('domain_root_confirmed', False):
+        if root:
+            raise PublicApiError('security_gpo_domain_root_confirmation_required', status_code=409)
+        raise ParseError('Domain-root confirmation is valid only for an explicit domain-wide action.')
+    configured_targets = [domain_root(config.domain_name)] if root else list(config.tier_ous[str(policy.tier)])
+    if (not isinstance(policy.target_ous, list) or not policy.target_ous
+            or any(target not in configured_targets for target in policy.target_ous)
+            or len(set(policy.target_ous)) != len(policy.target_ous)):
+        raise PublicApiError('security_gpo_unmanaged_target', status_code=409)
+    system = WindowsServer.objects.select_for_update().filter(pk=data['system_id'], tenant=tenant).first()
+    enrollment = AgentEnrollment.objects.filter(tenant=tenant, device_uri=system.source_id).first() if system else None
+    report = GpoExecutorReport.objects.filter(enrollment=enrollment).first() if enrollment else None
+    if (policy.domain_guid != (report.domain_guid if report else None)
+            or not _ready(system, enrollment, report, config.domain_name, portal=True)
+            or tuple(map(int, system.agent_version.split('.'))) < minimum_agent(DELETE)
+            or tuple(map(int, report.agent_version.split('.'))) < minimum_agent(DELETE)):
+        raise PublicApiError('security_gpo_executor_unavailable', status_code=409)
+    override = policy.override
+    if override:
+        staged = policy.staged_job.assignment if policy.staged_job else {}
+        if staged.get('schema') != 4 or staged.get('override_id') != str(override.pk):
+            raise PublicApiError('security_gpo_prepared_content_changed', status_code=409)
+    return component, policy.profile, policy.display_name, system, enrollment, report, override, list(policy.target_ous), policy
 
 
 def _idle(tenant, domain_guid):
@@ -401,17 +463,39 @@ def _origin(tenant, config, data, report, component):
 
 
 def create_preflight(tenant, user, config, data):
-    component, profile, name, system, enrollment, report, override, selected_targets = _selection(tenant, user, config, data)
-    request_digest = digest({'domain_id': str(config.pk), **data})
-    retry = _retry(tenant, user, data['idempotency_key'], request_digest)
-    if retry:
-        return retry
+    request_data = copy.deepcopy(data)
+    deleting = isinstance(data, dict) and data.get('operation') == DELETE
+    request_digest = digest({'domain_id': str(config.pk), **request_data})
+    if deleting and isinstance(data.get('idempotency_key'), str):
+        try:
+            uuid_text(data['idempotency_key'])
+        except (ValueError, TypeError):
+            pass
+        else:
+            retry = _retry(tenant, user, data['idempotency_key'], request_digest)
+            if retry:
+                return retry
+    if deleting:
+        component, profile, name, system, enrollment, report, override, selected_targets, policy = _delete_selection(
+            tenant, user, config, data)
+        data = {**data, 'baseline_id': policy.baseline_id, 'backup_id': policy.backup_id,
+                'tier': str(policy.tier), 'target': policy.target, 'target_ous': list(policy.target_ous),
+                'version': policy.version, 'adopt_job_id': None}
+    else:
+        component, profile, name, system, enrollment, report, override, selected_targets = _selection(tenant, user, config, data)
+        policy = None
+    if not deleting:
+        retry = _retry(tenant, user, data['idempotency_key'], request_digest)
+        if retry:
+            return retry
     _idle(tenant, report.domain_guid)
     logical = digest({'tier': data['tier'], 'baseline': data['baseline_id'], 'profile': profile,
                       'purpose': semantic_purpose(data['baseline_id'], component), 'target': data['target'].casefold(),
                       **({'override_id': str(override.pk)} if override else {})})
     origin = None
-    if data['managed_id']:
+    if deleting:
+        pass
+    elif data['managed_id']:
         policy = get_object_or_404(ManagedGpoPolicy.objects.select_for_update(), pk=data['managed_id'], tenant=tenant, domain=config)
         if (policy.domain_guid != report.domain_guid or policy.logical_key != logical
                 or policy.override_id != (override.pk if override else None)

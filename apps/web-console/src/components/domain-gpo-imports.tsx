@@ -239,13 +239,13 @@ function ProductionWorkflow({
           Number(e.agent_version.split(".")[1]) > 2 ||
           (Number(e.agent_version.split(".")[1]) === 2 &&
             Number(e.agent_version.split(".")[2]) >=
-              (override
-                ? operation === "delete_managed_gpo"
-                  ? 44
-                  : 43
-                : operation === "import_and_link_managed_gpo"
-                  ? 36
-                  : 35))),
+              (operation === "delete_managed_gpo"
+                ? 45
+                : override
+                  ? 43
+                  : operation === "import_and_link_managed_gpo"
+                    ? 36
+                    : 35))),
     ) ?? [];
   const executor =
     executors.find((e) => e.system_id === systemId) ?? executors[0];
@@ -302,27 +302,36 @@ function ProductionWorkflow({
   const availableOus = settings.tier_ous[tier];
   const actionTargetOus =
     component?.scope === "domain" ? [domainRootDn] : selectedOus;
-  const actionSelection = {
-    ...(override
-      ? {
-          override_id: override.id,
-          override_revision: override.revision,
-          override_sha256: override.sha256,
-        }
-      : {}),
-    revision: settings.revision,
-    system_id: executor?.system_id ?? "",
-    baseline_id: baseline?.id ?? "",
-    backup_id: component?.id ?? "",
-    tier,
-    target_ous: actionTargetOus,
-    target,
-    version,
-    operation,
-    managed_id: policy?.id ?? null,
-    adopt_job_id: adoptJobId || null,
-    domain_root_confirmed: domainRootAction && domainRootConfirmed,
-  };
+  const deleting = operation === "delete_managed_gpo";
+  const actionSelection = deleting
+    ? {
+        revision: settings.revision,
+        system_id: executor?.system_id ?? "",
+        operation,
+        managed_id: policy?.id ?? "",
+        domain_root_confirmed: domainRootAction && domainRootConfirmed,
+      }
+    : {
+        ...(override
+          ? {
+              override_id: override.id,
+              override_revision: override.revision,
+              override_sha256: override.sha256,
+            }
+          : {}),
+        revision: settings.revision,
+        system_id: executor?.system_id ?? "",
+        baseline_id: baseline?.id ?? "",
+        backup_id: component?.id ?? "",
+        tier,
+        target_ous: actionTargetOus,
+        target,
+        version,
+        operation,
+        managed_id: policy?.id ?? null,
+        adopt_job_id: adoptJobId || null,
+        domain_root_confirmed: domainRootAction && domainRootConfirmed,
+      };
   async function submit(kind: "inspect" | "write") {
     if (disabled || mutation.current || !data) return;
     const body =
@@ -466,18 +475,23 @@ function ProductionWorkflow({
       operation === "deactivate_managed_gpo" ||
       operation === "delete_managed_gpo" ||
       (override.enabled && override.entries.length > 0)) &&
-    executor &&
-    baseline &&
-    component?.available &&
-    actionTargetOus.length > 0 &&
-    (!domainRootAction || domainRootConfirmed) &&
-    (operation === "import_managed_gpo" ||
-      operation === "import_and_link_managed_gpo" ||
-      policy?.gpo_guid) &&
-    (component.scope !== "domain" || tier === "0") &&
-    (operation !== "activate_managed_gpo" || (management && recovery)) &&
-    /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(target) &&
-    /^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(version);
+    Boolean(executor) &&
+    (deleting
+      ? Boolean(policy?.gpo_guid) && (!domainRootAction || domainRootConfirmed)
+      : Boolean(
+          baseline &&
+            component?.available &&
+            actionTargetOus.length > 0 &&
+            (!domainRootAction || domainRootConfirmed) &&
+            (operation === "import_managed_gpo" ||
+              operation === "import_and_link_managed_gpo" ||
+              policy?.gpo_guid) &&
+            (component.scope !== "domain" || tier === "0") &&
+            (operation !== "activate_managed_gpo" ||
+              (management && recovery)) &&
+            /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(target) &&
+            /^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(version),
+        ));
   const fresh =
     inspection?.can_prepare &&
     inspection.preflight_state &&
@@ -603,7 +617,7 @@ function ProductionWorkflow({
               {GPO_OPERATIONS.filter(
                 (op) =>
                   (op !== "import_managed_gpo" || Boolean(policy)) &&
-                  (op !== "delete_managed_gpo" || Boolean(override && policy)),
+                  (op !== "delete_managed_gpo" || Boolean(policy)),
               ).map((op) => (
                 <option
                   key={op}
@@ -633,11 +647,13 @@ function ProductionWorkflow({
             >
               {!executors.length ? (
                 <option value="">
-                  {override
-                    ? getSecurityOverrideCopy(locale).agent
-                    : operation === "import_and_link_managed_gpo"
-                      ? c.noExecutor
-                      : c.noLegacyExecutor}
+                  {operation === "delete_managed_gpo"
+                    ? c.noDeleteExecutor
+                    : override
+                      ? getSecurityOverrideCopy(locale).agent
+                      : operation === "import_and_link_managed_gpo"
+                        ? c.noExecutor
+                        : c.noLegacyExecutor}
                 </option>
               ) : (
                 executors.map((e) => (

@@ -6,13 +6,7 @@
  */
 "use client";
 
-import {
-  ArrowDown,
-  ArrowUp,
-  GripVertical,
-  Plus,
-  RefreshCw,
-} from "lucide-react";
+import { Plus, RefreshCw } from "lucide-react";
 import type { Route } from "next";
 import Link from "next/link";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
@@ -322,15 +316,10 @@ function DomainSettingsEditor({
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(false);
   const [error, setError] = useState("");
-  const [moveNotice, setMoveNotice] = useState("");
   const request = useRef<AbortController | null>(null);
-  const dragging = useRef<string | null>(null);
   const mounted = useRef(false);
   const dirty =
     JSON.stringify(draft) !== JSON.stringify(draftFrom(settings, catalog));
-  const baselineById = new Map(
-    catalog.baseline_options.map((item) => [item.id, item]),
-  );
 
   useEffect(() => {
     onDirty(dirty);
@@ -346,28 +335,6 @@ function DomainSettingsEditor({
       onBusy(false);
     };
   }, [onBusy]);
-
-  function move(id: string, targetIndex: number) {
-    if (busy) return;
-    const currentIndex = draft.order.indexOf(id);
-    if (
-      currentIndex < 0 ||
-      targetIndex < 0 ||
-      targetIndex >= draft.order.length ||
-      currentIndex === targetIndex
-    )
-      return;
-    const order = [...draft.order];
-    order.splice(currentIndex, 1);
-    order.splice(targetIndex, 0, id);
-    setDraft((previous) => ({ ...previous, order }));
-    setMoveNotice(
-      copy.moved
-        .replace("{name}", baselineById.get(id)?.name ?? id)
-        .replace("{position}", String(targetIndex + 1))
-        .replace("{total}", String(order.length)),
-    );
-  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -591,93 +558,6 @@ function DomainSettingsEditor({
             </ul>
           </section>
         </section>
-        <section
-          className={styles.configurationSection}
-          aria-labelledby="baseline-order-heading"
-        >
-          <h3 id="baseline-order-heading">{copy.order}</h3>
-          <p className={styles.hint} id="baseline-order-hint">
-            {copy.orderHint}
-          </p>
-          <ol
-            className={styles.orderList}
-            aria-label={copy.order}
-            aria-describedby="baseline-order-hint"
-          >
-            {draft.order.map((id, index) => {
-              const baseline = baselineById.get(id);
-              const name = baseline?.name ?? id;
-              return (
-                <li
-                  key={id}
-                  data-baseline-id={id}
-                  onDragOver={(event) => {
-                    if (dragging.current && !busy) {
-                      event.preventDefault();
-                      event.dataTransfer.dropEffect = "move";
-                    }
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    if (dragging.current) move(dragging.current, index);
-                    dragging.current = null;
-                  }}
-                >
-                  <span className={styles.position} aria-hidden="true">
-                    {index + 1}
-                  </span>
-                  <button
-                    className={styles.dragHandle}
-                    type="button"
-                    draggable={!busy}
-                    disabled={busy}
-                    aria-label={`${copy.drag}: ${name}`}
-                    onDragStart={(event) => {
-                      dragging.current = id;
-                      event.dataTransfer.effectAllowed = "move";
-                      event.dataTransfer.setData("text/plain", id);
-                    }}
-                    onDragEnd={() => {
-                      dragging.current = null;
-                    }}
-                  >
-                    <GripVertical size={20} aria-hidden="true" />
-                  </button>
-                  <div className={styles.layerLabel}>
-                    <strong>{name}</strong>
-                    <small>
-                      {baseline?.provider} · {baseline?.revision}
-                    </small>
-                  </div>
-                  <div className={styles.actions}>
-                    <button
-                      className={styles.iconButton}
-                      type="button"
-                      disabled={busy || index === 0}
-                      aria-label={`${copy.moveUp}: ${name}`}
-                      onClick={() => move(id, index - 1)}
-                    >
-                      <ArrowUp size={17} aria-hidden="true" />
-                    </button>
-                    <button
-                      className={styles.iconButton}
-                      type="button"
-                      disabled={busy || index === draft.order.length - 1}
-                      aria-label={`${copy.moveDown}: ${name}`}
-                      onClick={() => move(id, index + 1)}
-                    >
-                      <ArrowDown size={17} aria-hidden="true" />
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-          <p className={styles.hint}>{copy.providersHint}</p>
-          <p role="status" aria-live="polite" className={styles.hint}>
-            {moveNotice}
-          </p>
-        </section>
       </section>
       {error ? (
         <p className={styles.error} role="alert">
@@ -698,7 +578,6 @@ function DomainSettingsEditor({
           disabled={busy || !dirty}
           onClick={() => {
             setDraft(draftFrom(settings, catalog));
-            setMoveNotice("");
           }}
         >
           {copy.reset}

@@ -13,7 +13,7 @@ from django.test import TestCase, SimpleTestCase, TransactionTestCase, skipUnles
 from django.utils import timezone
 
 from .gpo_jobs import digest, security_gpo_exchange
-from .gpo_production import (ACTIVATE, DEACTIVATE, IMPORT, IMPORT_LINK, INSPECT, LINK, SUCCESS, active_binding,
+from .gpo_production import (ACTIVATE, DEACTIVATE, DELETE, IMPORT, IMPORT_LINK, INSPECT, LINK, SUCCESS, active_binding,
                              compact_purpose, validate_snapshot)
 from .models import DomainSecuritySettings, GpoExecutorReport, GpoImportJob, ManagedGpoPolicy
 from . import test_gpo_approvals as approval_tests
@@ -191,6 +191,49 @@ class ProductionGpoTests(TestCase):
         jobs = GpoImportJob.objects.filter(assignment__approval_mode='portal')
         self.assertEqual(jobs.count(), 3)
         self.assertEqual(jobs.filter(approved_at__isnull=True).count(), 0)
+
+    def test_delete_baseline_uses_only_managed_identity_and_removes_projection(self):
+        _, state = self.activated()
+        managed_id = self.managed.pk
+        self.system.agent_version = '0.2.45'
+        self.system.save(update_fields=('agent_version',))
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.45')
+        request = {'revision': self.config['revision'], 'system_id': self.selection['system_id'],
+                   'idempotency_key': str(uuid.uuid4()), 'operation': DELETE,
+                   'managed_id': str(managed_id), 'domain_root_confirmed': False}
+        response = self.client.post(self.base + 'gpo-preflights/', request, format='json')
+        self.assertEqual(response.status_code, 202, response.data)
+        inspection = GpoImportJob.objects.get(pk=response.data['id']).assignment
+        self.assertEqual(inspection['schema'], 3)
+        self.assertEqual(inspection['intended_operation'], DELETE)
+        self.assertEqual(inspection['pilot_display_name'], self.managed.display_name)
+        self.report_success(inspection, state)
+        deletion = self.change(inspection)
+        self.execute(deletion)
+        post = copy.deepcopy(state)
+        removed_guid = post['gpo']['guid']
+        post['gpo'] = None
+        for ou in post['ous']:
+            ou['links'] = [link for link in ou['links'] if link['guid'] != removed_guid]
+            for order, link in enumerate(ou['links'], 1):
+                link['order'] = order
+            ou['usn'] = '12'
+        self.report_success(deletion, post, backup=True)
+        self.assertFalse(ManagedGpoPolicy.objects.filter(pk=managed_id).exists())
+        retry = self.client.post(self.base + 'gpo-preflights/', request, format='json')
+        self.assertEqual(retry.status_code, 202, retry.data)
+        self.assertEqual(retry.data['id'], response.data['id'])
+
+    def test_delete_rejects_creation_fields_instead_of_revalidating_them(self):
+        self.linked()
+        self.system.agent_version = '0.2.45'
+        self.system.save(update_fields=('agent_version',))
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.45')
+        response = self.client.post(self.base + 'gpo-preflights/', {**self.selection,
+            'idempotency_key': str(uuid.uuid4()), 'operation': DELETE,
+            'managed_id': str(self.managed.pk), 'adopt_job_id': None}, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(GpoImportJob.objects.filter(assignment__intended_operation=DELETE).exists())
 
     def test_initial_import_receipt_rejects_enabled_or_linked_policy(self):
         inspected = self.inspect()

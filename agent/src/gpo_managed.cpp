@@ -212,7 +212,6 @@ void validate_managed_job(const job& j) {
     "preflight_id","expected_state","intended_operation","safety_review"};
   for(const auto* k:extra)if(!j.fields.contains(k))fail();
   if(!valid_uuid(j.text("managed_id"))||j.number("managed_revision")<1||!managed_operation(j.text("intended_operation")))fail();
-  if(j.text("intended_operation")=="delete_managed_gpo"&&!override_job(j))fail("gpo_unmanaged_target");
   const bool read=inspection(j);
   const auto* content=component(j);
   const bool root=domain_scope(j);

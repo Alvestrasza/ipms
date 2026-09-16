@@ -509,8 +509,14 @@ int main(int argc,char** argv) {
   const auto delete_backup=std::find(sparse_delete.calls.begin(),sparse_delete.calls.end(),"backup"),deleted=std::find(sparse_delete.calls.begin(),sparse_delete.calls.end(),"remove");
   require(delete_backup!=sparse_delete.calls.end()&&deleted!=sparse_delete.calls.end()&&delete_backup<deleted,"Override deletion preceded its protected backup");
   j=record(delete_override);provider invalid_delete(sparse_activate.state);invalid_delete.invalid_delete_order=true;
-  rejects([&]{gpo::execute_managed(j,invalid_delete,save,[]{return true;},[]{});});
-  auto baseline_delete=document("delete_managed_gpo",sparse_activate.state);baseline_delete["input_digest"]=gpo::input_digest(baseline_delete);rejects([&]{gpo::parse_job(baseline_delete);});
+  const auto invalid_delete_result=gpo::execute_managed(j,invalid_delete,save,[]{return true;},[]{});
+  require(invalid_delete_result.at("status").as<std::string>()=="requires_reconciliation"&&
+    invalid_delete_result.at("result_code").as<std::string>()=="gpo_verification_failed","Invalid deletion receipt was accepted");
+  auto baseline_delete=document("delete_managed_gpo",linked_state);baseline_delete["input_digest"]=gpo::input_digest(baseline_delete);
+  j=record(baseline_delete);provider baseline_delete_provider(linked_state);
+  const auto baseline_deletion_result=gpo::execute_managed(j,baseline_delete_provider,save,[]{return true;},[]{});
+  require(baseline_deletion_result.at("status").as<std::string>()=="deleted"&&
+    baseline_deletion_result.at("result_code").as<std::string>()=="gpo_deleted","Managed baseline deletion failed");
   auto reject_patch=[&](json::array entries){auto invalid=override_document(override_component,std::move(entries));rejects([&]{gpo::parse_job(invalid);});};
   reject_patch({});reject_patch({patch[0],patch[0]});
   auto bad_entry=patch[0].as<json::object>();bad_entry["setting_id"]="not-compiled";reject_patch({bad_entry});

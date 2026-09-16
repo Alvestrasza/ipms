@@ -96,7 +96,7 @@ async function selectPolicyDomain(
     .selectOption(settings.id);
 }
 
-test("domain administration saves OUs, GPO names and composition together without importing", async ({
+test("domain administration saves OUs and GPO names without exposing composition ordering", async ({
   page,
 }) => {
   const { headers } = await login(page);
@@ -131,7 +131,7 @@ test("domain administration saves OUs, GPO names and composition together withou
   ).toBeVisible();
   await expect(
     page.getByRole("list", { name: "Baseline composition order", exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(
     page.getByRole("heading", {
       name: "Domain GPO configuration",
@@ -169,48 +169,7 @@ test("domain administration saves OUs, GPO names and composition together withou
   await expect(
     page.getByText("Corp-1-C-ALL-Baseline_V1.0.0", { exact: true }),
   ).toBeVisible();
-  const first = catalog.baseline_options[0];
-  const second = catalog.baseline_options[1];
-  await page
-    .getByRole("button", { name: `Move down: ${first.name}`, exact: true })
-    .focus();
-  await page.keyboard.press("Enter");
-  const order = page.getByRole("list", {
-    name: "Baseline composition order",
-    exact: true,
-  });
-  await expect(order.locator("li").first()).toHaveAttribute(
-    "data-baseline-id",
-    second.id,
-  );
-  const drag = page.getByRole("button", {
-    name: `Drag to reorder: ${second.name}`,
-    exact: true,
-  });
-  const dropTarget = order.locator("li").last();
-  await drag.hover();
-  const dragBox = await drag.boundingBox();
-  if (!dragBox) throw new Error("The visible drag handle has no bounds.");
-  await page.mouse.down();
-  // Start native dragging before the offscreen drop target is scrolled into view.
-  await page.mouse.move(
-    dragBox.x + dragBox.width / 2 + 10,
-    dragBox.y + dragBox.height / 2,
-    { steps: 5 },
-  );
-  await dropTarget.hover();
-  // A second pointer move delivers dragover before drop in Chromium.
-  await dropTarget.hover();
-  await page.mouse.up();
-  await expect(order.locator("li").last()).toHaveAttribute(
-    "data-baseline-id",
-    second.id,
-  );
-  const expectedOrder = await order
-    .locator("li")
-    .evaluateAll((items) =>
-      items.map((item) => item.getAttribute("data-baseline-id")),
-    );
+  const expectedOrder = catalog.baseline_options.map((item) => item.id);
   expect(imports).toEqual([]);
   const savedResponse = page.waitForResponse(
     (response) =>
@@ -244,10 +203,6 @@ test("domain administration saves OUs, GPO names and composition together withou
   await expect(
     page.getByLabel("GPO naming template", { exact: true }),
   ).toHaveValue(template);
-  await expect(order.locator("li").last()).toHaveAttribute(
-    "data-baseline-id",
-    second.id,
-  );
   expect(imports).toEqual([]);
   expect(executorReads).toEqual([]);
   expect(
@@ -303,7 +258,10 @@ test("domain administration saves OUs, GPO names and composition together withou
     page.getByRole("list", { name: "Baseline composition order", exact: true }),
   ).toHaveCount(0);
   await expect(
-    page.getByRole("link", { name: "Configure domains & tiers", exact: true }),
+    page.getByRole("link", {
+      name: "Configure domains and tier OUs",
+      exact: true,
+    }),
   ).toHaveAttribute("href", route);
   expect(imports).toEqual([]);
 });

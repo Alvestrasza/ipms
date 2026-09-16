@@ -1,13 +1,13 @@
 # Managed GPO operations
 
-Version: 1.5.0 | Date: 2026-09-16
+Version: 1.6.0 | Date: 2026-09-16
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
-Applies to: Portal 0.2.64 / Windows Agent 0.2.44
+Applies to: Portal 0.2.65 / Windows Agent 0.2.45
 
 ## Configuration
 
 In **Administration → Security → Domains**, configure each domain's existing
-tier OUs, naming template and baseline composition order. No OU layout is assumed
+tier OUs and naming template. No OU layout is assumed
 or created. A template such as `{tier}-{scope}-{target}-{purpose}_V{version}`
 produces names such as `0-C-ALL-MS-WS2025-DC_V1.0.0`. Component aliases retain
 distinctions such as VBS, Credential Guard, BitLocker and user policy. The GPO
@@ -64,7 +64,7 @@ is needed. Viewing a request never approves it. Activation remains separate.
 | Link | Managed links placed on the approved OUs or domain root, disabled and non-enforced |
 | Activate | Protected backup, prepared content applied to stable GUID, intended half and approved links enabled |
 | Deactivate | Both GPO halves disabled; existing links retained |
-| Delete override GPO | Protected backup, approved links removed and exact owned override GPO deleted; managed projection removed |
+| Delete GPO | Protected backup, approved links removed and exact owned baseline, override or custom GPO deleted; managed projection removed |
 
 The combined import and link uses one approval. Each action must have a fresh
 successful inspection, which expires after 15 minutes. Changed configuration,
@@ -72,12 +72,14 @@ permissions, managed revision or directory state require a new inspection.
 Changes to baseline order are applied only through another approved link action.
 An active GPO must first be deactivated before its links can be changed.
 
-Deletion is available only for managed override GPOs and requires Windows Agent
-0.2.44 or later. The fresh inspection must confirm complete forest-wide link
+Deletion is available for every IPMS-managed baseline, override and custom GPO
+and requires Windows Agent 0.2.45 or later. The request contains only the selected
+managed identity; tier, component, target token, version and approved target OUs
+are derived from its immutable projection. The fresh inspection must confirm complete forest-wide link
 visibility and that every direct link is within the approved target set. The Agent
 disables both halves, creates a protected GPMC backup, removes those exact links,
-deletes the owned GPO and verifies its absence. Baseline GPOs, default policies,
-enforced links, links outside the approved target set and unmanaged objects are
+deletes the owned GPO and verifies its absence. Default policies, enforced links,
+links outside the approved target set and unmanaged objects are
 rejected. After the managed policy is gone, the override editor allows the separate
 revision-bound deletion of the definition. Definitions that still reference a
 managed policy cannot be deleted.

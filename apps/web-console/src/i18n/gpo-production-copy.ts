@@ -130,7 +130,7 @@ const en = {
     "Deactivation disables both GPO halves. It does not delete the GPO or its links.",
 
   deleteBoundary:
-    "Deletion is available only for managed override GPOs. The Agent verifies the complete forest link census, creates a protected backup, removes the approved links and then deletes the exact owned GPO.",
+    "Deletion is available for every IPMS-managed baseline, override and custom GPO. The Agent verifies the complete forest link census, creates a protected backup, removes only the approved links and then deletes the exact owned GPO.",
 
   inspectOnly: "Read-only inspection; no change approval is required.",
 
@@ -148,6 +148,8 @@ const en = {
 
   noLegacyExecutor: "No eligible Agent 0.2.35 or newer is currently available.",
 
+  noDeleteExecutor: "No eligible Agent 0.2.45 or newer is currently available.",
+
   actions: {
     import_and_link_managed_gpo: "Import and link",
 
@@ -159,7 +161,7 @@ const en = {
 
     deactivate_managed_gpo: "Deactivate",
 
-    delete_managed_gpo: "Delete override GPO",
+    delete_managed_gpo: "Delete GPO",
 
     inspect_managed_gpo: "Inspect AD state",
   },
@@ -299,7 +301,7 @@ const de: typeof en = {
     "Die Deaktivierung schaltet beide GPO-Teile aus. Sie löscht weder die GPO noch deren Verknüpfungen.",
 
   deleteBoundary:
-    "Das Löschen ist nur für verwaltete Override-GPOs verfügbar. Der Agent prüft alle Verknüpfungen im Forest, erstellt eine geschützte Sicherung, entfernt die freigegebenen Verknüpfungen und löscht anschließend genau die verwaltete GPO.",
+    "Das Löschen ist für jede von IPMS verwaltete Baseline-, Override- und Custom-GPO verfügbar. Der Agent prüft alle Verknüpfungen im Forest, erstellt eine geschützte Sicherung, entfernt ausschließlich die freigegebenen Verknüpfungen und löscht anschließend genau die verwaltete GPO.",
 
   inspectOnly:
     "Lesende Prüfung; dafür ist keine Änderungsfreigabe erforderlich.",
@@ -320,6 +322,9 @@ const de: typeof en = {
   noLegacyExecutor:
     "Derzeit ist kein geeigneter Agent ab Version 0.2.35 verfügbar.",
 
+  noDeleteExecutor:
+    "Derzeit ist kein geeigneter Agent ab Version 0.2.45 verfügbar.",
+
   actions: {
     import_and_link_managed_gpo: "Importieren und verknüpfen",
 
@@ -331,7 +336,7 @@ const de: typeof en = {
 
     deactivate_managed_gpo: "Deaktivieren",
 
-    delete_managed_gpo: "Override-GPO löschen",
+    delete_managed_gpo: "GPO löschen",
 
     inspect_managed_gpo: "AD-Zustand prüfen",
   },

@@ -9,12 +9,12 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-Candidate `0.2.64` makes override names explicit template-purpose tokens and
-adds controlled deletion for managed override GPOs and their definitions. With
-the standard template, purpose `MS-WS2025-Defender` produces exactly
-`0-C-OVRD-MS-WS2025-Defender_V1.0.0` for Tier 0 computer policy. Windows Agent
-`0.2.44` verifies forest-wide links, creates a protected backup, removes only the
-approved links and proves absence of the exact owned GPO before reporting deletion.
+Candidate `0.2.65` removes baseline composition ordering from domain administration
+and provides one source-neutral deletion action for every IPMS-managed baseline,
+override or custom GPO. Deletion derives its complete identity from the selected
+managed policy instead of reusing creation fields. Windows Agent `0.2.45` verifies
+forest-wide links, creates a protected backup, removes only the approved links and
+proves absence of the exact owned GPO before reporting deletion.
 
 Portal `0.2.63` centralized managed deployment under **Security → Windows GPOs**
 and binds every managed GPO to an exact, administrator-selected subset of the OUs

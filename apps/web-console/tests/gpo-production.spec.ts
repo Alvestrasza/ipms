@@ -1613,7 +1613,7 @@ test("override editor persists only deviations, restores baseline and deploys a 
   const currentOverride = await patch.json();
   expect(currentOverride.entries).toEqual([]);
 
-  nativeFixture("agent-044", context.fixture.domain_id);
+  nativeFixture("agent-045", context.fixture.domain_id);
   await page.goto("/en/security/windows-gpos?source=override");
   await page
     .getByRole("combobox", { name: "Domain", exact: true })
@@ -1638,6 +1638,14 @@ test("override editor persists only deviations, restores baseline and deploys a 
     .click();
   const deletionInspection = await deletionInspectionResponse;
   expect(deletionInspection.status()).toBe(202);
+  expect(deletionInspection.request().postDataJSON()).toEqual({
+    revision: expect.any(Number),
+    system_id: context.fixture.system_id,
+    operation: "delete_managed_gpo",
+    managed_id: writeJob.managed_id,
+    domain_root_confirmed: false,
+    idempotency_key: expect.any(String),
+  });
   const deletionInspectionJob = await deletionInspection.json();
   expect(deletionInspectionJob.operation).toBe("inspect_managed_gpo");
   const deletionWriteResponse = page.waitForResponse(
