@@ -131,8 +131,8 @@ def _validate(data, *, update=False):
     keys = {'name', 'entries', 'enabled'} | ({'expected_revision'} if update else {'baseline_id', 'backup_id'})
     if not isinstance(data, dict) or set(data) != keys or type(data['enabled']) is not bool:
         raise ParseError('Supply exactly the documented override fields.')
-    if not _string(data['name'], 80) or not data['name'].strip() or data['name'] != data['name'].strip():
-        raise ParseError('Supply a non-empty override name with at most 80 characters.')
+    if not isinstance(data['name'], str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9-]{0,47}', data['name']):
+        raise ParseError('Supply only the purpose token used by the GPO naming template.')
     if update:
         if type(data['expected_revision']) is not int or not 1 <= data['expected_revision'] < 2**31 - 1:
             raise ParseError('Supply the current override revision.')
@@ -176,7 +176,7 @@ class OverrideView(SecurityReadView):
 
 
 class OverrideDetailView(OverrideView):
-    http_method_names = ('get', 'patch', 'head', 'options')
+    http_method_names = ('get', 'patch', 'delete', 'head', 'options')
 
     def get(self, request, override_id):
         query(request, set())
@@ -204,6 +204,24 @@ class OverrideDetailView(OverrideView):
             _invalidate(job, 'override_configuration_changed')
         _audit(row, request.user, 'security.gpo_override_updated')
         return Response(override_projection(row))
+
+    @transaction.atomic
+    def delete(self, request, override_id):
+        query(request, set())
+        request.tenant = Tenant.objects.select_for_update().get(pk=request.tenant.pk)
+        fresh_actor(request)
+        self.check_permissions(request)
+        row = get_object_or_404(GpoOverride.objects.select_for_update(), pk=override_id, tenant=request.tenant)
+        if (not isinstance(request.data, dict) or set(request.data) != {'expected_revision'}
+                or type(request.data['expected_revision']) is not int):
+            raise ParseError('Supply the current override revision.')
+        if request.data['expected_revision'] != row.revision:
+            raise PublicApiError('security_override_revision_changed', status_code=409)
+        if row.policies.exists():
+            raise PublicApiError('security_override_in_use', status_code=409)
+        _audit(row, request.user, 'security.gpo_override_deleted')
+        row.delete()
+        return Response(status=204)
 
 
 class OverrideCatalogView(OverrideView):

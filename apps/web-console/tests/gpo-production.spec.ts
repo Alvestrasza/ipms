@@ -1475,7 +1475,7 @@ test("override editor persists only deviations, restores baseline and deploys a 
     throw new Error("An editable original integer setting is required.");
   const changed =
     setting.baseline_value === setting.min ? setting.min + 1 : setting.min;
-  const name = `Browser override ${randomUUID().slice(0, 8)}`;
+  const name = `MS-WS2025-Defender-${randomUUID().slice(0, 8)}`;
   await page.goto("/en/security/override");
   await expect(
     page.getByRole("link", { name: "Overrides", exact: true }),
@@ -1493,7 +1493,7 @@ test("override editor persists only deviations, restores baseline and deploys a 
   await editor
     .getByRole("combobox", { name: "Component", exact: true })
     .selectOption(context.component.id);
-  await editor.getByLabel("Name", { exact: true }).fill(name);
+  await editor.getByLabel("GPO purpose token", { exact: true }).fill(name);
   await editor
     .getByLabel("Search settings", { exact: true })
     .fill(setting.label);
@@ -1577,7 +1577,7 @@ test("override editor persists only deviations, restores baseline and deploys a 
   const writeJob = await write.json();
   expect(writeJob.override_id).toBe(override.id);
   expect(writeJob.status).toBe("queued");
-  expect(writeJob.display_name).toContain("OVR-");
+  expect(writeJob.display_name).toBe(`0-C-OVRD-${name}_V1.0.0`);
   expect(nativeFixture("complete", writeJob.id).status).toBe("linked");
   // Reopening then removing the value removes it from the sparse override GPO.
   await page.goto(`/en/logs/baselines?job=${writeJob.id}`);
@@ -1610,7 +1610,74 @@ test("override editor persists only deviations, restores baseline and deploys a 
   const patch = await patched;
   expect(patch.status()).toBe(200);
   expect(patch.request().postDataJSON().entries).toEqual([]);
-  expect((await patch.json()).entries).toEqual([]);
+  const currentOverride = await patch.json();
+  expect(currentOverride.entries).toEqual([]);
+
+  nativeFixture("agent-044", context.fixture.domain_id);
+  await page.goto("/en/security/windows-gpos?source=override");
+  await page
+    .getByRole("combobox", { name: "Domain", exact: true })
+    .selectOption(context.fixture.domain_id);
+  await page
+    .getByRole("combobox", { name: "Saved override", exact: true })
+    .selectOption(override.id);
+  const deletionPanel = panel(page);
+  await deletionPanel
+    .getByRole("combobox", { name: "Managed GPO", exact: true })
+    .selectOption(writeJob.managed_id);
+  await deletionPanel
+    .getByRole("combobox", { name: "Action", exact: true })
+    .selectOption("delete_managed_gpo");
+  const deletionInspectionResponse = page.waitForResponse(
+    (r) =>
+      isApiResponse(r, `${context.endpoint}/gpo-preflights/`) &&
+      r.request().method() === "POST",
+  );
+  await deletionPanel
+    .getByRole("button", { name: "Submit action", exact: true })
+    .click();
+  const deletionInspection = await deletionInspectionResponse;
+  expect(deletionInspection.status()).toBe(202);
+  const deletionInspectionJob = await deletionInspection.json();
+  expect(deletionInspectionJob.operation).toBe("inspect_managed_gpo");
+  const deletionWriteResponse = page.waitForResponse(
+    (r) =>
+      isApiResponse(r, `${context.endpoint}/managed-gpos/`) &&
+      r.request().method() === "POST",
+  );
+  expect(nativeFixture("inspect", deletionInspectionJob.id).status).toBe(
+    "inspected",
+  );
+  const deletionWrite = await deletionWriteResponse;
+  expect(deletionWrite.status()).toBe(202);
+  const deletionJob = await deletionWrite.json();
+  expect(deletionJob.operation).toBe("delete_managed_gpo");
+  expect(nativeFixture("complete", deletionJob.id).status).toBe("deleted");
+
+  await page.goto("/en/security/override");
+  await page
+    .getByRole("combobox", { name: "Override", exact: true })
+    .selectOption(override.id);
+  const deleteDefinition = editor.getByRole("button", {
+    name: "Delete override",
+    exact: true,
+  });
+  await deleteDefinition.click();
+  const deletedDefinitionResponse = page.waitForResponse(
+    (r) =>
+      isApiResponse(r, `/api/v1/security/overrides/${override.id}/`) &&
+      r.request().method() === "DELETE",
+  );
+  await editor
+    .getByRole("button", { name: "Confirm deletion", exact: true })
+    .click();
+  expect((await deletedDefinitionResponse).status()).toBe(204);
+  await expect(
+    page.getByText(
+      "Override definition deleted. Existing AD GPOs must be deleted first in Windows GPO deployment.",
+      { exact: true },
+    ),
+  ).toBeVisible();
 });
 
 test("German Sample submission selection remains accepted before the override is saved", async ({
@@ -1657,8 +1724,8 @@ test("German Sample submission selection remains accepted before the override is
     .getByRole("combobox", { name: "Komponente", exact: true })
     .selectOption(defender.id);
   await editor
-    .getByLabel("Name", { exact: true })
-    .fill(`Sample submission ${randomUUID().slice(0, 8)}`);
+    .getByLabel("GPO-Zweck ({purpose})", { exact: true })
+    .fill(`Sample-submission-${randomUUID().slice(0, 8)}`);
   await editor
     .getByLabel("Einstellungen suchen", { exact: true })
     .fill(setting.label);

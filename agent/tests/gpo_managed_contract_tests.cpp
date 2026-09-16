@@ -99,7 +99,7 @@ void override_roundtrip() {
 
 class provider final:public gpo::managed_provider {
  public:
-  json::object state;std::vector<std::string> calls;std::string failure;std::string failure_code="gpo_provider_failed";int inspections{};bool drift{};bool drift_after_import{};bool partial_link_failure{};bool override_activation{};
+  json::object state;std::vector<std::string> calls;std::string failure;std::string failure_code="gpo_provider_failed";int inspections{};bool drift{};bool drift_after_import{};bool partial_link_failure{};bool override_activation{};bool invalid_delete_order{};
   explicit provider(json::object s):state(std::move(s)){}
   void call(const char* op){calls.emplace_back(op);if(failure==op)throw gpo::operation_error(failure_code);}
   json::object inspect()override{call("inspect");++inspections;if(drift&&inspections==2)state["name_available"]=false;if(drift_after_import&&inspections==3)state.at("ous").as<json::array>()[0].as<json::object>()["usn"]="124";return state;}
@@ -121,6 +121,14 @@ class provider final:public gpo::managed_provider {
   }
   void activate(std::string_view)override{call("activate");if(override_activation){link(id);for(auto& own:state.at("gpo").as<json::object>().at("links").as<json::array>())own.as<json::object>()["enabled"]=true;for(auto& ou:state.at("ous").as<json::array>())for(auto& own:ou.as<json::object>().at("links").as<json::array>())if(own.as<json::object>().at("guid").as<std::string>()==id)own.as<json::object>()["enabled"]=true;}state.at("gpo").as<json::object>()["computer_enabled"]=gpo::components.front().scope=="machine";state.at("gpo").as<json::object>()["user_enabled"]=gpo::components.front().scope=="user";state.at("gpo").as<json::object>()["name"]="1-C-ALL-MS-WS2025_V2.0.0";}
   void deactivate(std::string_view)override{call("deactivate");state.at("gpo").as<json::object>()["computer_enabled"]=false;state.at("gpo").as<json::object>()["user_enabled"]=false;}
+  void remove(std::string_view)override{
+    call("remove");for(auto& value:state.at("ous").as<json::array>()){
+      auto& links=value.as<json::object>().at("links").as<json::array>();
+      links.erase(std::remove_if(links.begin(),links.end(),[](const auto& v){return v.template as<json::object>().at("guid").template as<std::string>()==id;}),links.end());
+      for(std::size_t n=0;n<links.size();++n)links[n].as<json::object>()["order"]=n+1;
+      if(invalid_delete_order&&!links.empty())links[0].as<json::object>()["order"]=2;
+    }state["gpo"]=json::value{};
+  }
 };
 void save(const gpo::journal& j) {
   // Exercise the real parser/serializer limits with nested expected/observed
@@ -493,6 +501,16 @@ int main(int argc,char** argv) {
   const auto backed_up=std::find(sparse_activate.calls.begin(),sparse_activate.calls.end(),"backup"),written=std::find(sparse_activate.calls.begin(),sparse_activate.calls.end(),"activate");
   require(backed_up!=sparse_activate.calls.end()&&written!=sparse_activate.calls.end()&&backed_up<written,"Override mutation preceded protected backup");
   require(activation_result.at("evidence").as<json::object>().at("override_sha256")==activate_override.at("override_sha256"),"Activation receipt lost patch revision");
+  auto delete_override=override_document(override_component,patch,"delete_managed_gpo",sparse_activate.state);
+  j=record(delete_override);provider sparse_delete(sparse_activate.state);
+  const auto deletion_result=gpo::execute_managed(j,sparse_delete,save,[]{return true;},[]{});
+  require(deletion_result.at("status").as<std::string>()=="deleted"&&deletion_result.at("result_code").as<std::string>()=="gpo_deleted","Managed override deletion failed");
+  require(deletion_result.at("gpo_guid").get_if<std::nullptr_t>()&&deletion_result.at("evidence").as<json::object>().at("state").as<json::object>().at("gpo").get_if<std::nullptr_t>(),"Deleted override retained a directory identity");
+  const auto delete_backup=std::find(sparse_delete.calls.begin(),sparse_delete.calls.end(),"backup"),deleted=std::find(sparse_delete.calls.begin(),sparse_delete.calls.end(),"remove");
+  require(delete_backup!=sparse_delete.calls.end()&&deleted!=sparse_delete.calls.end()&&delete_backup<deleted,"Override deletion preceded its protected backup");
+  j=record(delete_override);provider invalid_delete(sparse_activate.state);invalid_delete.invalid_delete_order=true;
+  rejects([&]{gpo::execute_managed(j,invalid_delete,save,[]{return true;},[]{});});
+  auto baseline_delete=document("delete_managed_gpo",sparse_activate.state);baseline_delete["input_digest"]=gpo::input_digest(baseline_delete);rejects([&]{gpo::parse_job(baseline_delete);});
   auto reject_patch=[&](json::array entries){auto invalid=override_document(override_component,std::move(entries));rejects([&]{gpo::parse_job(invalid);});};
   reject_patch({});reject_patch({patch[0],patch[0]});
   auto bad_entry=patch[0].as<json::object>();bad_entry["setting_id"]="not-compiled";reject_patch({bad_entry});

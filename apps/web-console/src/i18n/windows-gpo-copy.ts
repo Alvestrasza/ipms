@@ -18,7 +18,7 @@ const en = {
   overrideSelection: "Saved override",
   noDomains:
     "No domain configuration is available. Configure domains and tier OUs first.",
-  noOverrides: "No enabled override with saved deviations is available.",
+  noOverrides: "No override definition is available.",
   unavailable: "The Windows GPO workspace could not be loaded.",
   configure: "Configure domains and tier OUs",
   baselines: "Baselines",
@@ -42,8 +42,7 @@ const de: typeof en = {
   overrideSelection: "Gespeicherter Override",
   noDomains:
     "Es ist keine Domänenkonfiguration verfügbar. Konfiguriere zuerst Domänen und Tier-OUs.",
-  noOverrides:
-    "Es ist kein aktivierter Override mit gespeicherten Abweichungen verfügbar.",
+  noOverrides: "Es ist keine Override-Definition verfügbar.",
   unavailable: "Der Windows-GPO-Arbeitsbereich konnte nicht geladen werden.",
   configure: "Domänen und Tier-OUs konfigurieren",
   baselines: "Baselines",

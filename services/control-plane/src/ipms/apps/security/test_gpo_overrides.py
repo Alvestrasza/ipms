@@ -10,7 +10,7 @@ from django.test import TestCase, SimpleTestCase
 from rest_framework.test import APIClient
 
 from .gpo_jobs import digest
-from .gpo_production import ACTIVATE, DEACTIVATE, IMPORT, IMPORT_LINK, LINK, SUCCESS, _orders, owner_marker
+from .gpo_production import ACTIVATE, DEACTIVATE, DELETE, IMPORT, IMPORT_LINK, LINK, SUCCESS, _orders, owner_marker
 from .models import GpoImportJob, GpoOverride, GpoExecutorReport, ManagedGpoPolicy
 from . import test_gpo_production as production_tests
 from .gpo_override_content import OVERRIDE_COMPONENTS
@@ -25,6 +25,7 @@ class OverrideTests(TestCase):
                      'snapshot', 'change', 'execute', 'imported', 'linked', 'linked_state', 'activated'):
             setattr(self, name, getattr(production_tests.ProductionGpoTests, name).__get__(self))
         production_tests.ProductionGpoTests.setUp(self)
+        self.selection['target'] = 'OVRD'
         self.system.agent_version = '0.2.43'
         self.system.save(update_fields=('agent_version',))
         GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.43')
@@ -96,6 +97,8 @@ class OverrideTests(TestCase):
                 self.assertEqual(self.update_override(entries=entries).status_code, 400)
         self.assertEqual(self.update_override(expected_revision=99).status_code, 409)
         self.assertEqual(self.update_override(name='').status_code, 400)
+        self.assertEqual(self.update_override(name='0-C-OVRD-MS-WS2025-Defender_V1.0.0').status_code, 400)
+        self.assertEqual(self.update_override(name='Contains spaces').status_code, 400)
         self.assertEqual(self.client.patch(URL + self.override['id'] + '/', {'enabled': False}, format='json').status_code, 400)
         reader = self.client
         reader.force_authenticate(self.approver)
@@ -110,7 +113,7 @@ class OverrideTests(TestCase):
         override = self.inspect()
         self.assertEqual(override['schema'], 4)
         self.assertNotEqual(override['managed_id'], inspected['managed_id'])
-        self.assertIn('OVR-Operations', override['pilot_display_name'])
+        self.assertEqual(override['pilot_display_name'], '1-C-OVRD-Operations_V1.0.0')
         self.assertNotEqual(self.managed.logical_key, baseline_policy.logical_key)
         self.report_success(override, self.snapshot(override))
         self.managed = baseline_policy
@@ -138,12 +141,65 @@ class OverrideTests(TestCase):
         self.managed.refresh_from_db()
         self.assertEqual(self.managed.state, 'inactive')
 
+    def test_delete_override_gpo_removes_managed_projection_then_definition(self):
+        _, state = self.activated()
+        managed_id = self.managed.pk
+        self.assertEqual(self.update_override(entries=[]).status_code, 200)
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.44')
+        self.system.agent_version = '0.2.44'
+        self.system.save(update_fields=('agent_version',))
+        inspection = self.inspect(DELETE)
+        self.report_success(inspection, state)
+        deletion = self.change(inspection)
+        self.execute(deletion)
+        post = copy.deepcopy(state)
+        removed_guid = post['gpo']['guid']
+        post['gpo'] = None
+        for ou in post['ous']:
+            ou['links'] = [link for link in ou['links'] if link['guid'] != removed_guid]
+            for order, link in enumerate(ou['links'], 1):
+                link['order'] = order
+            ou['usn'] = '12'
+        self.report_success(deletion, post, backup=True)
+        self.assertFalse(ManagedGpoPolicy.objects.filter(pk=managed_id).exists())
+        response = self.client.delete(URL + self.override['id'] + '/',
+            {'expected_revision': self.override['revision']}, format='json')
+        self.assertEqual(response.status_code, 204, getattr(response, 'data', None))
+        self.assertEqual(self.client.get(URL + self.override['id'] + '/').status_code, 404)
+
+    def test_delete_definition_requires_current_revision_and_no_managed_gpo(self):
+        self.assertEqual(self.client.delete(URL + self.override['id'] + '/',
+            {'expected_revision': self.override['revision'] + 1}, format='json').status_code, 409)
+        self.inspect()
+        blocked = self.client.delete(URL + self.override['id'] + '/',
+            {'expected_revision': self.override['revision']}, format='json')
+        self.assertEqual(blocked.status_code, 409)
+        self.assertEqual(blocked.data['error']['code'], 'security_override_in_use')
+
+    def test_delete_requires_agent_0244_and_is_override_only(self):
+        self.linked()
+        response = self.client.post(self.base + 'gpo-preflights/', {**self.selection,
+            'idempotency_key': str(uuid.uuid4()), 'operation': DELETE, 'managed_id': str(self.managed.pk),
+            'adopt_job_id': None, 'override_id': self.override['id'], 'override_revision': self.override['revision'],
+            'override_sha256': self.override['sha256']}, format='json')
+        self.assertEqual(response.status_code, 409)
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.44')
+        self.system.agent_version = '0.2.44'
+        self.system.save(update_fields=('agent_version',))
+        self.managed.override = None
+        self.managed.save(update_fields=('override',))
+        response = self.client.post(self.base + 'gpo-preflights/', {**self.selection,
+            'idempotency_key': str(uuid.uuid4()), 'operation': DELETE, 'managed_id': str(self.managed.pk),
+            'adopt_job_id': None}, format='json')
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data['error']['code'], 'security_override_unavailable')
+
     def test_changed_override_withdraws_pending_authority_and_blocks_old_activation(self):
         inspection = self.inspect()
         self.report_success(inspection, self.snapshot(inspection))
         job = self.change(inspection)
         self.assertEqual(GpoImportJob.objects.get(pk=job['job_id']).status, 'queued')
-        self.assertEqual(self.update_override(name='Operations v2').status_code, 200)
+        self.assertEqual(self.update_override(name='Operations-v2').status_code, 200)
         self.assertEqual(GpoImportJob.objects.get(pk=job['job_id']).status, 'failed')
         self.assertFalse(self.exchange(job, 'claim')['gpo_claim']['authorized'])
 
@@ -180,7 +236,7 @@ class OverrideTests(TestCase):
     def test_reimport_revision_stages_same_guid_then_activation_uses_exact_new_patch(self):
         _, state = self.activated()
         original_guid, original_policy = self.managed.gpo_guid, self.managed.pk
-        self.update_override(name='Operations Revised')
+        self.update_override(name='Operations-Revised')
         inspection = self.inspect(IMPORT, version='1.1.0')
         self.report_success(inspection, self.snapshot(inspection, state['gpo']))
         job = self.change(inspection)
@@ -214,7 +270,7 @@ class OverrideTests(TestCase):
 
     def test_preflight_rejects_stale_editor_revision_or_digest(self):
         original = copy.deepcopy(self.override)
-        self.update_override(name='Updated name')
+        self.update_override(name='Updated-name')
         for revision, sha in ((original['revision'], original['sha256']),
                               (self.override['revision'], original['sha256'])):
             response = self.client.post(self.base + 'gpo-preflights/', {**self.selection,
@@ -322,7 +378,7 @@ class OverrideTests(TestCase):
 
     def test_configuration_permission_never_grants_domain_deployment_rights(self):
         self.grants([])
-        self.create_override(name='Another allowed definition')
+        self.create_override(name='Another-allowed-definition')
         data = {**self.selection, 'idempotency_key': str(uuid.uuid4()), 'operation': IMPORT, 'managed_id': None,
                 'adopt_job_id': None, 'override_id': self.override['id'], 'override_revision': self.override['revision'], 'override_sha256': self.override['sha256']}
         self.assertEqual(self.client.post(self.base + 'gpo-preflights/', data, format='json').status_code, 403)

@@ -15,7 +15,8 @@
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   gap: 1rem;
 }
-.fields label {
+.fields label,
+.field {
   display: grid;
   gap: 0.4rem;
 }

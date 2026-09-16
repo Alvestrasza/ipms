@@ -14,12 +14,20 @@ const en = {
   openDeployment: "Open Windows GPO deployment",
   select: "Override",
   create: "New override",
-  name: "Name",
+  name: "GPO purpose token",
+  nameHint:
+    "Enter only the value for {purpose}, for example MS-WS2025-Defender. IPMS adds tier, scope, target alias and version once through the domain naming template.",
   baseline: "Baseline",
   component: "Component",
   enabled: "Available for deployment",
   save: "Save override",
   discard: "Discard changes",
+  delete: "Delete override",
+  confirmDelete: "Confirm deletion",
+  deleted:
+    "Override definition deleted. Existing AD GPOs must be deleted first in Windows GPO deployment.",
+  deleteInUse:
+    "This override still has a managed GPO. Delete that GPO in Windows GPO deployment first, then delete the definition here.",
   saved: "Override saved. Saving does not change AD.",
   load: "The override configuration could not be loaded. Reload before continuing.",
   rejected:
@@ -57,7 +65,8 @@ const en = {
   saveFirst: "Save or discard changes before deployment.",
   disabled:
     "This override is unavailable for new deployments. Existing managed GPOs can still be deactivated.",
-  agent: "Overrides require a domain controller Agent version 0.2.43 or newer.",
+  agent:
+    "Overrides require a domain controller Agent version 0.2.43 or newer; deleting a managed override GPO requires 0.2.44.",
   noDomains: "No domain configuration is available for deployment.",
   noChanges: "No deviations selected.",
   previous: "Previous",
@@ -74,12 +83,20 @@ const de: typeof en = {
   openDeployment: "Windows-GPO-Verteilung öffnen",
   select: "Override",
   create: "Neuer Override",
-  name: "Name",
+  name: "GPO-Zweck ({purpose})",
+  nameHint:
+    "Nur den Wert für {purpose} eintragen, zum Beispiel MS-WS2025-Defender. Tier, Scope, Zielkürzel und Version ergänzt IPMS genau einmal über das Namensschema der Domäne.",
   baseline: "Baseline",
   component: "Komponente",
   enabled: "Für Verteilung verfügbar",
   save: "Override speichern",
   discard: "Änderungen verwerfen",
+  delete: "Override löschen",
+  confirmDelete: "Löschen bestätigen",
+  deleted:
+    "Override-Definition gelöscht. Vorhandene AD-GPOs müssen zuvor unter Windows-GPO-Verteilung gelöscht werden.",
+  deleteInUse:
+    "Zu diesem Override existiert noch eine verwaltete GPO. Lösche diese zuerst unter Windows-GPO-Verteilung und anschließend hier die Definition.",
   saved: "Override gespeichert. Das Speichern ändert nichts im AD.",
   load: "Die Override-Konfiguration konnte nicht geladen werden. Lade die Seite erneut, bevor du fortfährst.",
   rejected:
@@ -118,7 +135,8 @@ const de: typeof en = {
   saveFirst: "Speichere oder verwirf Änderungen vor der Verteilung.",
   disabled:
     "Dieser Override ist für neue Verteilungen gesperrt. Bestehende verwaltete GPOs können weiterhin deaktiviert werden.",
-  agent: "Overrides benötigen einen Domain-Controller-Agent ab Version 0.2.43.",
+  agent:
+    "Overrides benötigen einen Domain-Controller-Agent ab Version 0.2.43; das Löschen einer verwalteten Override-GPO benötigt 0.2.44.",
   noDomains: "Keine Domänenkonfiguration für die Verteilung verfügbar.",
   noChanges: "Keine Abweichungen ausgewählt.",
   previous: "Zurück",

@@ -113,7 +113,7 @@ function ProductionWorkflow({
   const [selectedOus, setSelectedOus] = useState<string[]>(
     settings.tier_ous["0"],
   );
-  const [target, setTarget] = useState("ALL");
+  const [target, setTarget] = useState(override ? "OVRD" : "ALL");
   const [version, setVersion] = useState("1.0.0");
   const [adoptJobId, setAdoptJobId] = useState("");
   const [operation, setOperation] = useState<GpoOperation>(
@@ -240,7 +240,9 @@ function ProductionWorkflow({
           (Number(e.agent_version.split(".")[1]) === 2 &&
             Number(e.agent_version.split(".")[2]) >=
               (override
-                ? 43
+                ? operation === "delete_managed_gpo"
+                  ? 44
+                  : 43
                 : operation === "import_and_link_managed_gpo"
                   ? 36
                   : 35))),
@@ -462,6 +464,7 @@ function ProductionWorkflow({
     !disabled &&
     (!override ||
       operation === "deactivate_managed_gpo" ||
+      operation === "delete_managed_gpo" ||
       (override.enabled && override.entries.length > 0)) &&
     executor &&
     baseline &&
@@ -598,7 +601,9 @@ function ProductionWorkflow({
               }}
             >
               {GPO_OPERATIONS.filter(
-                (op) => op !== "import_managed_gpo" || Boolean(policy),
+                (op) =>
+                  (op !== "import_managed_gpo" || Boolean(policy)) &&
+                  (op !== "delete_managed_gpo" || Boolean(override && policy)),
               ).map((op) => (
                 <option
                   key={op}
@@ -832,6 +837,8 @@ function ProductionWorkflow({
           <p>{c.linkBoundary}</p>
         ) : operation === "deactivate_managed_gpo" ? (
           <p>{c.deactivateBoundary}</p>
+        ) : operation === "delete_managed_gpo" ? (
+          <p>{c.deleteBoundary}</p>
         ) : null}
         <div className={styles.actions}>
           <button

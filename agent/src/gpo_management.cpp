@@ -52,7 +52,7 @@ bool known_code(std::string_view code) {
     "gpo_provider_failed", "gpo_verification_failed", "gpo_worker_timeout", "gpo_worker_failed",
     "gpo_journal_invalid", "gpo_claim_uncertain", "gpo_authority_expired", "gpo_enrollment_changed",
     "gpo_portal_approval_required", "gpo_portal_approval_invalid",
-    "gpo_inspected", "gpo_prepared", "gpo_linked", "gpo_activated", "gpo_deactivated",
+    "gpo_inspected", "gpo_prepared", "gpo_linked", "gpo_activated", "gpo_deactivated", "gpo_deleted",
     "gpo_state_changed", "gpo_requires_disabled", "gpo_unmanaged_target", "gpo_target_invalid",
     "gpo_link_conflict", "gpo_backup_failed", "gpo_preflight_required",
     "gpo_preflight_inventory_failed", "gpo_preflight_controller_failed", "gpo_preflight_directory_failed",
@@ -228,9 +228,9 @@ journal parse_journal(const json::value& v) {
   if(completed ? !valid_result(j.result) : !j.result.get_if<std::nullptr_t>()) invalid();
   if(completed) {
     const auto& receipt=j.result.as<json::object>();const auto status=receipt.at("status").as<std::string>();
-    if(schema>=2&&(status=="staged"||status=="linked"||status=="activated"||status=="deactivated")&&j.portal_approval.get_if<std::nullptr_t>()) invalid();
-    if(j.state==phase::reconciliation ? status!="requires_reconciliation" : status!="staged"&&status!="failed"&&status!="inspected"&&status!="linked"&&status!="activated"&&status!="deactivated") invalid();
-    if(schema<3&&(status=="inspected"||status=="linked"||status=="activated"||status=="deactivated")) invalid();
+    if(schema>=2&&(status=="staged"||status=="linked"||status=="activated"||status=="deactivated"||status=="deleted")&&j.portal_approval.get_if<std::nullptr_t>()) invalid();
+    if(j.state==phase::reconciliation ? status!="requires_reconciliation" : status!="staged"&&status!="failed"&&status!="inspected"&&status!="linked"&&status!="activated"&&status!="deactivated"&&status!="deleted") invalid();
+    if(schema<3&&(status=="inspected"||status=="linked"||status=="activated"||status=="deactivated"||status=="deleted")) invalid();
     if(schema<3&&receipt.at("evidence").get_if<json::object>()&&receipt.at("evidence").as<json::object>().contains("schema")) invalid();
     if(schema>=3&&status!="failed"&&status!="requires_reconciliation") {
       if(!valid_managed_result(receipt)) invalid();
@@ -270,7 +270,7 @@ bool valid_result(const json::value& v) { try {
   if(s=="staged") { const auto& e=f.at("evidence").as<json::object>(); return id && e.size()==6 &&
     f.at("result_code").as<std::string>()=="gpo_staged_unlinked" && !e.at("computer_enabled").as<bool>() && !e.at("user_enabled").as<bool>() &&
     e.at("unlinked").as<bool>() && dns(e.at("domain_dns_name").as<std::string>()) && valid_uuid(e.at("domain_guid").as<std::string>()) && dns(e.at("dc_fqdn").as<std::string>()); }
-  if(code=="gpo_inspected"||code=="gpo_prepared"||code=="gpo_linked"||code=="gpo_activated"||code=="gpo_deactivated"||code=="gpo_staged_unlinked" || (s=="awaiting_local_approval"&&code!="gpo_local_approval_required") ||
+  if(code=="gpo_inspected"||code=="gpo_prepared"||code=="gpo_linked"||code=="gpo_activated"||code=="gpo_deactivated"||code=="gpo_deleted"||code=="gpo_staged_unlinked" || (s=="awaiting_local_approval"&&code!="gpo_local_approval_required") ||
       (s=="awaiting_portal_approval"&&code!="gpo_portal_approval_required"))return false;
   return f.at("evidence").get_if<std::nullptr_t>() && (s=="requires_reconciliation" || !id);
 } catch(...) { return false; } }

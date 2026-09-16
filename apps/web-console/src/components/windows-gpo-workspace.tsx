@@ -38,11 +38,10 @@ export function WindowsGpoWorkspace({
   const c = getWindowsGpoCopy(locale);
   const [domainId, setDomainId] = useState(catalog?.results[0]?.id ?? "");
   const [source, setSource] = useState(initialSource);
-  const eligibleOverrides =
-    overrides?.filter((item) => item.enabled && item.entries.length > 0) ?? [];
-  const [overrideId, setOverrideId] = useState(eligibleOverrides[0]?.id ?? "");
+  const availableOverrides = overrides ?? [];
+  const [overrideId, setOverrideId] = useState(availableOverrides[0]?.id ?? "");
   const domain = catalog?.results.find((item) => item.id === domainId);
-  const selectedOverride = eligibleOverrides.find(
+  const selectedOverride = availableOverrides.find(
     (item) => item.id === overrideId,
   );
 
@@ -99,7 +98,7 @@ export function WindowsGpoWorkspace({
                   value={overrideId}
                   onChange={(event) => setOverrideId(event.target.value)}
                 >
-                  {eligibleOverrides.map((item) => (
+                  {availableOverrides.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name}
                     </option>

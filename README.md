@@ -9,14 +9,20 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-Candidate `0.2.63` centralizes managed deployment under **Security → Windows GPOs**
+Candidate `0.2.64` makes override names explicit template-purpose tokens and
+adds controlled deletion for managed override GPOs and their definitions. With
+the standard template, purpose `MS-WS2025-Defender` produces exactly
+`0-C-OVRD-MS-WS2025-Defender_V1.0.0` for Tier 0 computer policy. Windows Agent
+`0.2.44` verifies forest-wide links, creates a protected backup, removes only the
+approved links and proves absence of the exact owned GPO before reporting deletion.
+
+Portal `0.2.63` centralized managed deployment under **Security → Windows GPOs**
 and binds every managed GPO to an exact, administrator-selected subset of the OUs
 configured for its authorized tier. Baseline and Override remain focused editors;
 the shared workspace imports, links and activates both policy sources. Typed sparse
 overrides contain only accepted deviations, while every other setting remains Not
-Configured in the override GPO. Windows Agent `0.2.43` remains unchanged and
-continues to validate the immutable setting catalog and render only selected policy
-records.
+Configured in the override GPO. Windows Agent `0.2.43` validates the immutable
+setting catalog and renders only selected policy records.
 
 Application `0.2.60` directly approves newly submitted managed GPO actions when
 four-eyes review is disabled and the requester has domain/tier approval rights.

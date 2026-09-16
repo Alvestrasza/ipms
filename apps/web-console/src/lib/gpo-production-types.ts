@@ -10,6 +10,7 @@ export const GPO_OPERATIONS = [
   "link_managed_gpo",
   "activate_managed_gpo",
   "deactivate_managed_gpo",
+  "delete_managed_gpo",
 ] as const;
 export type GpoOperation = (typeof GPO_OPERATIONS)[number];
 export type GpoLink = {

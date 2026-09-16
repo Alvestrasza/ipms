@@ -129,6 +129,9 @@ const en = {
   deactivateBoundary:
     "Deactivation disables both GPO halves. It does not delete the GPO or its links.",
 
+  deleteBoundary:
+    "Deletion is available only for managed override GPOs. The Agent verifies the complete forest link census, creates a protected backup, removes the approved links and then deletes the exact owned GPO.",
+
   inspectOnly: "Read-only inspection; no change approval is required.",
 
   domainBoundary:
@@ -155,6 +158,8 @@ const en = {
     activate_managed_gpo: "Activate",
 
     deactivate_managed_gpo: "Deactivate",
+
+    delete_managed_gpo: "Delete override GPO",
 
     inspect_managed_gpo: "Inspect AD state",
   },
@@ -293,6 +298,9 @@ const de: typeof en = {
   deactivateBoundary:
     "Die Deaktivierung schaltet beide GPO-Teile aus. Sie löscht weder die GPO noch deren Verknüpfungen.",
 
+  deleteBoundary:
+    "Das Löschen ist nur für verwaltete Override-GPOs verfügbar. Der Agent prüft alle Verknüpfungen im Forest, erstellt eine geschützte Sicherung, entfernt die freigegebenen Verknüpfungen und löscht anschließend genau die verwaltete GPO.",
+
   inspectOnly:
     "Lesende Prüfung; dafür ist keine Änderungsfreigabe erforderlich.",
 
@@ -322,6 +330,8 @@ const de: typeof en = {
     activate_managed_gpo: "Aktivieren",
 
     deactivate_managed_gpo: "Deaktivieren",
+
+    delete_managed_gpo: "Override-GPO löschen",
 
     inspect_managed_gpo: "AD-Zustand prüfen",
   },

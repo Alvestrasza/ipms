@@ -30,7 +30,7 @@ from .models import DomainSecuritySettings, GpoExecutorReport, GpoImportJob
 
 ACTIVE = ('queued', 'awaiting_approval', 'running', 'reconciliation_required')
 PRE_EXECUTION = ('queued', 'awaiting_approval')
-TERMINAL = ('staged', 'failed', 'expired', 'inspected', 'linked', 'activated', 'deactivated', 'reconciled')
+TERMINAL = ('staged', 'failed', 'expired', 'inspected', 'linked', 'activated', 'deactivated', 'deleted', 'reconciled')
 MAX_ARTIFACT = 1024 * 1024
 DEFAULT_GPO_IDS = {'31b2f340-016d-11d2-945f-00c04fb984f9', '6ac1786c-016f-11d2-945f-00c04fb984f9'}
 RESULT_CODES = set('gpo_staged_unlinked gpo_local_approval_required gpo_job_expired gpo_invalid_job '

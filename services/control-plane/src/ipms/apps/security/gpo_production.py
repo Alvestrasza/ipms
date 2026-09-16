@@ -31,10 +31,12 @@ IMPORT_LINK = 'import_and_link_managed_gpo'
 LINK = 'link_managed_gpo'
 ACTIVATE = 'activate_managed_gpo'
 DEACTIVATE = 'deactivate_managed_gpo'
-WRITES = (IMPORT, IMPORT_LINK, LINK, ACTIVATE, DEACTIVATE)
+DELETE = 'delete_managed_gpo'
+WRITES = (IMPORT, IMPORT_LINK, LINK, ACTIVATE, DEACTIVATE, DELETE)
 SUCCESS = {INSPECT: ('inspected', 'gpo_inspected'), IMPORT: ('staged', 'gpo_prepared'),
            LINK: ('linked', 'gpo_linked'), ACTIVATE: ('activated', 'gpo_activated'),
-           DEACTIVATE: ('deactivated', 'gpo_deactivated'), IMPORT_LINK: ('linked', 'gpo_linked')}
+           DEACTIVATE: ('deactivated', 'gpo_deactivated'), DELETE: ('deleted', 'gpo_deleted'),
+           IMPORT_LINK: ('linked', 'gpo_linked')}
 FIELDS = set('schema approval_mode job_id operation domain_dns_name domain_guid forest_dns_name executor_dc_fqdn '
              'scope_id scope_revision target_tier baseline_id profile backup_id artifact_sha256 pilot_display_name '
              'expires_at input_digest managed_id managed_revision gpo_guid owner_marker target_ous link_orders '
@@ -53,7 +55,7 @@ def inspecting(job):
 
 def minimum_agent(operation, override=False):
     if override:
-        return (0, 2, 43)
+        return (0, 2, 44) if operation == DELETE else (0, 2, 43)
     return (0, 2, 36) if operation == IMPORT_LINK else (0, 2, 35)
 
 
@@ -69,8 +71,9 @@ def owner_marker(assignment):
 
 
 def override_purpose(row):
-    readable = re.sub('[^A-Za-z0-9-]', '', row.name.replace(' ', '-'))[:48].strip('-') or 'Override'
-    return 'OVR-' + readable
+    # This is the exact value for the configured template's {purpose} token.
+    # Tier, scope, target and version are rendered once by render_name().
+    return row.name
 
 
 def _invalid(message='Invalid managed GPO state.'):
@@ -327,10 +330,12 @@ def _selection(tenant, user, config, data):
             raise PublicApiError('security_override_revision_changed', status_code=409)
         if (override.baseline_id != data['baseline_id'] or override.backup_id != data['backup_id']
                 or override.artifact_sha256 != component['artifact_sha256'] or data['adopt_job_id']
-                or (data['operation'] != DEACTIVATE and (not override.enabled or not override.entries))):
+                or (data['operation'] not in (DEACTIVATE, DELETE) and (not override.enabled or not override.entries))):
             raise PublicApiError('security_override_unavailable', status_code=409)
         if normalize_entries(component_for(override.baseline_id, override.backup_id), override.entries) != override.entries:
             raise PublicApiError('security_override_artifact_changed', status_code=409)
+    if data['operation'] == DELETE and override is None:
+        raise PublicApiError('security_override_unavailable', status_code=409)
     name = render_name(config.gpo_name_template, data['tier'], 'U' if component['scope'] == 'user' else 'C',
                        data['target'], override_purpose(override) if override else compact_purpose(data['baseline_id'], component), data['version'])
     system = WindowsServer.objects.select_for_update().filter(pk=data['system_id'], tenant=tenant).first()
@@ -427,7 +432,7 @@ def create_preflight(tenant, user, config, data):
             purpose=semantic_purpose(data['baseline_id'], component), target=data['target'], display_name=name, name_key=name.casefold(),
             version=data['version'], backup_id=data['backup_id'], target_ous=selected_targets,
             gpo_guid=origin.gpo_guid if origin else '', origin_job=origin)
-    if override and data['operation'] == DEACTIVATE:
+    if override and data['operation'] in (DEACTIVATE, DELETE):
         name = policy.display_name
     if policy.state == 'reconciliation_required':
         raise PublicApiError('security_gpo_reconciliation_required', status_code=409)
@@ -455,7 +460,7 @@ def create_preflight(tenant, user, config, data):
         'preflight_id': '', 'expected_state': None, 'intended_operation': data['operation'], 'safety_review': dict(FALSE_REVIEW)}
     if override:
         from .gpo_overrides import assignment_patch, OVERRIDE_FIELDS
-        if data['operation'] == DEACTIVATE:
+        if data['operation'] in (DEACTIVATE, DELETE):
             if not policy.staged_job or policy.staged_job.assignment.get('override_id') != str(override.pk):
                 raise PublicApiError('security_gpo_prepared_content_changed', status_code=409)
             assignment.update({key: policy.staged_job.assignment[key] for key in OVERRIDE_FIELDS})
@@ -495,7 +500,7 @@ def _safe_before(assignment, state):
             _invalid()
     if operation in (LINK, IMPORT_LINK) and (gpo['computer_enabled'] or gpo['user_enabled']):
         _invalid('Disable the managed GPO before changing links.')
-    if operation in (IMPORT_LINK, LINK, ACTIVATE, DEACTIVATE):
+    if operation in (IMPORT_LINK, LINK, ACTIVATE, DEACTIVATE, DELETE):
         if any(link['kind'] != ('domain' if component['scope'] == 'domain' else 'ou') or link['domain'] != assignment['domain_dns_name']
                or not _target_ou(link['dn'], assignment) or link['enforced'] for link in gpo['links']):
             _invalid('The GPO has links outside the approved OU set.')
@@ -610,7 +615,7 @@ def create_change(tenant, user, config, data):
         assignment['link_orders'] = _orders(policy, config, state)
     elif operation == ACTIVATE and policy.override_id:
         assignment['link_orders'] = _orders(policy, config, state, preserve_override_order=True)
-    elif operation in (ACTIVATE, DEACTIVATE):
+    elif operation in (ACTIVATE, DEACTIVATE, DELETE):
         assignment['link_orders'] = [next(link['order'] for link in ou['links'] if link['guid'] == policy.gpo_guid)
                                      for ou in state['ous']] if operation == ACTIVATE else [
                                          next((link['order'] for link in ou['links'] if link['guid'] == policy.gpo_guid), 1)
@@ -694,9 +699,10 @@ def scope_current(job, enrollment, tenant, *, lock=True):
             return False
         if a['schema'] == 4:
             from .gpo_overrides import current_patch, OVERRIDE_FIELDS
-            if str(policy.override_id) != a['override_id'] or not current_patch(a, tenant, allow_historical=a['intended_operation'] == DEACTIVATE):
+            if str(policy.override_id) != a['override_id'] or not current_patch(
+                    a, tenant, allow_historical=a['intended_operation'] in (DEACTIVATE, DELETE)):
                 return False
-            if a['intended_operation'] in (ACTIVATE, DEACTIVATE, LINK):
+            if a['intended_operation'] in (ACTIVATE, LINK):
                 if (not policy.staged_job or any(policy.staged_job.assignment.get(key) != a[key] for key in OVERRIDE_FIELDS)):
                     return False
         if a['operation'] == INSPECT:
@@ -769,14 +775,27 @@ def _postcondition(job, evidence, guid):
         if not _sha(evidence['backup_manifest_sha256']):
             _invalid()
         backed_up = True
-    if backed_up and operation != ACTIVATE:
-        _invalid('Only activation may report a recovery backup.')
+    if backed_up and operation not in (ACTIVATE, DELETE):
+        _invalid('Only activation or deletion may report a recovery backup.')
     if operation == INSPECT:
         if backed_up or a['gpo_guid'] != (guid or ''):
             _invalid()
         return
     before = a['expected_state']
     old = before['gpo']
+    if operation == DELETE:
+        if not backed_up or not old or gpo is not None or not state['name_available']:
+            _invalid('Deletion requires a protected backup and confirmed GPO absence.')
+        removed_guid = old['guid']
+        for prior, after in zip(before['ous'], state['ous'], strict=True):
+            if any(prior[key] != after[key] for key in ('dn', 'guid', 'blocked', 'inherited_links')):
+                _invalid('An unrelated OU property changed during deletion.')
+            expected = [copy.deepcopy(link) for link in prior['links'] if link['guid'] != removed_guid]
+            for order, link in enumerate(expected, 1):
+                link['order'] = order
+            if after['links'] != expected:
+                _invalid('Deletion changed links outside the managed GPO.')
+        return
     if not gpo or not state['name_available'] or gpo['wmi_filter']:
         _invalid()
     if gpo['description'] != owner_marker(a):
@@ -857,7 +876,7 @@ def receive_success(job, document):
     if (document['status'], document['result_code']) != SUCCESS[operation]:
         _invalid()
     receipt = digest({key: document[key] for key in ('status', 'result_code', 'gpo_guid', 'evidence')})
-    if job.status in ('inspected', 'staged', 'linked', 'activated', 'deactivated'):
+    if job.status in ('inspected', 'staged', 'linked', 'activated', 'deactivated', 'deleted'):
         if job.result_digest != receipt:
             _invalid()
         return
@@ -900,6 +919,10 @@ def receive_success(job, document):
         elif operation == ACTIVATE:
             policy.active_job = job
             policy.state = 'active'
+        elif operation == DELETE:
+            policy.delete()
+            _audit(job, 'security.gpo_deleted')
+            return
         else:
             policy.state = 'inactive'
         policy.revision += 1

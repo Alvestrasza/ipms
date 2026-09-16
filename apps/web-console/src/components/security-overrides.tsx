@@ -92,6 +92,12 @@ export function SecurityOverrides(props: Props) {
           setLocked(false);
           setNotice(c.saved);
         }}
+        onDeleted={(id) => {
+          setItems((old) => (old ?? []).filter((item) => item.id !== id));
+          setSelectedId("");
+          setLocked(false);
+          setNotice(c.deleted);
+        }}
       />
     </div>
   );
@@ -104,11 +110,13 @@ function OverrideEditor({
   locale,
   onLocked,
   onSaved,
+  onDeleted,
 }: Omit<Props, "initial"> & {
   domains: DomainSecurityCatalog;
   selected: SecurityOverride | null;
   onLocked: (v: boolean) => void;
   onSaved: (v: SecurityOverride) => void;
+  onDeleted: (id: string) => void;
 }) {
   const c = getSecurityOverrideCopy(locale);
   const baselines = domains.baseline_options.filter((b) =>
@@ -136,6 +144,7 @@ function OverrideEditor({
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(false);
   const [error, setError] = useState("");
+  const [deleteArmed, setDeleteArmed] = useState(false);
   const [search, setSearch] = useState("");
   const [onlyChanged, setOnlyChanged] = useState(false);
   const [page, setPage] = useState(0);
@@ -350,251 +359,286 @@ function OverrideEditor({
       }
     }
   }
+  async function deleteDefinition() {
+    if (!selected || busy || uncertain || dirty || hasDrafts) return;
+    if (!deleteArmed) {
+      setDeleteArmed(true);
+      return;
+    }
+    const controller = new AbortController();
+    request.current = controller;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(
+        `/api/v1/security/overrides/${encodeURIComponent(selected.id)}/`,
+        {
+          method: "DELETE",
+          credentials: "same-origin",
+          cache: "no-store",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": csrfToken,
+            "X-IPMS-Tenant-ID": tenantId,
+          },
+          body: JSON.stringify({ expected_revision: selected.revision }),
+          signal: AbortSignal.any([
+            controller.signal,
+            AbortSignal.timeout(20000),
+          ]),
+        },
+      );
+      const payload: unknown =
+        response.status === 204
+          ? null
+          : await response.json().catch(() => null);
+      if (!mounted.current || controller.signal.aborted) return;
+      if (!response.ok) {
+        const code =
+          payload &&
+          typeof payload === "object" &&
+          !Array.isArray(payload) &&
+          "error" in payload &&
+          payload.error &&
+          typeof payload.error === "object" &&
+          !Array.isArray(payload.error) &&
+          "code" in payload.error
+            ? payload.error.code
+            : null;
+        setUncertain(response.status >= 500);
+        setError(
+          code === "security_override_in_use"
+            ? c.deleteInUse
+            : response.status >= 500
+              ? c.uncertain
+              : c.rejected,
+        );
+        setDeleteArmed(false);
+        return;
+      }
+      onDeleted(selected.id);
+    } catch {
+      if (mounted.current) {
+        setUncertain(true);
+        setError(c.uncertain);
+      }
+    } finally {
+      if (mounted.current) {
+        request.current = null;
+        setBusy(false);
+      }
+    }
+  }
   const locked = busy || uncertain;
   return (
-    <>
-      <section
-        className={styles.panel}
-        aria-label={c.title}
-        aria-busy={loading || busy}
-      >
-        <form onSubmit={(event) => void save(event)}>
-          <div className={styles.fields}>
-            <label>
-              {c.name}
-              <input
-                value={name}
-                maxLength={80}
-                required
-                disabled={locked}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </label>
-            <label>
-              {c.baseline}
-              <select
-                value={baselineId}
-                disabled={
-                  locked ||
-                  hasDrafts ||
-                  Boolean(selected) ||
-                  Object.keys(inputs).length > 0
-                }
-                onChange={(e) => {
-                  setBaselineId(e.target.value);
-                  setBackupId(
-                    baselines
-                      .find((b) => b.id === e.target.value)
-                      ?.components.find((x) => x.available)?.id ?? "",
-                  );
-                  setPage(0);
-                  setDrafts({});
-                }}
-              >
-                {baselines.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
+    <section
+      className={styles.panel}
+      aria-label={c.title}
+      aria-busy={loading || busy}
+    >
+      <form onSubmit={(event) => void save(event)}>
+        <div className={styles.fields}>
+          <div className={styles.field}>
+            <label htmlFor="override-purpose">{c.name}</label>
+            <input
+              id="override-purpose"
+              aria-describedby="override-purpose-hint"
+              value={name}
+              maxLength={48}
+              pattern="[A-Za-z0-9][A-Za-z0-9-]{0,47}"
+              required
+              disabled={locked}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <small id="override-purpose-hint">{c.nameHint}</small>
+          </div>
+          <label>
+            {c.baseline}
+            <select
+              value={baselineId}
+              disabled={
+                locked ||
+                hasDrafts ||
+                Boolean(selected) ||
+                Object.keys(inputs).length > 0
+              }
+              onChange={(e) => {
+                setBaselineId(e.target.value);
+                setBackupId(
+                  baselines
+                    .find((b) => b.id === e.target.value)
+                    ?.components.find((x) => x.available)?.id ?? "",
+                );
+                setPage(0);
+                setDrafts({});
+              }}
+            >
+              {baselines.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {c.component}
+            <select
+              value={backupId}
+              disabled={
+                locked ||
+                hasDrafts ||
+                Boolean(selected) ||
+                Object.keys(inputs).length > 0
+              }
+              onChange={(e) => {
+                setBackupId(e.target.value);
+                setPage(0);
+                setDrafts({});
+              }}
+            >
+              {baseline?.components
+                .filter((x) => x.available)
+                .map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
                   </option>
                 ))}
-              </select>
-            </label>
-            <label>
-              {c.component}
-              <select
-                value={backupId}
-                disabled={
-                  locked ||
-                  hasDrafts ||
-                  Boolean(selected) ||
-                  Object.keys(inputs).length > 0
-                }
-                onChange={(e) => {
-                  setBackupId(e.target.value);
-                  setPage(0);
-                  setDrafts({});
-                }}
-              >
-                {baseline?.components
-                  .filter((x) => x.available)
-                  .map((x) => (
-                    <option key={x.id} value={x.id}>
-                      {x.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-          </div>
-          <label className={styles.check}>
-            <input
-              type="checkbox"
-              checked={enabled}
-              disabled={locked}
-              onChange={(e) => setEnabled(e.target.checked)}
-            />
-            {c.enabled}
+            </select>
           </label>
-          <p>{c.sparse}</p>
-          <div className={styles.fields}>
-            <label>
-              {c.search}
-              <input
-                type="search"
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(0);
-                }}
-              />
-            </label>
-          </div>
-          <label className={styles.check}>
+        </div>
+        <label className={styles.check}>
+          <input
+            type="checkbox"
+            checked={enabled}
+            disabled={locked}
+            onChange={(e) => setEnabled(e.target.checked)}
+          />
+          {c.enabled}
+        </label>
+        <p>{c.sparse}</p>
+        <div className={styles.fields}>
+          <label>
+            {c.search}
             <input
-              type="checkbox"
-              checked={onlyChanged}
+              type="search"
+              value={search}
               onChange={(e) => {
-                setOnlyChanged(e.target.checked);
+                setSearch(e.target.value);
                 setPage(0);
               }}
             />
-            {c.changedOnly}
           </label>
-          <p role="status">
-            {c.count}: {values.entries.length} / 128
-          </p>
-          {loading ? <p role="status">{c.loading}</p> : null}
-          <div className={styles.scroll}>
-            <table className={styles.table}>
-              <caption className="sr-only">{c.title}</caption>
-              <thead>
-                <tr>
-                  <th scope="col">{c.setting}</th>
-                  <th scope="col">{c.original}</th>
-                  <th scope="col">{c.override}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered
-                  .slice(currentPage * 30, (currentPage + 1) * 30)
-                  .map((s) => {
-                    const editing = Object.hasOwn(drafts, s.setting_id);
-                    const overridden = Object.hasOwn(inputs, s.setting_id);
-                    const draftValue = editing
-                      ? parseOverrideInput(s, drafts[s.setting_id])
-                      : null;
-                    const invalid = editing && draftValue === null;
-                    const matchesBaseline =
-                      draftValue !== null &&
-                      sameOverrideValue(draftValue, s.baseline_value);
-                    const acceptedValue = overridden
-                      ? parseOverrideInput(s, inputs[s.setting_id])
-                      : null;
-                    const acceptedOption = s.enum_options.find((option) =>
-                      sameOverrideValue(option.value, acceptedValue),
-                    );
-                    const valueLabel = `${c.override}: ${s.label}`;
-                    return (
-                      <tr
-                        key={s.setting_id}
-                        className={
-                          editing || overridden ? styles.changed : undefined
-                        }
-                      >
-                        <td>
-                          <strong>{s.label}</strong>
-                          <small>{s.category}</small>
-                          <small>
-                            {s.scope} · {s.kind}
-                          </small>
-                          {!s.editable ? (
-                            <p>
-                              {overrideReadonlyReason(
-                                s.readonly_reason,
-                                locale,
-                              )}
-                            </p>
-                          ) : null}
-                        </td>
-                        <td>
-                          {!s.editable &&
-                          (displayValue(s.baseline_value)?.length ?? 0) >
-                            200 ? (
-                            <details>
-                              <summary>{c.original}</summary>
-                              <pre className={styles.value}>
-                                {displayValue(s.baseline_value)}
-                              </pre>
-                            </details>
-                          ) : (
+        </div>
+        <label className={styles.check}>
+          <input
+            type="checkbox"
+            checked={onlyChanged}
+            onChange={(e) => {
+              setOnlyChanged(e.target.checked);
+              setPage(0);
+            }}
+          />
+          {c.changedOnly}
+        </label>
+        <p role="status">
+          {c.count}: {values.entries.length} / 128
+        </p>
+        {loading ? <p role="status">{c.loading}</p> : null}
+        <div className={styles.scroll}>
+          <table className={styles.table}>
+            <caption className="sr-only">{c.title}</caption>
+            <thead>
+              <tr>
+                <th scope="col">{c.setting}</th>
+                <th scope="col">{c.original}</th>
+                <th scope="col">{c.override}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered
+                .slice(currentPage * 30, (currentPage + 1) * 30)
+                .map((s) => {
+                  const editing = Object.hasOwn(drafts, s.setting_id);
+                  const overridden = Object.hasOwn(inputs, s.setting_id);
+                  const draftValue = editing
+                    ? parseOverrideInput(s, drafts[s.setting_id])
+                    : null;
+                  const invalid = editing && draftValue === null;
+                  const matchesBaseline =
+                    draftValue !== null &&
+                    sameOverrideValue(draftValue, s.baseline_value);
+                  const acceptedValue = overridden
+                    ? parseOverrideInput(s, inputs[s.setting_id])
+                    : null;
+                  const acceptedOption = s.enum_options.find((option) =>
+                    sameOverrideValue(option.value, acceptedValue),
+                  );
+                  const valueLabel = `${c.override}: ${s.label}`;
+                  return (
+                    <tr
+                      key={s.setting_id}
+                      className={
+                        editing || overridden ? styles.changed : undefined
+                      }
+                    >
+                      <td>
+                        <strong>{s.label}</strong>
+                        <small>{s.category}</small>
+                        <small>
+                          {s.scope} · {s.kind}
+                        </small>
+                        {!s.editable ? (
+                          <p>
+                            {overrideReadonlyReason(s.readonly_reason, locale)}
+                          </p>
+                        ) : null}
+                      </td>
+                      <td>
+                        {!s.editable &&
+                        (displayValue(s.baseline_value)?.length ?? 0) > 200 ? (
+                          <details>
+                            <summary>{c.original}</summary>
                             <pre className={styles.value}>
                               {displayValue(s.baseline_value)}
                             </pre>
-                          )}
-                        </td>
-                        <td>
-                          {!s.editable ? (
-                            "—"
-                          ) : editing ? (
-                            <>
-                              {s.enum_options.length ? (
-                                <select
+                          </details>
+                        ) : (
+                          <pre className={styles.value}>
+                            {displayValue(s.baseline_value)}
+                          </pre>
+                        )}
+                      </td>
+                      <td>
+                        {!s.editable ? (
+                          "—"
+                        ) : editing ? (
+                          <>
+                            {s.enum_options.length ? (
+                              <select
+                                aria-label={valueLabel}
+                                value={drafts[s.setting_id]}
+                                disabled={locked}
+                                onChange={(e) =>
+                                  setDrafts((old) => ({
+                                    ...old,
+                                    [s.setting_id]: e.target.value,
+                                  }))
+                                }
+                              >
+                                {s.enum_options.map((o) => (
+                                  <option
+                                    key={JSON.stringify(o.value)}
+                                    value={inputValue(o.value)}
+                                  >
+                                    {o.label}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : s.value_type === "string_list" ? (
+                              <>
+                                <textarea
                                   aria-label={valueLabel}
-                                  value={drafts[s.setting_id]}
-                                  disabled={locked}
-                                  onChange={(e) =>
-                                    setDrafts((old) => ({
-                                      ...old,
-                                      [s.setting_id]: e.target.value,
-                                    }))
-                                  }
-                                >
-                                  {s.enum_options.map((o) => (
-                                    <option
-                                      key={JSON.stringify(o.value)}
-                                      value={inputValue(o.value)}
-                                    >
-                                      {o.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              ) : s.value_type === "string_list" ? (
-                                <>
-                                  <textarea
-                                    aria-label={valueLabel}
-                                    rows={3}
-                                    value={drafts[s.setting_id]}
-                                    aria-invalid={invalid}
-                                    disabled={locked}
-                                    onChange={(e) =>
-                                      setDrafts((old) => ({
-                                        ...old,
-                                        [s.setting_id]: e.target.value,
-                                      }))
-                                    }
-                                  />
-                                  <small>{c.listHint}</small>
-                                </>
-                              ) : (
-                                <input
-                                  aria-label={valueLabel}
-                                  type={
-                                    s.value_type === "integer"
-                                      ? "number"
-                                      : "text"
-                                  }
-                                  min={
-                                    s.value_type === "integer"
-                                      ? s.min
-                                      : undefined
-                                  }
-                                  max={
-                                    s.value_type === "integer"
-                                      ? s.max
-                                      : undefined
-                                  }
-                                  step={
-                                    s.value_type === "integer" ? 1 : undefined
-                                  }
-                                  maxLength={s.max_length}
+                                  rows={3}
                                   value={drafts[s.setting_id]}
                                   aria-invalid={invalid}
                                   disabled={locked}
@@ -605,139 +649,174 @@ function OverrideEditor({
                                     }))
                                   }
                                 />
-                              )}
-                              {invalid ? (
-                                <p className={styles.error}>{c.invalid}</p>
-                              ) : null}
-                              {matchesBaseline ? (
-                                <p>{c.baselineSelected}</p>
-                              ) : null}
-                              <div className={styles.rowActions}>
-                                <button
-                                  type="button"
-                                  className="primary-button"
-                                  disabled={
-                                    locked || invalid || matchesBaseline
-                                  }
-                                  onClick={() => acceptEdit(s)}
-                                >
-                                  {c.apply}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="outline-button"
-                                  disabled={locked}
-                                  onClick={() => cancelEdit(s.setting_id)}
-                                >
-                                  {c.cancelSetting}
-                                </button>
-                              </div>
-                            </>
-                          ) : overridden ? (
-                            <>
-                              <pre className={styles.value}>
-                                {acceptedOption?.label ??
-                                  displayValue(acceptedValue)}
-                              </pre>
-                              {acceptedOption ? (
-                                <small>{displayValue(acceptedValue)}</small>
-                              ) : null}
-                              <div className={styles.rowActions}>
-                                <button
-                                  type="button"
-                                  className="outline-button"
-                                  disabled={locked}
-                                  onClick={() => beginEdit(s)}
-                                >
-                                  {c.editExisting}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="outline-button"
-                                  disabled={locked}
-                                  onClick={() => removeOverride(s.setting_id)}
-                                >
-                                  {c.remove}
-                                </button>
-                              </div>
-                            </>
-                          ) : (
-                            <button
-                              type="button"
-                              className="outline-button"
-                              disabled={
-                                locked || Object.keys(inputs).length >= 128
-                              }
-                              onClick={() => beginEdit(s)}
-                            >
-                              {c.edit}
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-              </tbody>
-            </table>
-          </div>
-          {!loading && !filtered.length ? <p>{c.empty}</p> : null}
-          <div className={styles.actions}>
-            <button
-              type="button"
-              disabled={currentPage === 0}
-              onClick={() => setPage(currentPage - 1)}
-            >
-              {c.previous}
-            </button>
-            <span>
-              {currentPage + 1} / {pages}
-            </span>
-            <button
-              type="button"
-              disabled={currentPage + 1 >= pages}
-              onClick={() => setPage(currentPage + 1)}
-            >
-              {c.next}
-            </button>
-          </div>
-          {error ? (
-            <p role="alert" className={styles.error}>
-              {error}
-            </p>
-          ) : null}
-          {uncertain ? (
-            <button type="button" onClick={() => window.location.reload()}>
-              {c.reload}
-            </button>
-          ) : null}
-          <div className={styles.actions}>
-            <button
-              type="submit"
-              className="primary-button"
-              disabled={
-                locked ||
-                loading ||
-                !catalog ||
-                !dirty ||
-                hasDrafts ||
-                !name.trim() ||
-                values.invalid.length > 0 ||
-                values.entries.length > 128
-              }
-            >
-              {c.save}
-            </button>
+                                <small>{c.listHint}</small>
+                              </>
+                            ) : (
+                              <input
+                                aria-label={valueLabel}
+                                type={
+                                  s.value_type === "integer" ? "number" : "text"
+                                }
+                                min={
+                                  s.value_type === "integer" ? s.min : undefined
+                                }
+                                max={
+                                  s.value_type === "integer" ? s.max : undefined
+                                }
+                                step={
+                                  s.value_type === "integer" ? 1 : undefined
+                                }
+                                maxLength={s.max_length}
+                                value={drafts[s.setting_id]}
+                                aria-invalid={invalid}
+                                disabled={locked}
+                                onChange={(e) =>
+                                  setDrafts((old) => ({
+                                    ...old,
+                                    [s.setting_id]: e.target.value,
+                                  }))
+                                }
+                              />
+                            )}
+                            {invalid ? (
+                              <p className={styles.error}>{c.invalid}</p>
+                            ) : null}
+                            {matchesBaseline ? (
+                              <p>{c.baselineSelected}</p>
+                            ) : null}
+                            <div className={styles.rowActions}>
+                              <button
+                                type="button"
+                                className="primary-button"
+                                disabled={locked || invalid || matchesBaseline}
+                                onClick={() => acceptEdit(s)}
+                              >
+                                {c.apply}
+                              </button>
+                              <button
+                                type="button"
+                                className="outline-button"
+                                disabled={locked}
+                                onClick={() => cancelEdit(s.setting_id)}
+                              >
+                                {c.cancelSetting}
+                              </button>
+                            </div>
+                          </>
+                        ) : overridden ? (
+                          <>
+                            <pre className={styles.value}>
+                              {acceptedOption?.label ??
+                                displayValue(acceptedValue)}
+                            </pre>
+                            {acceptedOption ? (
+                              <small>{displayValue(acceptedValue)}</small>
+                            ) : null}
+                            <div className={styles.rowActions}>
+                              <button
+                                type="button"
+                                className="outline-button"
+                                disabled={locked}
+                                onClick={() => beginEdit(s)}
+                              >
+                                {c.editExisting}
+                              </button>
+                              <button
+                                type="button"
+                                className="outline-button"
+                                disabled={locked}
+                                onClick={() => removeOverride(s.setting_id)}
+                              >
+                                {c.remove}
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className="outline-button"
+                            disabled={
+                              locked || Object.keys(inputs).length >= 128
+                            }
+                            onClick={() => beginEdit(s)}
+                          >
+                            {c.edit}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+            </tbody>
+          </table>
+        </div>
+        {!loading && !filtered.length ? <p>{c.empty}</p> : null}
+        <div className={styles.actions}>
+          <button
+            type="button"
+            disabled={currentPage === 0}
+            onClick={() => setPage(currentPage - 1)}
+          >
+            {c.previous}
+          </button>
+          <span>
+            {currentPage + 1} / {pages}
+          </span>
+          <button
+            type="button"
+            disabled={currentPage + 1 >= pages}
+            onClick={() => setPage(currentPage + 1)}
+          >
+            {c.next}
+          </button>
+        </div>
+        {error ? (
+          <p role="alert" className={styles.error}>
+            {error}
+          </p>
+        ) : null}
+        {uncertain ? (
+          <button type="button" onClick={() => window.location.reload()}>
+            {c.reload}
+          </button>
+        ) : null}
+        <div className={styles.actions}>
+          <button
+            type="submit"
+            className="primary-button"
+            disabled={
+              locked ||
+              loading ||
+              !catalog ||
+              !dirty ||
+              hasDrafts ||
+              !name.trim() ||
+              values.invalid.length > 0 ||
+              values.entries.length > 128
+            }
+          >
+            {c.save}
+          </button>
+          <button
+            type="button"
+            className="outline-button"
+            disabled={locked || (!dirty && !hasDrafts)}
+            onClick={discard}
+          >
+            {c.discard}
+          </button>
+          {selected ? (
             <button
               type="button"
               className="outline-button"
-              disabled={locked || (!dirty && !hasDrafts)}
-              onClick={discard}
+              disabled={locked || dirty || hasDrafts}
+              onClick={() => void deleteDefinition()}
             >
-              {c.discard}
+              {deleteArmed ? c.confirmDelete : c.delete}
             </button>
-          </div>
-        </form>
-      </section>
-    </>
+          ) : null}
+        </div>
+      </form>
+    </section>
   );
 }

@@ -1,8 +1,8 @@
 # Managed GPO operations
 
-Version: 1.4.0 | Date: 2026-09-16
+Version: 1.5.0 | Date: 2026-09-16
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
-Applies to: Portal 0.2.63 / Windows Agent 0.2.43
+Applies to: Portal 0.2.64 / Windows Agent 0.2.44
 
 ## Configuration
 
@@ -28,6 +28,12 @@ and typed values, never caller-provided registry paths or policy file names. The
 original value remains visible; **Remove override** removes the sparse entry. Every
 other setting remains Not Configured in the separate override GPO. Complex
 structured values that cannot be changed safely as one typed field remain read-only.
+
+The override name field contains only the naming template's `{purpose}` token. Use
+a value such as `MS-WS2025-Defender`; do not enter a complete GPO name. With the
+standard template and the `OVRD` target alias, Tier 0 computer policy becomes
+`0-C-OVRD-MS-WS2025-Defender_V1.0.0`. The Portal accepts only letters, digits and
+hyphens in this token so structural name parts cannot be embedded a second time.
 
 Saving an override does not change AD. Deployment uses the existing domain, tier,
 executor and approval workflow and creates a separate managed GPO. Its link is
@@ -58,12 +64,23 @@ is needed. Viewing a request never approves it. Activation remains separate.
 | Link | Managed links placed on the approved OUs or domain root, disabled and non-enforced |
 | Activate | Protected backup, prepared content applied to stable GUID, intended half and approved links enabled |
 | Deactivate | Both GPO halves disabled; existing links retained |
+| Delete override GPO | Protected backup, approved links removed and exact owned override GPO deleted; managed projection removed |
 
 The combined import and link uses one approval. Each action must have a fresh
 successful inspection, which expires after 15 minutes. Changed configuration,
 permissions, managed revision or directory state require a new inspection.
 Changes to baseline order are applied only through another approved link action.
 An active GPO must first be deactivated before its links can be changed.
+
+Deletion is available only for managed override GPOs and requires Windows Agent
+0.2.44 or later. The fresh inspection must confirm complete forest-wide link
+visibility and that every direct link is within the approved target set. The Agent
+disables both halves, creates a protected GPMC backup, removes those exact links,
+deletes the owned GPO and verifies its absence. Baseline GPOs, default policies,
+enforced links, links outside the approved target set and unmanaged objects are
+rejected. After the managed policy is gone, the override editor allows the separate
+revision-bound deletion of the definition. Definitions that still reference a
+managed policy cannot be deleted.
 
 Microsoft **Domain Security** components use the selected domain's root and
 require Tier 0 authorization. Before requesting import and link, linking,

@@ -80,11 +80,11 @@ with transaction.atomic():
         actor = get_user_model().objects.get(username="e2e-admin")
         GpoDomainAuthorization.objects.create(domain=domain, grants=[{"user_id": str(actor.pk), "tiers": ["0", "1", "2"]}])
         result = {"domain_id": str(domain.pk), "domain_name": domain_name, "system_id": str(system.pk)}
-    elif mode in ("agent-035", "agent-037", "agent-043"):
+    elif mode in ("agent-035", "agent-037", "agent-043", "agent-044"):
         domain = DomainSecuritySettings.objects.get(pk=uuid.UUID(sys.argv[2]), tenant=tenant,
             domain_name__startswith="production-", domain_name__endswith=".example.invalid")
         system = WindowsServer.objects.get(tenant=tenant, domain_name=domain.domain_name, hostname="gpo-ui-dc")
-        system.agent_version = {"agent-035": "0.2.35", "agent-037": "0.2.37", "agent-043": "0.2.43"}[mode]
+        system.agent_version = {"agent-035": "0.2.35", "agent-037": "0.2.37", "agent-043": "0.2.43", "agent-044": "0.2.44"}[mode]
         system.save(update_fields=("agent_version",))
         GpoExecutorReport.objects.filter(enrollment__device_uri=system.source_id).update(agent_version=system.agent_version)
         result = {"version": system.agent_version}
@@ -189,13 +189,22 @@ with transaction.atomic():
                     ou["usn"] = str(int(ou["usn"]) + 1)
                 status, code = ("activated", "gpo_activated") if activating else ("linked", "gpo_linked")
             elif assignment["operation"] != "import_managed_gpo":
-                raise RuntimeError("Unsupported synthetic fixture operation.")
+                if assignment["operation"] != "delete_managed_gpo":
+                    raise RuntimeError("Unsupported synthetic fixture operation.")
+                removed_guid = state["gpo"]["guid"]
+                state["gpo"] = None
+                for ou in state["ous"]:
+                    ou["links"] = [link for link in ou["links"] if link["guid"] != removed_guid]
+                    for order, item in enumerate(ou["links"], 1):
+                        item["order"] = order
+                    ou["usn"] = str(int(ou["usn"]) + 1)
+                status, code = "deleted", "gpo_deleted"
         evidence = {"schema": assignment["schema"], "operation": assignment["operation"], "managed_id": assignment["managed_id"],
             "state": state, "prepared_artifact_sha256": assignment["artifact_sha256"] if mode == "complete"
                 and assignment["operation"] in ("import_managed_gpo", "activate_managed_gpo", "import_and_link_managed_gpo") else "", "backup_id": "", "backup_manifest_sha256": ""}
         if assignment["schema"] == 4:
             evidence["override_sha256"] = assignment["override_sha256"]
-        if mode == "complete" and assignment["operation"] == "activate_managed_gpo":
+        if mode == "complete" and assignment["operation"] in ("activate_managed_gpo", "delete_managed_gpo"):
             # Placeholder receipt represents the fake provider, never a backup of real directory data.
             evidence["backup_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, "synthetic-backup-" + str(job.pk)))
             evidence["backup_manifest_sha256"] = "c" * 64

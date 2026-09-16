@@ -68,9 +68,23 @@ json::array unrelated(json::array list,std::string_view id) {
 }
 void postconditions(const job& j,const json::object& before,const json::object& after) {
   if(!valid_snapshot(after)||!after.at("name_available").as<bool>())fail("gpo_verification_failed");
-  const auto& g=after.at("gpo").as<json::object>();const auto& op=j.text("operation");
-  const auto id=g.at("guid").as<std::string>();
-  const auto& original=before.at("gpo");
+  const auto& op=j.text("operation");const auto& original=before.at("gpo");
+  if(op=="delete_managed_gpo") {
+    if(original.get_if<std::nullptr_t>()||!after.at("gpo").get_if<std::nullptr_t>())fail("gpo_verification_failed");
+    const auto id=original.as<json::object>().at("guid").as<std::string>();
+    const auto& a=before.at("ous").as<json::array>();const auto& b=after.at("ous").as<json::array>();if(a.size()!=b.size())fail("gpo_verification_failed");
+    for(std::size_t n=0;n<a.size();++n) {
+      const auto& x=a[n].as<json::object>();const auto& y=b[n].as<json::object>();
+      for(const auto* key:{"dn","guid","blocked","inherited_links"})if(x.at(key)!=y.at(key))fail("gpo_verification_failed");
+      auto expected=x.at("links").as<json::array>();
+      expected.erase(std::remove_if(expected.begin(),expected.end(),[&](const auto& v){return v.template as<json::object>().at("guid").template as<std::string>()==id;}),expected.end());
+      const auto& actual=y.at("links").as<json::array>();
+      for(std::size_t i=0;i<expected.size();++i)expected[i].as<json::object>()["order"]=static_cast<std::int64_t>(i+1);
+      if(actual!=expected)fail("gpo_verification_failed");
+    }
+    return;
+  }
+  const auto& g=after.at("gpo").as<json::object>();const auto id=g.at("guid").as<std::string>();
   if(!original.get_if<std::nullptr_t>()) {
     const auto& prior=original.as<json::object>();
     if(g.at("security_digest")!=prior.at("security_digest"))fail("gpo_verification_failed");
@@ -157,7 +171,7 @@ void verify_forest_link_census(const json::array& observed,const std::map<std::s
   }
 }
 bool managed_operation(std::string_view op) {
-  return import_operation(op)||op=="link_managed_gpo"||op=="activate_managed_gpo"||op=="deactivate_managed_gpo";
+  return import_operation(op)||op=="link_managed_gpo"||op=="activate_managed_gpo"||op=="deactivate_managed_gpo"||op=="delete_managed_gpo";
 }
 bool inspection(const job& j) {return j.number("schema")>=3&&j.text("operation")=="inspect_managed_gpo";}
 std::pair<std::string,std::string> ace_object_types(std::int64_t flags,
@@ -198,6 +212,7 @@ void validate_managed_job(const job& j) {
     "preflight_id","expected_state","intended_operation","safety_review"};
   for(const auto* k:extra)if(!j.fields.contains(k))fail();
   if(!valid_uuid(j.text("managed_id"))||j.number("managed_revision")<1||!managed_operation(j.text("intended_operation")))fail();
+  if(j.text("intended_operation")=="delete_managed_gpo"&&!override_job(j))fail("gpo_unmanaged_target");
   const bool read=inspection(j);
   const auto* content=component(j);
   const bool root=domain_scope(j);
@@ -271,7 +286,7 @@ void validate_managed_state(const job& j,const json::object& state) {
   if((link_operation(op)||j.text("owner_marker")!=managed_marker(j))&&!disabled)fail("gpo_requires_disabled");
   const auto& existing=g.at("links").as<json::array>();
   if(j.text("owner_marker")!=managed_marker(j)&&!existing.empty())fail("gpo_unmanaged_target");
-  if(link_operation(op)||op=="activate_managed_gpo"||op=="deactivate_managed_gpo") {
+  if(link_operation(op)||op=="activate_managed_gpo"||op=="deactivate_managed_gpo"||op=="delete_managed_gpo") {
     std::set<std::string> seen;
     for(const auto& v:existing) {const auto& l=v.as<json::object>();const auto dn=lower(l.at("dn").as<std::string>());
       if(l.at("kind").as<std::string>()!=target_kind(j)||l.at("domain").as<std::string>()!=j.text("domain_dns_name")||l.at("enforced").as<bool>()||
@@ -299,13 +314,15 @@ bool valid_managed_result(const json::object& r) {try {
   const auto& op=e.at("operation").as<std::string>();const auto& s=r.at("status").as<std::string>();const auto& c=r.at("result_code").as<std::string>();
   if(!((op=="inspect_managed_gpo"&&s=="inspected"&&c=="gpo_inspected")||(op=="import_managed_gpo"&&s=="staged"&&c=="gpo_prepared")||
     (link_operation(op)&&s=="linked"&&c=="gpo_linked")||(op=="activate_managed_gpo"&&s=="activated"&&c=="gpo_activated")||
-    (op=="deactivate_managed_gpo"&&s=="deactivated"&&c=="gpo_deactivated")))return false;
+    (op=="deactivate_managed_gpo"&&s=="deactivated"&&c=="gpo_deactivated")||
+    (op=="delete_managed_gpo"&&s=="deleted"&&c=="gpo_deleted")))return false;
   const auto id=state_guid(e.at("state").as<json::object>());const auto* result_id=r.at("gpo_guid").get_if<std::string>();
-  if(id.empty()?(!r.at("gpo_guid").get_if<std::nullptr_t>()||s!="inspected"):(!result_id||*result_id!=id))return false;
+  if(id.empty()?(!r.at("gpo_guid").get_if<std::nullptr_t>()||(s!="inspected"&&s!="deleted")):(!result_id||*result_id!=id))return false;
   const auto& artifact=e.at("prepared_artifact_sha256").as<std::string>();
   if(import_operation(op)||op=="activate_managed_gpo") {if(!hash(artifact))return false;} else if(!artifact.empty())return false;
   const auto& bid=e.at("backup_id").as<std::string>();const auto& bh=e.at("backup_manifest_sha256").as<std::string>();
-  if(bid.empty()?(!bh.empty()||op=="activate_managed_gpo"):(!valid_uuid(bid)||!hash(bh)||op!="activate_managed_gpo"))return false;
+  if(bid.empty()?(!bh.empty()||op=="activate_managed_gpo"||op=="delete_managed_gpo"):
+      (!valid_uuid(bid)||!hash(bh)||(op!="activate_managed_gpo"&&op!="delete_managed_gpo")))return false;
   return true;
 }catch(...){return false;}}
 json::object inspect_managed(journal& j,managed_provider& provider,const persist& save,const std::function<bool()>& authority) {
@@ -332,7 +349,7 @@ json::object execute_managed(journal& j,managed_provider& provider,const persist
     const bool adoption=!target.empty()&&j.assignment.text("owner_marker")!=managed_marker(j.assignment);
     if(import_operation(op)||op=="activate_managed_gpo")provider.prepare();
     std::pair<std::string,std::string> backup;
-    if(op=="activate_managed_gpo") {
+    if(op=="activate_managed_gpo"||op=="delete_managed_gpo") {
       backup=provider.backup(target);if(!valid_uuid(backup.first)||!hash(backup.second))fail("gpo_backup_failed");
     }
     if(json::value(provider.inspect())!=j.assignment.fields.at("expected_state"))fail("gpo_state_changed");
@@ -371,8 +388,13 @@ json::object execute_managed(journal& j,managed_provider& provider,const persist
     }
     else if(op=="link_managed_gpo")provider.link(j.gpo_guid);
     else if(op=="activate_managed_gpo")provider.activate(j.gpo_guid);
-    else provider.deactivate(j.gpo_guid);
+    else if(op=="deactivate_managed_gpo")provider.deactivate(j.gpo_guid);
+    else provider.remove(j.gpo_guid);
     auto after=provider.inspect();
+    if(op=="delete_managed_gpo") {
+      if(!state_guid(after).empty())fail("gpo_verification_failed");postconditions(j.assignment,state,after);
+      return terminal(j,"deleted","gpo_deleted",std::move(after),save,backup.first,backup.second);
+    }
     if(state_guid(after)!=j.gpo_guid)fail("gpo_verification_failed");
     const auto& g=after.at("gpo").as<json::object>();
     if(g.at("description").as<std::string>()!=managed_marker(j.assignment)||!g.at("wmi_filter").as<std::string>().empty()||

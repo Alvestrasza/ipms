@@ -531,6 +531,25 @@ class native_managed final:public gpo::managed_provider {
     }
   }
   void deactivate(std::string_view id) override {same(id);disable();}
+  void remove(std::string_view id) override {
+    same(id);disable();
+    const auto& targets=job_.fields.at("target_ous").as<json::array>();
+    for(std::size_t n=0;n<targets.size();++n) {
+      auto som=write_ou(n);const auto before=som_links(som.Get());ComPtr<IGPMGPOLinksCollection> collection;check(som->GetGPOLinks(&collection));
+      ComPtr<IGPMGPOLink> own;for(const auto& candidate:items<IGPMGPOLink>(collection.Get(),128))if(guid(property([&](BSTR* p){return candidate->get_GPOID(p);}))==id) {
+        if(own)fail("gpo_link_conflict");own=candidate;
+      }
+      if(own) {VARIANT_BOOL enforced{};check(own->get_Enforced(&enforced));if(enforced!=VARIANT_FALSE)fail("gpo_link_conflict");check(own->Delete());}
+      const auto after=som_links(som.Get());auto expected=without_own(before,id);
+      for(std::size_t i=0;i<expected.size();++i)expected[i].as<json::object>()["order"]=static_cast<std::int64_t>(i+1);
+      if(after!=expected)fail("gpo_state_changed");
+    }
+    check(target_->Delete());target_.Reset();
+    ComPtr<IGPMSearchCriteria> criteria;check(gpm_->CreateSearchCriteria(&criteria));bstr identifier("{"+std::string(id)+"}");
+    VARIANT query{};query.vt=VT_BSTR;query.bstrVal=identifier.value;check(criteria->Add(gpoID,opEquals,query));
+    ComPtr<IGPMGPOCollection> matches;check(domain_->SearchGPOs(criteria.Get(),&matches));long count{};check(matches->get_Count(&count));
+    if(count!=0)fail("gpo_verification_failed");current_guid_.clear();
+  }
 };
 }
 std::unique_ptr<gpo::managed_provider> make_managed_gpo_provider(const gpo::job& job,const gpo::json::object& executor_identity) {return std::make_unique<native_managed>(job,executor_identity);}

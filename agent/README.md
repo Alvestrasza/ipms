@@ -1,10 +1,14 @@
 # IPMS Agent
 
-Windows candidate **0.2.43** validates schema-4 sparse override jobs against a
+Windows candidate **0.2.44** validates schema-4 sparse override jobs against a
 compiled Microsoft baseline catalog. It renders only the selected Registry.pol,
 security template and audit records into a separate managed GPO. Caller-provided
 paths, types and structured AppLocker XML are never accepted. The base GPO stays
-unchanged and activation preserves the server-approved higher link priority.
+unchanged and activation preserves the server-approved higher link priority. It
+also supports deletion of an exact managed override GPO after a fresh complete
+forest link inspection and protected backup. The operation removes only approved,
+non-enforced links, rejects baseline and default policies, verifies the GPO is gone
+and leaves the immutable job and backup evidence available for audit and recovery.
 
 Windows **0.2.42** adds a separate read-only GPO reconciliation worker.
 It observes the directory using the original protected job identity, retains the

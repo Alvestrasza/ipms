@@ -41,6 +41,7 @@ class managed_provider {
   virtual void link(std::string_view guid) = 0;
   virtual void activate(std::string_view guid) = 0;
   virtual void deactivate(std::string_view guid) = 0;
+  virtual void remove(std::string_view guid) = 0;
 };
 json::object inspect_managed(journal& record, managed_provider& provider, const persist& save,
     const std::function<bool()>& authority);

@@ -141,6 +141,7 @@ export function isGpoImportJob(value: unknown): value is GpoImportJob {
       "linked",
       "activated",
       "deactivated",
+      "deleted",
       "reconciled",
       "blocked",
       "failed",
