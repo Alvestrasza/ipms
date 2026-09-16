@@ -11,6 +11,7 @@ const en = {
   title: "Baseline overrides",
   description:
     "Change selected original baseline settings. Only deviations are stored; the Microsoft baseline stays unchanged.",
+  openDeployment: "Open Windows GPO deployment",
   select: "Override",
   create: "New override",
   name: "Name",
@@ -47,7 +48,7 @@ const en = {
   empty: "No settings match this selection.",
   count: "Changed settings",
   sparse:
-    "Choose a value, then accept it with Use override. Remove override restores the baseline value; it does not create a Not Configured setting. Save override persists all accepted deviations. At most 128 deviations can be saved.",
+    "Choose a value, then accept it with Use override. The override GPO contains only those accepted deviations; every other setting remains Not Configured in this GPO. Remove override removes the entry from the override GPO. At most 128 deviations can be saved.",
   listHint: "One entry per line; an empty field means an empty list.",
   deployment: "Deploy saved override",
   domain: "Domain",
@@ -70,6 +71,7 @@ const de: typeof en = {
   title: "Baseline-Overrides",
   description:
     "Ändere ausgewählte Originaleinstellungen einer Baseline. Gespeichert werden nur Abweichungen; die Microsoft-Baseline bleibt unverändert.",
+  openDeployment: "Windows-GPO-Verteilung öffnen",
   select: "Override",
   create: "Neuer Override",
   name: "Name",
@@ -107,7 +109,7 @@ const de: typeof en = {
   empty: "Keine Einstellungen entsprechen dieser Auswahl.",
   count: "Geänderte Einstellungen",
   sparse:
-    "Wähle einen Wert und bestätige ihn mit Override übernehmen. Override entfernen stellt den Baseline-Wert wieder her; es entsteht keine Einstellung Nicht konfiguriert. Override speichern speichert alle übernommenen Abweichungen. Maximal 128 Abweichungen können gespeichert werden.",
+    "Wähle einen Wert und bestätige ihn mit Override übernehmen. Die Override-GPO enthält ausschließlich diese übernommenen Abweichungen; alle übrigen Einstellungen bleiben in dieser GPO Nicht konfiguriert. Override entfernen entfernt den Eintrag wieder aus der Override-GPO. Maximal 128 Abweichungen können gespeichert werden.",
   listHint: "Ein Eintrag pro Zeile; ein leeres Feld bedeutet eine leere Liste.",
   deployment: "Gespeicherten Override verteilen",
   domain: "Domäne",

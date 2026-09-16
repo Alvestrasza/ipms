@@ -27,7 +27,7 @@ JOURNAL = 'a' * 64
 class GpoReconciliationTests(TestCase):
     # Reuse only fixture helpers, never inherit the unrelated production test cases.
     for _name in ('setUp', 'draft', 'create', 'envelope', 'exchange', 'result', 'approve', 'grants', 'policy',
-                  'poll', 'inspect', 'snapshot', 'gpo', 'report_success', 'change', 'execute', 'linked_state', 'agent_036'):
+                  'poll', 'inspect', 'legacy_queue', 'snapshot', 'gpo', 'report_success', 'change', 'execute', 'linked_state', 'agent_036'):
         locals()[_name] = getattr(production_tests.ProductionGpoTests, _name)
     del _name
 
@@ -376,7 +376,7 @@ class GpoReconciliationTests(TestCase):
         self.assertEqual(self.accept().status_code, 403)
 
     def test_reconciled_legacy_adoption_reuses_managed_marker_and_guid(self):
-        legacy = production_tests.approval_tests.PortalApprovalTests.queue(self)
+        legacy = self.legacy_queue()
         self.assertEqual(self.approve(legacy).status_code, 200)
         self.assertTrue(self.exchange(legacy, 'claim')['gpo_claim']['authorized'])
         self.result(legacy, status='staged', code='gpo_staged_unlinked', guid=PILOT_GUID, evidence={

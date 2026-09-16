@@ -19,7 +19,7 @@ from ipms.apps.tenancy.models import Tenant
 from .domains import DomainJSONParser
 from .gpo_approvals import authorization_for, fresh_actor, policy_for, scoped, visible_jobs
 from .gpo_jobs import DEFAULT_GPO_IDS, _ready, canonical, digest, uuid_text
-from .gpo_production import assignment_fields, owner_marker, _domain_component, _links, _same_target, _sha, policy_for_job, production, validate_snapshot
+from .gpo_production import assignment_fields, domain_root, owner_marker, _domain_component, _links, _same_target, _sha, policy_for_job, production, validate_snapshot
 from .models import DomainSecuritySettings, GpoExecutorReport, GpoImportJob, GpoReconciliation, ManagedGpoPolicy
 from .views import SecurityReadView, query
 
@@ -192,7 +192,8 @@ def observation_blocker(record):
         root = _domain_component(job.assignment)
         if root and job.assignment['target_tier'] != 0:
             return 'link_scope_conflict'
-        configured = job.assignment['target_ous'] if root else job.domain.tier_ous.get(str(job.assignment['target_tier']), [])
+        configured = ([domain_root(job.domain.domain_name)] if root
+                      else job.domain.tier_ous.get(str(job.assignment['target_tier']), []))
         for link in value['forest_links']:
             if (link['guid'] != value['gpo_guid'] or link['domain'] != job.assignment['domain_dns_name']
                     or link['kind'] != ('domain' if root else 'ou') or link['enforced']

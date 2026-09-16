@@ -24,7 +24,6 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ConsoleShell } from "@/components/console-shell";
-import { BaselineGpoDeployment } from "@/components/domain-security-administration";
 import { SecurityBaselineDetails } from "@/components/security-baseline-details";
 import { SecurityBaselineScansPanel } from "@/components/security-baseline-scans";
 import { documentLocale, type Locale } from "@/i18n/config";
@@ -43,7 +42,6 @@ import type {
   SecurityBaselineTarget,
 } from "@/lib/security-types";
 import { getServerSession } from "@/lib/server-auth";
-import { getDomainSecuritySettings } from "@/lib/server-domain-security";
 import { requireTenantScope } from "@/lib/server-portal-scope";
 import {
   getSecurityBaselineCatalog,
@@ -276,7 +274,6 @@ export default async function SecurityBaselinePage({
   if (!tenant) redirect(`/${locale}/access-unavailable`);
   if (!hasPermission(tenant, "inventory.view")) redirect(`/${locale}`);
   const canManageBaselines = hasPermission(tenant, "security.baselines.manage");
-  const canManageDomains = hasPermission(tenant, "security.domains.manage");
 
   const query = await searchParams;
   const target: SecurityBaselineTarget =
@@ -289,17 +286,9 @@ export default async function SecurityBaselinePage({
     typeof query.page === "string" && /^[1-9]\d{0,6}$/.test(query.page)
       ? Number(query.page)
       : 1;
-  const [response, domainResponse] = await Promise.all([
-    getSecurityBaselineCatalog(tenant.id, target),
-    canManageDomains
-      ? getDomainSecuritySettings(tenant.id)
-      : Promise.resolve(null),
-  ]);
+  const response = await getSecurityBaselineCatalog(tenant.id, target);
   if (!response.sessionValid) redirect(`/${locale}/login`);
   if (response.forbidden) redirect(`/${locale}/access-unavailable`);
-  if (domainResponse && !domainResponse.sessionValid)
-    redirect(`/${locale}/login`);
-  if (domainResponse?.forbidden) redirect(`/${locale}/access-unavailable`);
   const catalog = response.data;
   const selection = requestedBaseline
     ? catalog?.results.find((baseline) => baseline.id === requestedBaseline)
@@ -360,6 +349,16 @@ export default async function SecurityBaselinePage({
               href={`/${locale}/administration/security/baselines` as Route}
             >
               {copy.manageVisibility}
+            </Link>
+          ) : null}
+          {hasPermission(tenant, "security.gpo_imports.run") ? (
+            <Link
+              className={styles.button}
+              href={
+                `/${locale}/security/windows-gpos?baseline=${encodeURIComponent(baseline?.id ?? requestedBaseline ?? "")}` as Route
+              }
+            >
+              {copy.openGpoDeployment}
             </Link>
           ) : null}
           <a className={styles.button} href={currentHref}>
@@ -718,23 +717,6 @@ export default async function SecurityBaselinePage({
                     scanCopy={scanCopy}
                   />
                 )}
-                {canManageDomains ? (
-                  <div className={styles.deployment}>
-                    <BaselineGpoDeployment
-                      key={tenant.id}
-                      initialCatalog={domainResponse?.data ?? null}
-                      tenantId={tenant.id}
-                      csrfToken={session.csrf_token}
-                      canImport={hasPermission(
-                        tenant,
-                        "security.gpo_imports.run",
-                      )}
-                      preferredBaselineId={baseline.id}
-                      locale={locale}
-                      copy={domainCopy}
-                    />
-                  </div>
-                ) : null}
               </SecurityBaselineDetails>
             ) : null}
           </section>

@@ -7,7 +7,6 @@
 "use client";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { Locale } from "@/i18n/config";
-import { getDomainSecurityCopy } from "@/i18n/domain-security-copy";
 import {
   getSecurityOverrideCopy,
   overrideReadonlyReason,
@@ -23,7 +22,6 @@ import {
   type SecurityOverride,
   sameOverrideValue,
 } from "@/lib/security-override-types";
-import { DomainGpoImports } from "./domain-gpo-imports";
 import styles from "./security-overrides.module.css";
 
 type Props = {
@@ -32,7 +30,6 @@ type Props = {
   tenantId: string;
   csrfToken: string;
   locale: Locale;
-  canImport: boolean;
 };
 const inputValue = (v: unknown) =>
   Array.isArray(v)
@@ -105,7 +102,6 @@ function OverrideEditor({
   tenantId,
   csrfToken,
   locale,
-  canImport,
   onLocked,
   onSaved,
 }: Omit<Props, "initial"> & {
@@ -139,12 +135,10 @@ function OverrideEditor({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(false);
-  const [deploymentLocked, setDeploymentLocked] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [onlyChanged, setOnlyChanged] = useState(false);
   const [page, setPage] = useState(0);
-  const [domainId, setDomainId] = useState(domains.results[0]?.id ?? "");
   const request = useRef<AbortController | null>(null);
   const mounted = useRef(false);
   useEffect(() => {
@@ -221,9 +215,9 @@ function OverrideEditor({
       );
   const hasDrafts = Object.keys(drafts).length > 0;
   useEffect(() => {
-    onLocked(dirty || hasDrafts || busy || uncertain || deploymentLocked);
+    onLocked(dirty || hasDrafts || busy || uncertain);
     return () => onLocked(false);
-  }, [dirty, hasDrafts, busy, uncertain, deploymentLocked, onLocked]);
+  }, [dirty, hasDrafts, busy, uncertain, onLocked]);
   const filtered =
     catalog?.settings.filter(
       (s) =>
@@ -356,8 +350,7 @@ function OverrideEditor({
       }
     }
   }
-  const domain = domains.results.find((d) => d.id === domainId);
-  const locked = busy || uncertain || deploymentLocked;
+  const locked = busy || uncertain;
   return (
     <>
       <section
@@ -745,47 +738,6 @@ function OverrideEditor({
           </div>
         </form>
       </section>
-      {selected ? (
-        <section className={styles.panel} aria-label={c.deployment}>
-          <h2>{c.deployment}</h2>
-          <p>{c.priority}</p>
-          <p>{c.agent}</p>
-          {dirty || hasDrafts ? <p>{c.saveFirst}</p> : null}
-          {!selected.enabled ? <p>{c.disabled}</p> : null}
-          <div className={styles.fields}>
-            <label>
-              {c.domain}
-              <select
-                value={domainId}
-                disabled={dirty || hasDrafts || locked}
-                onChange={(e) => setDomainId(e.target.value)}
-              >
-                {domains.results.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.domain_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          {domain ? (
-            <DomainGpoImports
-              settings={domain}
-              catalog={domains}
-              tenantId={tenantId}
-              csrfToken={csrfToken}
-              canImport={canImport}
-              configurationDirty={dirty || hasDrafts || busy || uncertain}
-              onWorkflowLocked={setDeploymentLocked}
-              locale={locale}
-              copy={getDomainSecurityCopy(locale)}
-              override={selected}
-            />
-          ) : (
-            <p>{c.noDomains}</p>
-          )}
-        </section>
-      ) : null}
     </>
   );
 }

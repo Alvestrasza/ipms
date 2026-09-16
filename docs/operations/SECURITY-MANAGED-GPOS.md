@@ -1,8 +1,8 @@
 # Managed GPO operations
 
-Version: 1.3.0 | Date: 2026-09-16
+Version: 1.4.0 | Date: 2026-09-16
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
-Applies to: Portal 0.2.62 / Windows Agent 0.2.43
+Applies to: Portal 0.2.63 / Windows Agent 0.2.43
 
 ## Configuration
 
@@ -22,10 +22,11 @@ service account or directory permissions as part of these actions.
 
 ## Sparse baseline overrides
 
-In **Security → Override**, select a Microsoft baseline component and change only
+In **Security → Windows GPOs → Overrides**, select a Microsoft baseline component and change only
 settings already contained in that component. IPMS stores the setting identities
 and typed values, never caller-provided registry paths or policy file names. The
-original value remains visible; **Use baseline** removes the sparse entry. Complex
+original value remains visible; **Remove override** removes the sparse entry. Every
+other setting remains Not Configured in the separate override GPO. Complex
 structured values that cannot be changed safely as one typed field remain read-only.
 
 Saving an override does not change AD. Deployment uses the existing domain, tier,
@@ -39,8 +40,9 @@ artifact hash, sorted entries and override digest. At most 128 deviations and
 
 ## Import and link with one request
 
-In **Security → Baseline**, select the domain, managed GPO (or new GPO), baseline
-component, tier and executor. Choose **Import and link** and create the request.
+In **Security → Windows GPOs**, select the domain, policy source, managed GPO (or
+new GPO), baseline component, tier, exact configured target OUs and executor. Choose
+**Import and link** and create the request.
 The Portal runs the read-only inspection in the background and prepares one
 request covering both import and the exact target links. With four-eyes review
 disabled, submission directly approves a new request when the requester has
@@ -68,7 +70,10 @@ require Tier 0 authorization. Before requesting import and link, linking,
 activation or deactivation, explicitly confirm this domain-wide target. The Portal derives the
 root from the configured domain; the Agent verifies its domain object GUID.
 Tier OU mappings are not required for this scope. Regular computer and user
-components continue to use configured tier OUs. The target confirmation does
+components use the explicitly selected subset of configured tier OUs. The managed
+identity retains that exact target set for later link, activation and deactivation
+actions; removing an OU from the domain configuration invalidates pending actions
+instead of silently expanding or retargeting the GPO. The target confirmation does
 not by itself approve a write: submitting the action follows the tenant approval
 rule and activation still requires management and independent recovery checks.
 Neither Default Domain Policy nor Default Domain Controllers Policy is modified.

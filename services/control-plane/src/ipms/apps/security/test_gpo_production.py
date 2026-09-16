@@ -42,6 +42,7 @@ class ProductionGpoTests(TestCase):
         self.system.agent_version = '0.2.35'
         self.system.save(update_fields=('agent_version',))
         GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.35')
+        self.selection['target_ous'] = list(self.config['tier_ous']['1'])
         self.base = f"/api/v1/security/domain-settings/{self.config['id']}/"
         self.managed = None
 
@@ -53,6 +54,14 @@ class ProductionGpoTests(TestCase):
         job = GpoImportJob.objects.get(pk=response.data['id'])
         self.managed = ManagedGpoPolicy.objects.get(pk=job.assignment['managed_id'])
         return job.assignment
+
+    def legacy_queue(self):
+        selection = self.selection
+        self.selection = {key: value for key, value in selection.items() if key != 'target_ous'}
+        try:
+            return approval_tests.PortalApprovalTests.queue(self)
+        finally:
+            self.selection = selection
 
     def snapshot(self, job, gpo=None):
         return {'schema': 1, 'gpo': copy.deepcopy(gpo), 'name_available': True, 'ous': [
@@ -339,8 +348,26 @@ class ProductionGpoTests(TestCase):
         self.assertFalse(GpoImportJob.objects.exists())
         self.imported()
 
+    def test_combined_links_only_the_selected_configured_ou_and_persists_scope(self):
+        self.agent_036()
+        selected = [self.config['tier_ous']['1'][1]]
+        inspected = self.inspect(IMPORT_LINK, target_ous=selected)
+        self.assertEqual(inspected['target_ous'], selected)
+        self.assertEqual(self.managed.target_ous, selected)
+        self.assertEqual(self.snapshot(inspected)['ous'][0]['dn'], selected[0])
+
+    def test_target_ous_reject_empty_duplicates_and_cross_tier_values(self):
+        self.agent_036()
+        for targets in ([], [self.config['tier_ous']['1'][0]] * 2, self.config['tier_ous']['2']):
+            with self.subTest(targets=targets):
+                response = self.client.post(self.base + 'gpo-preflights/', {**self.selection,
+                    'target_ous': targets, 'idempotency_key': str(uuid.uuid4()), 'operation': IMPORT_LINK,
+                    'managed_id': None, 'adopt_job_id': None}, format='json')
+                self.assertEqual(response.status_code, 400, response.data)
+        self.assertFalse(ManagedGpoPolicy.objects.exists())
+
     def test_combined_adopts_only_exact_legacy_receipt_then_links_same_guid(self):
-        legacy = approval_tests.PortalApprovalTests.queue(self)
+        legacy = self.legacy_queue()
         self.assertEqual(self.approve(legacy).status_code, 200)
         self.assertTrue(self.exchange(legacy, 'claim')['gpo_claim']['authorized'])
         self.result(legacy, status='staged', code='gpo_staged_unlinked', guid=PILOT_GUID, evidence={
@@ -430,7 +457,8 @@ class ProductionGpoTests(TestCase):
 
     def test_read_only_jobs_share_domain_fence_with_legacy_and_production(self):
         job = self.inspect()
-        response = self.client.post(self.import_url, {**self.selection, 'idempotency_key': str(uuid.uuid4())}, format='json')
+        legacy_selection = {key: value for key, value in self.selection.items() if key != 'target_ous'}
+        response = self.client.post(self.import_url, {**legacy_selection, 'idempotency_key': str(uuid.uuid4())}, format='json')
         self.assertEqual(response.status_code, 409)
         self.assertEqual(GpoImportJob.objects.count(), 1)
         self.assertEqual(GpoImportJob.objects.get().assignment['job_id'], job['job_id'])
@@ -601,7 +629,7 @@ class ProductionGpoTests(TestCase):
         old_apps = MigrationExecutor(connection).loader.project_state([
             ('security', '0005_gpoapprovalpolicy_gpodomainauthorization_and_more')]).apps
         old_model = old_apps.get_model('security', 'GpoImportJob')
-        legacy = approval_tests.PortalApprovalTests.queue(self)
+        legacy = self.legacy_queue()
         row = GpoImportJob.objects.get(pk=legacy['job_id'])
         row.status = 'failed'
         row.save(update_fields=('status',))
@@ -624,7 +652,7 @@ class ProductionGpoTests(TestCase):
             validate_snapshot(state, job)
 
     def test_explicit_legacy_receipt_adoption_preserves_guid_and_removes_old_name(self):
-        legacy = approval_tests.PortalApprovalTests.queue(self)
+        legacy = self.legacy_queue()
         self.assertEqual(self.approve(legacy).status_code, 200)
         self.assertTrue(self.exchange(legacy, 'claim')['gpo_claim']['authorized'])
         self.result(legacy, status='staged', code='gpo_staged_unlinked', guid=PILOT_GUID, evidence={
@@ -649,6 +677,7 @@ class ProductionGpoTests(TestCase):
         config = DomainSecuritySettings.objects.get(pk=self.config['id'])
         config.tier_ous['1'] = ['OU=Servers,DC=example,DC=invalid', 'OU=Apps,OU=Servers,DC=example,DC=invalid']
         config.save(update_fields=('tier_ous',))
+        self.selection['target_ous'] = list(config.tier_ous['1'])
         imported, gpo = self.imported()
         inspection = self.inspect(LINK)
         state = self.snapshot(inspection, gpo)
@@ -667,6 +696,7 @@ class ProductionGpoTests(TestCase):
         config = DomainSecuritySettings.objects.get(pk=self.config['id'])
         config.tier_ous['1'] = [dn.lower() for dn in config.tier_ous['1']]
         config.save(update_fields=('tier_ous',))
+        self.selection['target_ous'] = list(config.tier_ous['1'])
         imported, gpo = self.imported()
         inspected = self.inspect(LINK)
         state = self.snapshot(inspected, gpo)
@@ -715,7 +745,7 @@ class ProductionGpoTests(TestCase):
         content = {**components, (self.selection['baseline_id'], domain_backup): domain_component}
         patch('ipms.apps.security.gpo_jobs._content', return_value=(content, profiles)).start()
         patch('ipms.apps.security.gpo_production._content', return_value=(content, profiles)).start()
-        self.selection.update(backup_id=domain_backup, tier='0')
+        self.selection.update(backup_id=domain_backup, tier='0', target_ous=['DC=example,DC=invalid'])
 
     def root_inspection(self, operation):
         job = self.inspect(operation, domain_root_confirmed=True)

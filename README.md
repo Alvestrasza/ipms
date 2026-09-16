@@ -9,13 +9,14 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-Candidate `0.2.62` adds an explicit per-setting confirmation step to typed sparse
-baseline overrides. A selected value is accepted with **Use override**, while
-**Remove override** deliberately restores the baseline value. Administrators select a
-compiled Microsoft baseline component and change only settings already present in
-that component. Each definition produces a separate managed GPO above baseline
-GPOs; the source GPO remains unchanged. Windows Agent `0.2.43` validates the same
-immutable setting catalog and renders only selected policy records.
+Candidate `0.2.63` centralizes managed deployment under **Security → Windows GPOs**
+and binds every managed GPO to an exact, administrator-selected subset of the OUs
+configured for its authorized tier. Baseline and Override remain focused editors;
+the shared workspace imports, links and activates both policy sources. Typed sparse
+overrides contain only accepted deviations, while every other setting remains Not
+Configured in the override GPO. Windows Agent `0.2.43` remains unchanged and
+continues to validate the immutable setting catalog and render only selected policy
+records.
 
 Application `0.2.60` directly approves newly submitted managed GPO actions when
 four-eyes review is disabled and the requester has domain/tier approval rights.

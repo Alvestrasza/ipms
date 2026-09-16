@@ -251,7 +251,8 @@ def managed_projection(policy):
         active_name = policy.active_job.result_evidence['state']['gpo']['name']
     return {'id': str(policy.pk), 'revision': policy.revision, 'display_name': policy.display_name,
             'active_display_name': active_name,
-            'gpo_guid': policy.gpo_guid or None, 'tier': str(policy.tier), 'baseline_id': policy.baseline_id,
+            'gpo_guid': policy.gpo_guid or None, 'tier': str(policy.tier), 'target_ous': policy.target_ous,
+            'baseline_id': policy.baseline_id,
             'backup_id': policy.backup_id, 'profile': policy.profile, 'target': policy.target, 'version': policy.version,
             'state': policy.state, 'origin_job_id': str(policy.origin_job_id) if policy.origin_job_id else None,
             'staged_job_id': str(policy.staged_job_id) if policy.staged_job_id else None,
@@ -266,10 +267,12 @@ def policy_for_job(job, *, lock=False):
 
 
 def _selection(tenant, user, config, data):
-    fields = set('revision system_id baseline_id backup_id tier target version idempotency_key operation managed_id adopt_job_id'.split())
+    fields = set('revision system_id baseline_id backup_id tier target target_ous version idempotency_key operation managed_id adopt_job_id'.split())
     if (not isinstance(data, dict) or not fields <= set(data) or set(data) - fields - {'domain_root_confirmed', 'override_id', 'override_revision', 'override_sha256'} or type(data['revision']) is not int
-            or any(not isinstance(data[key], str) for key in fields - {'revision', 'managed_id', 'adopt_job_id'})
+            or any(not isinstance(data[key], str) for key in fields - {'revision', 'managed_id', 'adopt_job_id', 'target_ous'})
             or type(data.get('domain_root_confirmed', False)) is not bool
+            or not isinstance(data['target_ous'], list) or not data['target_ous'] or len(data['target_ous']) > 32
+            or any(not isinstance(value, str) for value in data['target_ous'])
             or data['tier'] not in ('0', '1', '2') or data['operation'] not in WRITES):
         raise ParseError('Supply exactly the documented managed GPO selection.')
     if data.get('override_id'):
@@ -306,6 +309,15 @@ def _selection(tenant, user, config, data):
                   if data['backup_id'] in profiles.get((data['baseline_id'], profile), ())]
     if not candidates or (candidates == ['domain-controller'] or component['scope'] == 'domain') and data['tier'] != '0':
         raise ParseError('DC and domain components require Tier 0.')
+    configured_targets = list(config.tier_ous[data['tier']])
+    if component['scope'] == 'domain':
+        if data['target_ous'] != [domain_root(config.domain_name)]:
+            raise ParseError('Select the configured domain root for this domain-wide component.')
+        selected_targets = list(data['target_ous'])
+    else:
+        selected_targets = [value for value in configured_targets if value in data['target_ous']]
+        if selected_targets != data['target_ous'] or len(set(data['target_ous'])) != len(data['target_ous']):
+            raise ParseError('Select unique target OUs from the configured tier.')
     profile = candidates[0]
     override = None
     if data.get('override_id'):
@@ -332,7 +344,7 @@ def _selection(tenant, user, config, data):
         artifact_bytes(component)
     except ValidationError as exc:
         raise PublicApiError('security_gpo_artifact_unavailable', status_code=409) from exc
-    return component, profile, name, system, enrollment, report, override
+    return component, profile, name, system, enrollment, report, override, selected_targets
 
 
 def _idle(tenant, domain_guid):
@@ -384,7 +396,7 @@ def _origin(tenant, config, data, report, component):
 
 
 def create_preflight(tenant, user, config, data):
-    component, profile, name, system, enrollment, report, override = _selection(tenant, user, config, data)
+    component, profile, name, system, enrollment, report, override, selected_targets = _selection(tenant, user, config, data)
     request_digest = digest({'domain_id': str(config.pk), **data})
     retry = _retry(tenant, user, data['idempotency_key'], request_digest)
     if retry:
@@ -397,7 +409,8 @@ def create_preflight(tenant, user, config, data):
     if data['managed_id']:
         policy = get_object_or_404(ManagedGpoPolicy.objects.select_for_update(), pk=data['managed_id'], tenant=tenant, domain=config)
         if (policy.domain_guid != report.domain_guid or policy.logical_key != logical
-                or policy.override_id != (override.pk if override else None)):
+                or policy.override_id != (override.pk if override else None)
+                or policy.target_ous != selected_targets):
             raise PublicApiError('security_gpo_unmanaged_target', status_code=409)
     else:
         if data['operation'] not in (IMPORT, IMPORT_LINK):
@@ -412,7 +425,8 @@ def create_preflight(tenant, user, config, data):
         policy = ManagedGpoPolicy.objects.create(tenant=tenant, domain=config, domain_guid=report.domain_guid,
             logical_key=logical, override=override, tier=int(data['tier']), baseline_id=data['baseline_id'], profile=profile,
             purpose=semantic_purpose(data['baseline_id'], component), target=data['target'], display_name=name, name_key=name.casefold(),
-            version=data['version'], backup_id=data['backup_id'], gpo_guid=origin.gpo_guid if origin else '', origin_job=origin)
+            version=data['version'], backup_id=data['backup_id'], target_ous=selected_targets,
+            gpo_guid=origin.gpo_guid if origin else '', origin_job=origin)
     if override and data['operation'] == DEACTIVATE:
         name = policy.display_name
     if policy.state == 'reconciliation_required':
@@ -430,8 +444,7 @@ def create_preflight(tenant, user, config, data):
         origin = policy.origin_job
         owner = 'IPMS disabled, unlinked pilot; job=' + str(origin.pk) + '; digest=' + origin.input_digest
     expires = (timezone.now() + timedelta(minutes=15)).replace(microsecond=0)
-    targets = [] if data['operation'] == IMPORT else ([domain_root(config.domain_name)]
-              if component['scope'] == 'domain' else list(config.tier_ous[data['tier']]))
+    targets = [] if data['operation'] == IMPORT else list(policy.target_ous)
     assignment = {'schema': 4 if override else 3, 'approval_mode': 'inspection', 'job_id': data['idempotency_key'], 'operation': INSPECT,
         'domain_dns_name': config.domain_name, 'domain_guid': report.domain_guid, 'forest_dns_name': report.forest_dns_name,
         'executor_dc_fqdn': report.dc_fqdn, 'scope_id': str(config.pk), 'scope_revision': config.revision,
@@ -661,8 +674,12 @@ def scope_current(job, enrollment, tenant, *, lock=True):
                 or report.domain_guid != a['domain_guid'] or report.forest_dns_name != a['forest_dns_name']
                 or report.dc_fqdn != a['executor_dc_fqdn']):
             return False
-        expected_targets = [] if a['intended_operation'] == IMPORT else ([domain_root(config.domain_name)]
-                           if _domain_component(a) else config.tier_ous[str(a['target_tier'])])
+        configured_targets = ([domain_root(config.domain_name)] if _domain_component(a)
+                              else config.tier_ous[str(a['target_tier'])])
+        if (not isinstance(policy.target_ous, list) or not policy.target_ous
+                or any(target not in configured_targets for target in policy.target_ous)):
+            return False
+        expected_targets = [] if a['intended_operation'] == IMPORT else policy.target_ous
         if a['target_ous'] != expected_targets:
             return False
         rule, auth = policy_for(tenant), authorization_for(config)

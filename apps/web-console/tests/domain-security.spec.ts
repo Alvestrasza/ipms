@@ -87,10 +87,10 @@ async function selectPolicyDomain(
   locale = "en",
   baseline = "microsoft-windows-server-2025",
 ) {
-  await page.goto(`/${locale}/security/baseline?baseline=${baseline}`);
+  await page.goto(`/${locale}/security/windows-gpos?baseline=${baseline}`);
   await page
     .getByRole("combobox", {
-      name: locale === "de" ? "Konfigurierte Domäne" : "Configured domain",
+      name: locale === "de" ? "Domäne" : "Domain",
       exact: true,
     })
     .selectOption(settings.id);
@@ -322,9 +322,9 @@ test("switching baselines keeps the second domain while updating the selected pa
     throw new Error(
       "The fixture requires the Microsoft Windows Server 2022 catalog.",
     );
-  await page.goto(`/en/security/baseline?baseline=${initialBaseline}`);
+  await page.goto(`/en/security/windows-gpos?baseline=${initialBaseline}`);
   const domains = page.getByRole("combobox", {
-    name: "Configured domain",
+    name: "Domain",
     exact: true,
   });
   const firstId = await domains.locator("option").first().getAttribute("value");
@@ -338,22 +338,11 @@ test("switching baselines keeps the second domain while updating the selected pa
     exact: true,
   });
   await expect(pilotPackage).toHaveValue(initialBaseline);
-  const details = page.locator(
-    "details[aria-labelledby='baseline-details-heading']",
-  );
-  await details.locator("summary").click();
-  await expect(details).not.toHaveAttribute("open");
   await expect(
     page.getByLabel("GPO naming template", { exact: true }),
   ).toHaveCount(0);
-  await page
-    .getByRole("link", { name: nextBaseline.name, exact: true })
-    .click();
-  await expect(page).toHaveURL(
-    (url) => url.searchParams.get("baseline") === nextBaseline.id,
-  );
+  await pilotPackage.selectOption(nextBaseline.id);
   await expect(pilotPackage).toHaveValue(nextBaseline.id);
-  await expect(details).toHaveAttribute("open", "");
   await expect(domains).toHaveValue(secondId);
   await expect(domains).toBeEnabled();
   await expect(pilotPackage).toBeEnabled();

@@ -72,8 +72,10 @@ with transaction.atomic():
             "forest_dns_name": domain_name, "dc_fqdn": system.fqdn, "role": "writable-domain-controller",
             "gpmc_available": True, "result_code": "ready_for_approval", "observed_at": timezone.now()})
         suffix_dn = ",".join("DC=" + part for part in domain_name.split("."))
+        tier_ous = {str(tier): [f"OU=Tier{tier},{suffix_dn}"] for tier in range(3)}
+        tier_ous["1"].append(f"OU=Application,OU=Tier1,{suffix_dn}")
         domain = DomainSecuritySettings.objects.create(tenant=tenant, domain_name=domain_name,
-            tier_ous={str(tier): [f"OU=Tier{tier},{suffix_dn}"] for tier in range(3)},
+            tier_ous=tier_ous,
             gpo_name_template="{tier}-{scope}-{target}-{purpose}_V{version}", baseline_order=[item.id for item in BASELINES])
         actor = get_user_model().objects.get(username="e2e-admin")
         GpoDomainAuthorization.objects.create(domain=domain, grants=[{"user_id": str(actor.pk), "tiers": ["0", "1", "2"]}])

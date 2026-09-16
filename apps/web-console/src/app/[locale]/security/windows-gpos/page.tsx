@@ -2,69 +2,75 @@
  * File Name: page.tsx
  * Version: v0.1.0 | Created: 2026-09-16 | Modified: 2026-09-16
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
- * Purpose: Authorize tenant original-setting overrides and their managed deployment.
+ * Purpose: Render the single authorized Windows GPO deployment workspace.
  */
-
-import type { Route } from "next";
 import { cookies } from "next/headers";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ConsoleShell } from "@/components/console-shell";
-import { SecurityOverrides } from "@/components/security-overrides";
-import { getSecurityOverrideCopy } from "@/i18n/security-override-copy";
+import { WindowsGpoWorkspace } from "@/components/windows-gpo-workspace";
 import { resolveLocale } from "@/i18n/server";
+import { getWindowsGpoCopy } from "@/i18n/windows-gpo-copy";
 import { hasPermission } from "@/lib/auth-types";
 import { getServerSession } from "@/lib/server-auth";
 import { getDomainSecuritySettings } from "@/lib/server-domain-security";
 import { requireTenantScope } from "@/lib/server-portal-scope";
 import { getSecurityOverrides } from "@/lib/server-security-overrides";
 import { selectedTenant } from "@/lib/tenant-selection";
+
 export async function generateMetadata() {
-  return { title: getSecurityOverrideCopy(await resolveLocale()).title };
+  return { title: getWindowsGpoCopy(await resolveLocale()).title };
 }
-export default async function OverridePage() {
+
+export default async function WindowsGpoPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    source?: string | string[];
+    baseline?: string | string[];
+  }>;
+}) {
   const locale = await resolveLocale();
   const session = await getServerSession();
   requireTenantScope(session, locale);
   const tenant = selectedTenant(session, await cookies());
-  if (!tenant || !hasPermission(tenant, "security.baselines.manage"))
+  if (!tenant || !hasPermission(tenant, "security.gpo_imports.run"))
     redirect(`/${locale}/access-unavailable`);
-  const [overrides, domains] = await Promise.all([
-    getSecurityOverrides(tenant.id),
+  const canManageOverrides = hasPermission(tenant, "security.baselines.manage");
+  const [domains, overrides] = await Promise.all([
     getDomainSecuritySettings(tenant.id),
+    canManageOverrides
+      ? getSecurityOverrides(tenant.id)
+      : Promise.resolve({ data: [], status: 200 }),
   ]);
-  if (overrides.status === 401 || !domains.sessionValid)
+  if (!domains.sessionValid || overrides.status === 401)
     redirect(`/${locale}/login`);
-  if (overrides.status === 403) redirect(`/${locale}/access-unavailable`);
-  const copy = getSecurityOverrideCopy(locale);
+  if (domains.forbidden || overrides.status === 403)
+    redirect(`/${locale}/access-unavailable`);
+  const query = await searchParams;
+  const copy = getWindowsGpoCopy(locale);
   return (
     <ConsoleShell
       session={session}
       tenant={tenant}
-      activeSection="security-override"
+      activeSection="security-windows-gpos"
     >
       <section className="page-heading">
         <div>
-          <p className="eyebrow">Security</p>
+          <p className="eyebrow">Security / {copy.navigation}</p>
           <h1>{copy.title}</h1>
           <p>{copy.description}</p>
         </div>
-        {hasPermission(tenant, "security.gpo_imports.run") ? (
-          <Link
-            className="outline-button"
-            href={`/${locale}/security/windows-gpos?source=override` as Route}
-          >
-            {copy.openDeployment}
-          </Link>
-        ) : null}
       </section>
-      <SecurityOverrides
-        key={tenant.id}
-        initial={overrides.data}
-        domains={domains.data}
+      <WindowsGpoWorkspace
+        catalog={domains.data}
+        overrides={overrides.data}
         tenantId={tenant.id}
         csrfToken={session.csrf_token}
         locale={locale}
+        preferredBaselineId={
+          typeof query.baseline === "string" ? query.baseline : undefined
+        }
+        initialSource={query.source === "override" ? "override" : "baseline"}
       />
     </ConsoleShell>
   );

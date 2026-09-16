@@ -78,6 +78,7 @@ export async function ConsoleShell({
           tenant,
           "security.domains.manage",
         )}
+        canRunGpoImports={hasPermission(tenant, "security.gpo_imports.run")}
         windowsRoles={windowsRoles}
         windowsClientFamilies={windowsClientFamilies}
       />

@@ -42,6 +42,13 @@ const en = {
 
   tier: "Tier",
 
+  exactOus: "Exact target OUs",
+
+  exactOusHint:
+    "Select one or more OUs configured for this tier. The managed GPO remains bound to this exact target set for later activation and lifecycle actions.",
+
+  noConfiguredOus: "No OUs are configured for this tier.",
+
   adopt: "Use existing IPMS import",
 
   noAdopt: "Create a new managed GPO",
@@ -196,6 +203,13 @@ const de: typeof en = {
   version: "Version",
 
   tier: "Tier",
+
+  exactOus: "Genaue Ziel-OUs",
+
+  exactOusHint:
+    "Wähle eine oder mehrere für dieses Tier konfigurierte OUs. Die verwaltete GPO bleibt für die spätere Aktivierung und weitere Aktionen genau an diese Zielmenge gebunden.",
+
+  noConfiguredOus: "Für dieses Tier sind keine OUs konfiguriert.",
 
   adopt: "Vorhandenen IPMS-Import übernehmen",
 

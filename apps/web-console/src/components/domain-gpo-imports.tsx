@@ -110,6 +110,9 @@ function ProductionWorkflow({
   );
   const [backupId, setBackupId] = useState(override?.backup_id ?? "");
   const [tier, setTier] = useState<SecurityTier>("0");
+  const [selectedOus, setSelectedOus] = useState<string[]>(
+    settings.tier_ous["0"],
+  );
   const [target, setTarget] = useState("ALL");
   const [version, setVersion] = useState("1.0.0");
   const [adoptJobId, setAdoptJobId] = useState("");
@@ -264,6 +267,7 @@ function ProductionWorkflow({
       setBaselineId(selected.baseline_id);
       setBackupId(selected.backup_id);
       setTier(selected.tier);
+      setSelectedOus(selected.target_ous);
       setTarget(selected.target);
       setVersion(selected.version);
       setOperation(
@@ -293,6 +297,9 @@ function ProductionWorkflow({
     .split(".")
     .map((part) => `DC=${part}`)
     .join(",");
+  const availableOus = settings.tier_ous[tier];
+  const actionTargetOus =
+    component?.scope === "domain" ? [domainRootDn] : selectedOus;
   const actionSelection = {
     ...(override
       ? {
@@ -306,6 +313,7 @@ function ProductionWorkflow({
     baseline_id: baseline?.id ?? "",
     backup_id: component?.id ?? "",
     tier,
+    target_ous: actionTargetOus,
     target,
     version,
     operation,
@@ -458,6 +466,7 @@ function ProductionWorkflow({
     executor &&
     baseline &&
     component?.available &&
+    actionTargetOus.length > 0 &&
     (!domainRootAction || domainRootConfirmed) &&
     (operation === "import_managed_gpo" ||
       operation === "import_and_link_managed_gpo" ||
@@ -678,7 +687,9 @@ function ProductionWorkflow({
               disabled={lockedSelection || Boolean(policy)}
               onChange={(e) => {
                 resetInspection();
-                setTier(e.target.value as SecurityTier);
+                const nextTier = e.target.value as SecurityTier;
+                setTier(nextTier);
+                setSelectedOus(settings.tier_ous[nextTier]);
                 setAdoptJobId("");
               }}
             >
@@ -689,6 +700,38 @@ function ProductionWorkflow({
               ))}
             </select>
           </label>
+          {component?.scope !== "domain" ? (
+            <fieldset className={styles.ouSelection}>
+              <legend>{c.exactOus}</legend>
+              {availableOus.length ? (
+                availableOus.map((ou) => (
+                  <label key={ou}>
+                    <input
+                      type="checkbox"
+                      checked={selectedOus.includes(ou)}
+                      disabled={lockedSelection || Boolean(policy)}
+                      onChange={(event) => {
+                        resetInspection();
+                        setSelectedOus((current) =>
+                          event.target.checked
+                            ? availableOus.filter(
+                                (candidate) =>
+                                  current.includes(candidate) ||
+                                  candidate === ou,
+                              )
+                            : current.filter((candidate) => candidate !== ou),
+                        );
+                      }}
+                    />
+                    <span>{ou}</span>
+                  </label>
+                ))
+              ) : (
+                <p>{c.noConfiguredOus}</p>
+              )}
+              <small>{c.exactOusHint}</small>
+            </fieldset>
+          ) : null}
           <label>
             {c.target}
             <input

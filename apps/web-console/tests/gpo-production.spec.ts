@@ -8,7 +8,13 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { expect, type Page, type Route, test } from "@playwright/test";
+import {
+  expect,
+  type Page,
+  type Response,
+  type Route,
+  test,
+} from "@playwright/test";
 import type {
   DomainSecurityCatalog,
   GpoImportJob,
@@ -106,12 +112,19 @@ type Context = Awaited<ReturnType<typeof setup>>;
 const panel = (page: Page) =>
   page.getByRole("region", { name: "GPO distribution", exact: true });
 
+function isApiResponse(response: Response, path: string) {
+  return (
+    new URL(response.url()).pathname.replace(/\/$/, "") ===
+      path.replace(/\/$/, "") && ![307, 308].includes(response.status())
+  );
+}
+
 async function openWorkflow(page: Page, context: Context) {
   await page.goto(
-    "/en/security/baseline?baseline=microsoft-windows-server-2025",
+    "/en/security/windows-gpos?baseline=microsoft-windows-server-2025",
   );
   await page
-    .getByRole("combobox", { name: "Configured domain", exact: true })
+    .getByRole("combobox", { name: "Domain", exact: true })
     .selectOption(context.fixture.domain_id);
   await expect(
     panel(page).getByRole("button", {
@@ -141,6 +154,7 @@ async function seedPrepared(page: Page, context: Context) {
     baseline_id: context.baseline.id,
     backup_id: context.component.id,
     tier: "0",
+    target_ous: context.settings.tier_ous["0"],
     target: "ALL",
     version: "1.0.0",
     idempotency_key: randomUUID(),
@@ -190,6 +204,7 @@ async function completeFixtureAction(
         baseline_id: context.baseline.id,
         backup_id: context.component.id,
         tier: "0",
+        target_ous: context.settings.tier_ous["0"],
         target: "ALL",
         version,
         idempotency_key: randomUUID(),
@@ -218,7 +233,7 @@ async function completeFixtureAction(
 async function beginRequest(page: Page, context: Context) {
   const pending = page.waitForResponse(
     (response) =>
-      response.url().endsWith(`${context.endpoint}/gpo-preflights/`) &&
+      isApiResponse(response, `${context.endpoint}/gpo-preflights/`) &&
       response.request().method() === "POST",
   );
   await panel(page)
@@ -241,7 +256,7 @@ async function finishInspection(
 ) {
   const pending = page.waitForResponse(
     (response) =>
-      response.url().endsWith(`${context.endpoint}/managed-gpos/`) &&
+      isApiResponse(response, `${context.endpoint}/managed-gpos/`) &&
       response.request().method() === "POST",
   );
   const observed = nativeFixture("inspect", inspection.id);
@@ -365,6 +380,26 @@ test("one submit action approves exactly one combined import/link request withou
   expect(csv).toContain(created.write.id);
 });
 
+test("central Windows GPO deployment submits only the selected configured OUs", async ({
+  page,
+}) => {
+  const context = await setup(page);
+  await openWorkflow(page, context);
+  await panel(page)
+    .getByRole("combobox", { name: "Tier", exact: true })
+    .selectOption("1");
+  const targets = context.settings.tier_ous["1"];
+  expect(targets).toHaveLength(2);
+  await expect(
+    panel(page).getByRole("checkbox", { name: targets[0], exact: true }),
+  ).toBeChecked();
+  await panel(page)
+    .getByRole("checkbox", { name: targets[0], exact: true })
+    .uncheck();
+  const created = await createAutomatically(page, context);
+  expect(created.selection.target_ous).toEqual([targets[1]]);
+});
+
 test("domain-root confirmation precedes combined creation and activation is a separate request with both safety checks", async ({
   page,
 }) => {
@@ -386,12 +421,12 @@ test("domain-root confirmation precedes combined creation and activation is a se
     .check();
   const combined = await createAutomatically(page, context);
   expect(combined.selection.domain_root_confirmed).toBe(true);
-  expect(combined.selection).not.toHaveProperty("target_ous");
-  const linked = await approveAndCompleteFixture(page, context, combined.write);
   const rootDn = context.fixture.domain_name
     .split(".")
     .map((part) => `DC=${part}`)
     .join(",");
+  expect(combined.selection.target_ous).toEqual([rootDn]);
+  const linked = await approveAndCompleteFixture(page, context, combined.write);
   expect(linked.state.gpo.links).toEqual([
     expect.objectContaining({
       kind: "domain",
@@ -446,10 +481,10 @@ test("Agent 0.2.35 remains available for existing operations but cannot import a
   const prepared = await seedPrepared(page, context);
   nativeFixture("agent-035", context.fixture.domain_id);
   await page.goto(
-    "/en/security/baseline?baseline=microsoft-windows-server-2025",
+    "/en/security/windows-gpos?baseline=microsoft-windows-server-2025",
   );
   await page
-    .getByRole("combobox", { name: "Configured domain", exact: true })
+    .getByRole("combobox", { name: "Domain", exact: true })
     .selectOption(context.fixture.domain_id);
   const create = panel(page).getByRole("button", {
     name: "Submit action",
@@ -587,7 +622,7 @@ test("a lost inspection response resumes the same ID and creates only one combin
   const created = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
-      response.url().endsWith(`${context.endpoint}/managed-gpos/`),
+      isApiResponse(response, `${context.endpoint}/managed-gpos/`),
   );
   await panel(page)
     .getByRole("button", { name: "Refresh", exact: true })
@@ -912,10 +947,10 @@ test("API rejection codes explain causes and next steps without exposing backend
     );
   }
   await page.goto(
-    "/de/security/baseline?baseline=microsoft-windows-server-2025",
+    "/de/security/windows-gpos?baseline=microsoft-windows-server-2025",
   );
   await page
-    .getByRole("combobox", { name: "Konfigurierte Domäne", exact: true })
+    .getByRole("combobox", { name: "Domäne", exact: true })
     .selectOption(context.fixture.domain_id);
   const german = page.getByRole("region", {
     name: "GPO-Verteilung",
@@ -1041,7 +1076,7 @@ async function requestObservation(
 ) {
   const response = page.waitForResponse(
     (r) =>
-      r.url().endsWith(context.reconciliationUrl) &&
+      isApiResponse(r, context.reconciliationUrl) &&
       r.request().method() === "POST",
   );
   await context.region
@@ -1077,7 +1112,7 @@ test("directory reconciliation waits for observation, explicit acceptance and Ag
   );
   expect(mutations).toHaveLength(1);
   const acceptedResponse = page.waitForResponse((r) =>
-    r.url().endsWith(`${context.reconciliationUrl}${request.id}/accept/`),
+    isApiResponse(r, `${context.reconciliationUrl}${request.id}/accept/`),
   );
   await accept.click();
   const accepted = await acceptedResponse;
@@ -1361,7 +1396,7 @@ test("four-eyes policy keeps submission pending for another administrator", asyn
   const inspection = await beginRequest(page, context);
   const pending = page.waitForResponse(
     (response) =>
-      response.url().endsWith(`${context.endpoint}/managed-gpos/`) &&
+      isApiResponse(response, `${context.endpoint}/managed-gpos/`) &&
       response.request().method() === "POST",
   );
   nativeFixture("inspect", inspection.job.id);
@@ -1443,7 +1478,7 @@ test("override editor persists only deviations, restores baseline and deploys a 
   const name = `Browser override ${randomUUID().slice(0, 8)}`;
   await page.goto("/en/security/override");
   await expect(
-    page.getByRole("link", { name: "Override", exact: true }),
+    page.getByRole("link", { name: "Overrides", exact: true }),
   ).toHaveAttribute("aria-current", "page");
   await page
     .getByRole("combobox", { name: "Override", exact: true })
@@ -1478,7 +1513,7 @@ test("override editor persists only deviations, restores baseline and deploys a 
   await expect(row).toContainText(JSON.stringify(changed));
   const saved = page.waitForResponse(
     (r) =>
-      r.url().endsWith("/security/overrides/") &&
+      isApiResponse(r, "/api/v1/security/overrides/") &&
       r.request().method() === "POST",
   );
   await editor
@@ -1501,13 +1536,14 @@ test("override editor persists only deviations, restores baseline and deploys a 
   await expect(
     editor.getByRole("combobox", { name: "Baseline", exact: true }),
   ).toBeDisabled();
-  const deployment = page.getByRole("region", {
-    name: "Deploy saved override",
-    exact: true,
-  });
-  await deployment
+  await page.goto("/en/security/windows-gpos?source=override");
+  await page
     .getByRole("combobox", { name: "Domain", exact: true })
     .selectOption(context.fixture.domain_id);
+  await page
+    .getByRole("combobox", { name: "Saved override", exact: true })
+    .selectOption(override.id);
+  const deployment = panel(page);
   await expect(
     deployment
       .getByRole("combobox", { name: "Managed GPO", exact: true })
@@ -1515,7 +1551,7 @@ test("override editor persists only deviations, restores baseline and deploys a 
   ).toHaveCount(0);
   const inspectionResponse = page.waitForResponse(
     (r) =>
-      r.url().endsWith(`${context.endpoint}/gpo-preflights/`) &&
+      isApiResponse(r, `${context.endpoint}/gpo-preflights/`) &&
       r.request().method() === "POST",
   );
   await deployment
@@ -1532,7 +1568,7 @@ test("override editor persists only deviations, restores baseline and deploys a 
   expect(job.override_id).toBe(override.id);
   const writeResponse = page.waitForResponse(
     (r) =>
-      r.url().endsWith(`${context.endpoint}/managed-gpos/`) &&
+      isApiResponse(r, `${context.endpoint}/managed-gpos/`) &&
       r.request().method() === "POST",
   );
   expect(nativeFixture("inspect", job.id).status).toBe("inspected");
@@ -1543,7 +1579,7 @@ test("override editor persists only deviations, restores baseline and deploys a 
   expect(writeJob.status).toBe("queued");
   expect(writeJob.display_name).toContain("OVR-");
   expect(nativeFixture("complete", writeJob.id).status).toBe("linked");
-  // Reopening then removing the override restores the baseline; it does not submit Not Configured.
+  // Reopening then removing the value removes it from the sparse override GPO.
   await page.goto(`/en/logs/baselines?job=${writeJob.id}`);
   const review = page.getByRole("region", {
     name: "Baseline overrides",
@@ -1565,7 +1601,7 @@ test("override editor persists only deviations, restores baseline and deploys a 
     .click();
   const patched = page.waitForResponse(
     (r) =>
-      r.url().endsWith(`/overrides/${override.id}/`) &&
+      isApiResponse(r, `/api/v1/security/overrides/${override.id}/`) &&
       r.request().method() === "PATCH",
   );
   await editor
@@ -1658,7 +1694,7 @@ test("German Sample submission selection remains accepted before the override is
 
   const saved = page.waitForResponse(
     (response) =>
-      response.url().endsWith("/security/overrides/") &&
+      isApiResponse(response, "/api/v1/security/overrides/") &&
       response.request().method() === "POST",
   );
   await editor

@@ -130,6 +130,7 @@ class ManagedGpoPolicy(models.Model):
     override = models.ForeignKey(GpoOverride, on_delete=models.PROTECT, null=True, related_name='policies')
     logical_key = models.CharField(max_length=64)
     tier = models.PositiveSmallIntegerField()
+    target_ous = models.JSONField(default=list)
     baseline_id = models.CharField(max_length=96)
     profile = models.CharField(max_length=32)
     purpose = models.CharField(max_length=80)

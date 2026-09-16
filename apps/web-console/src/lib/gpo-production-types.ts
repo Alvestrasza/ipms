@@ -55,6 +55,7 @@ export type ManagedGpo = {
   active_display_name?: string | null;
   gpo_guid: string | null;
   tier: "0" | "1" | "2";
+  target_ous: string[];
   baseline_id: string;
   backup_id: string;
   profile: string;
@@ -180,6 +181,10 @@ export function isManagedGpo(v: unknown): v is ManagedGpo {
       text(v.active_display_name, 240)) &&
     (v.gpo_guid === null || v.gpo_guid === "" || uuid(v.gpo_guid)) &&
     ["0", "1", "2"].includes(String(v.tier)) &&
+    Array.isArray(v.target_ous) &&
+    v.target_ous.length > 0 &&
+    v.target_ous.length <= 32 &&
+    v.target_ous.every((value) => text(value)) &&
     ["baseline_id", "backup_id", "profile", "target", "version"].every((k) =>
       text(v[k], 128),
     ) &&

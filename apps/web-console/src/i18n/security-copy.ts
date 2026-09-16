@@ -10,6 +10,7 @@ import type { Locale } from "./config";
 const en = {
   navigation: "Security",
   baselineNavigation: "Baseline",
+  openGpoDeployment: "Open Windows GPO deployment",
   title: "Microsoft security baselines",
   description:
     "Windows baseline application confirmed by the Agent, with assessment results for each catalog release.",
@@ -161,6 +162,7 @@ export type SecurityCopy = typeof en;
 const de: SecurityCopy = {
   navigation: "Security",
   baselineNavigation: "Baseline",
+  openGpoDeployment: "Windows-GPO-Verteilung öffnen",
   title: "Microsoft-Sicherheitsbaselines",
   description:
     "Vom Agent bestätigte Windows-Baseline-Anwendung und Prüfergebnisse zu den einzelnen Katalogversionen.",

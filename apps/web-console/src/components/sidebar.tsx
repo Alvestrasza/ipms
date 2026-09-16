@@ -30,8 +30,8 @@ import { getDictionary } from "@/i18n/dictionaries";
 import { getDomainSecurityCopy } from "@/i18n/domain-security-copy";
 import { getJobLogsCopy } from "@/i18n/job-logs-copy";
 import { getSecurityCopy } from "@/i18n/security-copy";
-import { getSecurityOverrideCopy } from "@/i18n/security-override-copy";
 import { resolveLocale } from "@/i18n/server";
+import { getWindowsGpoCopy } from "@/i18n/windows-gpo-copy";
 import { getWsusCopy } from "@/i18n/wsus-copy";
 import type {
   WindowsClientFamilySummary,
@@ -61,6 +61,8 @@ export type ActiveSection =
   | "updates-wsus"
   | "security-baseline"
   | "security-override"
+  | "security-windows-gpos"
+  | "security-custom-gpo"
   | "admin-users"
   | "admin-service-accounts"
   | "admin-wsus"
@@ -78,6 +80,7 @@ export async function Sidebar({
   canManageServiceAccounts,
   canManageSecurityBaselines,
   canManageSecurityDomains,
+  canRunGpoImports,
   canViewLogs,
   windowsRoles,
   windowsClientFamilies,
@@ -91,6 +94,7 @@ export async function Sidebar({
   canManageServiceAccounts: boolean;
   canManageSecurityBaselines: boolean;
   canManageSecurityDomains: boolean;
+  canRunGpoImports: boolean;
   canViewLogs: boolean;
   windowsRoles: WindowsServerRoleSummary[];
   windowsClientFamilies: WindowsClientFamilySummary[];
@@ -101,8 +105,10 @@ export async function Sidebar({
   const logsCopy = getJobLogsCopy(locale);
   const securityExpanded =
     activeSection === "security-baseline" ||
-    activeSection === "security-override";
-  const overrideCopy = getSecurityOverrideCopy(locale);
+    activeSection === "security-override" ||
+    activeSection === "security-windows-gpos" ||
+    activeSection === "security-custom-gpo";
+  const windowsGpoCopy = getWindowsGpoCopy(locale);
   const logsExpanded = activeSection.startsWith("logs-");
   const physicalExpanded = [
     "physical",
@@ -193,7 +199,9 @@ export async function Sidebar({
     {
       label: securityCopy.navigation,
       icon: Shield,
-      href: `/${locale}/security/baseline`,
+      href: canRunGpoImports
+        ? `/${locale}/security/windows-gpos`
+        : `/${locale}/security/baseline`,
       section: "security-baseline" as const,
       enabled: true as const,
     },
@@ -248,34 +256,70 @@ export async function Sidebar({
                 <ul className="nav-tree">
                   <li>
                     <Link
-                      className={`nav-subitem ${activeSection === "security-baseline" ? "nav-subitem--active" : ""}`}
-                      href={`/${locale}/security/baseline` as Route}
+                      className={`nav-subitem ${activeSection === "security-windows-gpos" ? "nav-subitem--active" : ""}`}
+                      href={
+                        (canRunGpoImports
+                          ? `/${locale}/security/windows-gpos`
+                          : `/${locale}/security/baseline`) as Route
+                      }
                       aria-current={
-                        activeSection === "security-baseline"
+                        activeSection === "security-windows-gpos"
                           ? "page"
                           : undefined
                       }
                     >
-                      <ShieldCheck aria-hidden="true" size={15} />
-                      <span>{securityCopy.baselineNavigation}</span>
+                      <ListTree aria-hidden="true" size={15} />
+                      <span>{windowsGpoCopy.navigation}</span>
                     </Link>
+                    <ul className="nav-tree nav-tree--nested">
+                      <li>
+                        <Link
+                          className={`nav-subitem ${activeSection === "security-baseline" ? "nav-subitem--active" : ""}`}
+                          href={`/${locale}/security/baseline` as Route}
+                          aria-current={
+                            activeSection === "security-baseline"
+                              ? "page"
+                              : undefined
+                          }
+                        >
+                          <ShieldCheck aria-hidden="true" size={15} />
+                          <span>{windowsGpoCopy.baselines}</span>
+                        </Link>
+                      </li>
+                      {canManageSecurityBaselines ? (
+                        <>
+                          <li>
+                            <Link
+                              className={`nav-subitem ${activeSection === "security-override" ? "nav-subitem--active" : ""}`}
+                              href={`/${locale}/security/override` as Route}
+                              aria-current={
+                                activeSection === "security-override"
+                                  ? "page"
+                                  : undefined
+                              }
+                            >
+                              <ShieldCheck aria-hidden="true" size={15} />
+                              <span>{windowsGpoCopy.overrides}</span>
+                            </Link>
+                          </li>
+                          <li>
+                            <Link
+                              className={`nav-subitem ${activeSection === "security-custom-gpo" ? "nav-subitem--active" : ""}`}
+                              href={`/${locale}/security/custom-gpo` as Route}
+                              aria-current={
+                                activeSection === "security-custom-gpo"
+                                  ? "page"
+                                  : undefined
+                              }
+                            >
+                              <ShieldCheck aria-hidden="true" size={15} />
+                              <span>{windowsGpoCopy.custom}</span>
+                            </Link>
+                          </li>
+                        </>
+                      ) : null}
+                    </ul>
                   </li>
-                  {canManageSecurityBaselines ? (
-                    <li>
-                      <Link
-                        className={`nav-subitem ${activeSection === "security-override" ? "nav-subitem--active" : ""}`}
-                        href={`/${locale}/security/override` as Route}
-                        aria-current={
-                          activeSection === "security-override"
-                            ? "page"
-                            : undefined
-                        }
-                      >
-                        <ShieldCheck aria-hidden="true" size={15} />
-                        <span>{overrideCopy.navigation}</span>
-                      </Link>
-                    </li>
-                  ) : null}
                 </ul>
               ) : null}
               {item.section === "physical" && physicalExpanded ? (
