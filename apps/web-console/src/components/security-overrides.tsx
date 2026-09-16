@@ -18,6 +18,7 @@ import {
   isSecurityOverride,
   type OverrideCatalog,
   type OverrideEntry,
+  type OverrideSetting,
   parseOverrideInput,
   type SecurityOverride,
   sameOverrideValue,
@@ -133,6 +134,7 @@ function OverrideEditor({
       (selected?.entries ?? []).map((e) => [e.setting_id, inputValue(e.value)]),
     ),
   );
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [catalog, setCatalog] = useState<OverrideCatalog | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -217,26 +219,52 @@ function OverrideEditor({
           ]),
         ),
       );
+  const hasDrafts = Object.keys(drafts).length > 0;
   useEffect(() => {
-    onLocked(dirty || busy || uncertain || deploymentLocked);
+    onLocked(dirty || hasDrafts || busy || uncertain || deploymentLocked);
     return () => onLocked(false);
-  }, [dirty, busy, uncertain, deploymentLocked, onLocked]);
+  }, [dirty, hasDrafts, busy, uncertain, deploymentLocked, onLocked]);
   const filtered =
     catalog?.settings.filter(
       (s) =>
-        (!onlyChanged || Object.hasOwn(inputs, s.setting_id)) &&
+        (!onlyChanged ||
+          Object.hasOwn(inputs, s.setting_id) ||
+          Object.hasOwn(drafts, s.setting_id)) &&
         `${s.label} ${s.category} ${s.path} ${s.name}`
           .toLocaleLowerCase()
           .includes(search.toLocaleLowerCase()),
     ) ?? [];
   const pages = Math.max(1, Math.ceil(filtered.length / 30));
   const currentPage = Math.min(page, pages - 1);
-  const reset = (id: string) =>
+  const beginEdit = (setting: OverrideSetting) =>
+    setDrafts((old) => ({
+      ...old,
+      [setting.setting_id]: Object.hasOwn(inputs, setting.setting_id)
+        ? inputs[setting.setting_id]
+        : inputValue(setting.baseline_value),
+    }));
+  const cancelEdit = (id: string) =>
+    setDrafts((old) => {
+      const next = { ...old };
+      delete next[id];
+      return next;
+    });
+  const acceptEdit = (setting: OverrideSetting) => {
+    const text = drafts[setting.setting_id];
+    const value = text === undefined ? null : parseOverrideInput(setting, text);
+    if (value === null || sameOverrideValue(value, setting.baseline_value))
+      return;
+    setInputs((old) => ({ ...old, [setting.setting_id]: text }));
+    cancelEdit(setting.setting_id);
+  };
+  const removeOverride = (id: string) => {
     setInputs((old) => {
       const next = { ...old };
       delete next[id];
       return next;
     });
+    cancelEdit(id);
+  };
   function discard() {
     setName(selected?.name ?? "");
     setEnabled(selected?.enabled ?? true);
@@ -248,6 +276,7 @@ function OverrideEditor({
         ]),
       ),
     );
+    setDrafts({});
     setError("");
   }
   async function save(event: FormEvent) {
@@ -256,6 +285,7 @@ function OverrideEditor({
       !catalog ||
       busy ||
       uncertain ||
+      hasDrafts ||
       values.invalid.length ||
       values.entries.length > 128 ||
       !name.trim()
@@ -352,7 +382,10 @@ function OverrideEditor({
               <select
                 value={baselineId}
                 disabled={
-                  locked || Boolean(selected) || Object.keys(inputs).length > 0
+                  locked ||
+                  hasDrafts ||
+                  Boolean(selected) ||
+                  Object.keys(inputs).length > 0
                 }
                 onChange={(e) => {
                   setBaselineId(e.target.value);
@@ -362,6 +395,7 @@ function OverrideEditor({
                       ?.components.find((x) => x.available)?.id ?? "",
                   );
                   setPage(0);
+                  setDrafts({});
                 }}
               >
                 {baselines.map((b) => (
@@ -376,11 +410,15 @@ function OverrideEditor({
               <select
                 value={backupId}
                 disabled={
-                  locked || Boolean(selected) || Object.keys(inputs).length > 0
+                  locked ||
+                  hasDrafts ||
+                  Boolean(selected) ||
+                  Object.keys(inputs).length > 0
                 }
                 onChange={(e) => {
                   setBackupId(e.target.value);
                   setPage(0);
+                  setDrafts({});
                 }}
               >
                 {baseline?.components
@@ -445,13 +483,28 @@ function OverrideEditor({
                 {filtered
                   .slice(currentPage * 30, (currentPage + 1) * 30)
                   .map((s) => {
-                    const editing = Object.hasOwn(inputs, s.setting_id);
-                    const invalid = values.invalid.includes(s.setting_id);
+                    const editing = Object.hasOwn(drafts, s.setting_id);
+                    const overridden = Object.hasOwn(inputs, s.setting_id);
+                    const draftValue = editing
+                      ? parseOverrideInput(s, drafts[s.setting_id])
+                      : null;
+                    const invalid = editing && draftValue === null;
+                    const matchesBaseline =
+                      draftValue !== null &&
+                      sameOverrideValue(draftValue, s.baseline_value);
+                    const acceptedValue = overridden
+                      ? parseOverrideInput(s, inputs[s.setting_id])
+                      : null;
+                    const acceptedOption = s.enum_options.find((option) =>
+                      sameOverrideValue(option.value, acceptedValue),
+                    );
                     const valueLabel = `${c.override}: ${s.label}`;
                     return (
                       <tr
                         key={s.setting_id}
-                        className={editing ? styles.changed : undefined}
+                        className={
+                          editing || overridden ? styles.changed : undefined
+                        }
                       >
                         <td>
                           <strong>{s.label}</strong>
@@ -492,10 +545,10 @@ function OverrideEditor({
                               {s.enum_options.length ? (
                                 <select
                                   aria-label={valueLabel}
-                                  value={inputs[s.setting_id]}
+                                  value={drafts[s.setting_id]}
                                   disabled={locked}
                                   onChange={(e) =>
-                                    setInputs((old) => ({
+                                    setDrafts((old) => ({
                                       ...old,
                                       [s.setting_id]: e.target.value,
                                     }))
@@ -515,11 +568,11 @@ function OverrideEditor({
                                   <textarea
                                     aria-label={valueLabel}
                                     rows={3}
-                                    value={inputs[s.setting_id]}
+                                    value={drafts[s.setting_id]}
                                     aria-invalid={invalid}
                                     disabled={locked}
                                     onChange={(e) =>
-                                      setInputs((old) => ({
+                                      setDrafts((old) => ({
                                         ...old,
                                         [s.setting_id]: e.target.value,
                                       }))
@@ -549,11 +602,11 @@ function OverrideEditor({
                                     s.value_type === "integer" ? 1 : undefined
                                   }
                                   maxLength={s.max_length}
-                                  value={inputs[s.setting_id]}
+                                  value={drafts[s.setting_id]}
                                   aria-invalid={invalid}
                                   disabled={locked}
                                   onChange={(e) =>
-                                    setInputs((old) => ({
+                                    setDrafts((old) => ({
                                       ...old,
                                       [s.setting_id]: e.target.value,
                                     }))
@@ -563,14 +616,57 @@ function OverrideEditor({
                               {invalid ? (
                                 <p className={styles.error}>{c.invalid}</p>
                               ) : null}
-                              <button
-                                type="button"
-                                className="outline-button"
-                                disabled={locked}
-                                onClick={() => reset(s.setting_id)}
-                              >
-                                {c.reset}
-                              </button>
+                              {matchesBaseline ? (
+                                <p>{c.baselineSelected}</p>
+                              ) : null}
+                              <div className={styles.rowActions}>
+                                <button
+                                  type="button"
+                                  className="primary-button"
+                                  disabled={
+                                    locked || invalid || matchesBaseline
+                                  }
+                                  onClick={() => acceptEdit(s)}
+                                >
+                                  {c.apply}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="outline-button"
+                                  disabled={locked}
+                                  onClick={() => cancelEdit(s.setting_id)}
+                                >
+                                  {c.cancelSetting}
+                                </button>
+                              </div>
+                            </>
+                          ) : overridden ? (
+                            <>
+                              <pre className={styles.value}>
+                                {acceptedOption?.label ??
+                                  displayValue(acceptedValue)}
+                              </pre>
+                              {acceptedOption ? (
+                                <small>{displayValue(acceptedValue)}</small>
+                              ) : null}
+                              <div className={styles.rowActions}>
+                                <button
+                                  type="button"
+                                  className="outline-button"
+                                  disabled={locked}
+                                  onClick={() => beginEdit(s)}
+                                >
+                                  {c.editExisting}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="outline-button"
+                                  disabled={locked}
+                                  onClick={() => removeOverride(s.setting_id)}
+                                >
+                                  {c.remove}
+                                </button>
+                              </div>
                             </>
                           ) : (
                             <button
@@ -579,12 +675,7 @@ function OverrideEditor({
                               disabled={
                                 locked || Object.keys(inputs).length >= 128
                               }
-                              onClick={() =>
-                                setInputs((old) => ({
-                                  ...old,
-                                  [s.setting_id]: inputValue(s.baseline_value),
-                                }))
-                              }
+                              onClick={() => beginEdit(s)}
                             >
                               {c.edit}
                             </button>
@@ -635,6 +726,7 @@ function OverrideEditor({
                 loading ||
                 !catalog ||
                 !dirty ||
+                hasDrafts ||
                 !name.trim() ||
                 values.invalid.length > 0 ||
                 values.entries.length > 128
@@ -645,7 +737,7 @@ function OverrideEditor({
             <button
               type="button"
               className="outline-button"
-              disabled={locked || !dirty}
+              disabled={locked || (!dirty && !hasDrafts)}
               onClick={discard}
             >
               {c.discard}
@@ -658,14 +750,14 @@ function OverrideEditor({
           <h2>{c.deployment}</h2>
           <p>{c.priority}</p>
           <p>{c.agent}</p>
-          {dirty ? <p>{c.saveFirst}</p> : null}
+          {dirty || hasDrafts ? <p>{c.saveFirst}</p> : null}
           {!selected.enabled ? <p>{c.disabled}</p> : null}
           <div className={styles.fields}>
             <label>
               {c.domain}
               <select
                 value={domainId}
-                disabled={dirty || locked}
+                disabled={dirty || hasDrafts || locked}
                 onChange={(e) => setDomainId(e.target.value)}
               >
                 {domains.results.map((d) => (
@@ -683,7 +775,7 @@ function OverrideEditor({
               tenantId={tenantId}
               csrfToken={csrfToken}
               canImport={canImport}
-              configurationDirty={dirty || busy || uncertain}
+              configurationDirty={dirty || hasDrafts || busy || uncertain}
               onWorkflowLocked={setDeploymentLocked}
               locale={locale}
               copy={getDomainSecurityCopy(locale)}

@@ -1471,6 +1471,11 @@ test("override editor persists only deviations, restores baseline and deploys a 
     .getByRole("button", { name: "Override this setting", exact: true })
     .click();
   await row.getByRole("spinbutton").fill(String(changed));
+  await expect(
+    editor.getByRole("button", { name: "Save override", exact: true }),
+  ).toBeDisabled();
+  await row.getByRole("button", { name: "Use override", exact: true }).click();
+  await expect(row).toContainText(JSON.stringify(changed));
   const saved = page.waitForResponse(
     (r) =>
       r.url().endsWith("/security/overrides/") &&
@@ -1538,7 +1543,7 @@ test("override editor persists only deviations, restores baseline and deploys a 
   expect(writeJob.status).toBe("queued");
   expect(writeJob.display_name).toContain("OVR-");
   expect(nativeFixture("complete", writeJob.id).status).toBe("linked");
-  // Reopening then resetting removes the entry; it does not submit Not Configured.
+  // Reopening then removing the override restores the baseline; it does not submit Not Configured.
   await page.goto(`/en/logs/baselines?job=${writeJob.id}`);
   const review = page.getByRole("region", {
     name: "Baseline overrides",
@@ -1556,7 +1561,7 @@ test("override editor persists only deviations, restores baseline and deploys a 
     .getByLabel("Search settings", { exact: true })
     .fill(setting.label);
   await editor
-    .getByRole("button", { name: "Use baseline", exact: true })
+    .getByRole("button", { name: "Remove override", exact: true })
     .click();
   const patched = page.waitForResponse(
     (r) =>
@@ -1570,6 +1575,100 @@ test("override editor persists only deviations, restores baseline and deploys a 
   expect(patch.status()).toBe(200);
   expect(patch.request().postDataJSON().entries).toEqual([]);
   expect((await patch.json()).entries).toEqual([]);
+});
+
+test("German Sample submission selection remains accepted before the override is saved", async ({
+  page,
+}) => {
+  const context = await setup(page);
+  const defender = context.baseline.components.find(
+    (component) =>
+      component.available && component.name.includes("Defender Antivirus"),
+  );
+  if (!defender) throw new Error("Defender baseline component required.");
+  const catalogResponse = await page.request.get(
+    `/api/v1/security/override-catalog/?${new URLSearchParams({ baseline_id: context.baseline.id, backup_id: defender.id })}`,
+    { headers: context.headers },
+  );
+  expect(catalogResponse.status()).toBe(200);
+  const catalog: OverrideCatalog = await catalogResponse.json();
+  const setting = catalog.settings.find(
+    (candidate) =>
+      candidate.editable &&
+      candidate.label === "Sample submission" &&
+      candidate.enum_options.length > 1,
+  );
+  if (!setting) throw new Error("Editable Sample submission setting required.");
+  const changed = setting.enum_options.find(
+    (option) =>
+      JSON.stringify(option.value) !== JSON.stringify(setting.baseline_value),
+  );
+  if (!changed)
+    throw new Error("Alternative Sample submission value required.");
+
+  await page.goto("/de/security/override");
+  await page
+    .getByRole("combobox", { name: "Override", exact: true })
+    .selectOption("");
+  const editor = page.getByRole("region", {
+    name: "Baseline-Overrides",
+    exact: true,
+  });
+  await editor
+    .getByRole("combobox", { name: "Baseline", exact: true })
+    .selectOption(context.baseline.id);
+  await editor
+    .getByRole("combobox", { name: "Komponente", exact: true })
+    .selectOption(defender.id);
+  await editor
+    .getByLabel("Name", { exact: true })
+    .fill(`Sample submission ${randomUUID().slice(0, 8)}`);
+  await editor
+    .getByLabel("Einstellungen suchen", { exact: true })
+    .fill(setting.label);
+  const row = editor
+    .getByRole("row")
+    .filter({ has: page.getByText(setting.label, { exact: true }) })
+    .first();
+  await row
+    .getByRole("button", {
+      name: "Diese Einstellung überschreiben",
+      exact: true,
+    })
+    .click();
+  const value = row.getByRole("combobox", {
+    name: `Override-Wert: ${setting.label}`,
+    exact: true,
+  });
+  await expect(
+    editor.getByRole("button", { name: "Override speichern", exact: true }),
+  ).toBeDisabled();
+  await value.selectOption(String(changed.value));
+  await row
+    .getByRole("button", { name: "Override übernehmen", exact: true })
+    .click();
+  await expect(value).toHaveCount(0);
+  await expect(row).toContainText(changed.label);
+  await expect(
+    row.getByRole("button", { name: "Override entfernen", exact: true }),
+  ).toBeVisible();
+  await expect(
+    editor.getByRole("button", { name: "Override speichern", exact: true }),
+  ).toBeEnabled();
+
+  const saved = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/security/overrides/") &&
+      response.request().method() === "POST",
+  );
+  await editor
+    .getByRole("button", { name: "Override speichern", exact: true })
+    .click();
+  const response = await saved;
+  expect(response.status()).toBe(201);
+  expect(response.request().postDataJSON().entries).toEqual([
+    { setting_id: setting.setting_id, value: changed.value },
+  ]);
 });
 
 test("structured baseline values remain read-only with localized explanations", async ({

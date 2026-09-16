@@ -9,7 +9,9 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-Candidate `0.2.61` adds typed sparse baseline overrides. Administrators select a
+Candidate `0.2.62` adds an explicit per-setting confirmation step to typed sparse
+baseline overrides. A selected value is accepted with **Use override**, while
+**Remove override** deliberately restores the baseline value. Administrators select a
 compiled Microsoft baseline component and change only settings already present in
 that component. Each definition produces a separate managed GPO above baseline
 GPOs; the source GPO remains unchanged. Windows Agent `0.2.43` validates the same

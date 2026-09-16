@@ -49,6 +49,13 @@
   flex-wrap: wrap;
   margin-block: 1rem;
 }
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.65rem;
+}
 .scroll {
   overflow-x: auto;
 }

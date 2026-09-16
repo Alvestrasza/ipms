@@ -32,8 +32,12 @@ const en = {
   setting: "Original setting",
   original: "Baseline value",
   override: "Override value",
-  reset: "Use baseline",
+  apply: "Use override",
+  cancelSetting: "Cancel",
   edit: "Override this setting",
+  editExisting: "Edit override",
+  remove: "Remove override",
+  baselineSelected: "Choose a value that differs from the baseline.",
   readonly: "This original setting cannot currently be edited safely.",
   structural:
     "This entry controls policy structure or removal. Changing it as an individual value is not supported.",
@@ -43,7 +47,7 @@ const en = {
   empty: "No settings match this selection.",
   count: "Changed settings",
   sparse:
-    "Use baseline removes the override entry. It does not create a Not Configured setting. At most 128 deviations can be saved.",
+    "Choose a value, then accept it with Use override. Remove override restores the baseline value; it does not create a Not Configured setting. Save override persists all accepted deviations. At most 128 deviations can be saved.",
   listHint: "One entry per line; an empty field means an empty list.",
   deployment: "Deploy saved override",
   domain: "Domain",
@@ -87,8 +91,12 @@ const de: typeof en = {
   setting: "Originaleinstellung",
   original: "Baseline-Wert",
   override: "Override-Wert",
-  reset: "Baseline übernehmen",
+  apply: "Override übernehmen",
+  cancelSetting: "Abbrechen",
   edit: "Diese Einstellung überschreiben",
+  editExisting: "Override bearbeiten",
+  remove: "Override entfernen",
+  baselineSelected: "Wähle einen Wert, der von der Baseline abweicht.",
   readonly:
     "Diese Originaleinstellung kann derzeit nicht sicher bearbeitet werden.",
   structural:
@@ -99,7 +107,7 @@ const de: typeof en = {
   empty: "Keine Einstellungen entsprechen dieser Auswahl.",
   count: "Geänderte Einstellungen",
   sparse:
-    "Baseline übernehmen entfernt den Override-Eintrag. Es entsteht keine Einstellung Nicht konfiguriert. Maximal 128 Abweichungen können gespeichert werden.",
+    "Wähle einen Wert und bestätige ihn mit Override übernehmen. Override entfernen stellt den Baseline-Wert wieder her; es entsteht keine Einstellung Nicht konfiguriert. Override speichern speichert alle übernommenen Abweichungen. Maximal 128 Abweichungen können gespeichert werden.",
   listHint: "Ein Eintrag pro Zeile; ein leeres Feld bedeutet eine leere Liste.",
   deployment: "Gespeicherten Override verteilen",
   domain: "Domäne",

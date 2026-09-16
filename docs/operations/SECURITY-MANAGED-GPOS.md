@@ -2,7 +2,7 @@
 
 Version: 1.3.0 | Date: 2026-09-16
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
-Applies to: Portal 0.2.61 / Windows Agent 0.2.43
+Applies to: Portal 0.2.62 / Windows Agent 0.2.43
 
 ## Configuration
 
