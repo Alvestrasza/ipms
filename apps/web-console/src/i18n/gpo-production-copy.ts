@@ -70,6 +70,8 @@ const en = {
   submitted:
     "Request approved and submitted. No additional approval in Logs is needed; execution status is shown there.",
 
+  deleted: "The unimported IPMS GPO record was deleted.",
+
   logs: "Review request in Logs",
 
   unavailable: "The GPO state could not be loaded. Reload before continuing.",
@@ -144,14 +146,14 @@ const en = {
 
   actionHint: "Approval authorizes only the action and targets shown below.",
 
-  noExecutor: "No eligible Agent 0.2.36 or newer is currently available.",
+  noExecutor: "No eligible Agent 0.2.47 or newer is currently available.",
 
-  noLegacyExecutor: "No eligible Agent 0.2.35 or newer is currently available.",
+  noLegacyExecutor: "No eligible Agent 0.2.47 or newer is currently available.",
 
-  noDeleteExecutor: "No eligible Agent 0.2.45 or newer is currently available.",
+  noDeleteExecutor: "No eligible Agent 0.2.47 or newer is currently available.",
 
   noRootExecutor:
-    "No eligible Agent 0.2.46 or newer is currently available for a domain-root target.",
+    "No eligible Agent 0.2.47 or newer is currently available for a domain-root target.",
 
   actions: {
     import_and_link_managed_gpo: "Import and link",
@@ -242,6 +244,8 @@ const de: typeof en = {
 
   submitted:
     "Auftrag freigegeben und übermittelt. Keine zusätzliche Freigabe unter Logs erforderlich; dort steht der Ausführungsstatus.",
+
+  deleted: "Der noch nicht importierte IPMS-GPO-Eintrag wurde gelöscht.",
   logs: "Auftrag unter Logs prüfen",
 
   unavailable:
@@ -320,16 +324,16 @@ const de: typeof en = {
   actionHint:
     "Die Freigabe gilt ausschließlich für die unten angezeigte Aktion und ihre Ziele.",
 
-  noExecutor: "Derzeit ist kein geeigneter Agent ab Version 0.2.36 verfügbar.",
+  noExecutor: "Derzeit ist kein geeigneter Agent ab Version 0.2.47 verfügbar.",
 
   noLegacyExecutor:
-    "Derzeit ist kein geeigneter Agent ab Version 0.2.35 verfügbar.",
+    "Derzeit ist kein geeigneter Agent ab Version 0.2.47 verfügbar.",
 
   noDeleteExecutor:
-    "Derzeit ist kein geeigneter Agent ab Version 0.2.45 verfügbar.",
+    "Derzeit ist kein geeigneter Agent ab Version 0.2.47 verfügbar.",
 
   noRootExecutor:
-    "Für ein Ziel an der Domänenwurzel ist derzeit kein geeigneter Agent ab Version 0.2.46 verfügbar.",
+    "Für ein Ziel an der Domänenwurzel ist derzeit kein geeigneter Agent ab Version 0.2.47 verfügbar.",
 
   actions: {
     import_and_link_managed_gpo: "Importieren und verknüpfen",

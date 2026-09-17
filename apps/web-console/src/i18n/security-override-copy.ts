@@ -66,7 +66,7 @@ const en = {
   disabled:
     "This override is unavailable for new deployments. Existing managed GPOs can still be deactivated.",
   agent:
-    "Overrides require a domain controller Agent version 0.2.43 or newer; deleting any managed GPO requires 0.2.45.",
+    "Overrides and managed GPO deletion require a domain controller Agent version 0.2.47 or newer.",
   noDomains: "No domain configuration is available for deployment.",
   noChanges: "No deviations selected.",
   previous: "Previous",
@@ -136,7 +136,7 @@ const de: typeof en = {
   disabled:
     "Dieser Override ist für neue Verteilungen gesperrt. Bestehende verwaltete GPOs können weiterhin deaktiviert werden.",
   agent:
-    "Overrides benötigen einen Domain-Controller-Agent ab Version 0.2.43; das Löschen einer verwalteten GPO benötigt 0.2.45.",
+    "Overrides und das Löschen verwalteter GPOs benötigen einen Domain-Controller-Agent ab Version 0.2.47.",
   noDomains: "Keine Domänenkonfiguration für die Verteilung verfügbar.",
   noChanges: "Keine Abweichungen ausgewählt.",
   previous: "Zurück",

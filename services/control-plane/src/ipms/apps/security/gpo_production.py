@@ -43,6 +43,7 @@ FIELDS = set('schema approval_mode job_id operation domain_dns_name domain_guid 
              'preflight_id expected_state intended_operation safety_review'.split())
 FALSE_REVIEW = {'management_access': False, 'recovery_access': False}
 HEX = re.compile('[a-f0-9]{64}')
+SID = re.compile(r'S-1-(?:0|[1-9][0-9]{0,14})(?:-(?:0|[1-9][0-9]{0,9})){2,15}')
 
 
 def production(job):
@@ -54,13 +55,8 @@ def inspecting(job):
 
 
 def minimum_agent(operation, override=False, domain_root=False):
-    if domain_root:
-        return (0, 2, 46)
-    if operation == DELETE:
-        return (0, 2, 45)
-    if override:
-        return (0, 2, 43)
-    return (0, 2, 36) if operation == IMPORT_LINK else (0, 2, 35)
+    # Snapshot schema 1 gained the independently verified domain/GPO owner SID.
+    return (0, 2, 47)
 
 
 def assignment_fields(assignment):
@@ -215,8 +211,9 @@ def validate_snapshot(value, assignment, *, allow_inconsistent=False):
         _invalid()
     if size > 16384:
         _invalid('The directory snapshot exceeds the bounded GPO transport budget.')
-    if (not isinstance(value, dict) or set(value) != {'schema', 'gpo', 'ous', 'name_available'}
+    if (not isinstance(value, dict) or set(value) != {'schema', 'domain_admins_sid', 'gpo', 'ous', 'name_available'}
             or type(value['schema']) is not int or value['schema'] != 1 or type(value['name_available']) is not bool
+            or not isinstance(value['domain_admins_sid'], str) or not SID.fullmatch(value['domain_admins_sid'])
             or not isinstance(value['ous'], list) or len(value['ous']) > 32):
         _invalid()
     if len(value['ous']) != len(assignment['target_ous']) or any(
@@ -249,11 +246,12 @@ def validate_snapshot(value, assignment, *, allow_inconsistent=False):
     gpo = value['gpo']
     if gpo is not None:
         fields = set('guid name description computer_enabled user_enabled computer_ds computer_sysvol user_ds '
-                     'user_sysvol security_digest wmi_filter links'.split())
+                     'user_sysvol owner_sid security_digest wmi_filter links'.split())
         if (not isinstance(gpo, dict) or set(gpo) != fields or not _bounded(gpo['name'], 240)
                 or not _bounded(gpo['description'], 2048, empty=True) or not _bounded(gpo['wmi_filter'], 2048, empty=True)
                 or type(gpo['computer_enabled']) is not bool or type(gpo['user_enabled']) is not bool
                 or any(not _integer(gpo[key]) for key in ('computer_ds', 'computer_sysvol', 'user_ds', 'user_sysvol'))
+                or not isinstance(gpo['owner_sid'], str) or not SID.fullmatch(gpo['owner_sid'])
                 or not _sha(gpo['security_digest']) or _guid(gpo['guid']) in DEFAULT_GPO_IDS):
             _invalid()
         _links(gpo['links'])
@@ -397,7 +395,10 @@ def _delete_selection(tenant, user, config, data):
         pk=data['managed_id'], tenant=tenant, domain=config)
     if not scoped(user, tenant, config, str(policy.tier)):
         raise PermissionDenied('An explicit domain/tier grant is required.')
-    if (not policy.gpo_guid or not policy.staged_job_id or policy.state == 'reconciliation_required'
+    stale_unimported = (policy.state == 'new' and bool(policy.gpo_guid)
+                        and not policy.staged_job_id and not policy.active_job_id)
+    if (not policy.gpo_guid or (not policy.staged_job_id and not stale_unimported)
+            or policy.state == 'reconciliation_required'
             or policy.gpo_guid in DEFAULT_GPO_IDS or _guid(policy.gpo_guid) != policy.gpo_guid):
         raise PublicApiError('security_gpo_unmanaged_target', status_code=409)
     components, profiles = _content()
@@ -541,7 +542,7 @@ def create_preflight(tenant, user, config, data):
         name = policy.display_name
     if policy.state == 'reconciliation_required':
         raise PublicApiError('security_gpo_reconciliation_required', status_code=409)
-    if data['operation'] not in (IMPORT, IMPORT_LINK) and (not policy.gpo_guid or not policy.staged_job_id):
+    if not deleting and data['operation'] not in (IMPORT, IMPORT_LINK) and (not policy.gpo_guid or not policy.staged_job_id):
         raise PublicApiError('security_gpo_preflight_required', status_code=409)
     if data['operation'] not in (IMPORT, IMPORT_LINK) and (policy.backup_id != data['backup_id'] or policy.version != data['version'] or policy.display_name != name):
         raise PublicApiError('security_gpo_prepared_content_changed', status_code=409)
@@ -847,12 +848,13 @@ def extend_projection(job, user, projection):
     return projection
 
 
-def _fixed_gpo(before, after, *, content=False, name=False, flags=False, links=False, adoption=False):
+def _fixed_gpo(before, after, *, content=False, name=False, flags=False, links=False, adoption=False, owner=False):
     excluded = ({'computer_ds', 'computer_sysvol', 'user_ds', 'user_sysvol'} if content else set())
     excluded |= {'name'} if name else set()
     excluded |= {'computer_enabled', 'user_enabled'} if flags else set()
     excluded |= {'links'} if links else set()
     excluded |= {'description'} if adoption else set()
+    excluded |= {'owner_sid'} if owner else set()
     if any(before[key] != after[key] for key in before.keys() - excluded):
         _invalid('An unrelated GPO property changed.')
 
@@ -870,6 +872,8 @@ def _postcondition(job, evidence, guid):
     if a['schema'] == 4 and evidence.get('override_sha256') != a['override_sha256']:
         _invalid('Override evidence differs from the approved patch.')
     state = validate_snapshot(evidence['state'], a)
+    if operation != INSPECT and state['domain_admins_sid'] != a['expected_state']['domain_admins_sid']:
+        _invalid('The domain administrators identity changed during the operation.')
     gpo = state['gpo']
     if guid != (gpo['guid'] if gpo else None):
         _invalid()
@@ -885,7 +889,8 @@ def _postcondition(job, evidence, guid):
     if backed_up and operation not in (ACTIVATE, DELETE):
         _invalid('Only activation or deletion may report a recovery backup.')
     if operation == INSPECT:
-        if backed_up or a['gpo_guid'] != (guid or ''):
+        missing_delete_target = a['intended_operation'] == DELETE and bool(a['gpo_guid']) and guid is None
+        if backed_up or (not missing_delete_target and a['gpo_guid'] != (guid or '')):
             _invalid()
         return
     before = a['expected_state']
@@ -916,7 +921,7 @@ def _postcondition(job, evidence, guid):
             if gpo['name'] != a['pilot_display_name'] or gpo['computer_enabled'] or gpo['user_enabled'] or gpo['links']:
                 _invalid()
             if old:
-                _fixed_gpo(old, gpo, name=True, adoption=True)
+                _fixed_gpo(old, gpo, name=True, adoption=True, owner=True)
         elif gpo != old:
             _invalid('Preparing a revision must not change the live GPO.')
         return
@@ -930,14 +935,14 @@ def _postcondition(job, evidence, guid):
     if operation == IMPORT_LINK:
         adoption = a['owner_marker'].startswith('IPMS disabled, unlinked pilot;')
         if old:
-            _fixed_gpo(old, gpo, links=True, name=adoption, adoption=adoption)
+            _fixed_gpo(old, gpo, links=True, name=adoption, adoption=adoption, owner=adoption)
         if ((not old or adoption) and gpo['name'] != a['pilot_display_name']
                 or gpo['computer_enabled'] or gpo['user_enabled']):
             _invalid('Import and linking must leave the policy disabled.')
     elif operation == ACTIVATE:
         if not backed_up:
             _invalid('Activation requires the protected backup receipt.')
-        _fixed_gpo(old, gpo, content=True, name=True, flags=True, links=True)
+        _fixed_gpo(old, gpo, content=True, name=True, flags=True, links=True, owner=True)
         scope = _content()[0][(a['baseline_id'], a['backup_id'])]['scope']
         if (gpo['name'] != a['pilot_display_name'] or gpo['user_enabled'] != (scope == 'user')
                 or gpo['computer_enabled'] != (scope != 'user')):
@@ -947,6 +952,10 @@ def _postcondition(job, evidence, guid):
         if gpo['computer_enabled'] or gpo['user_enabled']:
             _invalid()
     expected_links = []
+    owner_write = operation == ACTIVATE or old is None or a['owner_marker'] != owner_marker(a)
+    if ((owner_write and gpo['owner_sid'] != state['domain_admins_sid'])
+            or (old is not None and not owner_write and gpo['owner_sid'] != old['owner_sid'])):
+        _invalid('The managed GPO owner is not the domain administrators group.')
     for index, (prior, after) in enumerate(zip(before['ous'], state['ous'], strict=True)):
         if any(prior[key] != after[key] for key in ('dn', 'guid', 'blocked')):
             _invalid()
@@ -1000,6 +1009,10 @@ def receive_success(job, document):
     job.gpo_guid, job.result_evidence, job.result_digest = document['gpo_guid'] or '', document['evidence'], receipt
     job.completed_at = timezone.now()
     job.save()
+    if operation == INSPECT and job.assignment['intended_operation'] == DELETE and document['evidence']['state']['gpo'] is None:
+        policy.delete()
+        _audit(job, 'security.gpo_local_record_deleted')
+        return
     if operation != INSPECT:
         policy.gpo_guid = job.gpo_guid
         if operation in (IMPORT, IMPORT_LINK):
@@ -1071,6 +1084,7 @@ def active_binding(policy, now, *, computer_only=True):
 
 
 class ManagedGposView(DomainSettingsView):
+    http_method_names = ('get', 'post', 'delete', 'head', 'options')
     @transaction.atomic
     def get(self, request, domain_id):
         query(request, set())
@@ -1097,6 +1111,33 @@ class ManagedGposView(DomainSettingsView):
         config = get_object_or_404(DomainSecuritySettings.objects.select_for_update(), pk=domain_id, tenant=request.tenant)
         job = create_change(request.tenant, request.user, config, request.data)
         return Response(job_projection(job, user=request.user, include_review=True), status=202)
+
+    @transaction.atomic
+    def delete(self, request, domain_id):
+        query(request, set())
+        request.tenant = Tenant.objects.select_for_update().get(pk=request.tenant.pk)
+        fresh_actor(request)
+        self.check_permissions(request)
+        config = get_object_or_404(DomainSecuritySettings.objects.select_for_update(), pk=domain_id, tenant=request.tenant)
+        data = request.data
+        if (not isinstance(data, dict) or set(data) != {'revision', 'managed_id'}
+                or type(data['revision']) is not int or not isinstance(data['managed_id'], str)):
+            raise ParseError('Supply exactly the local managed GPO draft identity.')
+        try:
+            uuid_text(data['managed_id'])
+        except (ValueError, TypeError):
+            raise ParseError('Invalid local managed GPO draft identity.')
+        if config.revision != data['revision']:
+            raise PublicApiError('security_domain_revision_changed', status_code=409)
+        policy = get_object_or_404(ManagedGpoPolicy.objects.select_for_update(), pk=data['managed_id'], tenant=request.tenant, domain=config)
+        if not scoped(request.user, request.tenant, config, str(policy.tier)):
+            raise PermissionDenied('An explicit domain/tier grant is required.')
+        expire_jobs(request.tenant)
+        if (policy.state != 'new' or policy.gpo_guid or policy.origin_job_id or policy.staged_job_id or policy.active_job_id
+                or GpoImportJob.objects.filter(tenant=request.tenant, domain_guid=policy.domain_guid, status__in=ACTIVE).exists()):
+            raise PublicApiError('security_gpo_unmanaged_target', status_code=409)
+        policy.delete()
+        return Response(status=204)
 
 
 class GpoPreflightsView(ManagedGposView):

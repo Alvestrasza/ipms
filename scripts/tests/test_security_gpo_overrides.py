@@ -66,6 +66,22 @@ class OverrideCatalogTests(unittest.TestCase):
         self.assertNotIn('secret-setting', rendered)
         self.assertIn('selected settings only', rendered)
 
+    def test_empty_comment_file_keeps_required_gpmc_schema_containers(self):
+        data = b'''<policyComments xmlns="http://www.microsoft.com/GroupPolicy/CommentDefinitions" revision="1.0" schemaVersion="1.0">
+          <policyNamespaces><using prefix="defender" namespace="Microsoft.Policies.WindowsDefender" /></policyNamespaces>
+          <comments><admTemplate><comment policy="JoinMAPS" resource="comment.1" /></admTemplate></comments>
+          <resources minRequiredRevision="1.0"><stringTable><string id="comment.1">Copied comment</string></stringTable></resources>
+        </policyComments>'''
+        rendered = G.empty_xml('Machine/comment.cmtx', data)
+        root = ET.fromstring(rendered)
+        children = {node.tag.rsplit('}', 1)[-1]: node for node in root}
+        self.assertEqual([node.tag.rsplit('}', 1)[-1] for node in children['comments']], ['admTemplate'])
+        self.assertEqual([node.tag.rsplit('}', 1)[-1] for node in children['resources']], ['stringTable'])
+        self.assertEqual(len(list(children['comments'][0])), 0)
+        self.assertEqual(len(list(children['resources'][0])), 0)
+        self.assertEqual(children['resources'].attrib, {'minRequiredRevision': '1.0'})
+        self.assertNotIn('Copied comment', rendered)
+
     def test_artifact_tampering_and_trailing_data_rejected(self):
         data = b'PReg' + struct.pack('<I', 1)
         raw = b'IPMSGPO1' + struct.pack('<II', 1, len(data)) + data

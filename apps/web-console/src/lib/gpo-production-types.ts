@@ -24,6 +24,7 @@ export type GpoLink = {
 };
 export type GpoSnapshot = {
   schema: 1;
+  domain_admins_sid: string;
   name_available: boolean;
   gpo: null | {
     guid: string;
@@ -35,6 +36,7 @@ export type GpoSnapshot = {
     computer_sysvol: number;
     user_ds: number;
     user_sysvol: number;
+    owner_sid: string;
     security_digest: string;
     wmi_filter: string;
     links: GpoLink[];
@@ -82,6 +84,9 @@ const text = (v: unknown, max = 2048) =>
   typeof v === "string" && v.length <= max;
 const integer = (v: unknown, min = 0) =>
   Number.isSafeInteger(v) && Number(v) >= min;
+const sid = (v: unknown) =>
+  typeof v === "string" &&
+  /^S-1-(?:0|[1-9][0-9]{0,14})(?:-(?:0|[1-9][0-9]{0,9})){2,15}$/.test(v);
 const keys = (v: Record<string, unknown>, expected: string[]) =>
   Object.keys(v).length === expected.length &&
   expected.every((k) => Object.hasOwn(v, k));
@@ -114,8 +119,9 @@ export function isGpoLinks(v: unknown): v is GpoLink[] {
 export function isGpoSnapshot(v: unknown): v is GpoSnapshot {
   if (
     !object(v) ||
-    !keys(v, ["schema", "gpo", "ous", "name_available"]) ||
+    !keys(v, ["schema", "domain_admins_sid", "gpo", "ous", "name_available"]) ||
     v.schema !== 1 ||
+    !sid(v.domain_admins_sid) ||
     typeof v.name_available !== "boolean" ||
     !Array.isArray(v.ous) ||
     v.ous.length > 32
@@ -150,6 +156,7 @@ export function isGpoSnapshot(v: unknown): v is GpoSnapshot {
         "computer_sysvol",
         "user_ds",
         "user_sysvol",
+        "owner_sid",
         "security_digest",
         "wmi_filter",
         "links",
@@ -162,6 +169,7 @@ export function isGpoSnapshot(v: unknown): v is GpoSnapshot {
       [g.computer_ds, g.computer_sysvol, g.user_ds, g.user_sysvol].every((x) =>
         integer(x),
       ) &&
+      sid(g.owner_sid) &&
       typeof g.security_digest === "string" &&
       /^[a-f0-9]{64}$/.test(g.security_digest) &&
       text(g.wmi_filter) &&

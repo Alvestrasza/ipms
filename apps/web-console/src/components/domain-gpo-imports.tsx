@@ -230,6 +230,19 @@ function ProductionWorkflow({
     inspection?.operation === "inspect_managed_gpo" &&
     ["queued", "running"].includes(inspection.status);
   useEffect(() => {
+    if (
+      operation === "delete_managed_gpo" &&
+      policyId &&
+      !policy &&
+      inspection?.status === "inspected" &&
+      inspection.preflight_state?.gpo === null
+    ) {
+      setAutomaticRequest(false);
+      setPolicyId("");
+      setNotice(c.deleted);
+    }
+  }, [operation, policyId, policy, inspection, c.deleted]);
+  useEffect(() => {
     if (!checking || busy) return;
     const timer = setInterval(() => void refresh(), 4000);
     return () => clearInterval(timer);
@@ -252,15 +265,7 @@ function ProductionWorkflow({
     (component?.scope === "domain" || configuredRootTarget);
   const actionTargetOus =
     component?.scope === "domain" ? [domainRootDn] : selectedOus;
-  const requiredAgentPatch = configuredRootTarget
-    ? 46
-    : operation === "delete_managed_gpo"
-      ? 45
-      : override
-        ? 43
-        : operation === "import_and_link_managed_gpo"
-          ? 36
-          : 35;
+  const requiredAgentPatch = 47;
   const executors =
     data?.executors.filter(
       (e) =>
@@ -319,6 +324,13 @@ function ProductionWorkflow({
   const lockedSelection =
     disabled || pending.current !== null || automaticRequest;
   const deleting = operation === "delete_managed_gpo";
+  const localDraft =
+    deleting &&
+    policy?.state === "new" &&
+    !policy.gpo_guid &&
+    !policy.origin_job_id &&
+    !policy.staged_job_id &&
+    !policy.active_job_id;
   const actionSelection = deleting
     ? {
         revision: settings.revision,
@@ -350,6 +362,56 @@ function ProductionWorkflow({
       };
   async function submit(kind: "inspect" | "write") {
     if (disabled || mutation.current || !data) return;
+    if (kind === "inspect" && localDraft && policy) {
+      const controller = new AbortController();
+      mutation.current = controller;
+      setBusy(true);
+      setError("");
+      try {
+        const response = await fetch(`${endpoint}/managed-gpos/`, {
+          method: "DELETE",
+          credentials: "same-origin",
+          cache: "no-store",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": csrfToken,
+            "X-IPMS-Tenant-ID": tenantId,
+          },
+          body: JSON.stringify({
+            revision: settings.revision,
+            managed_id: policy.id,
+          }),
+          signal: AbortSignal.any([
+            controller.signal,
+            AbortSignal.timeout(20000),
+          ]),
+        });
+        if (!response.ok) {
+          const payload: unknown = await response.json().catch(() => null);
+          setError(gpoApiError(response.status, payload, locale, false));
+          return;
+        }
+        setPolicyId("");
+        resetInspection();
+        setNotice(c.deleted);
+        setData((current) =>
+          current
+            ? {
+                ...current,
+                results: current.results.filter(
+                  (item) => item.id !== policy.id,
+                ),
+              }
+            : current,
+        );
+      } catch {
+        setError(c.uncertain);
+      } finally {
+        if (mutation.current === controller) mutation.current = null;
+        setBusy(false);
+      }
+      return;
+    }
     const body =
       kind === "inspect"
         ? actionSelection
@@ -491,9 +553,12 @@ function ProductionWorkflow({
       operation === "deactivate_managed_gpo" ||
       operation === "delete_managed_gpo" ||
       (override.enabled && override.entries.length > 0)) &&
-    Boolean(executor) &&
+    (localDraft || Boolean(executor)) &&
     (deleting
-      ? Boolean(policy?.gpo_guid) && (!domainRootAction || domainRootConfirmed)
+      ? Boolean(policy) &&
+        (localDraft ||
+          (Boolean(policy?.gpo_guid) &&
+            (!domainRootAction || domainRootConfirmed)))
       : Boolean(
           baseline &&
             component?.available &&
@@ -641,6 +706,7 @@ function ProductionWorkflow({
                   disabled={
                     (op !== "import_managed_gpo" &&
                       op !== "import_and_link_managed_gpo" &&
+                      op !== "delete_managed_gpo" &&
                       !policy?.gpo_guid) ||
                     (op === "import_and_link_managed_gpo" &&
                       policy?.state === "active")

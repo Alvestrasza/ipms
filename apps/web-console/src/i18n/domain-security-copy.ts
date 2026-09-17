@@ -104,7 +104,7 @@ const en = {
   executor: "Domain controller Agent",
   noExecutor: "No eligible Agent in this domain",
   executorHint:
-    "The selected Agent must run version 0.2.36 or later and report the expected domain identity. Requesting and approving require an explicit domain and Tier authorization.",
+    "The selected Agent must run version 0.2.47 or later and report the expected domain identity. Requesting and approving require an explicit domain and Tier authorization.",
   baseline: "Baseline package",
   component: "GPO component",
   unavailableComponent: "Artifact unavailable",
@@ -256,7 +256,7 @@ const de: DomainSecurityCopy = {
   executor: "Domain-Controller-Agent",
   noExecutor: "Kein geeigneter Agent in dieser Domäne",
   executorHint:
-    "Der ausgewählte Agent muss mindestens Version 0.2.36 ausführen und die erwartete Domänenidentität melden. Anfordern und Freigeben erfordern eine ausdrückliche Berechtigung für Domäne und Tier.",
+    "Der ausgewählte Agent muss mindestens Version 0.2.47 ausführen und die erwartete Domänenidentität melden. Anfordern und Freigeben erfordern eine ausdrückliche Berechtigung für Domäne und Tier.",
   baseline: "Baseline-Paket",
   component: "GPO-Komponente",
   unavailableComponent: "Artefakt nicht verfügbar",

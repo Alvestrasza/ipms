@@ -39,9 +39,9 @@ class ProductionGpoTests(TestCase):
         from .gpo_jobs import _content
         patch('ipms.apps.security.gpo_production._content', return_value=_content()).start()
         patch('ipms.apps.security.gpo_production.artifact_bytes', return_value=self.bundle).start()
-        self.system.agent_version = '0.2.35'
+        self.system.agent_version = '0.2.47'
         self.system.save(update_fields=('agent_version',))
-        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.35')
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.47')
         self.selection['target_ous'] = list(self.config['tier_ous']['1'])
         self.base = f"/api/v1/security/domain-settings/{self.config['id']}/"
         self.managed = None
@@ -64,7 +64,8 @@ class ProductionGpoTests(TestCase):
             self.selection = selection
 
     def snapshot(self, job, gpo=None):
-        return {'schema': 1, 'gpo': copy.deepcopy(gpo), 'name_available': True, 'ous': [
+        return {'schema': 1, 'domain_admins_sid': 'S-1-5-21-1-2-3-512',
+                'gpo': copy.deepcopy(gpo), 'name_available': True, 'ous': [
             {'dn': dn, 'guid': str(uuid.UUID(int=index + 10)), 'usn': '10', 'blocked': False,
              'links': [], 'inherited_links': []} for index, dn in enumerate(job['target_ous'])]}
 
@@ -73,6 +74,7 @@ class ProductionGpoTests(TestCase):
                 'description': 'IPMS managed GPO; id=' + job['managed_id'],
                 'computer_enabled': False, 'user_enabled': False,
                 'computer_ds': 1, 'computer_sysvol': 1, 'user_ds': 0, 'user_sysvol': 0,
+                'owner_sid': 'S-1-5-21-1-2-3-512',
                 'security_digest': 'a' * 64, 'wmi_filter': '', 'links': []}
 
     def report_success(self, job, state, *, backup=False, **changes):
@@ -195,9 +197,9 @@ class ProductionGpoTests(TestCase):
     def test_delete_baseline_uses_only_managed_identity_and_removes_projection(self):
         _, state = self.activated()
         managed_id = self.managed.pk
-        self.system.agent_version = '0.2.45'
+        self.system.agent_version = '0.2.47'
         self.system.save(update_fields=('agent_version',))
-        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.45')
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.47')
         request = {'revision': self.config['revision'], 'system_id': self.selection['system_id'],
                    'idempotency_key': str(uuid.uuid4()), 'operation': DELETE,
                    'managed_id': str(managed_id), 'domain_root_confirmed': False}
@@ -224,11 +226,36 @@ class ProductionGpoTests(TestCase):
         self.assertEqual(retry.status_code, 202, retry.data)
         self.assertEqual(retry.data['id'], response.data['id'])
 
+    def test_unimported_local_draft_can_be_deleted_without_an_agent_write(self):
+        inspection = self.inspect()
+        self.report_success(inspection, self.snapshot(inspection))
+        managed_id = self.managed.pk
+        response = self.client.delete(self.base + 'managed-gpos/', {
+            'revision': self.config['revision'], 'managed_id': str(managed_id)}, format='json')
+        self.assertEqual(response.status_code, 204, getattr(response, 'data', None))
+        self.assertFalse(ManagedGpoPolicy.objects.filter(pk=managed_id).exists())
+
+    def test_missing_stale_guid_is_forgotten_only_after_agent_inspection(self):
+        inspection = self.inspect()
+        self.report_success(inspection, self.snapshot(inspection))
+        managed_id = self.managed.pk
+        self.managed.gpo_guid = PILOT_GUID
+        self.managed.save(update_fields=('gpo_guid',))
+        request = {'revision': self.config['revision'], 'system_id': self.selection['system_id'],
+                   'idempotency_key': str(uuid.uuid4()), 'operation': DELETE,
+                   'managed_id': str(managed_id), 'domain_root_confirmed': False}
+        response = self.client.post(self.base + 'gpo-preflights/', request, format='json')
+        self.assertEqual(response.status_code, 202, response.data)
+        deletion_check = GpoImportJob.objects.get(pk=response.data['id']).assignment
+        self.assertEqual(deletion_check['intended_operation'], DELETE)
+        self.report_success(deletion_check, self.snapshot(deletion_check))
+        self.assertFalse(ManagedGpoPolicy.objects.filter(pk=managed_id).exists())
+
     def test_delete_rejects_creation_fields_instead_of_revalidating_them(self):
         self.linked()
-        self.system.agent_version = '0.2.45'
+        self.system.agent_version = '0.2.47'
         self.system.save(update_fields=('agent_version',))
-        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.45')
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.47')
         response = self.client.post(self.base + 'gpo-preflights/', {**self.selection,
             'idempotency_key': str(uuid.uuid4()), 'operation': DELETE,
             'managed_id': str(self.managed.pk), 'adopt_job_id': None}, format='json')
@@ -250,14 +277,14 @@ class ProductionGpoTests(TestCase):
         self.assertEqual(self.managed.gpo_guid, '')
 
     def agent_036(self):
-        self.system.agent_version = '0.2.36'
+        self.system.agent_version = '0.2.47'
         self.system.save(update_fields=('agent_version',))
-        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.36')
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.47')
 
     def agent_046(self):
-        self.system.agent_version = '0.2.46'
+        self.system.agent_version = '0.2.47'
         self.system.save(update_fields=('agent_version',))
-        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.46')
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.47')
 
     def combined(self, *, root=False):
         self.agent_036()
@@ -388,12 +415,16 @@ class ProductionGpoTests(TestCase):
         self.managed.refresh_from_db()
         self.assertEqual(self.managed.state, 'active')
 
-    def test_combined_requires_agent_036_while_035_keeps_old_operations(self):
+    def test_all_managed_operations_require_agent_047(self):
+        self.system.agent_version = '0.2.46'
+        self.system.save(update_fields=('agent_version',))
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.46')
         response = self.client.post(self.base + 'gpo-preflights/', {**self.selection,
             'idempotency_key': str(uuid.uuid4()), 'operation': IMPORT_LINK, 'managed_id': None, 'adopt_job_id': None}, format='json')
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data['error']['code'], 'security_gpo_executor_unavailable')
         self.assertFalse(GpoImportJob.objects.exists())
+        self.agent_036()
         self.imported()
 
     def test_combined_links_only_the_selected_configured_ou_and_persists_scope(self):
@@ -914,9 +945,9 @@ class ProductionGpoTests(TestCase):
         config.save(update_fields=('tier_ous',))
         self.selection.update(tier='0', target_ous=[root])
 
-        self.system.agent_version = '0.2.45'
+        self.system.agent_version = '0.2.46'
         self.system.save(update_fields=('agent_version',))
-        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.45')
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.46')
         old_agent = self.client.post(self.base + 'gpo-preflights/', {**self.selection,
             'idempotency_key': str(uuid.uuid4()), 'operation': IMPORT_LINK,
             'managed_id': None, 'adopt_job_id': None, 'domain_root_confirmed': True}, format='json')

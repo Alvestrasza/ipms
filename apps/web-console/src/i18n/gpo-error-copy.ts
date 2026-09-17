@@ -21,9 +21,9 @@ const messages = {
   ],
 
   executor: [
-    "No eligible domain controller Agent is available for this action. Check its connection, domain assignment, GPMC readiness and Agent version; import and link requires 0.2.36, other managed actions require 0.2.35.",
+    "No eligible domain controller Agent 0.2.47 or newer is available for this action. Check its connection, domain assignment and GPMC readiness.",
 
-    "Für diese Aktion ist kein geeigneter Domain-Controller-Agent verfügbar. Prüfe Verbindung, Domänenzuordnung, GPMC-Bereitschaft und Agent-Version; Import und Verknüpfung benötigen 0.2.36, andere verwaltete Aktionen 0.2.35.",
+    "Für diese Aktion ist kein geeigneter Domain-Controller-Agent ab Version 0.2.47 verfügbar. Prüfe Verbindung, Domänenzuordnung und GPMC-Bereitschaft.",
   ],
 
   artifact: [

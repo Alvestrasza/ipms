@@ -2,7 +2,7 @@
 
 Version: 1.7.0 | Date: 2026-09-17
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
-Applies to: Portal 0.2.66 / Windows Agent 0.2.46
+Applies to: Portal 0.2.67 / Windows Agent 0.2.47
 
 ## Configuration
 
@@ -88,7 +88,7 @@ managed policy cannot be deleted.
 Microsoft **Domain Security** components use the selected domain's root and
 require Tier 0 authorization. A tenant can also configure the exact root DN as a
 Tier 0 directory target for an ordinary machine or user component. A root target
-must be selected alone, requires Windows Agent 0.2.46 or later, and never changes
+must be selected alone, requires Windows Agent 0.2.47 or later, and never changes
 the component's machine/user activation scope. Before requesting import and link,
 linking, activation, deactivation or deletion, explicitly confirm this domain-wide
 target. The Portal derives or validates the root against the configured domain;

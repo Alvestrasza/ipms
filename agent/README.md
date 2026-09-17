@@ -1,6 +1,6 @@
 # IPMS Agent
 
-Windows candidate **0.2.46** additionally permits an exact configured domain
+Windows candidate **0.2.47** additionally preserves valid Administrative Template comment schemas, verifies Domain Admins ownership, and safely confirms stale GPO absence before local cleanup. It also permits an exact configured domain
 root as an exclusive Tier 0 target for managed machine or user GPOs. It treats
 that target as a domain object in GPMC and LDAP while retaining the component's
 machine or user activation scope. Candidate **0.2.45** validates schema-4 sparse

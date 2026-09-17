@@ -9,11 +9,11 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-Candidate `0.2.66` accepts the exact configured domain distinguished name as an
+Candidate `0.2.67` accepts the exact configured domain distinguished name as an
 exclusive Tier 0 GPO target. Ordinary managed machine and user GPOs can therefore
 be linked at the domain root without being reclassified as Domain Security policy.
 The Portal requires an explicit root confirmation, blocks mixed root/OU selections
-and offers only Windows Agent `0.2.46` or later for this target.
+and offers only Windows Agent `0.2.47` or later for managed GPO operations.
 
 Portal `0.2.65` removed baseline composition ordering from domain administration
 and provided one source-neutral deletion action for every IPMS-managed baseline,

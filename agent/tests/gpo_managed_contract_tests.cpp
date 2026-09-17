@@ -28,8 +28,8 @@ json::object snapshot(bool exists=true,bool active=false) {
   json::value g;
   if(exists)g=json::object{{"guid",id},{"name","1-C-ALL-MS-WS2025_V1.0.0"},{"description",std::string("IPMS managed GPO; id=")+managed},
     {"computer_enabled",active},{"user_enabled",false},{"computer_ds",1},{"computer_sysvol",1},{"user_ds",0},{"user_sysvol",0},
-    {"security_digest",std::string(64,'a')},{"wmi_filter",""},{"links",json::array{}}};
-  return {{"schema",1},{"gpo",g},{"ous",json::array{}},{"name_available",true}};
+    {"owner_sid","S-1-5-21-1-2-3-512"},{"security_digest",std::string(64,'a')},{"wmi_filter",""},{"links",json::array{}}};
+  return {{"schema",1},{"domain_admins_sid","S-1-5-21-1-2-3-512"},{"gpo",g},{"ous",json::array{}},{"name_available",true}};
 }
 json::object link(std::string value=id,bool enabled=false,long order=1) {
   return {{"guid",value},{"domain","example.invalid"},{"dn",dn},{"kind","ou"},{"enabled",enabled},{"enforced",false},{"order",order}};
@@ -186,6 +186,18 @@ int main(int argc,char** argv) {
   require(gpo::ace_object_types(2,object_getter,inherited_getter).second=="inherited"&&ace_object_calls==1&&ace_inherited_calls==1,"Inherited ACE presence flag ignored");
   require(gpo::ace_object_types(3,object_getter,inherited_getter)==std::pair<std::string,std::string>{"object","inherited"},"Present ACE GUID dropped");
   rejects([&]{gpo::ace_object_types(4,object_getter,inherited_getter);});
+  auto missing_state=snapshot(false);
+  missing_state["ous"]=json::array{json::object{{"dn",dn},{"guid","88888888-8888-4888-8888-888888888888"},{"usn","123"},{"blocked",false},
+    {"links",json::array{}},{"inherited_links",json::array{}}}};
+  auto missing_document=document("inspect_managed_gpo",missing_state);
+  missing_document["gpo_guid"]=id;missing_document["owner_marker"]=std::string("IPMS managed GPO; id=")+managed;
+  missing_document["intended_operation"]="delete_managed_gpo";missing_document["input_digest"]="";
+  missing_document["input_digest"]=gpo::input_digest(missing_document);
+  const auto missing_job=gpo::parse_job(missing_document);
+  gpo::validate_managed_state(missing_job,missing_state);
+  missing_document["intended_operation"]="import_managed_gpo";missing_document["input_digest"]="";
+  missing_document["input_digest"]=gpo::input_digest(missing_document);
+  rejects([&]{gpo::validate_managed_state(gpo::parse_job(missing_document),missing_state);});
   auto original=record(document());original.state=gpo::phase::reconciliation;original.gpo_guid=id;
   original.result=gpo::result("requires_reconciliation","gpo_provider_failed",id);
   const auto original_bytes=json::serialize(gpo::journal_document(original));const auto original_hash=gpo::sha256(original_bytes);

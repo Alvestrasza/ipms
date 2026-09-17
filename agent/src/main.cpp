@@ -1,5 +1,5 @@
 // File Name: main.cpp
-// Version: v0.2.46 | Created: 2026-08-31 | Last Modified: 2026-09-17
+// Version: v0.2.47 | Created: 2026-08-31 | Last Modified: 2026-09-17
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Native Agent entry points and fixed internal workers; no arbitrary command execution.
 #include "ipms/agent/management_pack.hpp"

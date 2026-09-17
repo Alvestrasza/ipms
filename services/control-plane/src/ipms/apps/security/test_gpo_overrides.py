@@ -26,9 +26,9 @@ class OverrideTests(TestCase):
             setattr(self, name, getattr(production_tests.ProductionGpoTests, name).__get__(self))
         production_tests.ProductionGpoTests.setUp(self)
         self.selection['target'] = 'OVRD'
-        self.system.agent_version = '0.2.43'
+        self.system.agent_version = '0.2.47'
         self.system.save(update_fields=('agent_version',))
-        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.43')
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.47')
         self.override_component = copy.deepcopy(OVERRIDE_COMPONENTS[(self.selection['baseline_id'], self.selection['backup_id'])])
         self.override_component['artifact_sha256'] = self.component['artifact_sha256']
         patch('ipms.apps.security.gpo_override_content.OVERRIDE_COMPONENTS', {
@@ -152,8 +152,8 @@ class OverrideTests(TestCase):
         _, state = self.activated()
         managed_id = self.managed.pk
         self.assertEqual(self.update_override(entries=[]).status_code, 200)
-        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.45')
-        self.system.agent_version = '0.2.45'
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.47')
+        self.system.agent_version = '0.2.47'
         self.system.save(update_fields=('agent_version',))
         inspection = self.inspect(DELETE)
         self.report_success(inspection, state)
@@ -183,14 +183,17 @@ class OverrideTests(TestCase):
         self.assertEqual(blocked.status_code, 409)
         self.assertEqual(blocked.data['error']['code'], 'security_override_in_use')
 
-    def test_delete_requires_agent_0245(self):
+    def test_delete_requires_agent_0247(self):
         self.linked()
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.46')
+        self.system.agent_version = '0.2.46'
+        self.system.save(update_fields=('agent_version',))
         response = self.client.post(self.base + 'gpo-preflights/', {'revision': self.config['revision'],
             'system_id': self.selection['system_id'], 'idempotency_key': str(uuid.uuid4()),
             'operation': DELETE, 'managed_id': str(self.managed.pk), 'domain_root_confirmed': False}, format='json')
         self.assertEqual(response.status_code, 409)
-        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.45')
-        self.system.agent_version = '0.2.45'
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.47')
+        self.system.agent_version = '0.2.47'
         self.system.save(update_fields=('agent_version',))
         response = self.client.post(self.base + 'gpo-preflights/', {'revision': self.config['revision'],
             'system_id': self.selection['system_id'], 'idempotency_key': str(uuid.uuid4()),
@@ -211,7 +214,7 @@ class OverrideTests(TestCase):
         data = {**self.selection, 'idempotency_key': str(uuid.uuid4()), 'operation': IMPORT, 'managed_id': None,
                 'adopt_job_id': None, 'override_id': self.override['id'], 'override_revision': self.override['revision'], 'override_sha256': self.override['sha256']}
         self.assertEqual(self.client.post(self.base + 'gpo-preflights/', data, format='json').status_code, 409)
-        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.43')
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.47')
         self.update_override(enabled=False)
         self.assertEqual(self.client.post(self.base + 'gpo-preflights/', data, format='json').status_code, 409)
         self.update_override(enabled=True, entries=[])

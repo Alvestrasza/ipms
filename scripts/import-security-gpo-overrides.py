@@ -94,9 +94,22 @@ def empty_xml(filename, data):
     root = ET.fromstring(data)
     local = lambda tag: tag.rsplit('}', 1)[-1]
     if filename.endswith('comment.cmtx'):
-        for child in root:
-            if local(child.tag) in ('comments', 'resources'):
-                child.clear()
+        children = {local(child.tag): child for child in root}
+        comments = children.get('comments')
+        resources = children.get('resources')
+        if comments is None or resources is None:
+            raise ValueError('Unexpected administrative template comments structure')
+        adm_templates = [child for child in comments if local(child.tag) == 'admTemplate']
+        string_tables = [child for child in resources if local(child.tag) == 'stringTable']
+        if len(adm_templates) != 1 or len(string_tables) != 1:
+            raise ValueError('Unexpected administrative template comments containers')
+        # GPMC validates comment.cmtx against the CommentDefinitions schema.
+        # The containers are mandatory even when an override has no comments;
+        # clearing the parent elements produces XML that parses but fails that
+        # schema and makes the Settings report show "Comment parsing failed".
+        adm_templates[0].clear()
+        string_tables[0].clear()
+        XML.register_namespace('', 'http://www.microsoft.com/GroupPolicy/CommentDefinitions')
     else:
         # Preserve namespace declarations used by QName attribute values such
         # as xsi:type. Generic ElementTree serialization changes their meaning.
