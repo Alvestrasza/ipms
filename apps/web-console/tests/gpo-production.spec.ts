@@ -1,6 +1,6 @@
 /**
  * File Name: gpo-production.spec.ts
- * Version: v0.1.0 | Created: 2026-09-15 | Modified: 2026-09-15
+ * Version: v0.2.0 | Created: 2026-09-15 | Modified: 2026-09-17
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Verify one-click import/link preparation and separate activation through the isolated Portal and synthetic native observations.
  */
@@ -299,7 +299,7 @@ async function createAutomatically(
 }
 
 const rootCheck =
-  "I confirm the domain root as the target for this domain-wide account policy. This confirmation does not approve its execution.";
+  "I confirm the domain root as the only target for this GPO action. This confirmation does not approve its execution.";
 async function activationChecks(page: Page) {
   await panel(page)
     .getByRole("checkbox", { name: managementCheck, exact: true })
@@ -398,6 +398,66 @@ test("central Windows GPO deployment submits only the selected configured OUs", 
     .uncheck();
   const created = await createAutomatically(page, context);
   expect(created.selection.target_ous).toEqual([targets[1]]);
+});
+
+test("a configured domain root is an exclusive Tier 0 target for ordinary GPOs", async ({
+  page,
+}) => {
+  const context = await setup(page);
+  nativeFixture("agent-046", context.fixture.domain_id);
+  const root = context.fixture.domain_name
+    .split(".")
+    .map((part) => `DC=${part}`)
+    .join(",");
+  const saved = await page.request.put(
+    `${domainsApi}${context.fixture.domain_id}/`,
+    {
+      headers: context.headers,
+      data: {
+        expected_revision: context.settings.revision,
+        domain_name: context.settings.domain_name,
+        tier_ous: {
+          ...context.settings.tier_ous,
+          "0": [root, ...context.settings.tier_ous["0"]],
+        },
+        gpo_name_template: context.settings.gpo_name_template,
+        baseline_order: context.settings.baseline_order,
+      },
+    },
+  );
+  expect(saved.status()).toBe(200);
+  context.settings = await saved.json();
+  await openWorkflow(page, context);
+  const rootTarget = panel(page).getByRole("checkbox", {
+    name: root,
+    exact: true,
+  });
+  const ouTarget = panel(page).getByRole("checkbox", {
+    name: context.settings.tier_ous["0"][1],
+    exact: true,
+  });
+  await expect(ouTarget).toBeChecked();
+  await expect(rootTarget).not.toBeChecked();
+  await rootTarget.check();
+  await expect(rootTarget).toBeChecked();
+  await expect(ouTarget).not.toBeChecked();
+  await expect(
+    panel(page).getByRole("button", { name: "Submit action", exact: true }),
+  ).toBeDisabled();
+  await panel(page)
+    .getByRole("checkbox", { name: rootCheck, exact: true })
+    .check();
+  const created = await createAutomatically(page, context);
+  expect(created.selection).toMatchObject({
+    tier: "0",
+    target_ous: [root],
+    domain_root_confirmed: true,
+  });
+  const linked = nativeFixture("complete", created.write.id);
+  expect(linked.status).toBe("linked");
+  expect(linked.state.gpo.links).toEqual([
+    expect.objectContaining({ kind: "domain", dn: root, enabled: false }),
+  ]);
 });
 
 test("domain-root confirmation precedes combined creation and activation is a separate request with both safety checks", async ({

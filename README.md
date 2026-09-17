@@ -9,12 +9,16 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
-Candidate `0.2.65` removes baseline composition ordering from domain administration
-and provides one source-neutral deletion action for every IPMS-managed baseline,
-override or custom GPO. Deletion derives its complete identity from the selected
-managed policy instead of reusing creation fields. Windows Agent `0.2.45` verifies
-forest-wide links, creates a protected backup, removes only the approved links and
-proves absence of the exact owned GPO before reporting deletion.
+Candidate `0.2.66` accepts the exact configured domain distinguished name as an
+exclusive Tier 0 GPO target. Ordinary managed machine and user GPOs can therefore
+be linked at the domain root without being reclassified as Domain Security policy.
+The Portal requires an explicit root confirmation, blocks mixed root/OU selections
+and offers only Windows Agent `0.2.46` or later for this target.
+
+Portal `0.2.65` removed baseline composition ordering from domain administration
+and provided one source-neutral deletion action for every IPMS-managed baseline,
+override or custom GPO. Windows Agent `0.2.45` verifies forest-wide links, creates
+a protected backup and proves absence of the exact owned GPO after deletion.
 
 Portal `0.2.63` centralized managed deployment under **Security → Windows GPOs**
 and binds every managed GPO to an exact, administrator-selected subset of the OUs

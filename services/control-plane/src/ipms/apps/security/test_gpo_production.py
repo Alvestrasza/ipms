@@ -1,5 +1,5 @@
 # File Name: test_gpo_production.py
-# Version: v0.1.0 | Created: 2026-09-15 | Last Modified: 2026-09-15
+# Version: v0.2.0 | Created: 2026-09-15 | Last Modified: 2026-09-17
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
 # Description: Production GPO lifecycle, scoped inspection and immutable approval regression tests.
 import copy
@@ -253,6 +253,11 @@ class ProductionGpoTests(TestCase):
         self.system.agent_version = '0.2.36'
         self.system.save(update_fields=('agent_version',))
         GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.36')
+
+    def agent_046(self):
+        self.system.agent_version = '0.2.46'
+        self.system.save(update_fields=('agent_version',))
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.46')
 
     def combined(self, *, root=False):
         self.agent_036()
@@ -902,17 +907,40 @@ class ProductionGpoTests(TestCase):
             with self.assertRaises(ValidationError):
                 validate_snapshot(state, job)
 
-    def test_machine_component_cannot_bind_root_snapshot_or_select_root_confirmation(self):
-        imported, gpo = self.imported()
-        response = self.client.post(self.base + 'gpo-preflights/', {**self.selection,
-            'idempotency_key': str(uuid.uuid4()), 'operation': LINK,
-            'managed_id': str(self.managed.pk), 'adopt_job_id': None, 'domain_root_confirmed': True}, format='json')
-        self.assertEqual(response.status_code, 400)
-        job = self.inspect(LINK)
-        state = self.snapshot(job, gpo)
-        state['ous'][0].update(dn='DC=example,DC=invalid', guid=DOMAIN_GUID)
-        with self.assertRaises(ValidationError):
-            validate_snapshot(state, job)
+    def test_machine_component_can_target_only_the_confirmed_tier_zero_domain_root(self):
+        root = 'DC=example,DC=invalid'
+        config = DomainSecuritySettings.objects.get(pk=self.config['id'])
+        config.tier_ous['0'] = [root, *config.tier_ous['0']]
+        config.save(update_fields=('tier_ous',))
+        self.selection.update(tier='0', target_ous=[root])
+
+        self.system.agent_version = '0.2.45'
+        self.system.save(update_fields=('agent_version',))
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.45')
+        old_agent = self.client.post(self.base + 'gpo-preflights/', {**self.selection,
+            'idempotency_key': str(uuid.uuid4()), 'operation': IMPORT_LINK,
+            'managed_id': None, 'adopt_job_id': None, 'domain_root_confirmed': True}, format='json')
+        self.assertEqual(old_agent.status_code, 409, old_agent.data)
+        self.assertEqual(old_agent.data['error']['code'], 'security_gpo_executor_unavailable')
+
+        self.agent_046()
+        missing_confirmation = self.client.post(self.base + 'gpo-preflights/', {**self.selection,
+            'idempotency_key': str(uuid.uuid4()), 'operation': IMPORT_LINK,
+            'managed_id': None, 'adopt_job_id': None}, format='json')
+        self.assertEqual(missing_confirmation.status_code, 409, missing_confirmation.data)
+        self.assertEqual(missing_confirmation.data['error']['code'], 'security_gpo_domain_root_confirmation_required')
+
+        mixed = self.client.post(self.base + 'gpo-preflights/', {**self.selection,
+            'target_ous': config.tier_ous['0'], 'idempotency_key': str(uuid.uuid4()), 'operation': IMPORT_LINK,
+            'managed_id': None, 'adopt_job_id': None, 'domain_root_confirmed': True}, format='json')
+        self.assertEqual(mixed.status_code, 400, mixed.data)
+
+        job = self.inspect(IMPORT_LINK, domain_root_confirmed=True)
+        self.assertEqual(job['target_tier'], 0)
+        self.assertEqual(job['target_ous'], [root])
+        state = self.snapshot(job)
+        state['ous'][0]['guid'] = DOMAIN_GUID
+        self.assertEqual(validate_snapshot(state, job), state)
 
 
 @skipUnlessDBFeature('has_select_for_update')

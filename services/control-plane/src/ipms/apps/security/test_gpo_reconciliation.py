@@ -1,5 +1,5 @@
 # File Name: test_gpo_reconciliation.py
-# Version: v0.1.0 | Created: 2026-09-15 | Last Modified: 2026-09-15
+# Version: v0.1.1 | Created: 2026-09-15 | Last Modified: 2026-09-17
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
 # Description: Public reconciliation authority, immutable evidence, fence release and recovery upgrades.
 import copy
@@ -155,6 +155,23 @@ class GpoReconciliationTests(TestCase):
         self.assertEqual(self.accept().status_code, 409)
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, 'reconciliation_required')
+
+    def test_machine_domain_root_reconciliation_requires_agent_046(self):
+        from .gpo_reconciliation import _executor_blocker
+        self.failed_gpo()
+        assignment = copy.deepcopy(self.job.assignment)
+        assignment['target_tier'] = 0
+        assignment['target_ous'] = ['DC=example,DC=invalid']
+        GpoImportJob.objects.filter(pk=self.job.pk).update(assignment=assignment)
+        self.job.refresh_from_db()
+        self.system.agent_version = '0.2.45'
+        self.system.save(update_fields=('agent_version',))
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.45')
+        self.assertEqual(_executor_blocker(self.job), 'agent_update_required')
+        self.system.agent_version = '0.2.46'
+        self.system.save(update_fields=('agent_version',))
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.46')
+        self.assertIsNone(_executor_blocker(self.job))
 
     def test_diagnostic_codes_reject_free_text_success_and_malformed_hresult(self):
         from .gpo_reconciliation import validate_observation

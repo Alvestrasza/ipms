@@ -1,5 +1,5 @@
 // File Name: windows_gpo_managed.cpp
-// Version: v0.1.1 | Created: 2026-09-15 | Last Modified: 2026-09-16
+// Version: v0.2.0 | Created: 2026-09-15 | Last Modified: 2026-09-17
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Exact-DC ADSI inspection and bounded native managed GPO lifecycle.
 #include "ipms/agent/windows_gpo_management.hpp"
@@ -264,13 +264,13 @@ class native_managed final:public gpo::managed_provider {
   }
   void import() {if(!source_)fail("gpo_artifact_invalid");ComPtr<IGPMResult> result;check(target_->Import(0,source_.Get(),nullptr,nullptr,nullptr,&result));if(!result)fail();check(result->OverallStatus());}
   ComPtr<IGPMSOM> ou(std::string_view dn) {
-    bstr path(dn);ComPtr<IGPMSOM> out;check(domain_->GetSOM(path.value,&out));if(kind(out.Get())!=(component_->scope=="domain"?"domain":"ou")||lower(property([&](BSTR* p){return out->get_Path(p);}))!=lower(std::string(dn)))fail("gpo_target_invalid");return out;
+    bstr path(dn);ComPtr<IGPMSOM> out;check(domain_->GetSOM(path.value,&out));if(kind(out.Get())!=(gpo::domain_target(job_)?"domain":"ou")||lower(property([&](BSTR* p){return out->get_Path(p);}))!=lower(std::string(dn)))fail("gpo_target_invalid");return out;
   }
   ComPtr<IGPMSOM> write_ou(std::size_t index) {
     const auto& expected=job_.fields.at("expected_state").as<json::object>().at("ous").as<json::array>().at(index).as<json::object>();
     const auto& dn=job_.fields.at("target_ous").as<json::array>().at(index).as<std::string>();
     auto ads=directory_object(job_,dn);
-    if(lower(property([&](BSTR* p){return ads->get_Class(p);}))!=(component_->scope=="domain"?"domaindns":"organizationalunit")||object_guid(ads.Get())!=expected.at("guid").as<std::string>()||
+    if(lower(property([&](BSTR* p){return ads->get_Class(p);}))!=(gpo::domain_target(job_)?"domaindns":"organizationalunit")||object_guid(ads.Get())!=expected.at("guid").as<std::string>()||
       object_usn(ads.Get())!=expected.at("usn").as<std::string>()||lower(object_text(ads.Get(),L"distinguishedName"))!=lower(expected.at("dn").as<std::string>()))fail("gpo_state_changed");
     auto som=ou(dn);VARIANT_BOOL blocked{};check(som->get_GPOInheritanceBlocked(&blocked));
     if((blocked!=VARIANT_FALSE)!=expected.at("blocked").as<bool>()||json::value(som_links(som.Get()))!=expected.at("links"))fail("gpo_state_changed");
@@ -399,11 +399,11 @@ class native_managed final:public gpo::managed_provider {
       json::array ous;
       for(const auto& item:job_.fields.at("target_ous").as<json::array>()) {
         const auto& dn=item.as<std::string>();auto ads=directory_object(job_,dn);
-        if(lower(property([&](BSTR* p){return ads->get_Class(p);}))!=(component_->scope=="domain"?"domaindns":"organizationalunit"))fail("gpo_target_invalid");
+        if(lower(property([&](BSTR* p){return ads->get_Class(p);}))!=(gpo::domain_target(job_)?"domaindns":"organizationalunit"))fail("gpo_target_invalid");
         const auto actual=object_text(ads.Get(),L"distinguishedName");if(lower(actual)!=lower(dn))fail("gpo_target_invalid");
         auto som=ou(actual);VARIANT_BOOL blocked{};check(som->get_GPOInheritanceBlocked(&blocked));
         ous.push_back(json::object{{"dn",actual},{"guid",object_guid(ads.Get())},{"usn",object_usn(ads.Get())},{"blocked",blocked!=VARIANT_FALSE},
-          {"links",som_links(som.Get())},{"inherited_links",component_->scope=="domain"?json::array{}:som_links(som.Get(),true)}});
+          {"links",som_links(som.Get())},{"inherited_links",gpo::domain_target(job_)?json::array{}:som_links(som.Get(),true)}});
       }
       VARIANT_BOOL computer{},user{},consistent{};long cds{},css{},uds{},uss{};
       check(target_->IsComputerEnabled(&computer));check(target_->IsUserEnabled(&user));check(target_->IsACLConsistent(&consistent));
@@ -427,11 +427,11 @@ class native_managed final:public gpo::managed_provider {
     connect();open_target();json::array ous;
     for(const auto& item:job_.fields.at("target_ous").as<json::array>()) {
       const auto& dn=item.as<std::string>();auto ads=directory_object(job_,dn);
-      if(lower(property([&](BSTR* p){return ads->get_Class(p);}))!=(component_->scope=="domain"?"domaindns":"organizationalunit"))fail("gpo_target_invalid");
+      if(lower(property([&](BSTR* p){return ads->get_Class(p);}))!=(gpo::domain_target(job_)?"domaindns":"organizationalunit"))fail("gpo_target_invalid");
       const auto actual=object_text(ads.Get(),L"distinguishedName");if(lower(actual)!=lower(dn))fail("gpo_target_invalid");
       auto som=ou(actual);VARIANT_BOOL blocked{};check(som->get_GPOInheritanceBlocked(&blocked));
       ous.push_back(json::object{{"dn",actual},{"guid",object_guid(ads.Get())},{"usn",object_usn(ads.Get())},{"blocked",blocked!=VARIANT_FALSE},
-        {"links",som_links(som.Get())},{"inherited_links",component_->scope=="domain"?json::array{}:som_links(som.Get(),true)}});
+        {"links",som_links(som.Get())},{"inherited_links",gpo::domain_target(job_)?json::array{}:som_links(som.Get(),true)}});
     }
     auto links=all_links();json::value g;
     if(target_) {

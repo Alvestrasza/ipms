@@ -1,6 +1,6 @@
 /**
  * File Name: domain-security-copy.ts
- * Version: v0.1.2 | Created: 2026-09-14 | Modified: 2026-09-15
+ * Version: v0.1.3 | Created: 2026-09-14 | Modified: 2026-09-17
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Localize domain mapping, GPO names and managed GPO requests.
  */
@@ -38,9 +38,9 @@ const en = {
   domain: "Domain DNS name",
   domainHint:
     "Use the complete DNS name. The domain identity cannot be changed after saving.",
-  mappings: "Tier OU mappings",
+  mappings: "Directory targets by tier",
   mappingHint:
-    "Enter one existing OU per line: a simple name such as _T0 means an OU directly below the selected domain and is saved as its full distinguished name. For nested OUs, use the complete path, e.g. OU=Servers,OU=_T1,DC=example,DC=invalid. Several OUs per tier are allowed; unused tiers stay empty.",
+    "Enter one existing target per line. A simple name such as _T0 means an OU directly below the selected domain. Nested OUs use their complete distinguished name. The exact domain root, for example DC=example,DC=invalid, is accepted only in Tier 0.",
   unverified: "Directory verification pending",
   verificationHint:
     "Saved OU paths have not been checked against Active Directory. No existing directory objects have been adopted or moved.",
@@ -76,7 +76,7 @@ const en = {
     domain:
       "Domain DNS name: enter a complete name such as example.invalid, without a URL or path.",
     tier0:
-      "Tier 0 OUs: use simple names such as _T0 or complete OU distinguished names within the selected domain. Maximum 32 OUs; simple names allow up to 64 letters, digits, spaces, underscores, dots or hyphens. Nested OUs require their full path.",
+      "Tier 0 targets: use simple OU names, complete OU distinguished names within the selected domain, or the exact domain root. The domain root is a Tier 0 target only. Maximum 32 targets.",
     tier1:
       "Tier 1 OUs: use simple names such as _T1 or complete OU distinguished names within the selected domain. Maximum 32 OUs; simple names allow up to 64 letters, digits, spaces, underscores, dots or hyphens. Nested OUs require their full path.",
     tier2:
@@ -187,9 +187,9 @@ const de: DomainSecurityCopy = {
   domain: "DNS-Name der Domäne",
   domainHint:
     "Vollständigen DNS-Namen verwenden. Die Domänenidentität kann nach dem Speichern nicht geändert werden.",
-  mappings: "OU-Zuordnung je Tier",
+  mappings: "Verzeichnisziele je Tier",
   mappingHint:
-    "Pro Zeile eine vorhandene OU eintragen: Ein einfacher Name wie _T0 bezeichnet eine OU direkt unter der gewählten Domäne und wird als vollständiger Distinguished Name gespeichert. Für verschachtelte OUs den vollständigen Pfad verwenden, z. B. OU=Servers,OU=_T1,DC=example,DC=invalid. Mehrere OUs pro Tier sind möglich; nicht verwendete Tiers bleiben leer.",
+    "Pro Zeile ein vorhandenes Ziel eintragen. Ein einfacher Name wie _T0 bezeichnet eine OU direkt unter der gewählten Domäne. Für verschachtelte OUs den vollständigen Distinguished Name verwenden. Die exakte Domänenwurzel, zum Beispiel DC=example,DC=invalid, ist ausschließlich in Tier 0 zulässig.",
   unverified: "Prüfung im Verzeichnis ausstehend",
   verificationHint:
     "Die gespeicherten OU-Pfade wurden noch nicht mit Active Directory abgeglichen. Bestehende Verzeichnisobjekte wurden weder übernommen noch verschoben.",
@@ -227,7 +227,7 @@ const de: DomainSecurityCopy = {
     domain:
       "DNS-Name der Domäne: Einen vollständigen Namen wie example.invalid eintragen, ohne URL oder Pfad.",
     tier0:
-      "Tier 0 OUs: Einfache Namen wie _T0 oder vollständige OU-Distinguished-Names innerhalb der gewählten Domäne verwenden. Maximal 32 OUs; einfache Namen erlauben bis zu 64 Buchstaben, Ziffern, Leerzeichen, Unterstriche, Punkte oder Bindestriche. Verschachtelte OUs benötigen den vollständigen Pfad.",
+      "Tier-0-Ziele: Einfache OU-Namen, vollständige OU-Distinguished-Names innerhalb der gewählten Domäne oder die exakte Domänenwurzel verwenden. Die Domänenwurzel ist ausschließlich als Tier-0-Ziel zulässig. Maximal 32 Ziele.",
     tier1:
       "Tier 1 OUs: Einfache Namen wie _T1 oder vollständige OU-Distinguished-Names innerhalb der gewählten Domäne verwenden. Maximal 32 OUs; einfache Namen erlauben bis zu 64 Buchstaben, Ziffern, Leerzeichen, Unterstriche, Punkte oder Bindestriche. Verschachtelte OUs benötigen den vollständigen Pfad.",
     tier2:

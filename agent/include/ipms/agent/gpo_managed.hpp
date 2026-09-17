@@ -1,5 +1,5 @@
 // File Name: gpo_managed.hpp
-// Version: v0.1.1 | Created: 2026-09-15 | Last Modified: 2026-09-16
+// Version: v0.2.0 | Created: 2026-09-15 | Last Modified: 2026-09-17
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Snapshot-bound managed GPO operations and read-only inspection seam.
 #pragma once
@@ -21,6 +21,7 @@ std::pair<std::string,std::string> ace_object_types(std::int64_t flags,
     const std::function<std::string()>& object_type, const std::function<std::string()>& inherited_object_type);
 bool managed_operation(std::string_view operation);
 bool inspection(const job& assignment);
+bool domain_target(const job& assignment);
 bool valid_snapshot(const json::value& state);
 bool valid_gpo_links(const json::value& links);
 void validate_managed_job(const job& assignment);

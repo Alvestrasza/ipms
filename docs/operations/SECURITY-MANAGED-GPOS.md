@@ -1,14 +1,15 @@
 # Managed GPO operations
 
-Version: 1.6.0 | Date: 2026-09-16
+Version: 1.7.0 | Date: 2026-09-17
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
-Applies to: Portal 0.2.65 / Windows Agent 0.2.45
+Applies to: Portal 0.2.66 / Windows Agent 0.2.46
 
 ## Configuration
 
 In **Administration → Security → Domains**, configure each domain's existing
-tier OUs and naming template. No OU layout is assumed
-or created. A template such as `{tier}-{scope}-{target}-{purpose}_V{version}`
+tier directory targets and naming template. No OU layout is assumed or created.
+The exact domain distinguished name may be added only to Tier 0; all other targets
+must be OUs in the configured domain. A template such as `{tier}-{scope}-{target}-{purpose}_V{version}`
 produces names such as `0-C-ALL-MS-WS2025-DC_V1.0.0`. Component aliases retain
 distinctions such as VBS, Credential Guard, BitLocker and user policy. The GPO
 GUID is the stable identity; its active name changes when a version is activated.
@@ -85,11 +86,15 @@ revision-bound deletion of the definition. Definitions that still reference a
 managed policy cannot be deleted.
 
 Microsoft **Domain Security** components use the selected domain's root and
-require Tier 0 authorization. Before requesting import and link, linking,
-activation or deactivation, explicitly confirm this domain-wide target. The Portal derives the
-root from the configured domain; the Agent verifies its domain object GUID.
-Tier OU mappings are not required for this scope. Regular computer and user
-components use the explicitly selected subset of configured tier OUs. The managed
+require Tier 0 authorization. A tenant can also configure the exact root DN as a
+Tier 0 directory target for an ordinary machine or user component. A root target
+must be selected alone, requires Windows Agent 0.2.46 or later, and never changes
+the component's machine/user activation scope. Before requesting import and link,
+linking, activation, deactivation or deletion, explicitly confirm this domain-wide
+target. The Portal derives or validates the root against the configured domain;
+the Agent verifies its domain object GUID. Tier OU mappings are not required for
+Domain Security scope. Regular computer and user components use the explicitly
+selected subset of configured Tier targets. The managed
 identity retains that exact target set for later link, activation and deactivation
 actions; removing an OU from the domain configuration invalidates pending actions
 instead of silently expanding or retargeting the GPO. The target confirmation does

@@ -1,5 +1,5 @@
 // File Name: gpo_reconciliation.cpp
-// Version: v0.1.0 | Created: 2026-09-15 | Last Modified: 2026-09-15
+// Version: v0.1.1 | Created: 2026-09-15 | Last Modified: 2026-09-17
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Bounded reconciliation documents never authorize AD mutations.
 #include "ipms/agent/gpo_reconciliation.hpp"
@@ -76,13 +76,13 @@ bool acceptable_reconciliation_observation(const journal& j,const json::object& 
       !g.at("wmi_filter").as<std::string>().empty()||g.at("computer_ds")!=g.at("computer_sysvol")||g.at("user_ds")!=g.at("user_sysvol"))return false;
   const auto& targets=j.assignment.fields.at("target_ous").as<json::array>();const auto& ous=state.at("ous").as<json::array>();if(targets.size()!=ous.size())return false;
   for(std::size_t i=0;i<targets.size();++i)if(lower(targets[i].as<std::string>())!=lower(ous[i].as<json::object>().at("dn").as<std::string>()))return false;
-  const auto* c=component(j.assignment);if(!c)return false;
-  if(c->scope=="domain"&&(j.assignment.number("target_tier")!=0||
+  const auto* c=component(j.assignment);if(!c)return false;const bool root=domain_target(j.assignment);
+  if(root&&(j.assignment.number("target_tier")!=0||
       (!ous.empty()&&ous.front().as<json::object>().at("guid").as<std::string>()!=j.assignment.text("domain_guid"))))return false;
   for(const auto& item:o.at("forest_links").as<json::array>()) {
     const auto& l=item.as<json::object>();
     if(l.at("domain").as<std::string>()!=j.assignment.text("domain_dns_name")||l.at("enforced").as<bool>()||
-        l.at("kind").as<std::string>()!=(c->scope=="domain"?"domain":"ou"))return false;
+        l.at("kind").as<std::string>()!=(root?"domain":"ou"))return false;
     if(std::none_of(targets.begin(),targets.end(),[&](const auto& dn){return lower(dn.template as<std::string>())==lower(l.at("dn").as<std::string>());}))return false;
   }
   json::array direct;for(const auto& target:ous)for(const auto& link:target.as<json::object>().at("links").as<json::array>())

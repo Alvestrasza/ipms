@@ -1,5 +1,5 @@
 # File Name: gpo_reconciliation.py
-# Version: v0.1.0 | Created: 2026-09-15 | Last Modified: 2026-09-15
+# Version: v0.1.1 | Created: 2026-09-15 | Last Modified: 2026-09-17
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
 # Description: Read-only directory reconciliation and scoped, acknowledged fence release.
 from datetime import timedelta
@@ -19,7 +19,7 @@ from ipms.apps.tenancy.models import Tenant
 from .domains import DomainJSONParser
 from .gpo_approvals import authorization_for, fresh_actor, policy_for, scoped, visible_jobs
 from .gpo_jobs import DEFAULT_GPO_IDS, _ready, canonical, digest, uuid_text
-from .gpo_production import assignment_fields, domain_root, owner_marker, _domain_component, _links, _same_target, _sha, policy_for_job, production, validate_snapshot
+from .gpo_production import assignment_fields, domain_root, owner_marker, _domain_component, _domain_target, _links, _same_target, _sha, policy_for_job, production, validate_snapshot
 from .models import DomainSecuritySettings, GpoExecutorReport, GpoImportJob, GpoReconciliation, ManagedGpoPolicy
 from .views import SecurityReadView, query
 
@@ -67,7 +67,8 @@ def _job_integrity(job):
 def _executor_blocker(job):
     report = GpoExecutorReport.objects.filter(enrollment=job.enrollment).first()
     try:
-        minimum = (0, 2, 43) if job.assignment.get('schema') == 4 else (0, 2, 37)
+        minimum = ((0, 2, 46) if _domain_target(job.assignment) and not _domain_component(job.assignment)
+                   else (0, 2, 43) if job.assignment.get('schema') == 4 else (0, 2, 37))
         if (not report or tuple(map(int, report.agent_version.split('.'))) < minimum
                 or tuple(map(int, job.system.agent_version.split('.'))) < minimum):
             return 'agent_update_required'
@@ -189,7 +190,7 @@ def observation_blocker(record):
             return 'observation_issues'
         if sorted(gpo['links'], key=canonical) != sorted(value['forest_links'], key=canonical):
             return 'link_scope_conflict'
-        root = _domain_component(job.assignment)
+        root = _domain_target(job.assignment)
         if root and job.assignment['target_tier'] != 0:
             return 'link_scope_conflict'
         configured = ([domain_root(job.domain.domain_name)] if root

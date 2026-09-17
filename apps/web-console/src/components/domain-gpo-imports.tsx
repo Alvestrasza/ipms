@@ -1,6 +1,6 @@
 /**
  * File Name: domain-gpo-imports.tsx
- * Version: v0.4.0 | Created: 2026-09-14 | Modified: 2026-09-15
+ * Version: v0.5.0 | Created: 2026-09-14 | Modified: 2026-09-17
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Prepare snapshot-bound import/link requests in one action while keeping activation separately approved.
  */
@@ -74,6 +74,18 @@ function listing(v: unknown): v is Listing {
     isDomainGpoImports({ results: r.jobs, executors: r.executors })
   );
 }
+function domainRootFor(domain: string) {
+  return domain
+    .split(".")
+    .map((part) => `DC=${part}`)
+    .join(",");
+}
+function defaultDirectoryTargets(targets: string[], root: string) {
+  const ous = targets.filter(
+    (target) => target.toLowerCase() !== root.toLowerCase(),
+  );
+  return ous.length ? ous : targets.slice(0, 1);
+}
 export function DomainGpoImports(props: Props) {
   return (
     <ProductionWorkflow
@@ -97,6 +109,7 @@ function ProductionWorkflow({
 }: Props) {
   const c = getGpoProductionCopy(locale);
   const endpoint = `/api/v1/security/domain-settings/${encodeURIComponent(settings.id)}`;
+  const domainRootDn = domainRootFor(settings.domain_name);
   const [data, setData] = useState<Listing | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorJobId, setErrorJobId] = useState("");
@@ -111,7 +124,7 @@ function ProductionWorkflow({
   const [backupId, setBackupId] = useState(override?.backup_id ?? "");
   const [tier, setTier] = useState<SecurityTier>("0");
   const [selectedOus, setSelectedOus] = useState<string[]>(
-    settings.tier_ous["0"],
+    defaultDirectoryTargets(settings.tier_ous["0"], domainRootDn),
   );
   const [target, setTarget] = useState(override ? "OVRD" : "ALL");
   const [version, setVersion] = useState("1.0.0");
@@ -229,6 +242,25 @@ function ProductionWorkflow({
   const component =
     baseline?.components.find((b) => b.id === backupId) ??
     (override ? undefined : baseline?.components.find((b) => b.available));
+  const availableOus = settings.tier_ous[tier];
+  const configuredRootTarget =
+    component?.scope !== "domain" &&
+    selectedOus.length === 1 &&
+    selectedOus[0].toLowerCase() === domainRootDn.toLowerCase();
+  const domainRootAction =
+    operation !== "import_managed_gpo" &&
+    (component?.scope === "domain" || configuredRootTarget);
+  const actionTargetOus =
+    component?.scope === "domain" ? [domainRootDn] : selectedOus;
+  const requiredAgentPatch = configuredRootTarget
+    ? 46
+    : operation === "delete_managed_gpo"
+      ? 45
+      : override
+        ? 43
+        : operation === "import_and_link_managed_gpo"
+          ? 36
+          : 35;
   const executors =
     data?.executors.filter(
       (e) =>
@@ -238,14 +270,7 @@ function ProductionWorkflow({
         (Number(e.agent_version.split(".")[0]) > 0 ||
           Number(e.agent_version.split(".")[1]) > 2 ||
           (Number(e.agent_version.split(".")[1]) === 2 &&
-            Number(e.agent_version.split(".")[2]) >=
-              (operation === "delete_managed_gpo"
-                ? 45
-                : override
-                  ? 43
-                  : operation === "import_and_link_managed_gpo"
-                    ? 36
-                    : 35))),
+            Number(e.agent_version.split(".")[2]) >= requiredAgentPatch)),
     ) ?? [];
   const executor =
     executors.find((e) => e.system_id === systemId) ?? executors[0];
@@ -293,15 +318,6 @@ function ProductionWorkflow({
   const disabled = busy || loading || !canImport || configurationDirty;
   const lockedSelection =
     disabled || pending.current !== null || automaticRequest;
-  const domainRootAction =
-    component?.scope === "domain" && operation !== "import_managed_gpo";
-  const domainRootDn = settings.domain_name
-    .split(".")
-    .map((part) => `DC=${part}`)
-    .join(",");
-  const availableOus = settings.tier_ous[tier];
-  const actionTargetOus =
-    component?.scope === "domain" ? [domainRootDn] : selectedOus;
   const deleting = operation === "delete_managed_gpo";
   const actionSelection = deleting
     ? {
@@ -647,13 +663,15 @@ function ProductionWorkflow({
             >
               {!executors.length ? (
                 <option value="">
-                  {operation === "delete_managed_gpo"
-                    ? c.noDeleteExecutor
-                    : override
-                      ? getSecurityOverrideCopy(locale).agent
-                      : operation === "import_and_link_managed_gpo"
-                        ? c.noExecutor
-                        : c.noLegacyExecutor}
+                  {configuredRootTarget
+                    ? c.noRootExecutor
+                    : operation === "delete_managed_gpo"
+                      ? c.noDeleteExecutor
+                      : override
+                        ? getSecurityOverrideCopy(locale).agent
+                        : operation === "import_and_link_managed_gpo"
+                          ? c.noExecutor
+                          : c.noLegacyExecutor}
                 </option>
               ) : (
                 executors.map((e) => (
@@ -710,7 +728,12 @@ function ProductionWorkflow({
                 resetInspection();
                 const nextTier = e.target.value as SecurityTier;
                 setTier(nextTier);
-                setSelectedOus(settings.tier_ous[nextTier]);
+                setSelectedOus(
+                  defaultDirectoryTargets(
+                    settings.tier_ous[nextTier],
+                    domainRootDn,
+                  ),
+                );
                 setAdoptJobId("");
               }}
             >
@@ -733,15 +756,26 @@ function ProductionWorkflow({
                       disabled={lockedSelection || Boolean(policy)}
                       onChange={(event) => {
                         resetInspection();
-                        setSelectedOus((current) =>
-                          event.target.checked
-                            ? availableOus.filter(
-                                (candidate) =>
-                                  current.includes(candidate) ||
-                                  candidate === ou,
-                              )
-                            : current.filter((candidate) => candidate !== ou),
-                        );
+                        setSelectedOus((current) => {
+                          if (!event.target.checked)
+                            return current.filter(
+                              (candidate) => candidate !== ou,
+                            );
+                          if (ou.toLowerCase() === domainRootDn.toLowerCase())
+                            return [ou];
+                          const withoutRoot = current.filter(
+                            (candidate) =>
+                              candidate.toLowerCase() !==
+                              domainRootDn.toLowerCase(),
+                          );
+                          return availableOus.filter(
+                            (candidate) =>
+                              candidate.toLowerCase() !==
+                                domainRootDn.toLowerCase() &&
+                              (withoutRoot.includes(candidate) ||
+                                candidate === ou),
+                          );
+                        });
                       }}
                     />
                     <span>{ou}</span>

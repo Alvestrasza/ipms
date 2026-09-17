@@ -57,9 +57,9 @@ const messages = {
   ],
 
   root: [
-    "This account policy requires explicit confirmation of the domain root and Tier 0 authorization. Select Tier 0 and confirm the displayed domain root before creating the request.",
+    "This GPO action requires explicit confirmation of the domain root and Tier 0 authorization. Select Tier 0 and confirm the displayed domain root before creating the request.",
 
-    "Diese Kontorichtlinie benötigt eine ausdrückliche Bestätigung der Domänenwurzel und Tier-0-Berechtigung. Wähle Tier 0 und bestätige die angezeigte Domänenwurzel vor dem Erstellen des Auftrags.",
+    "Diese GPO-Aktion benötigt eine ausdrückliche Bestätigung der Domänenwurzel und Tier-0-Berechtigung. Wähle Tier 0 und bestätige die angezeigte Domänenwurzel vor dem Erstellen des Auftrags.",
   ],
 
   inspection: [

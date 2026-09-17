@@ -1,5 +1,5 @@
 # File Name: gpo_production.py
-# Version: v0.2.0 | Created: 2026-09-15 | Last Modified: 2026-09-16
+# Version: v0.3.0 | Created: 2026-09-15 | Last Modified: 2026-09-17
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
 # Description: Snapshot-bound production GPO preparation and separately approved changes.
 import copy
@@ -53,7 +53,9 @@ def inspecting(job):
     return production(job) and job.assignment.get('operation') == INSPECT
 
 
-def minimum_agent(operation, override=False):
+def minimum_agent(operation, override=False, domain_root=False):
+    if domain_root:
+        return (0, 2, 46)
     if operation == DELETE:
         return (0, 2, 45)
     if override:
@@ -111,6 +113,16 @@ def _domain_component(assignment):
     return bool(component and component['scope'] == 'domain')
 
 
+def _targets_domain_root(targets, domain):
+    return (isinstance(targets, list) and len(targets) == 1 and isinstance(targets[0], str)
+            and targets[0].casefold() == domain_root(domain).casefold())
+
+
+def _domain_target(assignment):
+    return _domain_component(assignment) or _targets_domain_root(
+        assignment.get('target_ous'), assignment.get('domain_dns_name', ''))
+
+
 def _target_identity(dn, domain, *, root=False):
     if root:
         if not isinstance(dn, str) or dn.casefold() != domain_root(domain).casefold():
@@ -121,7 +133,7 @@ def _target_identity(dn, domain, *, root=False):
 
 def _same_target(left, right, assignment):
     try:
-        domain, root = assignment['domain_dns_name'], _domain_component(assignment)
+        domain, root = assignment['domain_dns_name'], _domain_target(assignment)
         return _target_identity(left, domain, root=root) == _target_identity(right, domain, root=root)
     except ParseError:
         return False
@@ -222,12 +234,12 @@ def validate_snapshot(value, assignment, *, allow_inconsistent=False):
             _invalid()
         guids.add(ou['guid'])
         try:
-            _target_identity(ou['dn'], assignment['domain_dns_name'], root=_domain_component(assignment))
+            _target_identity(ou['dn'], assignment['domain_dns_name'], root=_domain_target(assignment))
         except ParseError:
             _invalid()
         _links(ou['links'])
         _links(ou['inherited_links'])
-        root_target = _domain_component(assignment)
+        root_target = _domain_target(assignment)
         if root_target and (assignment['target_tier'] != 0 or ou['guid'] != assignment['domain_guid'] or ou['inherited_links']):
             _invalid('The domain-root observation must bind the Tier 0 domain identity.')
         if any(link['kind'] != ('domain' if root_target else 'ou') or not _same_target(link['dn'], ou['dn'], assignment)
@@ -304,11 +316,6 @@ def _selection(tenant, user, config, data):
     component = components.get((data['baseline_id'], data['backup_id']))
     if not component or component['scope'] != 'domain' and not config.tier_ous[data['tier']]:
         raise ParseError('Select an available component and configured tier.')
-    root_operation = component['scope'] == 'domain' and data['operation'] != IMPORT
-    if root_operation and not data.get('domain_root_confirmed', False):
-        raise PublicApiError('security_gpo_domain_root_confirmation_required', status_code=409)
-    if not root_operation and data.get('domain_root_confirmed', False):
-        raise ParseError('Domain-root confirmation is valid only for an explicit domain-wide action.')
     from .catalog import BY_ID
     candidates = [profile for profile in BY_ID[data['baseline_id']].profiles
                   if data['backup_id'] in profiles.get((data['baseline_id'], profile), ())]
@@ -323,6 +330,14 @@ def _selection(tenant, user, config, data):
         selected_targets = [value for value in configured_targets if value in data['target_ous']]
         if selected_targets != data['target_ous'] or len(set(data['target_ous'])) != len(data['target_ous']):
             raise ParseError('Select unique target OUs from the configured tier.')
+        if any(value.casefold() == domain_root(config.domain_name).casefold() for value in selected_targets):
+            if data['tier'] != '0' or not _targets_domain_root(selected_targets, config.domain_name):
+                raise ParseError('Select the exact domain root by itself and only in Tier 0.')
+    root_operation = _targets_domain_root(selected_targets, config.domain_name) and data['operation'] != IMPORT
+    if root_operation and not data.get('domain_root_confirmed', False):
+        raise PublicApiError('security_gpo_domain_root_confirmation_required', status_code=409)
+    if not root_operation and data.get('domain_root_confirmed', False):
+        raise ParseError('Domain-root confirmation is valid only for an explicit domain-root action.')
     profile = candidates[0]
     override = None
     if data.get('override_id'):
@@ -342,8 +357,12 @@ def _selection(tenant, user, config, data):
     enrollment = AgentEnrollment.objects.filter(tenant=tenant, device_uri=system.source_id).first() if system else None
     report = GpoExecutorReport.objects.filter(enrollment=enrollment).first() if enrollment else None
     if (not _ready(system, enrollment, report, config.domain_name, portal=True)
-            or tuple(map(int, system.agent_version.split('.'))) < minimum_agent(data['operation'], bool(override))
-            or tuple(map(int, report.agent_version.split('.'))) < minimum_agent(data['operation'], bool(override))):
+            or tuple(map(int, system.agent_version.split('.'))) < minimum_agent(
+                data['operation'], bool(override),
+                _targets_domain_root(selected_targets, config.domain_name) and component['scope'] != 'domain')
+            or tuple(map(int, report.agent_version.split('.'))) < minimum_agent(
+                data['operation'], bool(override),
+                _targets_domain_root(selected_targets, config.domain_name) and component['scope'] != 'domain')):
         raise PublicApiError('security_gpo_executor_unavailable', status_code=409)
     try:
         artifact_bytes(component)
@@ -386,7 +405,7 @@ def _delete_selection(tenant, user, config, data):
     if (not component or policy.backup_id not in profiles.get((policy.baseline_id, policy.profile), ())
             or semantic_purpose(policy.baseline_id, component) != policy.purpose):
         raise PublicApiError('security_gpo_prepared_content_changed', status_code=409)
-    root = component['scope'] == 'domain'
+    root = _targets_domain_root(policy.target_ous, config.domain_name)
     if root and policy.tier != 0:
         raise PublicApiError('security_gpo_unmanaged_target', status_code=409)
     if root != data.get('domain_root_confirmed', False):
@@ -403,8 +422,10 @@ def _delete_selection(tenant, user, config, data):
     report = GpoExecutorReport.objects.filter(enrollment=enrollment).first() if enrollment else None
     if (policy.domain_guid != (report.domain_guid if report else None)
             or not _ready(system, enrollment, report, config.domain_name, portal=True)
-            or tuple(map(int, system.agent_version.split('.'))) < minimum_agent(DELETE)
-            or tuple(map(int, report.agent_version.split('.'))) < minimum_agent(DELETE)):
+            or tuple(map(int, system.agent_version.split('.'))) < minimum_agent(
+                DELETE, bool(policy.override_id), root and component['scope'] != 'domain')
+            or tuple(map(int, report.agent_version.split('.'))) < minimum_agent(
+                DELETE, bool(policy.override_id), root and component['scope'] != 'domain')):
         raise PublicApiError('security_gpo_executor_unavailable', status_code=409)
     override = policy.override
     if override:
@@ -585,7 +606,7 @@ def _safe_before(assignment, state):
     if operation in (LINK, IMPORT_LINK) and (gpo['computer_enabled'] or gpo['user_enabled']):
         _invalid('Disable the managed GPO before changing links.')
     if operation in (IMPORT_LINK, LINK, ACTIVATE, DEACTIVATE, DELETE):
-        if any(link['kind'] != ('domain' if component['scope'] == 'domain' else 'ou') or link['domain'] != assignment['domain_dns_name']
+        if any(link['kind'] != ('domain' if _domain_target(assignment) else 'ou') or link['domain'] != assignment['domain_dns_name']
                or not _target_ou(link['dn'], assignment) or link['enforced'] for link in gpo['links']):
             _invalid('The GPO has links outside the approved OU set.')
         own = []
@@ -758,12 +779,14 @@ def scope_current(job, enrollment, tenant, *, lock=True):
                 or config.revision != a['scope_revision'] or config.domain_name != a['domain_dns_name']
                 or not scoped(job.requested_by, tenant, config, a['target_tier'])
                 or not _ready(system, enrollment, report, config.domain_name, portal=True)
-                or tuple(map(int, system.agent_version.split('.'))) < minimum_agent(a['intended_operation'], a['schema'] == 4)
-                or tuple(map(int, report.agent_version.split('.'))) < minimum_agent(a['intended_operation'], a['schema'] == 4)
+                or tuple(map(int, system.agent_version.split('.'))) < minimum_agent(
+                    a['intended_operation'], a['schema'] == 4, _domain_target(a) and not _domain_component(a))
+                or tuple(map(int, report.agent_version.split('.'))) < minimum_agent(
+                    a['intended_operation'], a['schema'] == 4, _domain_target(a) and not _domain_component(a))
                 or report.domain_guid != a['domain_guid'] or report.forest_dns_name != a['forest_dns_name']
                 or report.dc_fqdn != a['executor_dc_fqdn']):
             return False
-        configured_targets = ([domain_root(config.domain_name)] if _domain_component(a)
+        configured_targets = ([domain_root(config.domain_name)] if _domain_target(a)
                               else config.tier_ous[str(a['target_tier'])])
         if (not isinstance(policy.target_ous, list) or not policy.target_ous
                 or any(target not in configured_targets for target in policy.target_ous)):
@@ -930,7 +953,7 @@ def _postcondition(job, evidence, guid):
         if [link for link in prior['inherited_links'] if link['guid'] != guid] != [
                 link for link in after['inherited_links'] if link['guid'] != guid]:
             _invalid('An unrelated inherited link changed.')
-        root_target = _domain_component(a)
+        root_target = _domain_target(a)
         child = _target_identity(after['dn'], a['domain_dns_name'], root=root_target)
         for inherited in after['inherited_links']:
             if inherited['guid'] != guid:

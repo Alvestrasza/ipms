@@ -2,7 +2,7 @@
 
  * File Name: gpo-production-copy.ts
 
- * Version: v0.1.0 | Created: 2026-09-15 | Modified: 2026-09-15
+ * Version: v0.2.0 | Created: 2026-09-15 | Modified: 2026-09-17
 
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
 
@@ -42,12 +42,12 @@ const en = {
 
   tier: "Tier",
 
-  exactOus: "Exact target OUs",
+  exactOus: "Exact directory targets",
 
   exactOusHint:
-    "Select one or more OUs configured for this tier. The managed GPO remains bound to this exact target set for later activation and lifecycle actions.",
+    "Select one or more configured OUs. In Tier 0, the exact domain root can be selected by itself. The managed GPO remains bound to this exact target set for later lifecycle actions.",
 
-  noConfiguredOus: "No OUs are configured for this tier.",
+  noConfiguredOus: "No directory targets are configured for this tier.",
 
   adopt: "Use existing IPMS import",
 
@@ -140,7 +140,7 @@ const en = {
   domainRoot: "Domain root",
 
   confirmDomainRoot:
-    "I confirm the domain root as the target for this domain-wide account policy. This confirmation does not approve its execution.",
+    "I confirm the domain root as the only target for this GPO action. This confirmation does not approve its execution.",
 
   actionHint: "Approval authorizes only the action and targets shown below.",
 
@@ -149,6 +149,9 @@ const en = {
   noLegacyExecutor: "No eligible Agent 0.2.35 or newer is currently available.",
 
   noDeleteExecutor: "No eligible Agent 0.2.45 or newer is currently available.",
+
+  noRootExecutor:
+    "No eligible Agent 0.2.46 or newer is currently available for a domain-root target.",
 
   actions: {
     import_and_link_managed_gpo: "Import and link",
@@ -211,12 +214,12 @@ const de: typeof en = {
 
   tier: "Tier",
 
-  exactOus: "Genaue Ziel-OUs",
+  exactOus: "Genaue Verzeichnisziele",
 
   exactOusHint:
-    "Wähle eine oder mehrere für dieses Tier konfigurierte OUs. Die verwaltete GPO bleibt für die spätere Aktivierung und weitere Aktionen genau an diese Zielmenge gebunden.",
+    "Wähle eine oder mehrere konfigurierte OUs. In Tier 0 kann die exakte Domänenwurzel allein ausgewählt werden. Die verwaltete GPO bleibt für weitere Aktionen genau an diese Zielmenge gebunden.",
 
-  noConfiguredOus: "Für dieses Tier sind keine OUs konfiguriert.",
+  noConfiguredOus: "Für dieses Tier sind keine Verzeichnisziele konfiguriert.",
 
   adopt: "Vorhandenen IPMS-Import übernehmen",
 
@@ -312,7 +315,7 @@ const de: typeof en = {
   domainRoot: "Domänenwurzel",
 
   confirmDomainRoot:
-    "Ich bestätige die Domänenwurzel als Ziel dieser domänenweiten Kontorichtlinie. Diese Bestätigung gibt die Ausführung noch nicht frei.",
+    "Ich bestätige die Domänenwurzel als einziges Ziel dieser GPO-Aktion. Diese Bestätigung gibt die Ausführung noch nicht frei.",
 
   actionHint:
     "Die Freigabe gilt ausschließlich für die unten angezeigte Aktion und ihre Ziele.",
@@ -324,6 +327,9 @@ const de: typeof en = {
 
   noDeleteExecutor:
     "Derzeit ist kein geeigneter Agent ab Version 0.2.45 verfügbar.",
+
+  noRootExecutor:
+    "Für ein Ziel an der Domänenwurzel ist derzeit kein geeigneter Agent ab Version 0.2.46 verfügbar.",
 
   actions: {
     import_and_link_managed_gpo: "Importieren und verknüpfen",

@@ -1,7 +1,10 @@
 # IPMS Agent
 
-Windows candidate **0.2.45** validates schema-4 sparse override jobs against a
-compiled Microsoft baseline catalog. It renders only the selected Registry.pol,
+Windows candidate **0.2.46** additionally permits an exact configured domain
+root as an exclusive Tier 0 target for managed machine or user GPOs. It treats
+that target as a domain object in GPMC and LDAP while retaining the component's
+machine or user activation scope. Candidate **0.2.45** validates schema-4 sparse
+override jobs against a compiled Microsoft baseline catalog. It renders only the selected Registry.pol,
 security template and audit records into a separate managed GPO. Caller-provided
 paths, types and structured AppLocker XML are never accepted. The base GPO stays
 unchanged and activation preserves the server-approved higher link priority. It

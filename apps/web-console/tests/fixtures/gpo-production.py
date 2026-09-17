@@ -1,5 +1,5 @@
 # File Name: gpo-production.py
-# Version: v0.1.0 | Created: 2026-09-15 | Last Modified: 2026-09-15
+# Version: v0.1.1 | Created: 2026-09-15 | Last Modified: 2026-09-17
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
 # Description: Synthetic native GPO observations in the explicit isolated browser database; never contacts AD.
 import copy
@@ -80,11 +80,11 @@ with transaction.atomic():
         actor = get_user_model().objects.get(username="e2e-admin")
         GpoDomainAuthorization.objects.create(domain=domain, grants=[{"user_id": str(actor.pk), "tiers": ["0", "1", "2"]}])
         result = {"domain_id": str(domain.pk), "domain_name": domain_name, "system_id": str(system.pk)}
-    elif mode in ("agent-035", "agent-037", "agent-043", "agent-044", "agent-045"):
+    elif mode in ("agent-035", "agent-037", "agent-043", "agent-044", "agent-045", "agent-046"):
         domain = DomainSecuritySettings.objects.get(pk=uuid.UUID(sys.argv[2]), tenant=tenant,
             domain_name__startswith="production-", domain_name__endswith=".example.invalid")
         system = WindowsServer.objects.get(tenant=tenant, domain_name=domain.domain_name, hostname="gpo-ui-dc")
-        system.agent_version = {"agent-035": "0.2.35", "agent-037": "0.2.37", "agent-043": "0.2.43", "agent-044": "0.2.44", "agent-045": "0.2.45"}[mode]
+        system.agent_version = {"agent-035": "0.2.35", "agent-037": "0.2.37", "agent-043": "0.2.43", "agent-044": "0.2.44", "agent-045": "0.2.45", "agent-046": "0.2.46"}[mode]
         system.save(update_fields=("agent_version",))
         GpoExecutorReport.objects.filter(enrollment__device_uri=system.source_id).update(agent_version=system.agent_version)
         result = {"version": system.agent_version}

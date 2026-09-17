@@ -1,7 +1,7 @@
 # File Name: domains.py
-# Version: v0.1.1 | Created: 2026-09-14 | Last Modified: 2026-09-14
+# Version: v0.1.2 | Created: 2026-09-14 | Last Modified: 2026-09-17
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
-# Description: Bounded domain/OU bindings, GPO names and draft composition order.
+# Description: Bounded domain directory targets, GPO names and draft composition order.
 import re
 import string
 import unicodedata
@@ -40,11 +40,12 @@ def domain_name(value):
     return name
 
 
-def ou_identity(value, domain):
+def ou_identity(value, domain, *, allow_domain_root=False):
     """Parse the supported OU/DC subset of escaped RFC4514 distinguished names.
 
     This compares syntax and containment, never claims the directory object exists.
     Reject unsupported multi-valued RDNs instead of interpreting them ambiguously.
+    The exact selected-domain root is accepted only for an explicit Tier 0 caller.
     """
     if not isinstance(value, str) or not 1 <= len(value) <= 2048 or any(ord(c) < 32 or ord(c) == 127 or 0xD800 <= ord(c) <= 0xDFFF for c in value):
         raise ParseError('Supply a bounded OU distinguished name.')
@@ -98,6 +99,8 @@ def ou_identity(value, domain):
             raise ParseError('Invalid distinguished-name value.')
         decoded.append((attribute, normalized))
     suffix = [('DC', label) for label in domain.split('.')]
+    if decoded == suffix and allow_domain_root:
+        return tuple(decoded)
     if len(decoded) <= len(suffix) or decoded[-len(suffix):] != suffix or any(a != 'OU' for a, _ in decoded[:-len(suffix)]):
         raise ParseError('The OU must belong to the configured DNS domain.')
     return tuple(decoded)
@@ -171,13 +174,15 @@ def validate_settings(data, *, updating=False):
             if isinstance(value, str) and re.fullmatch(r'\w[\w .-]{0,63}', value):
                 value = 'OU=' + value.strip() + ',' + ','.join('DC=' + label for label in name.split('.'))
             try:
-                identity = ou_identity(value, name)
+                identity = ou_identity(value, name, allow_domain_root=tier == '0')
             except ParseError as exc:
                 raise PublicApiError(f'security_domain_tier_{tier}_ou_invalid') from exc
             for other_tier, other in identities:
                 overlaps = (len(identity) >= len(other) and identity[-len(other):] == other) or (
                     len(other) >= len(identity) and other[-len(identity):] == identity)
-                if identity == other or (tier != other_tier and overlaps):
+                root_target = len(identity) == len(name.split('.'))
+                other_root_target = len(other) == len(name.split('.'))
+                if identity == other or (tier != other_tier and overlaps and not (root_target or other_root_target)):
                     raise PublicApiError('security_domain_ou_overlap')
             identities.append((tier, identity))
             cleaned[tier].append(value.strip())

@@ -1,6 +1,6 @@
 /**
  * File Name: domain-security.spec.ts
- * Version: v0.1.2 | Created: 2026-09-14 | Modified: 2026-09-15
+ * Version: v0.1.3 | Created: 2026-09-14 | Modified: 2026-09-17
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Exercise real tenant domain settings and bounded pilot requests in isolated fixtures.
  */
@@ -95,6 +95,57 @@ async function selectPolicyDomain(
     })
     .selectOption(settings.id);
 }
+
+test("the exact domain root can be configured only as a Tier 0 target", async ({
+  page,
+}) => {
+  const { headers } = await login(page);
+  const domain = `gpo-root-${randomUUID().slice(0, 8)}.example.invalid`;
+  const root = domain
+    .split(".")
+    .map((label) => `DC=${label}`)
+    .join(",");
+  const mappings = paths(domain);
+  await page.goto(route);
+  await page.getByRole("button", { name: "Add domain", exact: true }).click();
+  await page.getByLabel("Domain DNS name", { exact: true }).fill(domain);
+  await page.getByLabel("Tier 0 OUs", { exact: true }).fill(root);
+  await page
+    .getByLabel("Tier 1 OUs", { exact: true })
+    .fill(mappings["1"].join("\n"));
+  await page
+    .getByLabel("Tier 2 OUs", { exact: true })
+    .fill(mappings["2"].join("\n"));
+  const createdResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(api) && response.request().method() === "POST",
+  );
+  await page
+    .getByRole("button", { name: "Save domain settings", exact: true })
+    .click();
+  const created = await createdResponse;
+  expect(created.status()).toBe(201);
+  const saved: DomainSecuritySettings = await created.json();
+  expect(saved.tier_ous["0"]).toEqual([root]);
+
+  await page
+    .getByLabel("Tier 1 OUs", { exact: true })
+    .fill(`${mappings["1"].join("\n")}\n${root}`);
+  const rejectedResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`${api}${saved.id}/`) &&
+      response.request().method() === "PUT",
+  );
+  await page
+    .getByRole("button", { name: "Save domain settings", exact: true })
+    .click();
+  expect((await rejectedResponse).status()).toBe(400);
+  const current: DomainSecuritySettings = await (
+    await page.request.get(`${api}${saved.id}/`, { headers })
+  ).json();
+  expect(current.tier_ous["0"]).toEqual([root]);
+  expect(current.tier_ous["1"]).toEqual(mappings["1"]);
+});
 
 test("domain administration saves OUs and GPO names without exposing composition ordering", async ({
   page,

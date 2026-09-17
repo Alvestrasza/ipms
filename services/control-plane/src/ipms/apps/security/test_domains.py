@@ -1,5 +1,5 @@
 # File Name: test_domains.py
-# Version: v0.1.1 | Created: 2026-09-14 | Last Modified: 2026-09-14
+# Version: v0.1.2 | Created: 2026-09-14 | Last Modified: 2026-09-17
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
 # Description: Public tenant domain configuration, naming and ordering behavior.
 from django.contrib.auth import get_user_model
@@ -122,6 +122,25 @@ class DomainSettingsTests(TestCase):
         self.assertEqual(updated.data['tier_ous']['1'], ['OU=Application Servers,DC=example,DC=invalid'])
         from .models import GpoImportJob
         self.assertFalse(GpoImportJob.objects.exists())
+
+    def test_exact_domain_root_is_a_tier_zero_target_only(self):
+        root = 'DC=example,DC=invalid'
+        mappings = self.draft()['tier_ous']
+        mappings['0'] = [root, *mappings['0']]
+        created = self.create(tier_ous=mappings)
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data['tier_ous'], mappings)
+
+        for tier in ('1', '2'):
+            with self.subTest(tier=tier):
+                invalid = {key: ([] if key != tier else [root]) for key in ('0', '1', '2')}
+                response = self.create(tier_ous=invalid)
+                self.assertEqual(response.status_code, 400, response.data)
+                self.assertEqual(response.data['error']['code'], f'security_domain_tier_{tier}_ou_invalid')
+
+        foreign = self.create(tier_ous={'0': ['DC=other,DC=invalid'], '1': [], '2': []})
+        self.assertEqual(foreign.status_code, 400, foreign.data)
+        self.assertEqual(foreign.data['error']['code'], 'security_domain_tier_0_ou_invalid')
 
     def test_normalized_short_names_cannot_bypass_tier_overlap_checks(self):
         for mappings in [

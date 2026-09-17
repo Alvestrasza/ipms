@@ -1,5 +1,5 @@
 // File Name: gpo_managed.cpp
-// Version: v0.1.1 | Created: 2026-09-15 | Last Modified: 2026-09-16
+// Version: v0.2.0 | Created: 2026-09-15 | Last Modified: 2026-09-17
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Exact managed-GPO contracts, inspection isolation and durable write ordering.
 #include "ipms/agent/gpo_managed.hpp"
@@ -53,8 +53,7 @@ std::string root_dn(std::string_view domain) {
     if(!result.empty())result+=',';result+="dc=";result+=domain.substr(begin,end-begin);begin=end+1;
   }return result;
 }
-bool domain_scope(const job& j) {const auto* c=component(j);return c&&c->scope=="domain";}
-std::string target_kind(const job& j) {return domain_scope(j)?"domain":"ou";}
+std::string target_kind(const job& j) {return domain_target(j)?"domain":"ou";}
 std::string state_guid(const json::object& state) {
   const auto& g=state.at("gpo");return g.get_if<std::nullptr_t>()?std::string{}:g.as<json::object>().at("guid").as<std::string>();
 }
@@ -174,6 +173,12 @@ bool managed_operation(std::string_view op) {
   return import_operation(op)||op=="link_managed_gpo"||op=="activate_managed_gpo"||op=="deactivate_managed_gpo"||op=="delete_managed_gpo";
 }
 bool inspection(const job& j) {return j.number("schema")>=3&&j.text("operation")=="inspect_managed_gpo";}
+bool domain_target(const job& j) {
+  const auto* content=component(j);if(content&&content->scope=="domain")return true;
+  if(!j.fields.contains("target_ous")||!j.fields.contains("domain_dns_name"))return false;
+  const auto& targets=j.fields.at("target_ous").as<json::array>();
+  return targets.size()==1&&lower(targets.front().as<std::string>())==root_dn(j.text("domain_dns_name"));
+}
 std::pair<std::string,std::string> ace_object_types(std::int64_t flags,
     const std::function<std::string()>& object_type,const std::function<std::string()>& inherited_object_type) {
   // ADS_FLAG_OBJECT_TYPE_PRESENT=1, ADS_FLAG_INHERITED_OBJECT_TYPE_PRESENT=2.
@@ -214,7 +219,8 @@ void validate_managed_job(const job& j) {
   if(!valid_uuid(j.text("managed_id"))||j.number("managed_revision")<1||!managed_operation(j.text("intended_operation")))fail();
   const bool read=inspection(j);
   const auto* content=component(j);
-  const bool root=domain_scope(j);
+  const bool root=domain_target(j);
+  const bool domain_content=content&&content->scope=="domain";
   if(root&&j.number("target_tier")!=0)fail("gpo_target_invalid");
   if(content&&content->scope!="machine"&&content->scope!="user"&&content->scope!="domain")fail("gpo_unsupported_component");
   if(j.text("approval_mode")!=(read?"inspection":"portal")||(!read&&j.text("operation")!=j.text("intended_operation")))fail();
@@ -232,7 +238,8 @@ void validate_managed_job(const job& j) {
   const auto& ous=j.fields.at("target_ous").as<json::array>();const auto& orders=j.fields.at("link_orders").as<json::array>();
   if(ous.size()>32||orders.size()!=ous.size()||(ous.empty()&&j.text("intended_operation")!="import_managed_gpo"))fail();
   std::set<std::string> seen;
-  if(root&&((j.text("intended_operation")=="import_managed_gpo"&&!ous.empty())||
+  if(root&&((j.text("intended_operation")=="import_managed_gpo"&&
+      (domain_content?!ous.empty():ous.size()!=1))||
     (j.text("intended_operation")!="import_managed_gpo"&&ous.size()!=1)))fail("gpo_target_invalid");
   for(std::size_t n=0;n<ous.size();++n)if((root?lower(ous[n].as<std::string>())!=root_dn(j.text("domain_dns_name")):!ou_dn(ous[n].as<std::string>(),j.text("domain_dns_name")))||
       !seen.insert(lower(ous[n].as<std::string>())).second||orders[n].as<std::int64_t>()<1||orders[n].as<std::int64_t>()>128)fail();
@@ -252,7 +259,7 @@ void validate_managed_state(const job& j,const json::object& state) {
   if(!state.at("name_available").as<bool>())fail("gpo_name_collision");
   const auto& ous=state.at("ous").as<json::array>();const auto& targets=j.fields.at("target_ous").as<json::array>();
   if(ous.size()!=targets.size())fail("gpo_target_invalid");
-  if(domain_scope(j))for(const auto& v:ous) {const auto& target=v.as<json::object>();
+  if(domain_target(j))for(const auto& v:ous) {const auto& target=v.as<json::object>();
     if(target.at("guid").as<std::string>()!=j.text("domain_guid")||!target.at("inherited_links").as<json::array>().empty())fail("gpo_target_invalid");
   }
   for(std::size_t n=0;n<ous.size();++n)if(lower(ous[n].as<json::object>().at("dn").as<std::string>())!=lower(targets[n].as<std::string>()))fail("gpo_target_invalid");

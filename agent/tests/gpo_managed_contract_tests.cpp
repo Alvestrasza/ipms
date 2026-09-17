@@ -1,5 +1,5 @@
 // File Name: gpo_managed_contract_tests.cpp
-// Version: v0.1.1 | Created: 2026-09-15 | Last Modified: 2026-09-16
+// Version: v0.2.0 | Created: 2026-09-15 | Last Modified: 2026-09-17
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Managed GPO inspection, stable identity and irreversible boundary regressions without AD.
 #include "ipms/agent/gpo_managed.hpp"
@@ -417,8 +417,20 @@ int main(int argc,char** argv) {
   j=record(domain_document("activate_managed_gpo",wrong_identity));provider wrong_root(wrong_identity);
   require(gpo::execute_managed(j,wrong_root,save,[]{return true;},[]{}).at("result_code").as<std::string>()=="gpo_target_invalid"&&wrong_root.calls.size()==1,"Wrong domain root GUID reached mutation");
   auto domain_import=domain_document("import_managed_gpo",snapshot(false));require(gpo::parse_job(domain_import).fields.at("target_ous").as<json::array>().empty(),"Domain import requires root link prematurely");
-  auto unexpected_root=document("activate_managed_gpo",root_state);unexpected_root["target_ous"]=json::array{"DC=example,DC=invalid"};unexpected_root["input_digest"]=gpo::input_digest(unexpected_root);
-  rejects([&]{gpo::parse_job(unexpected_root);});
+  auto configured_root=document("activate_managed_gpo",root_state);configured_root["target_tier"]=0;
+  configured_root["target_ous"]=json::array{"DC=example,DC=invalid"};configured_root["input_digest"]=gpo::input_digest(configured_root);
+  require(gpo::domain_target(gpo::parse_job(configured_root)),"Configured machine GPO domain root was not recognized");
+  auto machine_root_import=configured_root;machine_root_import["operation"]="import_managed_gpo";
+  machine_root_import["intended_operation"]="import_managed_gpo";
+  machine_root_import["safety_review"]=json::object{{"management_access",false},{"recovery_access",false}};
+  machine_root_import["input_digest"]=gpo::input_digest(machine_root_import);
+  require(gpo::domain_target(gpo::parse_job(machine_root_import)),"Configured machine GPO root import was rejected");
+  auto machine_wrong_tier=configured_root;machine_wrong_tier["target_tier"]=1;machine_wrong_tier["input_digest"]=gpo::input_digest(machine_wrong_tier);
+  rejects([&]{gpo::parse_job(machine_wrong_tier);});
+  auto mixed_root=configured_root;mixed_root["target_ous"]=json::array{"DC=example,DC=invalid",dn};mixed_root["link_orders"]=json::array{1,1};mixed_root["input_digest"]=gpo::input_digest(mixed_root);
+  rejects([&]{gpo::parse_job(mixed_root);});
+  auto foreign_root=configured_root;foreign_root["target_ous"]=json::array{"DC=other,DC=invalid"};foreign_root["input_digest"]=gpo::input_digest(foreign_root);
+  rejects([&]{gpo::parse_job(foreign_root);});
   // Combined import/link has one claim and never enables policy content.
   const auto unlinked_targets=[](json::object state,bool exists) {
     for(auto& item:state.at("ous").as<json::array>()) {
