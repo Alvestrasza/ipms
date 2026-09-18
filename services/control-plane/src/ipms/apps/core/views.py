@@ -1,5 +1,5 @@
 # File Name: views.py
-# Version: v0.2.71 | Created: 2026-08-31 | Last Modified: 2026-09-18
+# Version: v0.2.72 | Created: 2026-08-31 | Last Modified: 2026-09-18
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
 # Description: Public version metadata and bounded service health endpoints.
 from django.db import DatabaseError, connection
@@ -19,7 +19,7 @@ def api_information(request: Request) -> Response:
         {
             "name": "IPMS Control Plane API",
             "version": "v1",
-            "application_version": "0.2.71",
+            "application_version": "0.2.72",
         }
     )
 

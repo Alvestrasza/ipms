@@ -1,6 +1,6 @@
 /**
  * File Name: windows-gpo-copy.ts
- * Version: v0.1.0 | Created: 2026-09-16 | Modified: 2026-09-16
+ * Version: v0.1.1 | Created: 2026-09-16 | Modified: 2026-09-18
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Label the single managed Windows GPO deployment workspace.
  */
@@ -10,7 +10,7 @@ const en = {
   navigation: "Windows GPOs",
   title: "Windows GPO deployment",
   description:
-    "Import, link and activate managed baseline and override GPOs from one workspace.",
+    "Import, link and activate managed baseline, override and custom GPOs from one workspace.",
   domain: "Domain",
   source: "Policy source",
   baseline: "Baseline",
@@ -36,7 +36,7 @@ const de: typeof en = {
   navigation: "Windows GPOs",
   title: "Windows-GPO-Verteilung",
   description:
-    "Importiere, verknüpfe und aktiviere verwaltete Baseline- und Override-GPOs an einer zentralen Stelle.",
+    "Importiere, verknüpfe und aktiviere verwaltete Baseline-, Override- und Custom-GPOs an einer zentralen Stelle.",
   domain: "Domäne",
   source: "Richtlinienquelle",
   baseline: "Baseline",
