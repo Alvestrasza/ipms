@@ -7,6 +7,8 @@ from .models import PlatformAdministrator, Tenant, TenantMembership
 
 
 class Permission:
+    SECURITY_COLLECTIONS_VIEW = 'security.collections.view'
+    SECURITY_COLLECTIONS_MANAGE = 'security.collections.manage'
     SECURITY_DOMAINS_MANAGE = 'security.domains.manage'
     SECURITY_GPO_IMPORTS_APPROVE = 'security.gpo_imports.approve'
     SECURITY_GPO_IMPORTS_RUN = 'security.gpo_imports.run'
@@ -44,6 +46,7 @@ ROLE_PERMISSIONS = {
             Permission.AGENTS_VIEW,
             Permission.AGENTS_MANAGE,
             Permission.SECURITY_SCANS_RUN,
+            Permission.SECURITY_COLLECTIONS_VIEW,
             Permission.VIRTUAL_MACHINES_OPERATE,
             Permission.VIRTUAL_MACHINES_CONSOLE_CONTROL,
         }
@@ -53,6 +56,7 @@ ROLE_PERMISSIONS = {
             Permission.INVENTORY_VIEW,
             Permission.OPERATIONS_APPROVE,
             Permission.SECURITY_GPO_IMPORTS_APPROVE,
+            Permission.SECURITY_COLLECTIONS_VIEW,
             Permission.AUDIT_VIEW,
         }
     ),
@@ -62,9 +66,10 @@ ROLE_PERMISSIONS = {
             Permission.AGENTS_VIEW,
             Permission.AUDIT_VIEW,
             Permission.USERS_VIEW,
+            Permission.SECURITY_COLLECTIONS_VIEW,
         }
     ),
-    TenantMembership.Role.READER: frozenset({Permission.INVENTORY_VIEW}),
+    TenantMembership.Role.READER: frozenset({Permission.INVENTORY_VIEW, Permission.SECURITY_COLLECTIONS_VIEW}),
 }
 
 

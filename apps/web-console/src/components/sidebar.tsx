@@ -10,6 +10,7 @@ import {
   ArchiveRestore,
   Boxes,
   Database,
+  FolderKanban,
   KeyRound,
   LayoutDashboard,
   ListTree,
@@ -25,7 +26,7 @@ import {
 } from "lucide-react";
 import type { Route } from "next";
 import Link from "next/link";
-
+import { getCollectionCopy } from "@/i18n/collection-copy";
 import { getDictionary } from "@/i18n/dictionaries";
 import { getDomainSecurityCopy } from "@/i18n/domain-security-copy";
 import { getJobLogsCopy } from "@/i18n/job-logs-copy";
@@ -63,6 +64,8 @@ export type ActiveSection =
   | "security-override"
   | "security-windows-gpos"
   | "security-custom-gpo"
+  | "collections-device"
+  | "collections-policy"
   | "admin-users"
   | "admin-service-accounts"
   | "admin-wsus"
@@ -81,6 +84,7 @@ export async function Sidebar({
   canManageSecurityBaselines,
   canManageSecurityDomains,
   canRunGpoImports,
+  canViewCollections,
   canViewLogs,
   windowsRoles,
   windowsClientFamilies,
@@ -95,6 +99,7 @@ export async function Sidebar({
   canManageSecurityBaselines: boolean;
   canManageSecurityDomains: boolean;
   canRunGpoImports: boolean;
+  canViewCollections: boolean;
   canViewLogs: boolean;
   windowsRoles: WindowsServerRoleSummary[];
   windowsClientFamilies: WindowsClientFamilySummary[];
@@ -102,6 +107,7 @@ export async function Sidebar({
   const locale = await resolveLocale();
   const dictionary = getDictionary(locale);
   const securityCopy = getSecurityCopy(locale);
+  const collectionCopy = getCollectionCopy(locale);
   const logsCopy = getJobLogsCopy(locale);
   const securityExpanded =
     activeSection === "security-baseline" ||
@@ -110,6 +116,7 @@ export async function Sidebar({
     activeSection === "security-custom-gpo";
   const windowsGpoCopy = getWindowsGpoCopy(locale);
   const logsExpanded = activeSection.startsWith("logs-");
+  const collectionsExpanded = activeSection.startsWith("collections-");
   const physicalExpanded = [
     "physical",
     "physical-servers",
@@ -206,6 +213,13 @@ export async function Sidebar({
       enabled: true as const,
     },
     {
+      label: collectionCopy.navigation,
+      icon: FolderKanban,
+      href: `/${locale}/collections/device`,
+      section: "collections-device" as const,
+      enabled: canViewCollections,
+    },
+    {
       label: dictionary.navigation.storage,
       icon: Database,
       enabled: false as const,
@@ -231,7 +245,7 @@ export async function Sidebar({
             <li key={label}>
               {item.enabled ? (
                 <Link
-                  className={`nav-item ${item.section === activeSection || (item.section === "security-baseline" && securityExpanded) || (item.section === "physical" && physicalExpanded) || (item.section === "virtual" && virtualExpanded) ? "nav-item--active" : ""}`}
+                  className={`nav-item ${item.section === activeSection || (item.section === "security-baseline" && securityExpanded) || (item.section === "collections-device" && collectionsExpanded) || (item.section === "physical" && physicalExpanded) || (item.section === "virtual" && virtualExpanded) ? "nav-item--active" : ""}`}
                   href={item.href as Route}
                   aria-current={
                     item.section === activeSection ? "page" : undefined
@@ -319,6 +333,38 @@ export async function Sidebar({
                         </>
                       ) : null}
                     </ul>
+                  </li>
+                </ul>
+              ) : null}
+              {item.section === "collections-device" && collectionsExpanded ? (
+                <ul className="nav-tree">
+                  <li>
+                    <Link
+                      className={`nav-subitem ${activeSection === "collections-device" ? "nav-subitem--active" : ""}`}
+                      href={`/${locale}/collections/device` as Route}
+                      aria-current={
+                        activeSection === "collections-device"
+                          ? "page"
+                          : undefined
+                      }
+                    >
+                      <MonitorCog aria-hidden="true" size={15} />
+                      <span>{collectionCopy.deviceNavigation}</span>
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      className={`nav-subitem ${activeSection === "collections-policy" ? "nav-subitem--active" : ""}`}
+                      href={`/${locale}/collections/policy` as Route}
+                      aria-current={
+                        activeSection === "collections-policy"
+                          ? "page"
+                          : undefined
+                      }
+                    >
+                      <ListTree aria-hidden="true" size={15} />
+                      <span>{collectionCopy.policyNavigation}</span>
+                    </Link>
                   </li>
                 </ul>
               ) : null}

@@ -13,8 +13,18 @@ from .gpo_approvals import GpoApprovalPolicyView, GpoDomainAuthorizationView, Gp
 from .gpo_reconciliation import GpoReconciliationsView, GpoReconciliationAcceptView
 
 from .gpo_overrides import OverrideView, OverrideDetailView, OverrideCatalogView
+from .collections import (
+    DeviceCollectionsView, DeviceCollectionView, PolicyCollectionsView,
+    PolicyCollectionView, PolicyCollectionPreviewView, PolicyCollectionDeploymentsView,
+)
 
 urlpatterns = [
+    path('device-collections/', DeviceCollectionsView.as_view(), name='security-device-collections'),
+    path('device-collections/<uuid:collection_id>/', DeviceCollectionView.as_view(), name='security-device-collection'),
+    path('policy-collections/', PolicyCollectionsView.as_view(), name='security-policy-collections'),
+    path('policy-collections/<uuid:collection_id>/', PolicyCollectionView.as_view(), name='security-policy-collection'),
+    path('policy-collections/<uuid:collection_id>/preview/', PolicyCollectionPreviewView.as_view(), name='security-policy-collection-preview'),
+    path('policy-collections/<uuid:collection_id>/deployments/', PolicyCollectionDeploymentsView.as_view(), name='security-policy-collection-deployments'),
     path('overrides/', OverrideView.as_view(), name='security-overrides'),
     path('overrides/<uuid:override_id>/', OverrideDetailView.as_view(), name='security-override'),
     path('override-catalog/', OverrideCatalogView.as_view(), name='security-override-catalog'),

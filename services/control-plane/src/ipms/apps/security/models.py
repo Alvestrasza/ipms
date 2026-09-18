@@ -190,6 +190,82 @@ class GpoReconciliation(models.Model):
             status__in=('requested', 'observed', 'accept_requested')), name='security_gpo_one_reconcile')]
 
 
+class DeviceCollection(models.Model):
+    """Tenant-owned direct and inventory-rule membership definition."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey('tenancy.Tenant', on_delete=models.CASCADE)
+    name = models.CharField(max_length=100)
+    description = models.CharField(max_length=500, blank=True)
+    revision = models.PositiveIntegerField(default=1)
+    static_system_ids = models.JSONField(default=list)
+    rules = models.JSONField(default=list)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='+')
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ('name', 'id')
+        constraints = [models.UniqueConstraint(fields=('tenant', 'name'), name='security_device_collection_name')]
+
+
+class PolicyCollection(models.Model):
+    """Versioned ordered policy stack with explicit domain target bindings."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey('tenancy.Tenant', on_delete=models.CASCADE)
+    name = models.CharField(max_length=100)
+    description = models.CharField(max_length=500, blank=True)
+    revision = models.PositiveIntegerField(default=1)
+    entries = models.JSONField(default=list)
+    bindings = models.JSONField(default=list)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='+')
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ('name', 'id')
+        constraints = [models.UniqueConstraint(fields=('tenant', 'name'), name='security_policy_collection_name')]
+
+
+class PolicyCollectionDeployment(models.Model):
+    """Immutable collection revision expanded into independently fenced domain jobs."""
+
+    id = models.UUIDField(primary_key=True, editable=False)
+    tenant = models.ForeignKey('tenancy.Tenant', on_delete=models.CASCADE)
+    collection = models.ForeignKey(PolicyCollection, on_delete=models.PROTECT, related_name='deployments')
+    collection_revision = models.PositiveIntegerField()
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='+')
+    status = models.CharField(max_length=32, default='queued')
+    snapshot = models.JSONField()
+    requested_at = models.DateTimeField(default=timezone.now)
+    completed_at = models.DateTimeField(null=True)
+
+    class Meta:
+        ordering = ('-requested_at', '-id')
+
+
+class PolicyCollectionDeploymentItem(models.Model):
+    """One ordered policy/domain expansion and its preflight/write receipts."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    deployment = models.ForeignKey(PolicyCollectionDeployment, on_delete=models.CASCADE, related_name='items')
+    domain = models.ForeignKey(DomainSecuritySettings, on_delete=models.PROTECT)
+    policy_index = models.PositiveSmallIntegerField()
+    sequence = models.PositiveIntegerField()
+    status = models.CharField(max_length=32, default='pending')
+    selection = models.JSONField()
+    preflight_job = models.OneToOneField(GpoImportJob, on_delete=models.PROTECT, null=True, related_name='+')
+    write_job = models.OneToOneField(GpoImportJob, on_delete=models.PROTECT, null=True, related_name='+')
+    error_code = models.CharField(max_length=64, blank=True)
+    completed_at = models.DateTimeField(null=True)
+
+    class Meta:
+        ordering = ('sequence', 'id')
+        constraints = [models.UniqueConstraint(
+            fields=('deployment', 'domain', 'policy_index'), name='security_policy_deployment_item')]
+
+
 class BaselinePreference(models.Model):
     """Tenant catalog visibility, independent of scan policy and evidence."""
 

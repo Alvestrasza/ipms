@@ -422,6 +422,8 @@ def _result(job, document):
         return  # Preserve a newer server-side authority-withdrawal reason.
     if production(job) and document.get('status') in {item[0] for item in SUCCESS.values()}:
         receive_success(job, document)
+        from .collections import notify_gpo_job
+        notify_gpo_job(job)
         return
     status, code, guid, evidence = (document[key] for key in ('status', 'result_code', 'gpo_guid', 'evidence'))
     if (not isinstance(status, str) or not isinstance(code, str)
@@ -492,6 +494,9 @@ def _result(job, document):
             policy.state = 'reconciliation_required'
             policy.save(update_fields=('state',))
     _audit(job, 'security.gpo_import_result')
+    if production(job):
+        from .collections import notify_gpo_job
+        notify_gpo_job(job)
 
 
 def _retired_unclaimed_exchange(tenant, enrollment, document):

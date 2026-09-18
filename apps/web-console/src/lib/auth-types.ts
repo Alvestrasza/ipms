@@ -19,6 +19,8 @@ export type PermissionCode =
   | "agents.manage"
   | "service_accounts.manage"
   | "security.baselines.manage"
+  | "security.collections.view"
+  | "security.collections.manage"
   | "security.scans.run"
   | "security.domains.manage"
   | "security.gpo_imports.run"

@@ -81,7 +81,7 @@ class SecurityBaselineTests(TestCase):
         data = self.catalog()
         self.assertEqual(len(data["results"]), 20)
         self.assertEqual({row["target"] for row in data["results"]}, {"client", "server"})
-        self.assertEqual(data["capabilities"], {"assessment": True, "deployment": False, "collections": False})
+        self.assertEqual(data["capabilities"], {"assessment": True, "deployment": True, "collections": True})
         self.assertEqual(
             {row["provider"] for row in data["results"]},
             {"microsoft", "cis", "disa", "bsi", "acsc", "ncsc-uk"},

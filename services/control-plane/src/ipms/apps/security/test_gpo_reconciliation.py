@@ -104,6 +104,9 @@ class GpoReconciliationTests(TestCase):
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, 'reconciled')
         self.assertEqual(self.wire('reconciliation_ack')['mode'], 'released')
+        self.system.agent_version = '0.2.47'
+        self.system.save(update_fields=('agent_version',))
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.47')
         next_inspection = self.inspect(IMPORT)
         self.assertEqual(next_inspection['gpo_guid'], PILOT_GUID)
         self.assertEqual(ManagedGpoPolicy.objects.count(), 1)
@@ -420,6 +423,9 @@ class GpoReconciliationTests(TestCase):
         self.assertEqual(self.wire('reconciliation_ack')['mode'], 'released')
         self.managed.refresh_from_db()
         self.assertEqual(str(self.managed.origin_job_id), legacy['job_id'])
+        self.system.agent_version = '0.2.47'
+        self.system.save(update_fields=('agent_version',))
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.47')
         next_request = self.inspect(IMPORT)
         self.assertEqual(next_request['gpo_guid'], PILOT_GUID)
         self.assertEqual(next_request['owner_marker'], 'IPMS managed GPO; id=' + str(self.managed.pk))

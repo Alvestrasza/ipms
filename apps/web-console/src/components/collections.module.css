@@ -1,0 +1,140 @@
+/*
+ * File Name: collections.module.css
+ * Version: v0.1.0 | Created: 2026-09-18 | Modified: 2026-09-18
+ * Author: Alice Endelgard | Organization: Alvestrasza Corporation
+ * Purpose: Present responsive Device and Policy Collection editors and rollout state.
+ */
+.layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(16rem, 0.7fr) minmax(0, 1.5fr);
+}
+.panel {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #d7dbe3);
+  border-radius: 14px;
+  padding: 1rem;
+}
+.stack {
+  display: grid;
+  gap: 0.85rem;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+.between {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.field {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.88rem;
+}
+.field input,
+.field select,
+.field textarea {
+  min-height: 2.5rem;
+  border: 1px solid var(--border, #cbd1dc);
+  border-radius: 8px;
+  padding: 0.55rem 0.65rem;
+  background: var(--surface, #fff);
+  color: inherit;
+}
+.field textarea {
+  min-height: 5rem;
+  resize: vertical;
+}
+.grid {
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+}
+.list {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.card {
+  border: 1px solid var(--border, #d7dbe3);
+  border-radius: 10px;
+  padding: 0.75rem;
+  background: color-mix(
+    in srgb,
+    var(--surface, #fff) 92%,
+    var(--accent, #466cff) 8%
+  );
+}
+.selected {
+  outline: 2px solid var(--accent, #466cff);
+}
+.button {
+  border: 1px solid var(--border, #bfc6d4);
+  border-radius: 8px;
+  padding: 0.55rem 0.8rem;
+  background: var(--surface, #fff);
+  color: inherit;
+  cursor: pointer;
+}
+.primary {
+  background: var(--accent, #315ee8);
+  border-color: var(--accent, #315ee8);
+  color: #fff;
+}
+.danger {
+  color: #a32626;
+}
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.checklist {
+  display: grid;
+  gap: 0.35rem;
+  max-height: 18rem;
+  overflow: auto;
+  border: 1px solid var(--border, #d7dbe3);
+  border-radius: 8px;
+  padding: 0.55rem;
+}
+.check {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+.muted {
+  color: var(--muted-foreground, #667085);
+  font-size: 0.86rem;
+}
+.status {
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.78rem;
+  background: #e8eefc;
+}
+.success {
+  color: #12633d;
+}
+.error {
+  color: #9d2424;
+}
+.policy {
+  border-left: 4px solid var(--accent, #315ee8);
+}
+.target {
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.78rem;
+}
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}

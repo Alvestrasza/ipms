@@ -116,7 +116,7 @@ class BaselineOverview:
         return {
             "catalog_revision": CATALOG_REVISION, "generated_at": self.now.isoformat(),
             "hidden_count": sum(baseline.id in hidden for baseline in selected),
-            "capabilities": {"assessment": True, "deployment": False, "collections": False},
+            "capabilities": {"assessment": True, "deployment": True, "collections": True},
             "inventory": {
                 "total": len(self.systems), "servers": roles["server"] + roles["domain-controller"],
                 "clients": roles["client"], "unclassified": sum(value for key, value in roles.items() if key not in ("server", "domain-controller", "client")),
