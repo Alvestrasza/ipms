@@ -1,6 +1,6 @@
 {
   "name": "@ipms/web-console",
-  "version": "0.2.70",
+  "version": "0.2.71",
   "private": true,
   "packageManager": "pnpm@11.24.0",
   "engines": {

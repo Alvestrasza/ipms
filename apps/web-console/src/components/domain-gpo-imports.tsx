@@ -24,6 +24,7 @@ import {
   gpoApiErrorCode,
 } from "@/i18n/gpo-error-copy";
 import { getGpoProductionCopy } from "@/i18n/gpo-production-copy";
+import { getSecurityCustomGpoCopy } from "@/i18n/security-custom-gpo-copy";
 import { getSecurityOverrideCopy } from "@/i18n/security-override-copy";
 import type {
   DomainSecurityCatalog,
@@ -48,6 +49,7 @@ import { GpoStateReview } from "./gpo-state-review";
 
 type Props = {
   override?: SecurityOverride;
+  definitionKind?: "override" | "custom";
   onWorkflowLocked?: (locked: boolean) => void;
   settings: DomainSecuritySettings;
   catalog: DomainSecurityCatalog;
@@ -96,6 +98,7 @@ export function DomainGpoImports(props: Props) {
 }
 function ProductionWorkflow({
   override,
+  definitionKind = "override",
   onWorkflowLocked,
   settings,
   catalog,
@@ -126,7 +129,9 @@ function ProductionWorkflow({
   const [selectedOus, setSelectedOus] = useState<string[]>(
     defaultDirectoryTargets(settings.tier_ous["0"], domainRootDn),
   );
-  const [target, setTarget] = useState(override ? "OVRD" : "ALL");
+  const [target, setTarget] = useState(
+    override ? (definitionKind === "custom" ? "CUST" : "OVRD") : "ALL",
+  );
   const [version, setVersion] = useState("1.0.0");
   const [adoptJobId, setAdoptJobId] = useState("");
   const [operation, setOperation] = useState<GpoOperation>(
@@ -265,7 +270,7 @@ function ProductionWorkflow({
     (component?.scope === "domain" || configuredRootTarget);
   const actionTargetOus =
     component?.scope === "domain" ? [domainRootDn] : selectedOus;
-  const requiredAgentPatch = 47;
+  const requiredAgentPatch = definitionKind === "custom" ? 48 : 47;
   const executors =
     data?.executors.filter(
       (e) =>
@@ -734,7 +739,10 @@ function ProductionWorkflow({
                     : operation === "delete_managed_gpo"
                       ? c.noDeleteExecutor
                       : override
-                        ? getSecurityOverrideCopy(locale).agent
+                        ? (definitionKind === "custom"
+                            ? getSecurityCustomGpoCopy(locale)
+                            : getSecurityOverrideCopy(locale)
+                          ).agent
                         : operation === "import_and_link_managed_gpo"
                           ? c.noExecutor
                           : c.noLegacyExecutor}

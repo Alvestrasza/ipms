@@ -27,6 +27,7 @@ export type SecurityOverride = {
   artifact_sha256: string;
   revision: number;
   enabled: boolean;
+  kind?: "override" | "custom";
   entries: OverrideEntry[];
   sha256: string;
 };
@@ -117,6 +118,7 @@ export function isSecurityOverride(v: unknown): v is SecurityOverride {
     Number.isSafeInteger(v.revision) &&
     Number(v.revision) >= 1 &&
     typeof v.enabled === "boolean" &&
+    (v.kind === undefined || ["override", "custom"].includes(String(v.kind))) &&
     hash(v.sha256) &&
     Array.isArray(v.entries) &&
     v.entries.length <= 128 &&

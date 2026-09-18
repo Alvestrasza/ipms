@@ -15,7 +15,10 @@ import { getServerSession } from "@/lib/server-auth";
 import { getPolicyCollections } from "@/lib/server-collections";
 import { getDomainSecuritySettings } from "@/lib/server-domain-security";
 import { requireTenantScope } from "@/lib/server-portal-scope";
-import { getSecurityOverrides } from "@/lib/server-security-overrides";
+import {
+  getSecurityCustomGpos,
+  getSecurityOverrides,
+} from "@/lib/server-security-overrides";
 import { selectedTenant } from "@/lib/tenant-selection";
 
 export async function generateMetadata() {
@@ -28,18 +31,25 @@ export default async function PolicyCollectionsPage() {
   const tenant = selectedTenant(session, await cookies());
   if (!tenant || !hasPermission(tenant, "security.collections.view"))
     redirect(`/${locale}/access-unavailable`);
-  const [collections, domains, overrides] = await Promise.all([
+  const [collections, domains, overrides, customGpos] = await Promise.all([
     getPolicyCollections(tenant.id),
     getDomainSecuritySettings(tenant.id),
     getSecurityOverrides(tenant.id),
+    getSecurityCustomGpos(tenant.id),
   ]);
   if (
     !collections.sessionValid ||
     !domains.sessionValid ||
-    overrides.status === 401
+    overrides.status === 401 ||
+    customGpos.status === 401
   )
     redirect(`/${locale}/login`);
-  if (collections.forbidden || domains.forbidden || overrides.status === 403)
+  if (
+    collections.forbidden ||
+    domains.forbidden ||
+    overrides.status === 403 ||
+    customGpos.status === 403
+  )
     redirect(`/${locale}/access-unavailable`);
   const copy = getCollectionCopy(locale);
   return (
@@ -57,11 +67,12 @@ export default async function PolicyCollectionsPage() {
           <p>{copy.policyDescription}</p>
         </div>
       </section>
-      {collections.data && domains.data && overrides.data ? (
+      {collections.data && domains.data && overrides.data && customGpos.data ? (
         <PolicyCollections
           initial={collections.data}
           domains={domains.data}
           overrides={overrides.data}
+          customGpos={customGpos.data}
           tenantId={tenant.id}
           csrfToken={session.csrf_token}
           canManage={hasPermission(tenant, "security.collections.manage")}

@@ -12,9 +12,20 @@ import {
 } from "./control-plane-request";
 import { isOverrideList } from "./security-override-types";
 export async function getSecurityOverrides(tenantId: string) {
+  return getSparseDefinitions(tenantId, "overrides");
+}
+
+export async function getSecurityCustomGpos(tenantId: string) {
+  return getSparseDefinitions(tenantId, "custom-gpos");
+}
+
+async function getSparseDefinitions(
+  tenantId: string,
+  endpoint: "overrides" | "custom-gpos",
+) {
   try {
     const response = await fetch(
-      `${CONTROL_PLANE_URL}/api/v1/security/overrides/`,
+      `${CONTROL_PLANE_URL}/api/v1/security/${endpoint}/`,
       {
         cache: "no-store",
         headers: controlPlaneHeaders({

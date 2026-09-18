@@ -1,5 +1,5 @@
 # File Name: CMakeLists.txt
-# Version: v0.2.47
+# Version: v0.2.48
 # Created: 2026-08-31
 # Last Modified: 2026-09-17
 # Author: Alice Endelgard
@@ -7,7 +7,7 @@
 # Description: Native Agent build with bounded scans and snapshot-bound managed GPO operations.
 cmake_minimum_required(VERSION 3.24)
 
-project(ipms_agent VERSION 0.2.47 LANGUAGES CXX)
+project(ipms_agent VERSION 0.2.48 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

@@ -12,7 +12,7 @@ from .collections import refresh_deployment
 from .gpo_content import COMPONENTS, PROFILE_COMPONENTS
 from .gpo_jobs import security_gpo_exchange
 from .gpo_production import IMPORT_LINK, SUCCESS
-from .models import GpoDomainAuthorization, GpoExecutorReport, GpoImportJob, PolicyCollectionDeployment
+from .models import GpoDomainAuthorization, GpoExecutorReport, GpoImportJob, GpoOverride, PolicyCollectionDeployment
 from . import test_domains, test_gpo_approvals, test_gpo_jobs
 from .test_gpo_jobs import DOMAIN_GUID, PILOT_GUID, SERVER
 
@@ -172,6 +172,34 @@ class CollectionTests(TestCase):
                           'target_ous': ['OU=Foreign,DC=example,DC=invalid']}],
         }, format='json')
         self.assertEqual(response.status_code, 400)
+
+    def test_policy_collection_accepts_enabled_custom_gpo_as_distinct_source(self):
+        custom = GpoOverride.objects.create(
+            tenant=self.tenant, kind=GpoOverride.CUSTOM, name='Operations-Custom',
+            baseline_id=SERVER, backup_id=self.selection['backup_id'],
+            artifact_sha256=self.component['artifact_sha256'],
+            entries=[{'setting_id': 'a' * 64, 'value': 1}],
+        )
+        self.system.agent_version = '0.2.48'
+        self.system.save(update_fields=('agent_version',))
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.48')
+        created = self.client.post('/api/v1/security/policy-collections/', {
+            'name': 'Custom security policy', 'description': '',
+            'entries': [{
+                'source': 'custom', 'baseline_id': SERVER,
+                'backup_id': self.selection['backup_id'], 'target': 'CUST',
+                'version': '1.0.0', 'override_id': str(custom.pk),
+            }],
+            'bindings': [{
+                'domain_id': self.config['id'], 'tier': '1',
+                'target_ous': [self.config['tier_ous']['1'][0]],
+            }],
+        }, format='json')
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data['entries'][0]['source'], 'custom')
+        preview = self.client.get(f"/api/v1/security/policy-collections/{created.data['id']}/preview/")
+        self.assertEqual(preview.status_code, 200)
+        self.assertTrue(preview.data['ready'])
 
     def test_policy_collection_blocks_later_policies_after_domain_failure(self):
         entry = {

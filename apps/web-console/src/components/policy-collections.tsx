@@ -30,7 +30,7 @@ import styles from "./collections.module.css";
 
 type EntryDraft = {
   _key: string;
-  source: "baseline" | "override";
+  source: "baseline" | "override" | "custom";
   baseline_id: string;
   backup_id: string;
   target: string;
@@ -46,6 +46,7 @@ type Props = {
   initial: PolicyCollectionCatalog;
   domains: DomainSecurityCatalog;
   overrides: SecurityOverride[];
+  customGpos: SecurityOverride[];
   tenantId: string;
   csrfToken: string;
   canManage: boolean;
@@ -56,6 +57,7 @@ export function PolicyCollections({
   initial,
   domains,
   overrides,
+  customGpos,
   tenantId,
   csrfToken,
   canManage,
@@ -183,22 +185,24 @@ export function PolicyCollections({
   }, [selectedId, loadStatus]);
   function selectSource(
     index: number,
-    source: "baseline" | "override",
+    source: "baseline" | "override" | "custom",
     id: string,
   ) {
     setEntries((current) =>
       current.map((entry, i) => {
         if (i !== index) return entry;
-        if (source === "override") {
-          const override =
-            overrides.find((row) => row.id === id) ?? overrides[0];
-          return override
+        if (source === "override" || source === "custom") {
+          const definitions = source === "custom" ? customGpos : overrides;
+          const definition =
+            definitions.find((row) => row.id === id) ?? definitions[0];
+          return definition
             ? {
                 ...entry,
                 source,
-                baseline_id: override.baseline_id,
-                backup_id: override.backup_id,
-                override_id: override.id,
+                baseline_id: definition.baseline_id,
+                backup_id: definition.backup_id,
+                override_id: definition.id,
+                target: source === "custom" ? "CUST" : "OVRD",
               }
             : entry;
         }
@@ -461,16 +465,24 @@ export function PolicyCollections({
                         onChange={(event) =>
                           selectSource(
                             index,
-                            event.target.value as "baseline" | "override",
+                            event.target.value as
+                              | "baseline"
+                              | "override"
+                              | "custom",
                             event.target.value === "override"
                               ? (overrides[0]?.id ?? "")
-                              : (firstBaseline?.id ?? ""),
+                              : event.target.value === "custom"
+                                ? (customGpos[0]?.id ?? "")
+                                : (firstBaseline?.id ?? ""),
                           )
                         }
                       >
                         <option value="baseline">{c.baseline}</option>
                         <option value="override" disabled={!overrides.length}>
                           {c.override}
+                        </option>
+                        <option value="custom" disabled={!customGpos.length}>
+                          {c.custom}
                         </option>
                       </select>
                     </label>
@@ -496,14 +508,21 @@ export function PolicyCollections({
                       </label>
                     ) : (
                       <label className={styles.field}>
-                        {c.override}
+                        {entry.source === "custom" ? c.custom : c.override}
                         <select
                           value={entry.override_id ?? ""}
                           onChange={(event) =>
-                            selectSource(index, "override", event.target.value)
+                            selectSource(
+                              index,
+                              entry.source,
+                              event.target.value,
+                            )
                           }
                         >
-                          {overrides.map((row) => (
+                          {(entry.source === "custom"
+                            ? customGpos
+                            : overrides
+                          ).map((row) => (
                             <option value={row.id} key={row.id}>
                               {row.name}
                             </option>

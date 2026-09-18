@@ -38,7 +38,7 @@ export type DeviceCollectionCatalog = {
   inventory: CollectionDevice[];
 };
 export type PolicyCollectionEntry = {
-  source: "baseline" | "override";
+  source: "baseline" | "override" | "custom";
   baseline_id: string;
   backup_id: string;
   target: string;
@@ -75,7 +75,7 @@ export type PolicyCollectionPreview = {
     domain_name: string;
     tier: SecurityTier;
     target_ous: string[];
-    source: "baseline" | "override";
+    source: "baseline" | "override" | "custom";
     component_name: string;
     executor: null | { system_id: string; hostname: string; dc_fqdn: string };
     ready: boolean;
@@ -150,7 +150,7 @@ const entry = (value: unknown): value is PolicyCollectionEntry =>
   ["baseline_id", "backup_id", "target", "version", "component_name"].every(
     (key) => typeof value[key] === "string",
   ) &&
-  ["baseline", "override"].includes(String(value.source)) &&
+  ["baseline", "override", "custom"].includes(String(value.source)) &&
   ["machine", "user", "domain"].includes(String(value.scope)) &&
   (value.override_id === null || typeof value.override_id === "string");
 const binding = (value: unknown): value is PolicyCollectionBinding =>

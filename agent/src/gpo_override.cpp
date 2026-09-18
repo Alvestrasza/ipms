@@ -36,7 +36,7 @@ bool sid(std::string_view value) {
   return parts>=2;
 }
 void validate_value(const json::object& d,const json::value& value) {
-  if(!d.at("editable").as<bool>()||value==d.at("baseline_value"))invalid();
+  if(!d.at("editable").as<bool>())invalid();
   const auto& type=d.at("value_type").as<std::string>();
   if(type=="integer") {
     const auto* number=value.get_if<std::int64_t>();

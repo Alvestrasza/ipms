@@ -31,7 +31,7 @@ def component_for(baseline_id, backup_id):
     return component
 
 
-def normalize_entries(component, entries):
+def normalize_entries(component, entries, *, keep_baseline=False):
     if not isinstance(entries, list) or len(entries) > 128:
         raise ParseError('Supply at most 128 sparse override entries.')
     settings = {row['setting_id']: row for row in component['settings']}
@@ -61,7 +61,7 @@ def normalize_entries(component, entries):
             valid = all(_sid(entry) for entry in value)
         if not valid:
             raise ParseError('The override value has an invalid type or exceeds its documented limits.')
-        if value != setting['baseline_value']:
+        if keep_baseline or value != setting['baseline_value']:
             normalized.append({'setting_id': key, 'value': value})
     normalized.sort(key=lambda item: item['setting_id'])
     if len(canonical(normalized)) > 8192:
@@ -87,7 +87,8 @@ def patch_document(row):
 
 
 def override_projection(row):
-    return {**patch_document(row), 'name': row.name, 'enabled': row.enabled, 'sha256': digest(patch_document(row))}
+    return {**patch_document(row), 'name': row.name, 'enabled': row.enabled, 'kind': row.kind,
+            'sha256': digest(patch_document(row))}
 
 
 def assignment_patch(row):
@@ -105,7 +106,7 @@ def patch_valid(assignment):
         component = component_for(assignment['baseline_id'], assignment['backup_id'])
         if component['artifact_sha256'] != assignment['artifact_sha256']:
             return False
-        if normalize_entries(component, assignment['override_entries']) != assignment['override_entries']:
+        if normalize_entries(component, assignment['override_entries'], keep_baseline=True) != assignment['override_entries']:
             return False
         value = {'id': assignment['override_id'], 'revision': assignment['override_revision'],
                  'baseline_id': assignment['baseline_id'], 'backup_id': assignment['backup_id'],
@@ -155,7 +156,8 @@ class OverrideView(SecurityReadView):
 
     def get(self, request):
         query(request, set())
-        return Response({'results': [override_projection(row) for row in GpoOverride.objects.filter(tenant=request.tenant)]})
+        return Response({'results': [override_projection(row) for row in GpoOverride.objects.filter(
+            tenant=request.tenant, kind=GpoOverride.OVERRIDE)]})
 
     @transaction.atomic
     def post(self, request):
@@ -166,9 +168,9 @@ class OverrideView(SecurityReadView):
         _validate(request.data)
         component = component_for(request.data['baseline_id'], request.data['backup_id'])
         entries = normalize_entries(component, request.data['entries'])
-        if GpoOverride.objects.filter(tenant=request.tenant).count() >= 1000:
+        if GpoOverride.objects.filter(tenant=request.tenant, kind=GpoOverride.OVERRIDE).count() >= 1000:
             raise PublicApiError('security_override_limit', status_code=409)
-        row = GpoOverride.objects.create(tenant=request.tenant, name=request.data['name'],
+        row = GpoOverride.objects.create(tenant=request.tenant, kind=GpoOverride.OVERRIDE, name=request.data['name'],
             baseline_id=request.data['baseline_id'], backup_id=request.data['backup_id'],
             artifact_sha256=component['artifact_sha256'], entries=entries, enabled=request.data['enabled'])
         _audit(row, request.user, 'security.gpo_override_created')
@@ -180,7 +182,8 @@ class OverrideDetailView(OverrideView):
 
     def get(self, request, override_id):
         query(request, set())
-        return Response(override_projection(get_object_or_404(GpoOverride, pk=override_id, tenant=request.tenant)))
+        return Response(override_projection(get_object_or_404(
+            GpoOverride, pk=override_id, tenant=request.tenant, kind=GpoOverride.OVERRIDE)))
 
     @transaction.atomic
     def patch(self, request, override_id):
@@ -188,7 +191,8 @@ class OverrideDetailView(OverrideView):
         request.tenant = Tenant.objects.select_for_update().get(pk=request.tenant.pk)
         fresh_actor(request)
         self.check_permissions(request)
-        row = get_object_or_404(GpoOverride.objects.select_for_update(), pk=override_id, tenant=request.tenant)
+        row = get_object_or_404(GpoOverride.objects.select_for_update(), pk=override_id,
+                                tenant=request.tenant, kind=GpoOverride.OVERRIDE)
         _validate(request.data, update=True)
         if request.data['expected_revision'] != row.revision:
             raise PublicApiError('security_override_revision_changed', status_code=409)
@@ -211,7 +215,8 @@ class OverrideDetailView(OverrideView):
         request.tenant = Tenant.objects.select_for_update().get(pk=request.tenant.pk)
         fresh_actor(request)
         self.check_permissions(request)
-        row = get_object_or_404(GpoOverride.objects.select_for_update(), pk=override_id, tenant=request.tenant)
+        row = get_object_or_404(GpoOverride.objects.select_for_update(), pk=override_id,
+                                tenant=request.tenant, kind=GpoOverride.OVERRIDE)
         if (not isinstance(request.data, dict) or set(request.data) != {'expected_revision'}
                 or type(request.data['expected_revision']) is not int):
             raise ParseError('Supply the current override revision.')
@@ -233,3 +238,89 @@ class OverrideCatalogView(OverrideView):
         component = component_for(baseline, backup)
         return Response({'baseline_id': baseline, 'backup_id': backup,
                          'artifact_sha256': component['artifact_sha256'], 'settings': component['settings']})
+
+
+class CustomGpoView(OverrideView):
+    """Author sparse custom GPO content without mutating AD."""
+
+    def get(self, request):
+        query(request, set())
+        return Response({'results': [override_projection(row) for row in GpoOverride.objects.filter(
+            tenant=request.tenant, kind=GpoOverride.CUSTOM)]})
+
+    @transaction.atomic
+    def post(self, request):
+        query(request, set())
+        request.tenant = Tenant.objects.select_for_update().get(pk=request.tenant.pk)
+        fresh_actor(request)
+        self.check_permissions(request)
+        _validate(request.data)
+        component = component_for(request.data['baseline_id'], request.data['backup_id'])
+        entries = normalize_entries(component, request.data['entries'], keep_baseline=True)
+        if not entries:
+            raise ParseError('Select at least one custom setting.')
+        if GpoOverride.objects.filter(tenant=request.tenant, kind=GpoOverride.CUSTOM).count() >= 1000:
+            raise PublicApiError('security_custom_gpo_limit', status_code=409)
+        row = GpoOverride.objects.create(
+            tenant=request.tenant, kind=GpoOverride.CUSTOM, name=request.data['name'],
+            baseline_id=request.data['baseline_id'], backup_id=request.data['backup_id'],
+            artifact_sha256=component['artifact_sha256'], entries=entries, enabled=request.data['enabled'],
+        )
+        _audit(row, request.user, 'security.custom_gpo_created')
+        return Response(override_projection(row), status=201)
+
+
+class CustomGpoDetailView(CustomGpoView):
+    http_method_names = ('get', 'patch', 'delete', 'head', 'options')
+
+    def _row(self, request, custom_id, *, lock=False):
+        rows = GpoOverride.objects.select_for_update() if lock else GpoOverride.objects
+        return get_object_or_404(rows, pk=custom_id, tenant=request.tenant, kind=GpoOverride.CUSTOM)
+
+    def get(self, request, custom_id):
+        query(request, set())
+        return Response(override_projection(self._row(request, custom_id)))
+
+    @transaction.atomic
+    def patch(self, request, custom_id):
+        query(request, set())
+        request.tenant = Tenant.objects.select_for_update().get(pk=request.tenant.pk)
+        fresh_actor(request)
+        self.check_permissions(request)
+        row = self._row(request, custom_id, lock=True)
+        _validate(request.data, update=True)
+        if request.data['expected_revision'] != row.revision:
+            raise PublicApiError('security_custom_gpo_revision_changed', status_code=409)
+        component = component_for(row.baseline_id, row.backup_id)
+        if component['artifact_sha256'] != row.artifact_sha256:
+            raise PublicApiError('security_custom_gpo_artifact_changed', status_code=409)
+        entries = normalize_entries(component, request.data['entries'], keep_baseline=True)
+        if not entries:
+            raise ParseError('Select at least one custom setting.')
+        row.name, row.enabled, row.entries = request.data['name'], request.data['enabled'], entries
+        row.revision += 1
+        row.save()
+        for job in GpoImportJob.objects.select_for_update().filter(
+                tenant=request.tenant, status__in=ACTIVE, assignment__override_id=str(row.pk)):
+            _invalidate(job, 'custom_gpo_configuration_changed')
+        _audit(row, request.user, 'security.custom_gpo_updated')
+        return Response(override_projection(row))
+
+    @transaction.atomic
+    def delete(self, request, custom_id):
+        query(request, set())
+        request.tenant = Tenant.objects.select_for_update().get(pk=request.tenant.pk)
+        fresh_actor(request)
+        self.check_permissions(request)
+        row = self._row(request, custom_id, lock=True)
+        if request.data != {'expected_revision': row.revision}:
+            raise ParseError('Supply the current custom GPO revision.')
+        if row.policies.exists():
+            raise PublicApiError('security_custom_gpo_in_use', status_code=409)
+        _audit(row, request.user, 'security.custom_gpo_deleted')
+        row.delete()
+        return Response(status=204)
+
+
+class CustomGpoCatalogView(OverrideCatalogView):
+    pass

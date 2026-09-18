@@ -14,7 +14,10 @@ import { hasPermission } from "@/lib/auth-types";
 import { getServerSession } from "@/lib/server-auth";
 import { getDomainSecuritySettings } from "@/lib/server-domain-security";
 import { requireTenantScope } from "@/lib/server-portal-scope";
-import { getSecurityOverrides } from "@/lib/server-security-overrides";
+import {
+  getSecurityCustomGpos,
+  getSecurityOverrides,
+} from "@/lib/server-security-overrides";
 import { selectedTenant } from "@/lib/tenant-selection";
 
 export async function generateMetadata() {
@@ -36,15 +39,26 @@ export default async function WindowsGpoPage({
   if (!tenant || !hasPermission(tenant, "security.gpo_imports.run"))
     redirect(`/${locale}/access-unavailable`);
   const canManageOverrides = hasPermission(tenant, "security.baselines.manage");
-  const [domains, overrides] = await Promise.all([
+  const [domains, overrides, customGpos] = await Promise.all([
     getDomainSecuritySettings(tenant.id),
     canManageOverrides
       ? getSecurityOverrides(tenant.id)
       : Promise.resolve({ data: [], status: 200 }),
+    canManageOverrides
+      ? getSecurityCustomGpos(tenant.id)
+      : Promise.resolve({ data: [], status: 200 }),
   ]);
-  if (!domains.sessionValid || overrides.status === 401)
+  if (
+    !domains.sessionValid ||
+    overrides.status === 401 ||
+    customGpos.status === 401
+  )
     redirect(`/${locale}/login`);
-  if (domains.forbidden || overrides.status === 403)
+  if (
+    domains.forbidden ||
+    overrides.status === 403 ||
+    customGpos.status === 403
+  )
     redirect(`/${locale}/access-unavailable`);
   const query = await searchParams;
   const copy = getWindowsGpoCopy(locale);
@@ -64,13 +78,18 @@ export default async function WindowsGpoPage({
       <WindowsGpoWorkspace
         catalog={domains.data}
         overrides={overrides.data}
+        customGpos={customGpos.data}
         tenantId={tenant.id}
         csrfToken={session.csrf_token}
         locale={locale}
         preferredBaselineId={
           typeof query.baseline === "string" ? query.baseline : undefined
         }
-        initialSource={query.source === "override" ? "override" : "baseline"}
+        initialSource={
+          query.source === "override" || query.source === "custom"
+            ? query.source
+            : "baseline"
+        }
       />
     </ConsoleShell>
   );

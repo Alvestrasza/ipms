@@ -552,7 +552,8 @@ int main(int argc,char** argv) {
   for(const auto& component:gpo::override_components)for(const auto& descriptor:component.settings) {
     const auto metadata=json::parse(descriptor.metadata_json).as<json::object>();
     if(!metadata.at("editable").as<bool>()){auto invalid=override_document(component,{json::object{{"setting_id",descriptor.setting_id},{"value",metadata.at("baseline_value")}}});rejects([&]{gpo::parse_job(invalid);});continue;}
-    auto unchanged=override_document(component,{json::object{{"setting_id",descriptor.setting_id},{"value",metadata.at("baseline_value")}}});rejects([&]{gpo::parse_job(unchanged);});
+    auto unchanged=override_document(component,{json::object{{"setting_id",descriptor.setting_id},{"value",metadata.at("baseline_value")}}});
+    require(!gpo::render_override_files(gpo::parse_job(unchanged)).empty(),"Sparse custom setting equal to source was rejected");
 
     const auto type=metadata.at("value_type").as<std::string>();
     if(validated_types.insert(type).second){

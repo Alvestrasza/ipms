@@ -174,20 +174,21 @@ def _policy_input(tenant, data, *, updating=False):
         expected = {'source', 'baseline_id', 'backup_id', 'target', 'version', 'override_id'}
         if not isinstance(entry, dict) or set(entry) != expected:
             raise ParseError('Supply exactly the documented policy entry fields.')
-        if entry['source'] not in ('baseline', 'override') or not TARGET.fullmatch(str(entry['target'])) or not VERSION.fullmatch(str(entry['version'])):
+        if entry['source'] not in ('baseline', 'override', 'custom') or not TARGET.fullmatch(str(entry['target'])) or not VERSION.fullmatch(str(entry['version'])):
             raise ParseError('Supply a supported policy source, target alias and version.')
         component = components.get((entry['baseline_id'], entry['backup_id']))
         if not component:
             raise PublicApiError('security_collection_policy_unavailable')
         override = None
-        if entry['source'] == 'override':
+        if entry['source'] in ('override', 'custom'):
             override = GpoOverride.objects.filter(pk=_uuid(entry['override_id']), tenant=tenant).first()
             if (not override or not override.enabled or not override.entries
+                    or override.kind != entry['source']
                     or override.baseline_id != entry['baseline_id'] or override.backup_id != entry['backup_id']
                     or override.artifact_sha256 != component['artifact_sha256']):
                 raise PublicApiError('security_collection_policy_unavailable')
         elif entry['override_id'] is not None:
-            raise ParseError('A baseline entry cannot reference an override.')
+            raise ParseError('A baseline entry cannot reference a sparse definition.')
         if override:
             from .gpo_overrides import patch_document
             override_digest = digest(patch_document(override))
@@ -264,7 +265,8 @@ def _preview(collection):
     for binding in collection.bindings:
         domain = DomainSecuritySettings.objects.filter(pk=binding['domain_id'], tenant=collection.tenant).first()
         options = executor_options(collection.tenant, domain) if domain else []
-        eligible = [row for row in options if row['eligible'] and tuple(map(int, row['agent_version'].split('.'))) >= minimum_agent(IMPORT_LINK)]
+        minimum = (0, 2, 48) if any(entry['source'] == 'custom' for entry in collection.entries) else minimum_agent(IMPORT_LINK)
+        eligible = [row for row in options if row['eligible'] and tuple(map(int, row['agent_version'].split('.'))) >= minimum]
         current = bool(domain and domain.revision == binding['domain_revision'])
         for index, entry in enumerate(collection.entries):
             override = (GpoOverride.objects.filter(pk=entry['override_id'], tenant=collection.tenant).first()
@@ -321,8 +323,9 @@ def _dispatch_domain(deployment, domain_id):
         return
     domain = DomainSecuritySettings.objects.select_for_update().get(pk=domain_id, tenant=deployment.tenant)
     entry, binding = pending.selection['entry'], pending.selection['binding']
+    required = (0, 2, 48) if entry['source'] == 'custom' else minimum_agent(IMPORT_LINK)
     options = [row for row in executor_options(deployment.tenant, domain)
-               if row['eligible'] and tuple(map(int, row['agent_version'].split('.'))) >= minimum_agent(IMPORT_LINK)]
+               if row['eligible'] and tuple(map(int, row['agent_version'].split('.'))) >= required]
     if domain.revision != binding['domain_revision']:
         pending.status, pending.error_code = 'failed', 'domain_revision_changed'
         pending.completed_at = timezone.now()

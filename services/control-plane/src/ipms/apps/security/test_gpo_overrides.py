@@ -17,6 +17,8 @@ from .gpo_override_content import OVERRIDE_COMPONENTS
 
 URL = '/api/v1/security/overrides/'
 CATALOG_URL = '/api/v1/security/override-catalog/'
+CUSTOM_URL = '/api/v1/security/custom-gpos/'
+CUSTOM_CATALOG_URL = '/api/v1/security/custom-gpo-catalog/'
 
 
 class OverrideTests(TestCase):
@@ -413,6 +415,58 @@ class OverrideTests(TestCase):
         client.credentials(HTTP_X_IPMS_TENANT_ID=str(self.tenant.pk))
         self.assertEqual(client.post(URL, {}, format='json').status_code, 403)
         self.assertEqual(client.patch(URL + self.override['id'] + '/', {}, format='json').status_code, 403)
+
+    def test_custom_gpo_keeps_explicit_source_value_and_is_separate_from_overrides(self):
+        entry = {'setting_id': self.setting['setting_id'], 'value': self.setting['baseline_value']}
+        response = self.client.post(CUSTOM_URL, {
+            'name': 'Operations-Custom', 'baseline_id': self.selection['baseline_id'],
+            'backup_id': self.selection['backup_id'], 'entries': [entry], 'enabled': True,
+        }, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        custom = response.data
+        self.assertEqual(custom['kind'], GpoOverride.CUSTOM)
+        self.assertEqual(custom['entries'], [entry])
+        self.assertEqual(self.client.get(CUSTOM_URL).data['results'], [custom])
+        self.assertEqual(self.client.get(URL).data['results'], [self.override])
+        self.assertEqual(self.client.get(CUSTOM_CATALOG_URL, {
+            'baseline_id': custom['baseline_id'], 'backup_id': custom['backup_id'],
+        }).status_code, 200)
+        self.assertFalse(GpoImportJob.objects.exists())
+        updated = self.client.patch(CUSTOM_URL + custom['id'] + '/', {
+            'expected_revision': custom['revision'], 'name': custom['name'],
+            'entries': custom['entries'], 'enabled': False,
+        }, format='json')
+        self.assertEqual(updated.status_code, 200, updated.data)
+        self.assertEqual(updated.data['revision'], 2)
+        self.assertEqual(self.client.delete(CUSTOM_URL + custom['id'] + '/', {
+            'expected_revision': 2,
+        }, format='json').status_code, 204)
+
+    def test_custom_gpo_requires_new_agent_and_uses_managed_sparse_lifecycle(self):
+        entry = {'setting_id': self.setting['setting_id'], 'value': self.setting['baseline_value']}
+        response = self.client.post(CUSTOM_URL, {
+            'name': 'Operations-Custom', 'baseline_id': self.selection['baseline_id'],
+            'backup_id': self.selection['backup_id'], 'entries': [entry], 'enabled': True,
+        }, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        original = self.override
+        self.override = response.data
+        blocked = self.client.post(self.base + 'gpo-preflights/', {
+            **self.selection, 'idempotency_key': str(uuid.uuid4()), 'operation': IMPORT_LINK,
+            'managed_id': None, 'adopt_job_id': None, 'override_id': self.override['id'],
+            'override_revision': self.override['revision'], 'override_sha256': self.override['sha256'],
+        }, format='json')
+        self.assertEqual(blocked.status_code, 409, blocked.data)
+        self.system.agent_version = '0.2.48'
+        self.system.save(update_fields=('agent_version',))
+        GpoExecutorReport.objects.filter(enrollment=self.agent).update(agent_version='0.2.48')
+        job = self.inspect(IMPORT_LINK)
+        self.assertEqual(job['schema'], 4)
+        self.assertEqual(job['override_entries'], [entry])
+        self.assertEqual(self.client.delete(CUSTOM_URL + self.override['id'] + '/', {
+            'expected_revision': self.override['revision'],
+        }, format='json').status_code, 409)
+        self.override = original
 
 
 class OverrideValueTests(SimpleTestCase):

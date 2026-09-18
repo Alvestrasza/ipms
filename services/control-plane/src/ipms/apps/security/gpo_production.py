@@ -54,9 +54,9 @@ def inspecting(job):
     return production(job) and job.assignment.get('operation') == INSPECT
 
 
-def minimum_agent(operation, override=False, domain_root=False):
+def minimum_agent(operation, override=False, domain_root=False, custom=False):
     # Snapshot schema 1 gained the independently verified domain/GPO owner SID.
-    return (0, 2, 47)
+    return (0, 2, 48) if custom else (0, 2, 47)
 
 
 def assignment_fields(assignment):
@@ -350,7 +350,8 @@ def _selection(tenant, user, config, data):
                 or override.artifact_sha256 != component['artifact_sha256'] or data['adopt_job_id']
                 or (data['operation'] not in (DEACTIVATE, DELETE) and (not override.enabled or not override.entries))):
             raise PublicApiError('security_override_unavailable', status_code=409)
-        if normalize_entries(component_for(override.baseline_id, override.backup_id), override.entries) != override.entries:
+        if normalize_entries(component_for(override.baseline_id, override.backup_id), override.entries,
+                             keep_baseline=override.kind == GpoOverride.CUSTOM) != override.entries:
             raise PublicApiError('security_override_artifact_changed', status_code=409)
     name = render_name(config.gpo_name_template, data['tier'], 'U' if component['scope'] == 'user' else 'C',
                        data['target'], override_purpose(override) if override else compact_purpose(data['baseline_id'], component), data['version'])
@@ -360,10 +361,12 @@ def _selection(tenant, user, config, data):
     if (not _ready(system, enrollment, report, config.domain_name, portal=True)
             or tuple(map(int, system.agent_version.split('.'))) < minimum_agent(
                 data['operation'], bool(override),
-                _targets_domain_root(selected_targets, config.domain_name) and component['scope'] != 'domain')
+                _targets_domain_root(selected_targets, config.domain_name) and component['scope'] != 'domain',
+                bool(override and override.kind == GpoOverride.CUSTOM))
             or tuple(map(int, report.agent_version.split('.'))) < minimum_agent(
                 data['operation'], bool(override),
-                _targets_domain_root(selected_targets, config.domain_name) and component['scope'] != 'domain')):
+                _targets_domain_root(selected_targets, config.domain_name) and component['scope'] != 'domain',
+                bool(override and override.kind == GpoOverride.CUSTOM))):
         raise PublicApiError('security_gpo_executor_unavailable', status_code=409)
     try:
         artifact_bytes(component)

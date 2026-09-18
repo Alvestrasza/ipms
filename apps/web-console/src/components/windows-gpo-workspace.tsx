@@ -19,16 +19,18 @@ import styles from "./domain-security-administration.module.css";
 type Props = {
   catalog: DomainSecurityCatalog | null;
   overrides: SecurityOverride[] | null;
+  customGpos: SecurityOverride[] | null;
   tenantId: string;
   csrfToken: string;
   locale: Locale;
   preferredBaselineId?: string;
-  initialSource?: "baseline" | "override";
+  initialSource?: "baseline" | "override" | "custom";
 };
 
 export function WindowsGpoWorkspace({
   catalog,
   overrides,
+  customGpos,
   tenantId,
   csrfToken,
   locale,
@@ -39,13 +41,20 @@ export function WindowsGpoWorkspace({
   const [domainId, setDomainId] = useState(catalog?.results[0]?.id ?? "");
   const [source, setSource] = useState(initialSource);
   const availableOverrides = overrides ?? [];
+  const availableCustomGpos = customGpos ?? [];
   const [overrideId, setOverrideId] = useState(availableOverrides[0]?.id ?? "");
+  const [customId, setCustomId] = useState(availableCustomGpos[0]?.id ?? "");
   const domain = catalog?.results.find((item) => item.id === domainId);
   const selectedOverride = availableOverrides.find(
     (item) => item.id === overrideId,
   );
+  const selectedCustom = availableCustomGpos.find(
+    (item) => item.id === customId,
+  );
+  const selectedDefinition =
+    source === "custom" ? selectedCustom : selectedOverride;
 
-  if (!catalog || !overrides)
+  if (!catalog || !overrides || !customGpos)
     return (
       <section className={styles.panel}>
         <p role="alert">{c.unavailable}</p>
@@ -84,11 +93,14 @@ export function WindowsGpoWorkspace({
               <select
                 value={source}
                 onChange={(event) =>
-                  setSource(event.target.value as "baseline" | "override")
+                  setSource(
+                    event.target.value as "baseline" | "override" | "custom",
+                  )
                 }
               >
                 <option value="baseline">{c.baseline}</option>
                 <option value="override">{c.override}</option>
+                <option value="custom">{c.custom}</option>
               </select>
             </label>
             {source === "override" ? (
@@ -106,6 +118,21 @@ export function WindowsGpoWorkspace({
                 </select>
               </label>
             ) : null}
+            {source === "custom" ? (
+              <label className={styles.field}>
+                {c.customSelection}
+                <select
+                  value={customId}
+                  onChange={(event) => setCustomId(event.target.value)}
+                >
+                  {availableCustomGpos.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
           </div>
         ) : (
           <p>{c.noDomains}</p>
@@ -113,10 +140,13 @@ export function WindowsGpoWorkspace({
         {source === "override" && !selectedOverride ? (
           <p>{c.noOverrides}</p>
         ) : null}
+        {source === "custom" && !selectedCustom ? (
+          <p>{c.noCustomGpos}</p>
+        ) : null}
       </section>
-      {domain && (source === "baseline" || selectedOverride) ? (
+      {domain && (source === "baseline" || selectedDefinition) ? (
         <DomainGpoImports
-          key={`${domain.id}:${domain.revision}:${source}:${selectedOverride?.id ?? preferredBaselineId ?? ""}`}
+          key={`${domain.id}:${domain.revision}:${source}:${selectedDefinition?.id ?? preferredBaselineId ?? ""}`}
           settings={domain}
           catalog={catalog}
           tenantId={tenantId}
@@ -128,7 +158,8 @@ export function WindowsGpoWorkspace({
           }
           locale={locale}
           copy={getDomainSecurityCopy(locale)}
-          override={source === "override" ? selectedOverride : undefined}
+          override={source === "baseline" ? undefined : selectedDefinition}
+          definitionKind={source === "custom" ? "custom" : "override"}
         />
       ) : null}
     </div>

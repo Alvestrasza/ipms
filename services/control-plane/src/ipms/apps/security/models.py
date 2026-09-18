@@ -103,10 +103,14 @@ class GpoImportJob(models.Model):
 
 
 class GpoOverride(models.Model):
-    """Tenant-owned sparse changes to one pinned baseline component."""
+    """Tenant-owned sparse policy definition pinned to one trusted component."""
+
+    OVERRIDE = 'override'
+    CUSTOM = 'custom'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey('tenancy.Tenant', on_delete=models.CASCADE)
+    kind = models.CharField(max_length=16, default=OVERRIDE, choices=((OVERRIDE, 'Override'), (CUSTOM, 'Custom')))
     name = models.CharField(max_length=80)
     baseline_id = models.CharField(max_length=96)
     backup_id = models.CharField(max_length=38)

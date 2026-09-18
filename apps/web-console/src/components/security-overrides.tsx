@@ -7,6 +7,7 @@
 "use client";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { Locale } from "@/i18n/config";
+import { getSecurityCustomGpoCopy } from "@/i18n/security-custom-gpo-copy";
 import {
   getSecurityOverrideCopy,
   overrideReadonlyReason,
@@ -30,6 +31,7 @@ type Props = {
   tenantId: string;
   csrfToken: string;
   locale: Locale;
+  mode?: "override" | "custom";
 };
 const inputValue = (v: unknown) =>
   Array.isArray(v)
@@ -40,7 +42,10 @@ const inputValue = (v: unknown) =>
 const displayValue = (v: unknown) =>
   typeof v === "string" ? JSON.stringify(v) : JSON.stringify(v, null, 2);
 export function SecurityOverrides(props: Props) {
-  const c = getSecurityOverrideCopy(props.locale);
+  const c =
+    props.mode === "custom"
+      ? getSecurityCustomGpoCopy(props.locale)
+      : getSecurityOverrideCopy(props.locale);
   const [items, setItems] = useState(props.initial);
   const [selectedId, setSelectedId] = useState(props.initial?.[0]?.id ?? "");
   const [locked, setLocked] = useState(false);
@@ -111,6 +116,7 @@ function OverrideEditor({
   onLocked,
   onSaved,
   onDeleted,
+  mode = "override",
 }: Omit<Props, "initial"> & {
   domains: DomainSecurityCatalog;
   selected: SecurityOverride | null;
@@ -118,7 +124,10 @@ function OverrideEditor({
   onSaved: (v: SecurityOverride) => void;
   onDeleted: (id: string) => void;
 }) {
-  const c = getSecurityOverrideCopy(locale);
+  const c =
+    mode === "custom"
+      ? getSecurityCustomGpoCopy(locale)
+      : getSecurityOverrideCopy(locale);
   const baselines = domains.baseline_options.filter((b) =>
     b.components.some((x) => x.available),
   );
@@ -166,7 +175,9 @@ function OverrideEditor({
       baseline_id: baselineId,
       backup_id: backupId,
     });
-    void fetch(`/api/v1/security/override-catalog/?${query}`, {
+    const catalogEndpoint =
+      mode === "custom" ? "custom-gpo-catalog" : "override-catalog";
+    void fetch(`/api/v1/security/${catalogEndpoint}/?${query}`, {
       credentials: "same-origin",
       cache: "no-store",
       headers: { "X-IPMS-Tenant-ID": tenantId },
@@ -196,7 +207,7 @@ function OverrideEditor({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [baselineId, backupId, tenantId, selected, c.load, c.mismatch]);
+  }, [baselineId, backupId, tenantId, selected, c.load, c.mismatch, mode]);
   const values = useMemo(() => {
     const entries: OverrideEntry[] = [];
     const invalid: string[] = [];
@@ -204,12 +215,15 @@ function OverrideEditor({
       const setting = catalog?.settings.find((s) => s.setting_id === id);
       const value = setting ? parseOverrideInput(setting, text) : null;
       if (value === null) invalid.push(id);
-      else if (!sameOverrideValue(value, setting?.baseline_value))
+      else if (
+        mode === "custom" ||
+        !sameOverrideValue(value, setting?.baseline_value)
+      )
         entries.push({ setting_id: id, value });
     }
     entries.sort((a, b) => a.setting_id.localeCompare(b.setting_id));
     return { entries, invalid };
-  }, [inputs, catalog]);
+  }, [inputs, catalog, mode]);
   const dirty =
     name !== (selected?.name ?? "") ||
     enabled !== (selected?.enabled ?? true) ||
@@ -255,7 +269,10 @@ function OverrideEditor({
   const acceptEdit = (setting: OverrideSetting) => {
     const text = drafts[setting.setting_id];
     const value = text === undefined ? null : parseOverrideInput(setting, text);
-    if (value === null || sameOverrideValue(value, setting.baseline_value))
+    if (
+      value === null ||
+      (mode === "override" && sameOverrideValue(value, setting.baseline_value))
+    )
       return;
     setInputs((old) => ({ ...old, [setting.setting_id]: text }));
     cancelEdit(setting.setting_id);
@@ -291,6 +308,7 @@ function OverrideEditor({
       hasDrafts ||
       values.invalid.length ||
       values.entries.length > 128 ||
+      (mode === "custom" && values.entries.length === 0) ||
       !name.trim()
     )
       return;
@@ -314,7 +332,7 @@ function OverrideEditor({
         };
     try {
       const response = await fetch(
-        `/api/v1/security/overrides/${selected ? `${encodeURIComponent(selected.id)}/` : ""}`,
+        `/api/v1/security/${mode === "custom" ? "custom-gpos" : "overrides"}/${selected ? `${encodeURIComponent(selected.id)}/` : ""}`,
         {
           method: selected ? "PATCH" : "POST",
           credentials: "same-origin",
@@ -371,7 +389,7 @@ function OverrideEditor({
     setError("");
     try {
       const response = await fetch(
-        `/api/v1/security/overrides/${encodeURIComponent(selected.id)}/`,
+        `/api/v1/security/${mode === "custom" ? "custom-gpos" : "overrides"}/${encodeURIComponent(selected.id)}/`,
         {
           method: "DELETE",
           credentials: "same-origin",
@@ -407,7 +425,10 @@ function OverrideEditor({
             : null;
         setUncertain(response.status >= 500);
         setError(
-          code === "security_override_in_use"
+          code ===
+            (mode === "custom"
+              ? "security_custom_gpo_in_use"
+              : "security_override_in_use")
             ? c.deleteInUse
             : response.status >= 500
               ? c.uncertain
@@ -565,6 +586,7 @@ function OverrideEditor({
                     : null;
                   const invalid = editing && draftValue === null;
                   const matchesBaseline =
+                    mode === "override" &&
                     draftValue !== null &&
                     sameOverrideValue(draftValue, s.baseline_value);
                   const acceptedValue = overridden
@@ -792,7 +814,8 @@ function OverrideEditor({
               hasDrafts ||
               !name.trim() ||
               values.invalid.length > 0 ||
-              values.entries.length > 128
+              values.entries.length > 128 ||
+              (mode === "custom" && values.entries.length === 0)
             }
           >
             {c.save}
