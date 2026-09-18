@@ -51,18 +51,15 @@ test("catalog navigation, true percentages, scope, tenant isolation and accessib
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize({ width: 1700, height: 1100 });
   await login(page);
-  await page
-    .getByRole("link", { name: "Security", exact: true })
-    .first()
-    .click();
+  await page.goto("/en/security/baseline");
   await expect(
     page.getByRole("heading", {
-      name: "Microsoft security baselines",
+      name: "Windows security baselines",
       exact: true,
     }),
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Baseline", exact: true }),
+    page.getByRole("link", { name: "Baselines", exact: true }),
   ).toHaveAttribute("aria-current", "page");
   const row = page
     .getByRole("row")
@@ -125,6 +122,35 @@ test("catalog navigation, true percentages, scope, tenant isolation and accessib
     .getByRole("link", { name: "Clear selection", exact: true })
     .click();
   await expect(catalog.locator("details")).toHaveCount(0);
+});
+
+test("third-party entries show their real delivery boundary", async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto(
+    "/en/security/baseline?target=server&baseline=cis-windows-server-2025",
+  );
+  await expect(
+    page.getByRole("heading", {
+      name: "Baseline details CIS Microsoft Windows Server 2025",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Licensed tenant package required", { exact: true }).last(),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "This catalog entry has no verified native IPMS assessment definition yet. Matching systems remain unknown.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Open Windows GPO deployment" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("combobox", { name: "Scan target", exact: true }),
+  ).toHaveCount(0);
 });
 
 test("application tiles group active releases and remain square", async ({
@@ -204,7 +230,7 @@ test("client unknown is not a zero score and empty baseline has no matching syst
   await page.reload();
   await expect(
     page.getByRole("heading", {
-      name: "Microsoft security baselines",
+      name: "Windows security baselines",
       exact: true,
     }),
   ).toBeVisible();
@@ -245,7 +271,7 @@ test("German copy and narrow viewport preserve readable scope", async ({
   await page.setViewportSize({ width: 1700, height: 1100 });
   await page.goto("/de/security/baseline");
   await expect(
-    page.getByRole("link", { name: "Baseline", exact: true }),
+    page.getByRole("link", { name: "Baselines", exact: true }),
   ).toHaveAttribute("aria-current", "page");
   const row = page
     .getByRole("row")
@@ -316,7 +342,10 @@ test("administrator hides and restores a baseline with persistent tenant setting
     .getByRole("link", { name: "Open Security overview", exact: true })
     .click();
   await expect(
-    page.getByRole("row").filter({ hasText: "Microsoft Windows Server 2019" }),
+    page.getByRole("link", {
+      name: "Microsoft Windows Server 2019",
+      exact: true,
+    }),
   ).toHaveCount(0);
   await expect(
     page.getByText("Hidden baselines in this selection: 1", { exact: true }),

@@ -8,7 +8,7 @@ from rest_framework.test import APIClient
 
 from ipms.apps.audit.models import AuditEvent
 from ipms.apps.tenancy.models import PlatformAdministrator, Tenant, TenantMembership
-from .catalog import BASELINES
+from .catalog import DEPLOYABLE_BASELINES
 
 URL = '/api/v1/security/domain-settings/'
 TEMPLATE = '{tier}-{scope}-{target}-{purpose}_V{version}'
@@ -31,7 +31,7 @@ class DomainSettingsTests(TestCase):
                          '1': ['OU=Servers,DC=example,DC=invalid', 'OU=Applications,DC=example,DC=invalid'],
                          '2': ['OU=Clients,DC=example,DC=invalid']},
             'gpo_name_template': TEMPLATE,
-            'baseline_order': [item.id for item in BASELINES],
+            'baseline_order': [item.id for item in DEPLOYABLE_BASELINES],
         }
         return {**data, **changes}
 

@@ -19,7 +19,7 @@ from ipms.apps.tenancy.models import Tenant
 from ipms.apps.tenancy.permissions import HasTenantPermission
 from ipms.apps.tenancy.rbac import Permission
 from .administration import SmallJSONParser
-from .catalog import BASELINES, BY_ID, CATALOG_REVISION
+from .catalog import CATALOG_REVISION, DEPLOYABLE_BY_ID
 from .models import DomainSecuritySettings
 from .views import SecurityReadView, query
 
@@ -188,7 +188,7 @@ def validate_settings(data, *, updating=False):
             cleaned[tier].append(value.strip())
     order = data['baseline_order']
     if (not isinstance(order, list) or any(not isinstance(item, str) for item in order)
-            or len(order) != len(BY_ID) or set(order) != set(BY_ID)):
+            or len(order) != len(DEPLOYABLE_BY_ID) or set(order) != set(DEPLOYABLE_BY_ID)):
         raise PublicApiError('security_domain_order_invalid')
     if updating and (type(data['expected_revision']) is not int or not 1 <= data['expected_revision'] <= 2**31 - 1):
         raise ParseError('Supply the expected settings revision.')

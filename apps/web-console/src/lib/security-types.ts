@@ -24,6 +24,7 @@ export type SecurityBaseline = {
   id: string;
   name: string;
   provider: string;
+  provider_label: string;
   platform: "windows";
   target: Exclude<SecurityBaselineTarget, "all">;
   release: string;
@@ -33,6 +34,18 @@ export type SecurityBaseline = {
   package_name: string;
   verified_at: string;
   assessment_state: "catalog-only" | "native-read-only";
+  deployment_state:
+    | "bundled"
+    | "licensed-package-required"
+    | "public-package-required"
+    | "guidance-only"
+    | "mdm-only";
+  package_kind:
+    | "gpo-backup"
+    | "cis-build-kit"
+    | "disa-gpo-bundle"
+    | "guidance"
+    | "intune-policy";
   summary: SecurityBaselineSummary;
 };
 

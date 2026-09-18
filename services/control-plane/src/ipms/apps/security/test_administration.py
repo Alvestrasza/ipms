@@ -32,7 +32,7 @@ class BaselineAdministrationTests(TestCase):
         response = self.client.get(SETTINGS)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Cache-Control"], "no-store")
-        self.assertEqual(len(response.data["results"]), 8)
+        self.assertEqual(len(response.data["results"]), 20)
         self.assertTrue(all(not row["hidden"] and row["updated_at"] is None for row in response.data["results"]))
 
     def test_hide_and_show_are_tenant_scoped_and_audited(self):
@@ -44,7 +44,7 @@ class BaselineAdministrationTests(TestCase):
         self.assertEqual(catalog["hidden_count"], 1)
         self.assertNotIn(SERVER, [row["id"] for row in catalog["results"]])
         self.assertEqual(self.client.get(CATALOG + SERVER + "/systems/").status_code, 404)
-        self.assertEqual(len(self.client.get(SETTINGS).data["results"]), 8)
+        self.assertEqual(len(self.client.get(SETTINGS).data["results"]), 20)
         event = AuditEvent.objects.get(action="security.baseline_visibility_changed")
         self.assertEqual(event.tenant_id, self.tenant.id)
         self.assertEqual(event.object_id, SERVER)
@@ -94,11 +94,11 @@ class BaselineAdministrationTests(TestCase):
         self.assertEqual(rows.status_code, 200)
         for row in rows.data["results"]:
             self.assertEqual(self.change({"hidden": True}, baseline=row["id"]).status_code, 200)
-        for target, count in (("all", 8), ("server", 4), ("client", 4)):
+        for target, count in (("all", 20), ("server", 10), ("client", 10)):
             data = self.client.get(CATALOG + "?target=" + target).data
             self.assertEqual(data["results"], [])
             self.assertEqual(data["hidden_count"], count)
-        self.assertEqual(len(self.client.get(SETTINGS).data["results"]), 8)
+        self.assertEqual(len(self.client.get(SETTINGS).data["results"]), 20)
         self.assertEqual(self.change({"hidden": False}).status_code, 200)
         self.assertEqual(len(self.client.get(CATALOG).data["results"]), 1)
 
@@ -107,7 +107,7 @@ class BaselineAdministrationTests(TestCase):
         TenantMembership.objects.create(tenant=self.other, user=self.user, role="tenant_admin")
         self.client.credentials(HTTP_X_IPMS_TENANT_ID=str(self.other.id))
         self.assertEqual(self.client.get(CATALOG).data["hidden_count"], 0)
-        self.assertEqual(len(self.client.get(CATALOG).data["results"]), 8)
+        self.assertEqual(len(self.client.get(CATALOG).data["results"]), 20)
 
     def test_session_mutation_requires_csrf(self):
         csrf_client = APIClient(enforce_csrf_checks=True)

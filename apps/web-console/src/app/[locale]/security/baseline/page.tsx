@@ -190,14 +190,18 @@ function SystemsTable({
                   )}
                 </td>
                 <td>
-                  <Link
-                    href={
-                      `/${locale}/security/baseline/${encodeURIComponent(data.baseline.id)}/systems/${encodeURIComponent(system.id)}/findings` as Route
-                    }
-                    className={styles.sourceLink}
-                  >
-                    {scanCopy.openFindings}
-                  </Link>
+                  {data.baseline.assessment_state === "native-read-only" ? (
+                    <Link
+                      href={
+                        `/${locale}/security/baseline/${encodeURIComponent(data.baseline.id)}/systems/${encodeURIComponent(system.id)}/findings` as Route
+                      }
+                      className={styles.sourceLink}
+                    >
+                      {scanCopy.openFindings}
+                    </Link>
+                  ) : (
+                    <span>{copy.assessmentUnavailable}</span>
+                  )}
                   {system.controls ? (
                     <small>
                       {system.controls.passed} {scanCopy.passed} ·{" "}
@@ -296,7 +300,7 @@ export default async function SecurityBaselinePage({
   const [systemsResponse, scansResponse] = selection
     ? await Promise.all([
         getSecurityBaselineSystems(tenant.id, selection.id, requestedPage),
-        catalog?.capabilities.assessment
+        selection.assessment_state === "native-read-only"
           ? getSecurityBaselineScans(tenant.id, selection.id)
           : Promise.resolve(null),
       ])
@@ -351,7 +355,8 @@ export default async function SecurityBaselinePage({
               {copy.manageVisibility}
             </Link>
           ) : null}
-          {hasPermission(tenant, "security.gpo_imports.run") ? (
+          {hasPermission(tenant, "security.gpo_imports.run") &&
+          (!baseline || baseline.deployment_state === "bundled") ? (
             <Link
               className={styles.button}
               href={
@@ -468,7 +473,7 @@ export default async function SecurityBaselinePage({
                 <h2 id="catalog-heading">{copy.catalog}</h2>
                 <p>{copy.catalogHint}</p>
               </div>
-              <span className={styles.provider}>Microsoft · Windows</span>
+              <span className={styles.provider}>{copy.providers}</span>
             </header>
             <nav className={styles.filters} aria-label={copy.filterLabel}>
               {(["all", "server", "client"] as const).map((value) => (
@@ -539,10 +544,9 @@ export default async function SecurityBaselinePage({
                             <ShieldCheck size={18} aria-hidden="true" />
                             <span>{entry.name}</span>
                           </Link>
+                          <small>{entry.provider_label}</small>
                           <small>
-                            {selection?.id === entry.id
-                              ? copy.selected
-                              : copy.viewSystems}
+                            {copy.availabilityStates[entry.deployment_state]}
                           </small>
                         </th>
                         <td>
@@ -627,8 +631,18 @@ export default async function SecurityBaselinePage({
                 </header>
                 <dl className={styles.packageDetails}>
                   <div>
+                    <dt>{copy.provider}</dt>
+                    <dd>{baseline.provider_label}</dd>
+                  </div>
+                  <div>
                     <dt>{copy.package}</dt>
                     <dd>{baseline.package_name}</dd>
+                  </div>
+                  <div>
+                    <dt>{copy.availability}</dt>
+                    <dd>
+                      {copy.availabilityStates[baseline.deployment_state]}
+                    </dd>
                   </div>
                   <div>
                     <dt>{copy.revision}</dt>
@@ -659,7 +673,7 @@ export default async function SecurityBaselinePage({
                     </dd>
                   </div>
                 </dl>
-                {catalog.capabilities.assessment ? (
+                {baseline.assessment_state === "native-read-only" ? (
                   <SecurityBaselineScansPanel
                     key={`${tenant.id}:${baseline.id}:${requestedPage}`}
                     baselineId={baseline.id}
@@ -673,7 +687,12 @@ export default async function SecurityBaselinePage({
                     logsLabel={domainCopy.scanLogs}
                     scanCopy={scanCopy}
                   />
-                ) : null}
+                ) : (
+                  <div className={styles.assessmentNotice} role="status">
+                    <ScanLine size={20} aria-hidden="true" />
+                    <p>{copy.assessmentPending}</p>
+                  </div>
+                )}
                 <dl className={styles.statusSummary}>
                   {statuses.map((status) => (
                     <div key={status}>

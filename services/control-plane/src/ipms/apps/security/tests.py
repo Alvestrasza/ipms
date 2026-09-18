@@ -77,16 +77,24 @@ class SecurityBaselineTests(TestCase):
     def row(self, key=SERVER):
         return next(row for row in self.catalog()["results"] if row["id"] == key)
 
-    def test_catalog_has_microsoft_client_and_server_packages_without_fake_scores(self):
+    def test_catalog_has_authoritative_providers_without_fake_scores(self):
         data = self.catalog()
-        self.assertEqual(len(data["results"]), 8)
+        self.assertEqual(len(data["results"]), 20)
         self.assertEqual({row["target"] for row in data["results"]}, {"client", "server"})
         self.assertEqual(data["capabilities"], {"assessment": True, "deployment": False, "collections": False})
+        self.assertEqual(
+            {row["provider"] for row in data["results"]},
+            {"microsoft", "cis", "disa", "bsi", "acsc", "ncsc-uk"},
+        )
         for row in data["results"]:
-            self.assertTrue(row["source_url"].startswith("https://www.microsoft.com/"))
-            self.assertEqual(row["provider"], "microsoft")
+            self.assertTrue(row["source_url"].startswith("https://"))
             self.assertIsNone(row["summary"]["compliance_percent"])
             self.assertIsNone(row["summary"]["coverage_percent"])
+        microsoft = [row for row in data["results"] if row["provider"] == "microsoft"]
+        references = [row for row in data["results"] if row["provider"] != "microsoft"]
+        self.assertEqual(len(microsoft), 8)
+        self.assertTrue(all(row["assessment_state"] == "native-read-only" and row["deployment_state"] == "bundled" for row in microsoft))
+        self.assertTrue(all(row["assessment_state"] == "catalog-only" and row["deployment_state"] != "bundled" for row in references))
 
     def test_inventory_without_measurements_is_unknown(self):
         self.system()
@@ -134,8 +142,8 @@ class SecurityBaselineTests(TestCase):
         self.assertEqual(self.row()["summary"]["applicable"], 0)
 
     def test_catalog_filter_and_unknown_queries(self):
-        self.assertEqual(len(self.catalog("?target=server")["results"]), 4)
-        self.assertEqual(len(self.catalog("?target=client")["results"]), 4)
+        self.assertEqual(len(self.catalog("?target=server")["results"]), 10)
+        self.assertEqual(len(self.catalog("?target=client")["results"]), 10)
         for query in ("?target=linux", "?target=server&target=client", "?collection=other"):
             self.assertEqual(self.client.get(BASE + query).status_code, 400)
 

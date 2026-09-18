@@ -95,6 +95,20 @@ class SecurityScanTests(TestCase):
             self.assertEqual(self.client.post(SCANS, {"system_ids": ids}, format="json").status_code, 404)
         self.assertFalse(BaselineScanJob.objects.exists())
 
+    def test_catalog_only_provider_cannot_queue_or_expose_findings(self):
+        baseline = "cis-windows-server-2025"
+        self.membership.role = "operator"
+        self.membership.save()
+        self.assertEqual(self.client.get(BASE + baseline + "/scans/").status_code, 404)
+        self.assertEqual(
+            self.client.post(BASE + baseline + "/scans/", {}, format="json").status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.get(BASE + baseline + f"/systems/{self.host.id}/findings/").status_code,
+            404,
+        )
+
     def test_queue_is_explicit_and_idempotent_and_old_agents_are_unavailable(self):
         old = self.system(name="old")
         self.assertEqual(self.client.get(SCANS).data["count"], 0)

@@ -1,5 +1,5 @@
 # File Name: seed-security.py
-# Version: v0.1.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
+# Version: v0.1.1 | Created: 2026-09-14 | Last Modified: 2026-09-18
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
 # Description: Synthetic baseline results in an explicitly isolated browser-test database.
 import os
@@ -16,7 +16,7 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 from ipms.apps.agent_pki.models import AgentEnrollment, AgentLifecycleJob, WindowsAgentDeployment
 from ipms.apps.discovery.models import WindowsServer
-from ipms.apps.security.catalog import CATALOG_REVISION
+from ipms.apps.security.catalog import ASSESSMENT_REVISION
 from ipms.apps.security.content import MANIFESTS
 from ipms.apps.security.models import BaselineAssessment, BaselineScanJob, DomainSecuritySettings, GpoExecutorReport, GpoImportJob
 from ipms.apps.security.catalog import BASELINES
@@ -49,7 +49,7 @@ def result(target, **changes):
     fields = dict(
         system=target, enrollment=AgentEnrollment.objects.get(device_uri=target.source_id),
         baseline_id="microsoft-windows-server-2025", baseline_revision="2602",
-        catalog_revision=CATALOG_REVISION, profile=target.operating_system_role,
+        catalog_revision=ASSESSMENT_REVISION, profile=target.operating_system_role,
         content_sha256=manifest["manifest_sha256"],
         os_build=target.os_build, operating_system=target.operating_system,
         scope_verified=True, total_controls=10, passed_controls=10,

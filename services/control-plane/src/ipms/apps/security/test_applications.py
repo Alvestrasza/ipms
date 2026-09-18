@@ -14,7 +14,7 @@ from django.utils import timezone
 from ipms.apps.agent_pki.models import AgentEnrollment
 from ipms.apps.agent_pki.services import confirm_inventory
 from ipms.apps.agent_pki.test_group_policy_inventory import DOMAIN_GUID, group_policy_report, utc_text, windows_inventory
-from .catalog import BASELINES, BY_ID
+from .catalog import BASELINES, BY_ID, DEPLOYABLE_BASELINES
 from .gpo_content import COMPONENTS, PROFILE_COMPONENTS
 from .gpo_jobs import digest, security_gpo_exchange
 from .models import BaselinePreference, DomainSecuritySettings, GpoImportJob
@@ -121,7 +121,7 @@ class GroupPolicyApplicationTests(TestCase):
             "applicable": 2, "applied": 1, "not_applied": 0, "partial": 0,
             "unknown": 1, "application_percent": 50.0,
         })
-        self.assertEqual(self.group()["baseline_ids"], [item.id for item in BASELINES if item.target == "server"])
+        self.assertEqual(self.group()["baseline_ids"], [item.id for item in DEPLOYABLE_BASELINES if item.target == "server"])
         self.assertEqual(self.group()["id"], "microsoft:windows:server")
         # An unrelated catalog filter must not remove the global application tiles.
         self.assertEqual(self.group(query="?target=client"), self.group())
@@ -438,7 +438,7 @@ class GroupPolicyApplicationTests(TestCase):
 
     def test_future_provider_families_are_not_merged_with_microsoft(self):
         extra = replace(BY_ID[SERVER], id="custom-server-2025", provider="a-corp")
-        with patch("ipms.apps.security.services.BASELINES", (*BASELINES, extra)):
+        with patch("ipms.apps.security.services.DEPLOYABLE_BASELINES", (*DEPLOYABLE_BASELINES, extra)):
             groups = self.catalog()["application_groups"]
         self.assertEqual([item["id"] for item in groups], [
             "microsoft:windows:server", "microsoft:windows:client", "a-corp:windows:server",

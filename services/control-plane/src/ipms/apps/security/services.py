@@ -9,7 +9,7 @@ from django.db.models import OuterRef, Subquery
 from django.utils import timezone
 
 from ipms.apps.discovery.models import WindowsServer
-from .catalog import BASELINES, CATALOG_REVISION
+from .catalog import ASSESSMENT_REVISION, BASELINES, CATALOG_REVISION, DEPLOYABLE_BASELINES
 from .models import BaselineAssessment, BaselinePreference
 
 MAX_AGE = timedelta(hours=24)
@@ -44,7 +44,7 @@ class BaselineOverview:
             if (identity.status != "active" or identity.platform != "windows"
                 or system.inventory_source != "agent" or system.source_id != identity.device_uri):
                 reason = "agent_unavailable"
-            elif record.baseline_revision != baseline.revision or record.catalog_revision != CATALOG_REVISION:
+            elif record.baseline_revision != baseline.revision or record.catalog_revision != ASSESSMENT_REVISION:
                 reason = "baseline_changed"
             elif not self.content_current(record):
                 reason = "baseline_changed"
@@ -123,7 +123,7 @@ class BaselineOverview:
                 "unmatched": sum(not any(baseline.matches(system) for baseline in BASELINES) for system in self.systems),
             },
             "application_groups": BaselineApplications(self.tenant, self.systems, self.now).groups(
-                baseline for baseline in BASELINES if baseline.id not in hidden
+                baseline for baseline in DEPLOYABLE_BASELINES if baseline.id not in hidden
             ),
             "results": [self.baseline(baseline) for baseline in selected if include_hidden or baseline.id not in hidden],
         }

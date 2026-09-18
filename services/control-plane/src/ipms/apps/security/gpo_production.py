@@ -314,8 +314,11 @@ def _selection(tenant, user, config, data):
     component = components.get((data['baseline_id'], data['backup_id']))
     if not component or component['scope'] != 'domain' and not config.tier_ous[data['tier']]:
         raise ParseError('Select an available component and configured tier.')
-    from .catalog import BY_ID
-    candidates = [profile for profile in BY_ID[data['baseline_id']].profiles
+    from .catalog import DEPLOYABLE_BY_ID
+    baseline = DEPLOYABLE_BY_ID.get(data['baseline_id'])
+    if not baseline:
+        raise ParseError('Select a baseline with an available GPO package.')
+    candidates = [profile for profile in baseline.profiles
                   if data['backup_id'] in profiles.get((data['baseline_id'], profile), ())]
     if not candidates or (candidates == ['domain-controller'] or component['scope'] == 'domain') and data['tier'] != '0':
         raise ParseError('DC and domain components require Tier 0.')

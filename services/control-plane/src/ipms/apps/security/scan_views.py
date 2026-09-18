@@ -22,9 +22,10 @@ from .services import BaselineOverview
 from .views import SecurityReadView, query
 
 
-def visible_baseline(tenant, baseline_id):
+def visible_baseline(tenant, baseline_id, *, assessable=False):
     baseline = BY_ID.get(baseline_id)
-    if not baseline or BaselinePreference.objects.filter(tenant=tenant, baseline_id=baseline_id, hidden=True).exists():
+    if (not baseline or (assessable and baseline.assessment_state != "native-read-only")
+            or BaselinePreference.objects.filter(tenant=tenant, baseline_id=baseline_id, hidden=True).exists()):
         raise NotFound("Baseline not found.")
     return baseline
 
@@ -45,7 +46,7 @@ class BaselineScansView(SecurityReadView):
         tenant = Tenant.objects.select_for_update().get(pk=request.tenant.pk)
         request.tenant = tenant
         self.check_permissions(request)
-        visible_baseline(tenant, baseline_id)
+        visible_baseline(tenant, baseline_id, assessable=True)
         expire_jobs(tenant)
         jobs = BaselineScanJob.objects.filter(tenant=tenant, baseline_id=baseline_id).select_related("system")
         return Response({"count": jobs.count(), "active": jobs.filter(status__in=ACTIVE).count(),
@@ -59,7 +60,7 @@ class BaselineScansView(SecurityReadView):
         self.check_permissions(request)
         if not has_tenant_permission(request.user, tenant, Permission.SECURITY_SCANS_RUN):
             raise PermissionDenied()
-        baseline = visible_baseline(tenant, baseline_id)
+        baseline = visible_baseline(tenant, baseline_id, assessable=True)
         data = request.data
         if not isinstance(data, dict) or set(data) - {"system_ids"}:
             raise ParseError("Only an optional system_ids selection is accepted.")
@@ -86,7 +87,7 @@ class BaselineScansView(SecurityReadView):
 class BaselineFindingsView(SecurityReadView):
     def get(self, request, baseline_id, system_id):
         query(request, {"page"})
-        baseline = visible_baseline(request.tenant, baseline_id)
+        baseline = visible_baseline(request.tenant, baseline_id, assessable=True)
         system = get_object_or_404(WindowsServer, pk=system_id, tenant=request.tenant)
         if not baseline.matches(system):
             raise NotFound("System not found.")

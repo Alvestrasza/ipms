@@ -24,7 +24,7 @@ from ipms.apps.core.exceptions import PublicApiError
 from ipms.apps.discovery.models import WindowsServer
 from ipms.apps.tenancy.models import Tenant
 from ipms.apps.tenancy.rbac import Permission, has_tenant_permission
-from .catalog import BASELINES, BY_ID
+from .catalog import DEPLOYABLE_BASELINES, DEPLOYABLE_BY_ID
 from .domains import domain_name, render_name, validate_settings
 from .models import DomainSecuritySettings, GpoExecutorReport, GpoImportJob
 
@@ -104,7 +104,7 @@ def artifact_bytes(component):
 def baseline_options():
     components, profiles = _content()
     results = []
-    for baseline in BASELINES:
+    for baseline in DEPLOYABLE_BASELINES:
         ids = list(dict.fromkeys(item for profile in baseline.profiles
                                 for item in profiles.get((baseline.id, profile), ())))
         rows = []
@@ -262,7 +262,7 @@ def queue_job(tenant, user, config, data):
         raise PublicApiError('security_domain_revision_changed', status_code=409)
     validate_settings({key: getattr(config, key) for key in ('domain_name', 'tier_ous', 'gpo_name_template', 'baseline_order')})
     components, profiles = _content()
-    baseline = BY_ID.get(data['baseline_id'])
+    baseline = DEPLOYABLE_BY_ID.get(data['baseline_id'])
     component = components.get((data['baseline_id'], data['backup_id']))
     if not baseline or not component or data['tier'] not in ('0', '1', '2') or not config.tier_ous[data['tier']]:
         raise ParseError('Select an available component and a configured tier.')

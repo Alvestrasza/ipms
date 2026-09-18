@@ -1,6 +1,6 @@
 <!--
 File Name: ADR-0015-SECURITY-BASELINES.md
-Version: v0.2.0 | Created: 2026-09-14 | Last Modified: 2026-09-14
+Version: v0.3.0 | Created: 2026-09-14 | Last Modified: 2026-09-18
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
 Description: Modular security baseline catalog, evidence and future enforcement boundaries.
 -->
@@ -9,7 +9,9 @@ Description: Modular security baseline catalog, evidence and future enforcement 
 Status: accepted; 0.2.45 extends the verified 0.2.44 foundation with tenant
 visibility and bounded native read-only evidence. Portal 0.2.48 adds domain plans
 and disabled/unlinked pilots under [ADR-0016](ADR-0016-TIER-DOMAIN-GPO-PILOTS.md).
-Effective policy activation and remediation remain future work.
+Portal 0.2.68 adds source-verified third-party catalog entries with explicit
+package, license and mechanism states. Effective third-party assessment and
+deployment remain future work.
 
 ## Context
 
@@ -27,6 +29,18 @@ Separate four responsibilities:
    published revision when available, source and verification date. Catalog
    metadata is shipped with the Control Plane. It contains no executable GPO,
    shell, PowerShell or remote-command payload.
+
+Catalog availability is baseline-specific:
+
+- `bundled`: immutable content is available to the current IPMS assessment and
+  GPO workflow.
+- `licensed-package-required`: the tenant must supply a properly licensed
+  package; IPMS does not redistribute it.
+- `public-package-required`: an official public package still needs immutable
+  import, validation and local acceptance.
+- `guidance-only`: the publisher supplies recommendations rather than a GPO
+  backup.
+- `mdm-only`: the source content targets Intune or another MDM mechanism.
 2. **Assessment:** a native compiled-in reader observes configuration using a
    verified, complete control manifest and role profile; the server evaluates it.
    The Control Plane receives authenticated evidence bound to tenant, Agent,

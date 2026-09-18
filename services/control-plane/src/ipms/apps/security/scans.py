@@ -19,7 +19,7 @@ from ipms.apps.core.exceptions import PublicApiError
 from ipms.apps.discovery.models import WindowsServer
 from ipms.apps.tenancy.models import Tenant
 from ipms.apps.tenancy.rbac import Permission, has_tenant_permission
-from .catalog import BY_ID, CATALOG_REVISION
+from .catalog import ASSESSMENT_REVISION, BY_ID
 from .content import CATALOG_SHA256, MANIFESTS
 from .evaluator import evaluate
 from .models import BaselineAssessment, BaselineScanJob
@@ -105,7 +105,7 @@ def queue_scans(tenant, user, baseline, systems):
     for system, enrollment, manifest in pending:
         job = BaselineScanJob.objects.create(
             tenant=tenant, system=system, enrollment=enrollment, requested_by=user,
-            baseline_id=baseline.id, baseline_revision=baseline.revision, catalog_revision=CATALOG_REVISION,
+            baseline_id=baseline.id, baseline_revision=baseline.revision, catalog_revision=ASSESSMENT_REVISION,
             manifest_sha256=manifest["manifest_sha256"], profile=system.operating_system_role,
             os_build=system.os_build, operating_system=system.operating_system, expires_at=now + QUEUE_AGE,
         )
@@ -126,7 +126,7 @@ def scope_current(job, enrollment, tenant):
     system = WindowsServer.objects.select_for_update().get(pk=job.system_id)
     job.system = system
     return bool(manifest and baseline and manifest["manifest_sha256"] == job.manifest_sha256
-                and job.catalog_revision == CATALOG_REVISION and job.baseline_revision == baseline.revision
+                and job.catalog_revision == ASSESSMENT_REVISION and job.baseline_revision == baseline.revision
                 and system.tenant_id == tenant.id and job.tenant_id == tenant.id
                 and job.enrollment_id == enrollment.id and system.source_id == enrollment.device_uri
                 and system.inventory_source == "agent" and baseline.matches(system)

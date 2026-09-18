@@ -75,6 +75,7 @@ function isBaseline(value: unknown): value is SecurityBaseline {
     [
       "id",
       "name",
+      "provider_label",
       "release",
       "source_url",
       "package_name",
@@ -89,6 +90,20 @@ function isBaseline(value: unknown): value is SecurityBaseline {
     ["catalog-only", "native-read-only"].includes(
       value.assessment_state as string,
     ) &&
+    [
+      "bundled",
+      "licensed-package-required",
+      "public-package-required",
+      "guidance-only",
+      "mdm-only",
+    ].includes(value.deployment_state as string) &&
+    [
+      "gpo-backup",
+      "cis-build-kit",
+      "disa-gpo-bundle",
+      "guidance",
+      "intune-policy",
+    ].includes(value.package_kind as string) &&
     Array.isArray(value.profiles) &&
     value.profiles.every((profile) => typeof profile === "string") &&
     [

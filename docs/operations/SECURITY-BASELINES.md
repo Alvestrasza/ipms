@@ -1,10 +1,17 @@
 <!--
 File Name: SECURITY-BASELINES.md
-Version: v0.2.1 | Created: 2026-09-14 | Last Modified: 2026-09-14
+Version: v0.3.0 | Created: 2026-09-14 | Last Modified: 2026-09-18
 Author: Alice Endelgard | Organization: Alvestrasza Corporation
 Description: Baseline catalog scope, percentages, source evidence and rollout acceptance.
 -->
 # Security baselines
+
+Portal **0.2.68** expands the Windows catalog to 20 entries across Microsoft,
+CIS, DISA, BSI, ASD/ACSC and UK NCSC. Only the eight pinned Microsoft packages
+are currently assessable and deployable by IPMS. The other entries state whether
+they require a tenant-licensed CIS Build Kit, an official public DISA package,
+conversion from written guidance, or an Intune/MDM workflow. The portal does not
+offer scan or GPO-deployment actions for content it cannot yet verify.
 
 Portal **0.2.52** adds square Agent-confirmed application tiles and selectable,
 collapsible catalog details. Domain, tier OU, naming and baseline-order settings
@@ -35,7 +42,7 @@ screenshots use an explicitly isolated synthetic fixture.
 ## Administration and scanning
 
 Open **Administration → Security → Baseline** as a tenant administrator to hide
-or show a baseline. All eight are visible by default. The preference is tenant
+or show a baseline. All 20 are visible by default. The preference is tenant
 specific and audited. Hiding removes the baseline from the Security catalog and
 detail pages; it preserves existing evidence and does not cancel an active scan.
 Administrators can always restore it from the administration page.
@@ -90,6 +97,24 @@ Server profiles distinguish non-DC servers and domain controllers. Client LTSC e
 sharing a listed build are candidates, not a claim of a separate LTSC package.
 The combined legacy packages' Windows 10 1607/1809 client profiles and the 20H2
 package are outside this initial eight-product selection.
+
+## Additional Windows catalogs
+
+Verified against first-party sources on **2026-09-18**:
+
+| Provider | Catalog entries | IPMS availability |
+| --- | --- | --- |
+| CIS | Server 2025 2.1.0, 2022 5.1.0, 2019 5.0.0, 2016 4.0.0; Windows 11 Enterprise 5.1.0; Windows 10 Enterprise 4.0.0 | Catalog only; the GPO Build Kits require a tenant-supplied CIS SecureSuite package |
+| DISA | Windows Server 2025 V1R2, Server 2022 V2R9, Windows 11 V2R8 | Catalog only; official public GPO package import and validation required |
+| BSI | SiSyPHuS Windows 10 hardening AP11 | Guidance and Group Policy table; conversion required |
+| ASD/ACSC | Windows 11 workstation hardening, September 2025 | Guidance with named Group Policy settings; conversion required |
+| UK NCSC | Windows 2025 configuration pack | Intune/MDM JSON and AppLocker content; no GPO backup |
+
+NIST's National Checklist Program is a repository and framework rather than a
+separate Windows GPO baseline; current Windows STIG records point back to DISA.
+ANSSI publishes valuable Active Directory administration and Windows logging
+guidance, but not a directly equivalent complete Windows OS GPO baseline.
+Neither is presented as a deployable GPO package in this catalog.
 
 Server 2025's package revision is **2602**. Older packages without an explicit
 revision retain an empty revision; the catalog revision separately pins the
