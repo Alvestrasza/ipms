@@ -1,5 +1,5 @@
 # File Name: test_gpo_production.py
-# Version: v0.2.0 | Created: 2026-09-15 | Last Modified: 2026-09-17
+# Version: v0.2.1 | Created: 2026-09-15 | Last Modified: 2026-09-18
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
 # Description: Production GPO lifecycle, scoped inspection and immutable approval regression tests.
 import copy
@@ -505,6 +505,10 @@ class ProductionGpoTests(TestCase):
         inspected = self.inspect()
         self.report_success(inspected, self.snapshot(inspected))
         GpoImportJob.objects.filter(pk=inspected['job_id']).update(expires_at=timezone.now() - timedelta(seconds=1))
+        listing = self.client.get(self.base + 'managed-gpos/')
+        projected = next(job for job in listing.data['jobs'] if job['id'] == inspected['job_id'])
+        self.assertIsNone(projected['preflight_state'])
+        self.assertFalse(projected['can_prepare'])
         response = self.client.post(self.base + 'managed-gpos/', {'preflight_id': inspected['job_id'],
             'idempotency_key': str(uuid.uuid4()), 'safety_review': {'management_access': False, 'recovery_access': False}}, format='json')
         self.assertEqual(response.status_code, 409)

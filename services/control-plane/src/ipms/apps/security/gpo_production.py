@@ -1,5 +1,5 @@
 # File Name: gpo_production.py
-# Version: v0.3.0 | Created: 2026-09-15 | Last Modified: 2026-09-17
+# Version: v0.3.1 | Created: 2026-09-15 | Last Modified: 2026-09-18
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
 # Description: Snapshot-bound production GPO preparation and separately approved changes.
 import copy
@@ -842,9 +842,11 @@ def extend_projection(job, user, projection):
     if not production(job):
         return projection
     a = job.assignment
+    current_snapshot = (job.result_evidence.get('state') if inspecting(job) and job.status == 'inspected'
+                        and timezone.now() < job.expires_at else None)
     projection.update(display_name=job.pilot_display_name, operation=a['operation'], managed_id=a['managed_id'],
         approval_mode=a['approval_mode'],
-        preflight_state=job.result_evidence.get('state') if inspecting(job) and job.status == 'inspected' else None,
+        preflight_state=current_snapshot,
         can_prepare=inspection_current(job, user), inspection_expires_at=job.expires_at.isoformat() if inspecting(job) else None)
     if a['schema'] == 4:
         projection.update(override_id=a['override_id'], override_revision=a['override_revision'], override_sha256=a['override_sha256'])
