@@ -1,6 +1,6 @@
 /*
  * File Name: collections.module.css
- * Version: v0.1.0 | Created: 2026-09-18 | Modified: 2026-09-18
+ * Version: v0.1.1 | Created: 2026-09-18 | Modified: 2026-09-19
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Present responsive Device and Policy Collection editors and rollout state.
  */
@@ -10,8 +10,8 @@
   grid-template-columns: minmax(16rem, 0.7fr) minmax(0, 1.5fr);
 }
 .panel {
-  background: var(--surface, #fff);
-  border: 1px solid var(--border, #d7dbe3);
+  background: var(--surface-panel);
+  border: 1px solid var(--border-default);
   border-radius: 14px;
   padding: 1rem;
 }
@@ -40,11 +40,18 @@
 .field select,
 .field textarea {
   min-height: 2.5rem;
-  border: 1px solid var(--border, #cbd1dc);
+  border: 1px solid var(--border-default);
   border-radius: 8px;
   padding: 0.55rem 0.65rem;
-  background: var(--surface, #fff);
-  color: inherit;
+  background: var(--surface-panel-raised);
+  color: var(--color-text-primary);
+  font: inherit;
+}
+.field input:focus-visible,
+.field select:focus-visible,
+.field textarea:focus-visible {
+  outline: 2px solid var(--color-accent-blue);
+  outline-offset: 2px;
 }
 .field textarea {
   min-height: 5rem;
@@ -63,33 +70,41 @@
   list-style: none;
 }
 .card {
-  border: 1px solid var(--border, #d7dbe3);
+  border: 1px solid var(--border-default);
   border-radius: 10px;
   padding: 0.75rem;
   background: color-mix(
     in srgb,
-    var(--surface, #fff) 92%,
-    var(--accent, #466cff) 8%
+    var(--surface-panel-raised) 92%,
+    var(--color-accent-blue) 8%
   );
 }
 .selected {
-  outline: 2px solid var(--accent, #466cff);
+  outline: 2px solid var(--color-accent-blue);
 }
 .button {
-  border: 1px solid var(--border, #bfc6d4);
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
   padding: 0.55rem 0.8rem;
-  background: var(--surface, #fff);
-  color: inherit;
+  background: var(--surface-panel-raised);
+  color: var(--color-text-secondary);
   cursor: pointer;
 }
+.button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--color-text-primary);
+}
+.button:focus-visible {
+  outline: 2px solid var(--color-accent-blue);
+  outline-offset: 2px;
+}
 .primary {
-  background: var(--accent, #315ee8);
-  border-color: var(--accent, #315ee8);
-  color: #fff;
+  background: var(--color-accent-blue);
+  border-color: var(--color-accent-blue);
+  color: var(--color-deepspace);
 }
 .danger {
-  color: #a32626;
+  color: var(--color-critical);
 }
 .button:disabled {
   opacity: 0.5;
@@ -100,33 +115,44 @@
   gap: 0.35rem;
   max-height: 18rem;
   overflow: auto;
-  border: 1px solid var(--border, #d7dbe3);
+  border: 1px solid var(--border-default);
   border-radius: 8px;
   padding: 0.55rem;
+  background: var(--surface-panel-raised);
 }
 .check {
   display: flex;
   gap: 0.5rem;
   align-items: flex-start;
 }
+.check input {
+  accent-color: var(--color-accent-blue);
+}
 .muted {
-  color: var(--muted-foreground, #667085);
+  color: var(--color-text-muted);
   font-size: 0.86rem;
 }
 .status {
+  display: inline-block;
+  border: 1px solid var(--border-default);
   border-radius: 999px;
   padding: 0.2rem 0.55rem;
   font-size: 0.78rem;
-  background: #e8eefc;
+  background: color-mix(
+    in srgb,
+    var(--color-accent-blue) 12%,
+    var(--surface-panel-raised)
+  );
+  color: var(--color-text-secondary);
 }
 .success {
-  color: #12633d;
+  color: var(--color-success);
 }
 .error {
-  color: #9d2424;
+  color: var(--color-critical);
 }
 .policy {
-  border-left: 4px solid var(--accent, #315ee8);
+  border-left: 4px solid var(--color-accent-blue);
 }
 .target {
   overflow-wrap: anywhere;

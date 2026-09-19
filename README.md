@@ -9,6 +9,11 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
+Portal `0.2.74` aligns Device and Policy Collections with the shared Portal
+theme tokens. Panels, forms, collection cards, status badges, buttons, focus
+states, and semantic success/error colors now switch consistently between the
+dark and light themes.
+
 Portal `0.2.73` adds the first read-only GPMC-style view to the central Windows
 GPO workspace. It projects configured domain targets and IPMS-managed GPOs from
 validated, receipt-bound Agent observations, including link state, inheritance,
