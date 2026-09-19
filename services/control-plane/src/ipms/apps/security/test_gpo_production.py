@@ -1,5 +1,5 @@
 # File Name: test_gpo_production.py
-# Version: v0.2.1 | Created: 2026-09-15 | Last Modified: 2026-09-18
+# Version: v0.3.0 | Created: 2026-09-15 | Last Modified: 2026-09-19
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
 # Description: Production GPO lifecycle, scoped inspection and immutable approval regression tests.
 import copy
@@ -326,6 +326,41 @@ class ProductionGpoTests(TestCase):
         self.managed.refresh_from_db()
         self.assertIsNotNone(active_binding(self.managed, timezone.now()))
         self.assertEqual(GpoImportJob.objects.filter(approved_at__isnull=False).count(), 2)
+
+    def test_directory_viewer_projects_configured_targets_and_latest_valid_managed_state(self):
+        job, state = self.combined()
+        listing = self.client.get(self.base + 'managed-gpos/')
+        self.assertEqual(listing.status_code, 200, listing.data)
+        viewer = listing.data['directory']
+        self.assertEqual(viewer['schema'], 1)
+        self.assertEqual(viewer['domain_dns_name'], DOMAIN)
+        self.assertEqual(viewer['scope'], 'configured-targets-and-managed-gpos')
+        configured = {dn for targets in self.config['tier_ous'].values() for dn in targets}
+        self.assertEqual({node['dn'] for node in viewer['nodes']}, configured)
+        self.assertEqual({node['dn'] for node in viewer['nodes'] if node['observed']},
+                         set(self.config['tier_ous']['1']))
+        self.assertEqual(len(viewer['gpos']), 1)
+        projected = viewer['gpos'][0]
+        self.assertEqual(projected['managed_id'], job['managed_id'])
+        self.assertEqual(projected['guid'], PILOT_GUID)
+        self.assertEqual(projected['name'], state['gpo']['name'])
+        self.assertEqual(projected['source'], 'baseline')
+        self.assertEqual(projected['state'], 'linked')
+        self.assertFalse(projected['computer_enabled'])
+        self.assertEqual(projected['computer_version'], {'directory': 1, 'sysvol': 1})
+        self.assertEqual(projected['links'], state['gpo']['links'])
+
+    def test_directory_viewer_does_not_project_invalid_or_foreign_evidence(self):
+        inspection = self.inspect()
+        self.report_success(inspection, self.snapshot(inspection))
+        job = GpoImportJob.objects.get(pk=inspection['job_id'])
+        job.result_evidence['state']['name_available'] = False
+        job.save(update_fields=('result_evidence',))
+        listing = self.client.get(self.base + 'managed-gpos/')
+        viewer = listing.data['directory']
+        self.assertEqual(viewer['gpos'][0]['name'], self.managed.display_name)
+        self.assertIsNone(viewer['gpos'][0]['observed_at'])
+        self.assertTrue(all(not node['observed'] for node in viewer['nodes']))
 
     def test_combined_root_import_preserves_default_domain_policy(self):
         self.use_domain_component()

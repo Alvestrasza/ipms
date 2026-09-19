@@ -1,6 +1,6 @@
 /**
  * File Name: gpo-production-types.ts
- * Version: v0.1.0 | Created: 2026-09-15 | Modified: 2026-09-15
+ * Version: v0.2.0 | Created: 2026-09-15 | Modified: 2026-09-19
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Bound production GPO observations and managed policy projections.
  */
@@ -74,6 +74,39 @@ export type ManagedGpo = {
   origin_job_id: string | null;
   staged_job_id: string | null;
   active_job_id: string | null;
+};
+export type GpoDirectoryNode = {
+  dn: string;
+  kind: "domain" | "ou";
+  tiers: ("0" | "1" | "2")[];
+  observed: boolean;
+  blocked: boolean | null;
+  links: GpoLink[];
+  inherited_links: GpoLink[];
+};
+export type GpoDirectoryItem = {
+  managed_id: string;
+  guid: string | null;
+  name: string;
+  source: "baseline" | "override" | "custom";
+  state: ManagedGpo["state"];
+  tier: "0" | "1" | "2";
+  targets: string[];
+  observed_at: string | null;
+  computer_enabled: boolean | null;
+  user_enabled: boolean | null;
+  computer_version: { directory: number; sysvol: number } | null;
+  user_version: { directory: number; sysvol: number } | null;
+  owner_sid: string | null;
+  wmi_filter: string | null;
+  links: GpoLink[];
+};
+export type GpoDirectoryView = {
+  schema: 1;
+  domain_dns_name: string;
+  scope: "configured-targets-and-managed-gpos";
+  nodes: GpoDirectoryNode[];
+  gpos: GpoDirectoryItem[];
 };
 const object = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === "object" && !Array.isArray(v);
@@ -207,6 +240,101 @@ export function isManagedGpo(v: unknown): v is ManagedGpo {
     ].includes(String(v.state)) &&
     [v.origin_job_id, v.staged_job_id, v.active_job_id].every(
       (id) => id === null || uuid(id),
+    )
+  );
+}
+const nullableBoolean = (value: unknown) =>
+  value === null || typeof value === "boolean";
+const version = (value: unknown) =>
+  value === null ||
+  (object(value) &&
+    keys(value, ["directory", "sysvol"]) &&
+    integer(value.directory) &&
+    integer(value.sysvol));
+export function isGpoDirectoryView(v: unknown): v is GpoDirectoryView {
+  if (
+    !object(v) ||
+    !keys(v, ["schema", "domain_dns_name", "scope", "nodes", "gpos"]) ||
+    v.schema !== 1 ||
+    !text(v.domain_dns_name, 253) ||
+    v.scope !== "configured-targets-and-managed-gpos" ||
+    !Array.isArray(v.nodes) ||
+    v.nodes.length > 96 ||
+    !Array.isArray(v.gpos) ||
+    v.gpos.length > 10000
+  )
+    return false;
+  const nodes = v.nodes.every(
+    (node) =>
+      object(node) &&
+      keys(node, [
+        "dn",
+        "kind",
+        "tiers",
+        "observed",
+        "blocked",
+        "links",
+        "inherited_links",
+      ]) &&
+      text(node.dn) &&
+      ["domain", "ou"].includes(String(node.kind)) &&
+      Array.isArray(node.tiers) &&
+      node.tiers.length > 0 &&
+      node.tiers.length <= 3 &&
+      node.tiers.every((tier) => ["0", "1", "2"].includes(String(tier))) &&
+      new Set(node.tiers).size === node.tiers.length &&
+      typeof node.observed === "boolean" &&
+      nullableBoolean(node.blocked) &&
+      isGpoLinks(node.links) &&
+      isGpoLinks(node.inherited_links),
+  );
+  return (
+    nodes &&
+    v.gpos.every(
+      (gpo) =>
+        object(gpo) &&
+        keys(gpo, [
+          "managed_id",
+          "guid",
+          "name",
+          "source",
+          "state",
+          "tier",
+          "targets",
+          "observed_at",
+          "computer_enabled",
+          "user_enabled",
+          "computer_version",
+          "user_version",
+          "owner_sid",
+          "wmi_filter",
+          "links",
+        ]) &&
+        uuid(gpo.managed_id) &&
+        (gpo.guid === null || uuid(gpo.guid)) &&
+        text(gpo.name, 240) &&
+        ["baseline", "override", "custom"].includes(String(gpo.source)) &&
+        [
+          "new",
+          "prepared",
+          "linked",
+          "active",
+          "inactive",
+          "reconciliation_required",
+        ].includes(String(gpo.state)) &&
+        ["0", "1", "2"].includes(String(gpo.tier)) &&
+        Array.isArray(gpo.targets) &&
+        gpo.targets.length > 0 &&
+        gpo.targets.length <= 32 &&
+        gpo.targets.every((target) => text(target)) &&
+        (gpo.observed_at === null || text(gpo.observed_at, 64)) &&
+        nullableBoolean(gpo.computer_enabled) &&
+        nullableBoolean(gpo.user_enabled) &&
+        version(gpo.computer_version) &&
+        version(gpo.user_version) &&
+        (gpo.owner_sid === null || sid(gpo.owner_sid)) &&
+        (gpo.wmi_filter === null || text(gpo.wmi_filter)) &&
+        isGpoLinks(gpo.links),
     )
   );
 }

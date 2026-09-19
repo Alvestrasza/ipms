@@ -9,6 +9,14 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
+Portal `0.2.73` adds the first read-only GPMC-style view to the central Windows
+GPO workspace. It projects configured domain targets and IPMS-managed GPOs from
+validated, receipt-bound Agent observations, including link state, inheritance,
+computer/user status, directory and SYSVOL versions, owner SID, and WMI filter.
+This bounded first stage does not enumerate unmanaged policies or mutate Active
+Directory; domain-wide inventory, delegation, modeling, and lifecycle expansion
+remain separate increments.
+
 Candidate `0.2.67` accepts the exact configured domain distinguished name as an
 exclusive Tier 0 GPO target. Ordinary managed machine and user GPOs can therefore
 be linked at the domain root without being reclassified as Domain Security policy.

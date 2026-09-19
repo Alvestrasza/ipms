@@ -1,5 +1,5 @@
 # File Name: gpo_production.py
-# Version: v0.3.1 | Created: 2026-09-15 | Last Modified: 2026-09-18
+# Version: v0.4.0 | Created: 2026-09-15 | Last Modified: 2026-09-19
 # Author: Alice Endelgard | Organization: Alvestrasza Corporation
 # Description: Snapshot-bound production GPO preparation and separately approved changes.
 import copy
@@ -273,6 +273,80 @@ def managed_projection(policy):
             'staged_job_id': str(policy.staged_job_id) if policy.staged_job_id else None,
             'active_job_id': str(policy.active_job_id) if policy.active_job_id else None,
             'override_id': str(policy.override_id) if policy.override_id else None}
+
+
+def directory_projection(config, policies, jobs):
+    """Project validated Agent observations into a read-only GPMC-style view.
+
+    This first viewer slice deliberately exposes configured directory targets
+    and IPMS-managed GPOs only. It never treats historical evidence as current
+    authority and it never performs or queues an Active Directory operation.
+    """
+    nodes = {}
+    root = domain_root(config.domain_name)
+    for tier, targets in config.tier_ous.items():
+        for dn in targets:
+            key = dn.casefold()
+            node = nodes.setdefault(key, {'dn': dn, 'kind': 'domain' if key == root.casefold() else 'ou',
+                                          'tiers': [], 'observed': False, 'blocked': None,
+                                          'links': [], 'inherited_links': []})
+            if tier not in node['tiers']:
+                node['tiers'].append(tier)
+    evidence = {}
+    for job in jobs:
+        assignment = job.assignment if isinstance(job.assignment, dict) else {}
+        managed_id = assignment.get('managed_id')
+        state = job.result_evidence.get('state') if isinstance(job.result_evidence, dict) else None
+        if (not managed_id or not job.completed_at or state is None or not production(job)
+                or job.status not in ('inspected', 'staged', 'linked', 'activated', 'deactivated')):
+            continue
+        expected = SUCCESS.get(assignment.get('operation'))
+        if not expected or expected[0] != job.status:
+            continue
+        receipt = {'status': job.status, 'result_code': expected[1],
+                   'gpo_guid': job.gpo_guid or None, 'evidence': job.result_evidence}
+        if not job.result_digest or digest(receipt) != job.result_digest:
+            continue
+        try:
+            validate_snapshot(state, assignment, allow_inconsistent=True)
+        except (ValidationError, ValueError, TypeError, KeyError, AttributeError):
+            continue
+        if managed_id not in evidence:
+            evidence[managed_id] = (job, state)
+        for observed in state['ous']:
+            key = observed['dn'].casefold()
+            if key not in nodes:
+                continue
+            nodes[key].update(observed=True, blocked=observed['blocked'],
+                              links=observed['links'], inherited_links=observed['inherited_links'])
+    gpos = []
+    for policy in policies:
+        latest = evidence.get(str(policy.pk))
+        job, state = latest if latest else (None, None)
+        observed = state['gpo'] if state else None
+        if observed and policy.gpo_guid and observed['guid'] != policy.gpo_guid:
+            observed = None
+        kind = ('custom' if policy.override_id and policy.override.kind == GpoOverride.CUSTOM
+                else 'override' if policy.override_id else 'baseline')
+        gpos.append({
+            'managed_id': str(policy.pk), 'guid': policy.gpo_guid or None,
+            'name': observed['name'] if observed else policy.display_name,
+            'source': kind, 'state': policy.state, 'tier': str(policy.tier),
+            'targets': policy.target_ous, 'observed_at': job.completed_at.isoformat() if job else None,
+            'computer_enabled': observed['computer_enabled'] if observed else None,
+            'user_enabled': observed['user_enabled'] if observed else None,
+            'computer_version': ({'directory': observed['computer_ds'], 'sysvol': observed['computer_sysvol']}
+                                 if observed else None),
+            'user_version': ({'directory': observed['user_ds'], 'sysvol': observed['user_sysvol']}
+                             if observed else None),
+            'owner_sid': observed['owner_sid'] if observed else None,
+            'wmi_filter': observed['wmi_filter'] if observed else None,
+            'links': observed['links'] if observed else [],
+        })
+    return {'schema': 1, 'domain_dns_name': config.domain_name,
+            'scope': 'configured-targets-and-managed-gpos',
+            'nodes': sorted(nodes.values(), key=lambda row: (min(row['tiers']), row['dn'].casefold())),
+            'gpos': gpos}
 
 
 def policy_for_job(job, *, lock=False):
@@ -1106,9 +1180,12 @@ class ManagedGposView(DomainSettingsView):
             option['combined_eligible'] = option['eligible'] and tuple(map(int, option['agent_version'].split('.'))) >= (0, 2, 36)
         jobs = visible_jobs(request.user, request.tenant, GpoImportJob.objects.filter(tenant=request.tenant, domain=config))
         policies = ManagedGpoPolicy.objects.filter(tenant=request.tenant, domain=config).select_related(
-            'active_job', 'active_job__domain', 'active_job__system', 'active_job__enrollment')
-        return Response({'results': [managed_projection(row) for row in policies],
-                         'executors': options, 'jobs': [job_projection(row, user=request.user) for row in jobs[:50]]})
+            'override', 'active_job', 'active_job__domain', 'active_job__system', 'active_job__enrollment')
+        policy_rows = list(policies)
+        job_rows = list(jobs[:250])
+        return Response({'results': [managed_projection(row) for row in policy_rows],
+                         'directory': directory_projection(config, policy_rows, job_rows),
+                         'executors': options, 'jobs': [job_projection(row, user=request.user) for row in job_rows[:50]]})
 
     @transaction.atomic
     def post(self, request, domain_id):

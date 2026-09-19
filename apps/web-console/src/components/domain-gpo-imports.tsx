@@ -1,6 +1,6 @@
 /**
  * File Name: domain-gpo-imports.tsx
- * Version: v0.5.0 | Created: 2026-09-14 | Modified: 2026-09-17
+ * Version: v0.6.0 | Created: 2026-09-14 | Modified: 2026-09-19
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Prepare snapshot-bound import/link requests in one action while keeping activation separately approved.
  */
@@ -39,11 +39,14 @@ import {
 } from "@/lib/domain-security-validation";
 import {
   GPO_OPERATIONS,
+  type GpoDirectoryView,
   type GpoOperation,
+  isGpoDirectoryView,
   isManagedGpo,
   type ManagedGpo,
 } from "@/lib/gpo-production-types";
 import type { SecurityOverride } from "@/lib/security-override-types";
+import { GpoDirectoryViewer } from "./gpo-directory-viewer";
 import styles from "./gpo-production.module.css";
 import { GpoStateReview } from "./gpo-state-review";
 
@@ -63,6 +66,7 @@ type Props = {
 };
 type Listing = {
   results: ManagedGpo[];
+  directory: GpoDirectoryView;
   executors: GpoImportExecutor[];
   jobs: GpoImportJob[];
 };
@@ -73,6 +77,7 @@ function listing(v: unknown): v is Listing {
     Array.isArray(r.results) &&
     r.results.length <= 10000 &&
     r.results.every(isManagedGpo) &&
+    isGpoDirectoryView(r.directory) &&
     isDomainGpoImports({ results: r.jobs, executors: r.executors })
   );
 }
@@ -624,6 +629,9 @@ function ProductionWorkflow({
       aria-label={c.title}
       aria-busy={busy || loading}
     >
+      {data ? (
+        <GpoDirectoryViewer directory={data.directory} locale={locale} />
+      ) : null}
       <div className={styles.heading}>
         <h3>{c.title}</h3>
         <button
