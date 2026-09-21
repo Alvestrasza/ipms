@@ -204,7 +204,7 @@ export const de = {
     infrastructure: "Infrastruktur",
     agents: "Agenten",
     soon: "Bald",
-    version: "IPMS v0.2.74 Entwicklung",
+    version: "IPMS v0.2.76 Entwicklung",
   },
   linuxSystems: {
     liveData:
@@ -293,7 +293,58 @@ export const de = {
   },
   platform: {
     setupBoundary:
-      "Das Anlegen eines Mandanten initialisiert weder Agent-PKI noch Gateway-Vertrauen, zusätzliche Dienste oder Dienstberechtigungen. Dafür ist eine separate Einrichtung erforderlich.",
+      "Mandant, erster Administrator und Agent-Zugang werden getrennt eingerichtet. Die Appliance führt die Agent-PKI, Wiederherstellungssicherung, den mandanteneigenen Gateway-Endpunkt und die Paketprüfung als nachvollziehbare Schritte aus.",
+    agentOnboarding: "Agent-Zugang",
+    configureAgentAccess: "Agent-Zugang einrichten",
+    agentAccessStatus: "Agent-Bereitschaft",
+    pkiState: "Agent-PKI",
+    pkiMissing: "Nicht eingerichtet",
+    pkiRecoveryPending: "Sicherung noch nicht bestätigt",
+    pkiReady: "Sicherung bestätigt",
+    gatewayEndpoint: "Gateway-Endpunkt",
+    gatewayReady: "Erreichbar und mandantensicher geprüft",
+    gatewayPending: "Prüfung ausstehend",
+    packageLabel: "Windows-Agent-Paket",
+    packageDigest: "Agent-Paket SHA-256",
+    packageReady: "Hash und Version geprüft",
+    packageBlocked: "Paket nicht bereit",
+    readyForEnrollment: "Agent-Einbindung ist bereit.",
+    onboardingNotReady: "Vor der Agent-Einbindung sind noch Schritte offen.",
+    gatewayDnsName: "Eigener Gateway-DNS-Name",
+    recoveryPassphrase: "Passphrase für die PKI-Wiederherstellung",
+    recoveryPassphraseConfirmation: "Passphrase wiederholen",
+    recoveryHint:
+      "Die Passphrase wird nicht gespeichert. Sichere sie getrennt vom verschlüsselten Wiederherstellungsmaterial. Der DNS-Name muss auf diese Appliance zeigen.",
+    initializePki: "Agent-PKI erzeugen",
+    downloadRecovery: "Wiederherstellungsmaterial herunterladen",
+    confirmRecovery: "Getrennte Sicherung bestätigen",
+    confirmRecoveryWarning:
+      "Bestätige erst, wenn Datei, SHA-256 und Passphrase getrennt und wiederauffindbar gesichert sind. Danach entfernt IPMS die Exportkopie aus der Appliance-Datenbank.",
+    verifyGateway: "Gateway und alle Mandanten prüfen",
+    recoveryDownloaded:
+      "Das verschlüsselte Wiederherstellungsmaterial wurde heruntergeladen.",
+    pkiPrepared:
+      "Die Agent-PKI wurde erzeugt. Lade nun das Wiederherstellungsmaterial herunter.",
+    recoveryConfirmed: "Die getrennte PKI-Sicherung wurde bestätigt.",
+    gatewayVerified: "Gateway-Zertifikat und Mandantentrennung wurden geprüft.",
+    gatewayVerificationFailed:
+      "Mindestens ein Gateway-Endpunkt ist nicht erreichbar oder stimmt nicht mit seiner Mandantenidentität überein.",
+    packageMissing: "Das konfigurierte Agent-Paket fehlt auf der Appliance.",
+    packageDigestMismatch:
+      "Der Paketinhalt stimmt nicht mit dem hinterlegten SHA-256 überein.",
+    packageUnreadable: "Das Agent-Paket kann nicht gelesen werden.",
+    packageVersionInvalid: "Die konfigurierte Agent-Version ist ungültig.",
+    packageHgsTooOld:
+      "Für HGS ist mindestens Agent-Version {version} erforderlich.",
+    agentPkiAlready:
+      "Für diesen Mandanten ist bereits eine Agent-PKI eingerichtet.",
+    gatewayNameUnavailable:
+      "Dieser Gateway-DNS-Name wird bereits von einem anderen Mandanten verwendet.",
+    adminRequired: "Richte zuerst den separaten Mandantenadministrator ein.",
+    recoveryUnavailable:
+      "Es ist kein ausstehendes Wiederherstellungsmaterial vorhanden.",
+    recoveryNotConfirmed:
+      "Download oder SHA-256-Bestätigung des Wiederherstellungsmaterials fehlt.",
     scope: "Plattformverwaltung",
     title: "Mandanten",
     account: "IPMS-Konto",
@@ -304,6 +355,13 @@ export const de = {
       "Dein Konto hat keinen Zugriff auf diesen Arbeitsbereich. Wende dich an den zuständigen Mandantenadministrator oder melde dich mit einem anderen Konto an.",
     name: "Mandantenname",
     slug: "Mandanten-ID",
+    purpose: "Mandantenzweck",
+    purposes: {
+      infrastructure: "Infrastruktur",
+      hgs: "Nur Host Guardian Service",
+    },
+    purposeHint:
+      "Wähle den Zweck beim Anlegen des Mandanten. Er kann später nicht geändert werden. Ein HGS-Mandant besitzt separate Identitäten und kann dieselbe Appliance wie Infrastruktur-Mandanten nutzen.",
     status: "Status",
     administrator: "Erster Administrator",
     updated: "Aktualisiert",

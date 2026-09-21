@@ -100,6 +100,9 @@ def _gpo_maintenance_allowed(enrollment, action, target_version='', artifact_sha
 @transaction.atomic
 def create_lifecycle_job(*, enrollment, action: str, actor: str) -> AgentLifecycleJob:
     require_active_tenant(enrollment.tenant_id, lock=True)
+    from ipms.apps.hgs.models import HgsDeployment
+    if HgsDeployment.objects.filter(nodes__enrollment=enrollment, status__in=("inspecting", "running", "waiting_for_reboot", "reconciliation_required")).exists():
+        raise ValidationError("An HGS operation must settle before Agent maintenance.")
     from .hyperv_management import active_management_jobs
     if active_management_jobs(enrollment.tenant_id, enrollment_id=enrollment.id).exists():
         raise ValidationError("A Hyper-V management operation must finish before Agent maintenance.")

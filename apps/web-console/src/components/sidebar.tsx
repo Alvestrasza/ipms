@@ -29,6 +29,7 @@ import Link from "next/link";
 import { getCollectionCopy } from "@/i18n/collection-copy";
 import { getDictionary } from "@/i18n/dictionaries";
 import { getDomainSecurityCopy } from "@/i18n/domain-security-copy";
+import { getHgsCopy } from "@/i18n/hgs-copy";
 import { getJobLogsCopy } from "@/i18n/job-logs-copy";
 import { getSecurityCopy } from "@/i18n/security-copy";
 import { resolveLocale } from "@/i18n/server";
@@ -64,6 +65,7 @@ export type ActiveSection =
   | "security-override"
   | "security-windows-gpos"
   | "security-custom-gpo"
+  | "security-hgs"
   | "collections-device"
   | "collections-policy"
   | "admin-users"
@@ -84,6 +86,8 @@ export async function Sidebar({
   canManageSecurityBaselines,
   canManageSecurityDomains,
   canRunGpoImports,
+  canViewHgs,
+  isHgsTenant,
   canViewCollections,
   canViewLogs,
   windowsRoles,
@@ -99,6 +103,8 @@ export async function Sidebar({
   canManageSecurityBaselines: boolean;
   canManageSecurityDomains: boolean;
   canRunGpoImports: boolean;
+  canViewHgs: boolean;
+  isHgsTenant: boolean;
   canViewCollections: boolean;
   canViewLogs: boolean;
   windowsRoles: WindowsServerRoleSummary[];
@@ -113,7 +119,8 @@ export async function Sidebar({
     activeSection === "security-baseline" ||
     activeSection === "security-override" ||
     activeSection === "security-windows-gpos" ||
-    activeSection === "security-custom-gpo";
+    activeSection === "security-custom-gpo" ||
+    activeSection === "security-hgs";
   const windowsGpoCopy = getWindowsGpoCopy(locale);
   const logsExpanded = activeSection.startsWith("logs-");
   const collectionsExpanded = activeSection.startsWith("collections-");
@@ -206,9 +213,12 @@ export async function Sidebar({
     {
       label: securityCopy.navigation,
       icon: Shield,
-      href: canRunGpoImports
-        ? `/${locale}/security/windows-gpos`
-        : `/${locale}/security/baseline`,
+      href:
+        isHgsTenant && canViewHgs
+          ? `/${locale}/security/hgs`
+          : canRunGpoImports
+            ? `/${locale}/security/windows-gpos`
+            : `/${locale}/security/baseline`,
       section: "security-baseline" as const,
       enabled: true as const,
     },
@@ -268,72 +278,88 @@ export async function Sidebar({
               )}
               {item.section === "security-baseline" && securityExpanded ? (
                 <ul className="nav-tree">
-                  <li>
-                    <Link
-                      className={`nav-subitem ${activeSection === "security-windows-gpos" ? "nav-subitem--active" : ""}`}
-                      href={
-                        (canRunGpoImports
-                          ? `/${locale}/security/windows-gpos`
-                          : `/${locale}/security/baseline`) as Route
-                      }
-                      aria-current={
-                        activeSection === "security-windows-gpos"
-                          ? "page"
-                          : undefined
-                      }
-                    >
-                      <ListTree aria-hidden="true" size={15} />
-                      <span>{windowsGpoCopy.navigation}</span>
-                    </Link>
-                    <ul className="nav-tree nav-tree--nested">
-                      <li>
-                        <Link
-                          className={`nav-subitem ${activeSection === "security-baseline" ? "nav-subitem--active" : ""}`}
-                          href={`/${locale}/security/baseline` as Route}
-                          aria-current={
-                            activeSection === "security-baseline"
-                              ? "page"
-                              : undefined
-                          }
-                        >
-                          <ShieldCheck aria-hidden="true" size={15} />
-                          <span>{windowsGpoCopy.baselines}</span>
-                        </Link>
-                      </li>
-                      {canManageSecurityBaselines ? (
-                        <>
-                          <li>
-                            <Link
-                              className={`nav-subitem ${activeSection === "security-override" ? "nav-subitem--active" : ""}`}
-                              href={`/${locale}/security/override` as Route}
-                              aria-current={
-                                activeSection === "security-override"
-                                  ? "page"
-                                  : undefined
-                              }
-                            >
-                              <ShieldCheck aria-hidden="true" size={15} />
-                              <span>{windowsGpoCopy.overrides}</span>
-                            </Link>
-                          </li>
-                          <li>
-                            <Link
-                              className={`nav-subitem ${activeSection === "security-custom-gpo" ? "nav-subitem--active" : ""}`}
-                              href={`/${locale}/security/custom-gpo` as Route}
-                              aria-current={
-                                activeSection === "security-custom-gpo"
-                                  ? "page"
-                                  : undefined
-                              }
-                            >
-                              <ShieldCheck aria-hidden="true" size={15} />
-                              <span>{windowsGpoCopy.custom}</span>
-                            </Link>
-                          </li>
-                        </>
-                      ) : null}
-                    </ul>
-                  </li>
+                  {canViewHgs ? (
+                    <li>
+                      <Link
+                        className={`nav-subitem ${activeSection === "security-hgs" ? "nav-subitem--active" : ""}`}
+                        href={`/${locale}/security/hgs` as Route}
+                        aria-current={
+                          activeSection === "security-hgs" ? "page" : undefined
+                        }
+                      >
+                        <KeyRound aria-hidden="true" size={15} />
+                        <span>{getHgsCopy(locale).navigation}</span>
+                      </Link>
+                    </li>
+                  ) : null}
+                  {!isHgsTenant ? (
+                    <li>
+                      <Link
+                        className={`nav-subitem ${activeSection === "security-windows-gpos" ? "nav-subitem--active" : ""}`}
+                        href={
+                          (canRunGpoImports
+                            ? `/${locale}/security/windows-gpos`
+                            : `/${locale}/security/baseline`) as Route
+                        }
+                        aria-current={
+                          activeSection === "security-windows-gpos"
+                            ? "page"
+                            : undefined
+                        }
+                      >
+                        <ListTree aria-hidden="true" size={15} />
+                        <span>{windowsGpoCopy.navigation}</span>
+                      </Link>
+                      <ul className="nav-tree nav-tree--nested">
+                        <li>
+                          <Link
+                            className={`nav-subitem ${activeSection === "security-baseline" ? "nav-subitem--active" : ""}`}
+                            href={`/${locale}/security/baseline` as Route}
+                            aria-current={
+                              activeSection === "security-baseline"
+                                ? "page"
+                                : undefined
+                            }
+                          >
+                            <ShieldCheck aria-hidden="true" size={15} />
+                            <span>{windowsGpoCopy.baselines}</span>
+                          </Link>
+                        </li>
+                        {canManageSecurityBaselines ? (
+                          <>
+                            <li>
+                              <Link
+                                className={`nav-subitem ${activeSection === "security-override" ? "nav-subitem--active" : ""}`}
+                                href={`/${locale}/security/override` as Route}
+                                aria-current={
+                                  activeSection === "security-override"
+                                    ? "page"
+                                    : undefined
+                                }
+                              >
+                                <ShieldCheck aria-hidden="true" size={15} />
+                                <span>{windowsGpoCopy.overrides}</span>
+                              </Link>
+                            </li>
+                            <li>
+                              <Link
+                                className={`nav-subitem ${activeSection === "security-custom-gpo" ? "nav-subitem--active" : ""}`}
+                                href={`/${locale}/security/custom-gpo` as Route}
+                                aria-current={
+                                  activeSection === "security-custom-gpo"
+                                    ? "page"
+                                    : undefined
+                                }
+                              >
+                                <ShieldCheck aria-hidden="true" size={15} />
+                                <span>{windowsGpoCopy.custom}</span>
+                              </Link>
+                            </li>
+                          </>
+                        ) : null}
+                      </ul>
+                    </li>
+                  ) : null}
                 </ul>
               ) : null}
               {item.section === "collections-device" && collectionsExpanded ? (

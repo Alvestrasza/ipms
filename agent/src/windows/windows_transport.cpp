@@ -1,8 +1,9 @@
 // File Name: windows_transport.cpp
-// Version: v0.2.48 | Created: 2026-08-31 | Last Modified: 2026-09-18
+// Version: v0.2.49 | Created: 2026-08-31 | Last Modified: 2026-09-18
 // Author: Alice Endelgard | Organization: Alvestrasza Corporation
 // Description: Authenticated fixed Agent channels with durable, exact-job GPO execution grants.
 #include "ipms/agent/windows_transport.hpp"
+#include "ipms/agent/windows_hgs_management.hpp"
 
 #include "ipms/agent/configuration.hpp"
 #include "ipms/agent/console_input_dispatcher.hpp"
@@ -46,12 +47,14 @@
 namespace {
 using Microsoft::WRL::ComPtr;
 constexpr std::size_t k_max_document_bytes = 65'536;
-constexpr wchar_t k_agent_version[] = L"0.2.48";
+constexpr wchar_t k_agent_version[] = L"0.2.49";
 constexpr std::size_t k_max_artifact_bytes = 64 * 1024 * 1024;
 std::mutex identity_mutex;
 std::mutex management_cycle_mutex;
 std::mutex security_cycle_mutex;
 std::mutex gpo_cycle_mutex;
+std::mutex hgs_cycle_mutex;
+std::atomic<bool> lifecycle_transition_started{false};
 std::atomic<ipms::agent::native_identity_worker*> active_native_validation{nullptr};
 
 ipms::agent::native_identity_worker& native_identity_validation() {
@@ -491,7 +494,7 @@ http_response post_json(const std::wstring& hostname, std::uint16_t port, const 
     ~failure_reset() { if (cache && !succeeded) cache->reset(); }
   } guard{reusable ? &console_transport : nullptr};
   if (!transport->session) {
-    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.48", WINHTTP_ACCESS_TYPE_NO_PROXY,
+    transport->session.reset(WinHttpOpen(L"IPMS-Agent/0.2.49", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
     if (!transport->session) throw std::runtime_error("The Agent HTTP session could not be created.");
     if (input_channel || security_channel || path == L"/v1/heartbeat" || path == L"/v1/hyperv-management") {
@@ -582,7 +585,7 @@ http_response post_binary(const state& identity, const std::string& body, PCCERT
   const auto check_deadline = [&] { if (gpo_artifact && ((cancelled && cancelled()) || std::chrono::steady_clock::now() >= deadline))
     throw std::runtime_error("The GPO artifact transfer stopped."); };
   check_deadline();
-  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.48", WINHTTP_ACCESS_TYPE_NO_PROXY,
+  internet_handle session(WinHttpOpen(L"IPMS-Agent/0.2.49", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
   if (!session) throw std::runtime_error("The Agent artifact session could not be created.");
   if (gpo_artifact) WinHttpSetTimeouts(session.get(), 2'000, 2'000, 2'000, 2'000);
@@ -750,6 +753,10 @@ void process_lifecycle_assignment(const std::string& response_document, const st
                                   PCCERT_CONTEXT certificate) {
   const auto assignment = json_object(response_document, "lifecycle");
   if (!assignment) return;
+  // HGS promotion/reboot and binary replacement cannot overlap. Once a fixed
+  // updater is launched, the service restart opens a fresh execution lifetime.
+  std::unique_lock hgs_transition(hgs_cycle_mutex, std::try_to_lock);
+  if (!hgs_transition.owns_lock() || lifecycle_transition_started.load()) return;
   const auto job_id = json_string(*assignment, "job_id");
   const auto action = json_string(*assignment, "action");
   if (!job_id || !action) return;
@@ -774,7 +781,9 @@ void process_lifecycle_assignment(const std::string& response_document, const st
     write_atomically(staged_binary, artifact.body);
   }
   report_result(identity, certificate, *job_id, "running", "accepted");
-  launch_updater(*job_id, *action, target_version, expected_sha256, staged_binary);
+  lifecycle_transition_started.store(true);
+  try { launch_updater(*job_id, *action, target_version, expected_sha256, staged_binary); }
+  catch (...) { lifecycle_transition_started.store(false); throw; }
 }
 
 void report_hyperv_action_result(
@@ -1624,6 +1633,75 @@ TransportResult run_gpo_cycle(const std::function<bool()>& cancelled) {
   } catch (...) {
     return {false, L"The GPO cycle failed; its durable journal is retained."};
   }
+}
+
+TransportResult run_hgs_cycle(const std::function<bool()>& cancelled) {
+  namespace json = hgs::json;
+  std::unique_lock lock(hgs_cycle_mutex, std::try_to_lock);
+  if (!lock.owns_lock() || lifecycle_transition_started.load()) return {true,L"HGS awaits the active local transition."};
+  try {
+    const auto stopping = [&] { return cancelled && cancelled(); };
+    if (stopping()) return {true,L"HGS worker stopped."};
+    const auto state_path=data_directory()/L"agent-state.json";
+    if (!std::filesystem::is_regular_file(state_path)) return {true,L"HGS awaits enrollment."};
+    const state identity=load_state(state_path);
+    cert_context certificate(find_agent_certificate(identity.certificate_sha256));
+    if (!certificate) return {true,L"HGS awaits credentials."};
+    const auto same_identity=[&] {
+      const auto current=load_state(state_path);
+      return current.device_uri==identity.device_uri && current.gateway==identity.gateway && current.port==identity.port && current.certificate_sha256==identity.certificate_sha256;
+    };
+    const auto close_lock=[](void* value) {if(value)CloseHandle(value);};
+    std::unique_ptr<void,decltype(close_lock)> local_lock(acquire_hgs_lock(),close_lock);
+    if(!local_lock)return {true,L"Another HGS operation is active."};
+    const auto exchange=[&](json::object document) {
+      if(stopping() || !same_identity())throw hgs::error("hgs_authority_lost");
+      document.emplace("type","hgs");document.emplace("device_uri",identity.device_uri);
+      const auto response=post_json(identity.gateway,identity.port,L"/v1/hgs",json::serialize(document),nullptr,certificate.get(),false,stopping);
+      if(response.status!=200)throw hgs::error("hgs_authority_lost");
+      return json::parse(response.body).as<json::object>();
+    };
+    const auto report=[&](const hgs::journal& record) {
+      hgs::validate_result(record.outcome);
+      const auto ack=exchange({{"mode","result"},{"job_id",record.assignment.text("job_id")},{"plan_digest",record.assignment.text("plan_digest")},{"result",record.outcome}});
+      if(!ack.at("accepted").as<bool>())throw hgs::error("hgs_authority_lost");
+    };
+    auto record=load_hgs_journal();
+    if(record && !hgs::bound_to(record->assignment,identity.device_uri))throw hgs::error("hgs_authority_lost");
+    auto provider=make_hgs_provider([&] { return stopping() || !same_identity(); });
+    if(record && record->state!=hgs::phase::terminal) {
+      hgs::recover(*record,*provider,save_hgs_journal);report(*record);
+      if(record->state!=hgs::phase::terminal)return {true,L"HGS recovery evidence was delivered."};
+    }
+    if(record && record->state==hgs::phase::terminal) {
+      report(*record);
+    }
+    const auto response=exchange({{"mode","poll"},{"agent_version",utf8(k_agent_version)},{"hgs_provider_version",1}});
+    const auto release=response.find("hgs_reconciliation_release");
+    if(release!=response.end() && !release->second.get_if<std::nullptr_t>())release_hgs_fence(release->second.as<json::object>());
+    const auto fence=load_hgs_fence();
+    const auto& offered=response.at("hgs_job");
+    if(offered.get_if<std::nullptr_t>())return {true,L"No HGS operation is pending."};
+    const auto assignment=hgs::parse_job(offered);
+    if(!hgs::bound_to(assignment,identity.device_uri))throw hgs::error("hgs_authority_lost");
+    if(fence && !hgs::permitted_while_fenced(*fence,assignment))
+      return {false,L"Only separately authorized HGS inspection is permitted while reconciliation is open."};
+    if(const auto completed=load_hgs_receipt(assignment)) {report(*completed);return {true,L"The retained HGS receipt was replayed."};}
+    record=hgs::journal{assignment};save_hgs_journal(*record);
+    ULONGLONG grant_deadline=0;
+    const auto claim=[&] {
+      const auto started=GetTickCount64();
+      const auto grant=exchange({{"mode","claim"},{"job_id",assignment.text("job_id")},{"plan_digest",assignment.text("plan_digest")}}).at("hgs_job");
+      if(grant.get_if<std::nullptr_t>())return false;
+      if(hgs::parse_job(grant)!=assignment)throw hgs::error("hgs_contract_invalid");
+      grant_deadline=started+60'000;return GetTickCount64()<grant_deadline;
+    };
+    hgs::execute(*record,*provider,save_hgs_journal,claim,[&] {
+      return !stopping() && same_identity() && !lifecycle_transition_started.load() && (grant_deadline==0 || GetTickCount64()<grant_deadline);
+    });
+    report(*record);
+    return {true,L"The bounded HGS operation receipt was delivered."};
+  } catch (...) { return {false,L"The HGS cycle failed; its protected journal was retained."}; }
 }
 
 TransportResult run_security_cycle(const std::function<bool()>& cancelled) {

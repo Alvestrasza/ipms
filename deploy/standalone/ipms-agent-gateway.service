@@ -1,8 +1,13 @@
+# File Name: ipms-agent-gateway.service
+# Version: v0.2.76 | Last Modified: 2026-09-20
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Serve tenant-isolated Agent TLS identities on one shared listener.
+
 [Unit]
 Description=IPMS Agent mTLS Gateway
 After=network-online.target postgresql.service ipms-agent-gateway-material.service
-Wants=network-online.target
-Requires=postgresql.service ipms-agent-gateway-material.service
+Wants=network-online.target ipms-agent-gateway-material.service
+Requires=postgresql.service
 
 [Service]
 Type=simple

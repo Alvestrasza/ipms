@@ -1,0 +1,16 @@
+# File Name: ipms-agent-gateway-material.timer
+# Version: v0.2.76 | Created: 2026-09-20
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Periodically reconcile tenant-isolated Agent Gateway TLS material.
+
+[Unit]
+Description=Reconcile IPMS Agent Gateway tenant TLS material
+
+[Timer]
+OnBootSec=15s
+OnUnitInactiveSec=15s
+AccuracySec=2s
+Unit=ipms-agent-gateway-material.service
+
+[Install]
+WantedBy=timers.target

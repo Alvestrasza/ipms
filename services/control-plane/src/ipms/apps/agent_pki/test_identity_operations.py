@@ -1,3 +1,7 @@
+# File Name: test_identity_operations.py
+# Version: v0.2.76 | Last Modified: 2026-09-20
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Regression checks for withdrawal of identity-bound operations.
 import uuid
 from datetime import timedelta
 from importlib import import_module
@@ -162,6 +166,7 @@ class IdentityOperationWithdrawalTests(TestCase):
                 "console_inputs": 0,
                 "management_jobs": 0,
                 "gpo_imports": 0,
+                "hgs_jobs": 0,
             },
         )
         self.assertFalse(any(self.withdraw().values()))

@@ -1,8 +1,15 @@
+# File Name: urls.py
+# Version: v0.2.76 | Last Modified: 2026-09-20
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Control-plane API routing including tenant-scoped HGS workflows.
 from django.urls import include, path
 from ipms.apps.tenancy.platform_views import (
     PlatformTenantListCreateView,
     PlatformTenantDetailView,
     InitialTenantAdministratorView,
+    PlatformTenantAgentGatewayVerifyView,
+    PlatformTenantAgentOnboardingView,
+    PlatformTenantAgentRecoveryView,
 )
 from ipms.apps.agent_pki.native_views import NativeConsoleConfigurationView
 from ipms.apps.discovery.hyperv_management_views import (
@@ -68,6 +75,7 @@ from .job_logs import GpoImportLogDetailView, JobLogView
 app_name = "core"
 
 urlpatterns = [
+    path("hgs/", include("ipms.apps.hgs.urls")),
     path("logs/agents/", JobLogView.as_view(), name="agent-job-logs"),
     path("logs/agents/export/", JobLogView.as_view(export=True), name="agent-job-log-export"),
     path("logs/baselines/", JobLogView.as_view(scope="baselines"), name="baseline-job-logs"),
@@ -94,6 +102,21 @@ urlpatterns = [
         "platform/tenants/<uuid:pk>/initial-administrator/",
         InitialTenantAdministratorView.as_view(),
         name="platform-tenant-initial-administrator",
+    ),
+    path(
+        "platform/tenants/<uuid:pk>/agent-onboarding/",
+        PlatformTenantAgentOnboardingView.as_view(),
+        name="platform-tenant-agent-onboarding",
+    ),
+    path(
+        "platform/tenants/<uuid:pk>/agent-onboarding/recovery/",
+        PlatformTenantAgentRecoveryView.as_view(),
+        name="platform-tenant-agent-recovery",
+    ),
+    path(
+        "platform/tenants/<uuid:pk>/agent-onboarding/verify-gateway/",
+        PlatformTenantAgentGatewayVerifyView.as_view(),
+        name="platform-tenant-agent-gateway-verify",
     ),
     path(
         "service-accounts/",

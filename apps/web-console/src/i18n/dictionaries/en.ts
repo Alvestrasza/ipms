@@ -190,7 +190,7 @@ export const en = {
     infrastructure: "Infrastructure",
     agents: "Agents",
     soon: "Soon",
-    version: "IPMS v0.2.74 development",
+    version: "IPMS v0.2.76 development",
   },
   linuxSystems: {
     liveData: "Live tenant-scoped Linux inventory from enrolled Agents.",
@@ -277,7 +277,56 @@ export const en = {
   },
   platform: {
     setupBoundary:
-      "Creating tenant metadata does not initialize Agent PKI, gateway trust, additional services or service entitlements. These require separate setup.",
+      "Tenant metadata, the initial administrator and Agent access are configured separately. The Appliance guides the Agent PKI, recovery custody, tenant-specific Gateway endpoint and package verification as explicit steps.",
+    agentOnboarding: "Agent access",
+    configureAgentAccess: "Configure Agent access",
+    agentAccessStatus: "Agent readiness",
+    pkiState: "Agent PKI",
+    pkiMissing: "Not configured",
+    pkiRecoveryPending: "Recovery custody not confirmed",
+    pkiReady: "Recovery custody confirmed",
+    gatewayEndpoint: "Gateway endpoint",
+    gatewayReady: "Reachable with tenant isolation verified",
+    gatewayPending: "Verification pending",
+    packageLabel: "Windows Agent package",
+    packageDigest: "Agent package SHA-256",
+    packageReady: "Hash and version verified",
+    packageBlocked: "Package not ready",
+    readyForEnrollment: "Agent enrollment is ready.",
+    onboardingNotReady: "Agent enrollment still has outstanding prerequisites.",
+    gatewayDnsName: "Dedicated Gateway DNS name",
+    recoveryPassphrase: "PKI recovery passphrase",
+    recoveryPassphraseConfirmation: "Repeat passphrase",
+    recoveryHint:
+      "The passphrase is not stored. Keep it separately from the encrypted recovery material. The DNS name must resolve to this Appliance.",
+    initializePki: "Create Agent PKI",
+    downloadRecovery: "Download recovery material",
+    confirmRecovery: "Confirm separate custody",
+    confirmRecoveryWarning:
+      "Confirm only after the file, SHA-256 digest and passphrase are stored separately and can be recovered. IPMS then removes the export copy from the Appliance database.",
+    verifyGateway: "Verify Gateway and all tenants",
+    recoveryDownloaded: "The encrypted recovery material was downloaded.",
+    pkiPrepared:
+      "The Agent PKI was created. Download the recovery material next.",
+    recoveryConfirmed: "Separate PKI recovery custody was confirmed.",
+    gatewayVerified:
+      "The Gateway certificate and tenant isolation were verified.",
+    gatewayVerificationFailed:
+      "At least one Gateway endpoint is unreachable or does not match its tenant identity.",
+    packageMissing:
+      "The configured Agent package is missing from the Appliance.",
+    packageDigestMismatch:
+      "The package content does not match the configured SHA-256 digest.",
+    packageUnreadable: "The Agent package cannot be read.",
+    packageVersionInvalid: "The configured Agent version is invalid.",
+    packageHgsTooOld: "HGS requires Agent version {version} or later.",
+    agentPkiAlready: "This tenant already has an Agent PKI.",
+    gatewayNameUnavailable:
+      "Another tenant already uses this Gateway DNS name.",
+    adminRequired: "Set up the separate tenant administrator first.",
+    recoveryUnavailable: "No pending recovery material is available.",
+    recoveryNotConfirmed:
+      "The recovery download or SHA-256 confirmation is missing.",
     scope: "Platform administration",
     title: "Tenants",
     account: "IPMS account",
@@ -288,6 +337,13 @@ export const en = {
       "Your account has no access to this workspace. Contact the administrator responsible for the tenant, or sign out and use a different account.",
     name: "Tenant name",
     slug: "Tenant ID",
+    purpose: "Tenant purpose",
+    purposes: {
+      infrastructure: "Infrastructure",
+      hgs: "Host Guardian Service only",
+    },
+    purposeHint:
+      "Choose the purpose when creating the tenant. It cannot be changed later. An HGS tenant has separate identities and can share this Appliance with infrastructure tenants.",
     status: "Status",
     administrator: "Initial administrator",
     updated: "Updated",

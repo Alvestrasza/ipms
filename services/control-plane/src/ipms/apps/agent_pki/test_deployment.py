@@ -1,3 +1,8 @@
+# File Name: test_deployment.py
+# Version: v0.2.76 | Last Modified: 2026-09-20
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Windows Agent deployment transport, identity and package tests.
+
 import hashlib
 import tempfile
 from pathlib import Path
@@ -98,6 +103,7 @@ class WindowsAgentDeploymentScriptTests(TestCase):
         self.assertIn("$targetVersion = '0.2.25'", update)
         self.assertIn("-Name DisplayVersion", update)
         self.assertIn("-Value $previousVersion", update)
+        self.assertIn("prepare-hgs-secret.ps1", update)
 
     def test_legacy_migration_is_device_and_certificate_bound(self) -> None:
         device_uri = "urn:ipms:agent:11111111-1111-1111-1111-111111111111"
@@ -119,6 +125,7 @@ class WindowsAgentDeploymentScriptTests(TestCase):
         self.assertIn("sc.exe config 'IPMS Agent'", migration)
         self.assertIn("$legacyBinary", migration)
         self.assertIn("IPMS_LEGACY_AGENT_MIGRATED=1", migration)
+        self.assertIn("prepare-hgs-secret.ps1", migration)
         self.assertIn("Remove-Item -LiteralPath $install -Recurse", migration)
 
 

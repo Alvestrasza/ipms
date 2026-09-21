@@ -22,6 +22,7 @@ bool is_allowed_server_message(ServerMessageType message_type) {
     case ServerMessageType::hyperv_management_operation:
     case ServerMessageType::security_baseline_scan:
     case ServerMessageType::security_gpo_pilot:
+    case ServerMessageType::hgs_deployment:
       return true;
   }
   return false;

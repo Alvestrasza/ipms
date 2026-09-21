@@ -9,6 +9,15 @@ A-Corp-hosted hybrid deployments.
 
 ## Project Status
 
+Candidate Portal `0.2.76` and Windows Agent `0.2.49` add HGS provisioning through
+one Appliance: dedicated HGS tenants/accounts, vTPM and Shielded VM profiles,
+readiness and exact-plan approval, bounded local Windows provisioning, planned
+reboots and explicit recovery of uncertain steps. Workload host admission and
+VM protection remain separate. See [HGS operations](docs/operations/HGS-DEPLOYMENT.md)
+and [validation scope](docs/operations/HGS-VALIDATION.md). The validation record
+keeps source/build checks, release publication, Appliance activation, and live
+Windows fabric acceptance as separate evidence.
+
 Portal `0.2.74` aligns Device and Policy Collections with the shared Portal
 theme tokens. Panels, forms, collection cards, status badges, buttons, focus
 states, and semantic success/error colors now switch consistently between the

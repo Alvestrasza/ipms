@@ -1,0 +1,140 @@
+/*
+ * File Name: hgs-workspace.module.css
+ * Version: v0.1.0 | Created: 2026-09-19 | Modified: 2026-09-19
+ * Author: Alice Endelgard | Organization: Alvestrasza Corporation
+ * Purpose: Present readable HGS plans in both portal themes and narrow viewports.
+ */
+.workspace,
+.stack {
+  display: grid;
+  gap: 1rem;
+}
+.panel {
+  padding: 1.25rem;
+  border: 1px solid var(--border-default);
+  border-radius: 14px;
+  background: var(--surface-panel);
+  min-width: 0;
+}
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.heading h2 {
+  margin: 0;
+}
+.fields,
+.facts,
+.nodes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  gap: 1rem;
+}
+.field {
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+.field input,
+.field select {
+  width: 100%;
+  min-height: 2.65rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--surface-panel-raised);
+  color: var(--color-text-primary);
+  font: inherit;
+}
+.field input:focus-visible,
+.field select:focus-visible,
+.check input:focus-visible,
+.nodeOption input:focus-visible {
+  outline: 2px solid var(--color-accent-blue);
+  outline-offset: 2px;
+}
+.fieldset {
+  display: grid;
+  gap: 1rem;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.nodePicker {
+  display: grid;
+  gap: 0.65rem;
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  padding: 1rem;
+  min-width: 0;
+}
+.nodeOption,
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  line-height: 1.5;
+}
+.nodeOption input,
+.check input {
+  accent-color: var(--color-accent-blue);
+  margin-top: 0.25rem;
+  flex-shrink: 0;
+}
+.nodeOption strong,
+.nodeOption .reason {
+  display: block;
+}
+.reason {
+  color: var(--color-warning);
+  font-size: 0.88rem;
+}
+.muted {
+  color: var(--color-text-muted);
+  line-height: 1.6;
+  font-size: 0.88rem;
+  margin: 0.35rem 0;
+}
+.status {
+  border: 1px solid var(--border-default);
+  border-radius: 99px;
+  padding: 0.35rem 0.65rem;
+  color: var(--color-text-secondary);
+  background: var(--surface-panel-raised);
+}
+.facts {
+  margin: 0;
+}
+.facts dt {
+  color: var(--color-text-muted);
+  font-size: 0.84rem;
+  margin-bottom: 0.3rem;
+}
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.digest {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+.node {
+  border: 1px solid var(--border-default);
+  background: var(--surface-panel-raised);
+  border-radius: 10px;
+  padding: 1rem;
+  overflow-wrap: anywhere;
+}
+.node p {
+  margin: 0.4rem 0;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}

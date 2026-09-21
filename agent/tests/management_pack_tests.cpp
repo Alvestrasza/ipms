@@ -21,7 +21,10 @@ int main() {
   if (!ipms::agent::is_allowed_server_message(ipms::agent::ServerMessageType::hyperv_management_operation)) return 22;
   if (!ipms::agent::is_allowed_server_message(ipms::agent::ServerMessageType::security_baseline_scan)) return 23;
   const auto& packs = ipms::agent::builtin_management_packs();
-  if (packs.size() != 4) return 10;
+  if (packs.size() != 5) return 10;
+  if (!ipms::agent::is_allowed_server_message(ipms::agent::ServerMessageType::hgs_deployment)) return 24;
+  const auto hgs = std::find_if(packs.begin(), packs.end(), [](const auto& pack) { return pack.id == "hgs-node"; });
+  if (hgs == packs.end() || hgs->access_mode != ipms::agent::AccessMode::management) return 25;
   const auto hyperv = std::find_if(
       packs.begin(), packs.end(), [](const auto& pack) { return pack.id == "hyper-v-host"; });
   const auto windows = std::find_if(

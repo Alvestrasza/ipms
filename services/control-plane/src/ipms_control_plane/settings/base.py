@@ -1,3 +1,7 @@
+# File Name: base.py
+# Version: v0.2.76 | Last Modified: 2026-09-20
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Control-plane application registration and environment configuration.
 import os
 import re
 from pathlib import Path
@@ -87,6 +91,12 @@ if not re.fullmatch(r"(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){2}", AGENT_WINDOW
     raise ImproperlyConfigured(
         "IPMS_AGENT_WINDOWS_VERSION must be a three-part numeric version."
     )
+AGENT_GATEWAY_PORT = bounded_integer_environment(
+    "IPMS_AGENT_GATEWAY_PORT", default=9419, minimum=1024, maximum=65535
+)
+AGENT_GATEWAY_PROBE_HOST = os.environ.get(
+    "IPMS_AGENT_GATEWAY_PROBE_HOST", ""
+).strip()
 AGENT_DEPLOYMENT_CA_BUNDLE = os.environ.get(
     "IPMS_AGENT_DEPLOYMENT_CA_BUNDLE",
     "/etc/ssl/certs/ca-certificates.crt",
@@ -109,6 +119,7 @@ INSTALLED_APPS = [
     "ipms.apps.discovery",
     "ipms.apps.updates",
     "ipms.apps.security",
+    "ipms.apps.hgs",
 ]
 
 MIDDLEWARE = [

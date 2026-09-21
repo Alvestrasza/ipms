@@ -1,3 +1,7 @@
+# File Name: crypto.py
+# Version: v0.2.76 | Last Modified: 2026-09-20
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Agent PKI hierarchy, envelope encryption and certificate validation.
 import base64
 import binascii
 import hashlib
@@ -48,14 +52,22 @@ def _master_key() -> bytes:
     return key
 
 
-def encrypt_private_key(private_key_pem: bytes, *, associated_data: bytes) -> tuple[bytes, bytes]:
+def encrypt_secret(plaintext: bytes, *, associated_data: bytes) -> tuple[bytes, bytes]:
     nonce = os.urandom(12)
-    ciphertext = AESGCM(_master_key()).encrypt(nonce, private_key_pem, associated_data)
+    ciphertext = AESGCM(_master_key()).encrypt(nonce, plaintext, associated_data)
     return nonce, ciphertext
 
 
+def decrypt_secret(nonce: bytes, ciphertext: bytes, *, associated_data: bytes) -> bytes:
+    return AESGCM(_master_key()).decrypt(nonce, ciphertext, associated_data)
+
+
+def encrypt_private_key(private_key_pem: bytes, *, associated_data: bytes) -> tuple[bytes, bytes]:
+    return encrypt_secret(private_key_pem, associated_data=associated_data)
+
+
 def decrypt_private_key(nonce: bytes, ciphertext: bytes, *, associated_data: bytes):
-    plaintext = AESGCM(_master_key()).decrypt(nonce, ciphertext, associated_data)
+    plaintext = decrypt_secret(nonce, ciphertext, associated_data=associated_data)
     return serialization.load_pem_private_key(plaintext, password=None)
 
 
@@ -65,6 +77,10 @@ def issuer_associated_data(tenant_id, issuer_id) -> bytes:
 
 def gateway_associated_data(tenant_id, identity_id) -> bytes:
     return f"ipms:agent-pki:v1:{tenant_id}:gateway:{identity_id}".encode()
+
+
+def recovery_associated_data(tenant_id, recovery_id) -> bytes:
+    return f"ipms:agent-pki:v1:{tenant_id}:recovery:{recovery_id}".encode()
 
 
 def certificate_fingerprint(certificate: x509.Certificate) -> str:

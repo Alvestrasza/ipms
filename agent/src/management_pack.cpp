@@ -10,13 +10,14 @@ const std::vector<ManagementPack>& builtin_management_packs() {
       {"windows-software", "0.2.12", AccessMode::read_inventory, {"windows-server-core"}, {"windows.software", "windows.update-posture"}},
       {"hyper-v-host", "0.2.29", AccessMode::management, {"windows-server-core"}, {"hyperv.host", "hyperv.virtual-machines", "hyperv.network", "hyperv.vm.lifecycle", "hyperv.vm.console", "hyperv.vm.management"}},
       {"linux-core", "0.2.12", AccessMode::read_inventory, {}, {"linux.os", "linux.hardware", "linux.storage", "linux.network", "linux.software", "linux.update-posture"}},
+      {"hgs-node", "0.1.0", AccessMode::management, {"windows-server-core"}, {"hgs.readiness", "hgs.deployment"}},
   };
   return packs;
 }
 
 bool is_valid_pack_assignment(const ManagementPack& pack) {
   if (pack.id.empty() || pack.version.empty()) return false;
-  if (pack.access_mode == AccessMode::management && pack.id != "hyper-v-host") return false;
+  if (pack.access_mode == AccessMode::management && pack.id != "hyper-v-host" && pack.id != "hgs-node") return false;
   return std::all_of(pack.capabilities.begin(), pack.capabilities.end(), [](std::string_view capability) { return !capability.empty(); });
 }
 

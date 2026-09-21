@@ -24,6 +24,7 @@ TransportResult run_heartbeat_cycle(const std::function<bool()>& cancelled);
 TransportResult run_management_cycle(const std::function<bool()>& cancelled);
 TransportResult run_security_cycle(const std::function<bool()>& cancelled);
 TransportResult run_gpo_cycle(const std::function<bool()>& cancelled);
+TransportResult run_hgs_cycle(const std::function<bool()>& cancelled);
 TransportResult report_lifecycle_result(
     const std::string& job_id,
     const std::string& result,

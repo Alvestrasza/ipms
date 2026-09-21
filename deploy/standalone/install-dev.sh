@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
+# File Name: install-dev.sh
+# Version: v0.2.76 | Last Modified: 2026-09-20
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Install an immutable standalone Appliance and hash-pinned Agent package.
 set -euo pipefail
 
 NODE_VERSION="24.20.0"
 PNPM_VERSION="11.24.0"
 REPOSITORY_URL="https://github.com/Alvestrasza/ipms.git"
-AGENT_PACKAGE_NAME="ipms-agent-windows-x64-0.2.27.zip"
-AGENT_PACKAGE_SHA256="e7deeb3794b34abf243e6f9a323e674f55781866ee0a62db3011c25eafc01814"
-AGENT_PACKAGE_URL="https://github.com/Alvestrasza/ipms/releases/download/v0.2.35/${AGENT_PACKAGE_NAME}"
+AGENT_PACKAGE_SHA256=""
+AGENT_PACKAGE_URL=""
+AGENT_PACKAGE_FILE=""
+AGENT_PACKAGE_VERSION=""
 
 usage() {
-    echo "Usage: sudo install-dev.sh --public-host HOST --management-source IP_OR_CIDR --release-ref COMMIT --tenant-slug SLUG --tenant-name NAME [--admin-username USER]" >&2
+    echo "Usage: sudo install-dev.sh --public-host HOST --management-source IP_OR_CIDR --release-ref COMMIT --tenant-slug SLUG --tenant-name NAME --agent-package-sha256 SHA256 --agent-package-version VERSION (--agent-package-url HTTPS_URL | --agent-package-file ABSOLUTE_PATH) [--admin-username USER]" >&2
     exit 2
 }
 
@@ -30,6 +35,10 @@ while [[ $# -gt 0 ]]; do
         --tenant-slug) TENANT_SLUG="${2:-}"; shift 2 ;;
         --tenant-name) TENANT_NAME="${2:-}"; shift 2 ;;
         --admin-username) ADMIN_USERNAME="${2:-}"; shift 2 ;;
+        --agent-package-url) AGENT_PACKAGE_URL="${2:-}"; shift 2 ;;
+        --agent-package-file) AGENT_PACKAGE_FILE="${2:-}"; shift 2 ;;
+        --agent-package-sha256) AGENT_PACKAGE_SHA256="${2:-}"; shift 2 ;;
+        --agent-package-version) AGENT_PACKAGE_VERSION="${2:-}"; shift 2 ;;
         *) usage ;;
     esac
 done
@@ -44,6 +53,15 @@ done
 [[ $TENANT_SLUG =~ ^[a-z0-9-]+$ ]] || usage
 [[ $ADMIN_USERNAME =~ ^[A-Za-z0-9@.+_-]+$ ]] || usage
 [[ -n $TENANT_NAME ]] || usage
+[[ $AGENT_PACKAGE_SHA256 =~ ^[0-9a-fA-F]{64}$ ]] || usage
+AGENT_PACKAGE_SHA256="${AGENT_PACKAGE_SHA256,,}"
+[[ $AGENT_PACKAGE_VERSION =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || usage
+if [[ -n $AGENT_PACKAGE_URL && -n $AGENT_PACKAGE_FILE ]] || [[ -z $AGENT_PACKAGE_URL && -z $AGENT_PACKAGE_FILE ]]; then
+    usage
+fi
+[[ -z $AGENT_PACKAGE_URL || $AGENT_PACKAGE_URL =~ ^https://[^[:space:]]+$ ]] || usage
+[[ -z $AGENT_PACKAGE_FILE || ( $AGENT_PACKAGE_FILE == /* && -f $AGENT_PACKAGE_FILE ) ]] || usage
+AGENT_PACKAGE_NAME="ipms-agent-windows-x64-${AGENT_PACKAGE_VERSION}.zip"
 
 . /etc/os-release
 [[ $ID == "ubuntu" && $VERSION_ID == "26.04" ]] || {
@@ -112,9 +130,14 @@ install -d -o root -g ipms-runtime -m 0750 /srv/ipms/shared/agent-artifacts
 agent_package="/srv/ipms/shared/agent-artifacts/${AGENT_PACKAGE_NAME}"
 if [[ ! -f $agent_package ]] || ! echo "${AGENT_PACKAGE_SHA256}  ${agent_package}" | sha256sum --check --status; then
     agent_package_download="${agent_package}.download"
-    curl --fail --silent --show-error --location \
-        "$AGENT_PACKAGE_URL" \
-        --output "$agent_package_download"
+    rm -f -- "$agent_package_download"
+    if [[ -n $AGENT_PACKAGE_FILE ]]; then
+        install -o root -g ipms-runtime -m 0640 "$AGENT_PACKAGE_FILE" "$agent_package_download"
+    else
+        curl --fail --silent --show-error --location \
+            "$AGENT_PACKAGE_URL" \
+            --output "$agent_package_download"
+    fi
     echo "${AGENT_PACKAGE_SHA256}  ${agent_package_download}" | sha256sum --check --strict -
     mv "$agent_package_download" "$agent_package"
 fi
@@ -212,11 +235,16 @@ sed -i \
     -e '/^IPMS_AGENT_WINDOWS_PACKAGE_PATH=/d' \
     -e '/^IPMS_AGENT_WINDOWS_PACKAGE_SHA256=/d' \
     -e '/^IPMS_AGENT_WINDOWS_VERSION=/d' \
+    -e '/^IPMS_AGENT_GATEWAY_PORT=/d' \
+    -e '/^IPMS_AGENT_GATEWAY_PROBE_HOST=/d' \
+    -e '/^IPMS_AGENT_GATEWAY_TENANT_SLUG=/d' \
     "$control_plane_env"
 {
     echo "IPMS_AGENT_WINDOWS_PACKAGE_PATH=${agent_package}"
     echo "IPMS_AGENT_WINDOWS_PACKAGE_SHA256=${AGENT_PACKAGE_SHA256}"
-    echo "IPMS_AGENT_WINDOWS_VERSION=0.2.27"
+    echo "IPMS_AGENT_WINDOWS_VERSION=${AGENT_PACKAGE_VERSION}"
+    echo "IPMS_AGENT_GATEWAY_PORT=9419"
+    echo "IPMS_AGENT_GATEWAY_PROBE_HOST="
 } >> "$control_plane_env"
 if ! grep -q '^IPMS_CERTIFICATE_PROBE_TOKEN=' "$control_plane_env"; then
     generated_probe_token=$(openssl rand -hex 32)
@@ -288,7 +316,7 @@ install -o root -g ipms-agent-gateway -m 0640 /dev/null "$agent_gateway_env"
     echo "IPMS_AGENT_PKI_MASTER_KEY=${agent_pki_master_key}"
     echo "IPMS_AGENT_WINDOWS_PACKAGE_PATH=${agent_package}"
     echo "IPMS_AGENT_WINDOWS_PACKAGE_SHA256=${AGENT_PACKAGE_SHA256}"
-    echo "IPMS_AGENT_WINDOWS_VERSION=0.2.27"
+    echo "IPMS_AGENT_WINDOWS_VERSION=${AGENT_PACKAGE_VERSION}"
     echo "IPMS_DATABASE_NAME=ipms"
     echo "IPMS_DATABASE_USER=ipms"
     echo "IPMS_DATABASE_PASSWORD=${database_password}"
@@ -298,7 +326,6 @@ install -o root -g ipms-agent-gateway -m 0640 /dev/null "$agent_gateway_env"
     echo "IPMS_AGENT_GATEWAY_RUNTIME_DIRECTORY=/run/ipms-agent-gateway"
     echo "IPMS_AGENT_GATEWAY_BIND=0.0.0.0"
     echo "IPMS_AGENT_GATEWAY_PORT=9419"
-    echo "IPMS_AGENT_GATEWAY_TENANT_SLUG=${TENANT_SLUG}"
 } > "$agent_gateway_env"
 
 initial_password_file=/srv/ipms/shared/initial-admin-password
@@ -330,11 +357,6 @@ root_recovery_bundle=/srv/ipms/shared/agent-root-recovery.pem
     --root-recovery-passphrase-file "$root_recovery_passphrase_file" \
     --generate-root-recovery-passphrase \
     --if-missing
-if grep -q '^IPMS_AGENT_GATEWAY_TENANT_SLUG=' "$control_plane_env"; then
-    sed -i "s|^IPMS_AGENT_GATEWAY_TENANT_SLUG=.*|IPMS_AGENT_GATEWAY_TENANT_SLUG=${TENANT_SLUG}|" "$control_plane_env"
-else
-    echo "IPMS_AGENT_GATEWAY_TENANT_SLUG=${TENANT_SLUG}" >> "$control_plane_env"
-fi
 "$control_python" "$control_manage" check --deploy
 
 install -m 0644 "$release_directory/deploy/standalone/ipms-control-plane.service" /etc/systemd/system/ipms-control-plane.service
@@ -345,6 +367,7 @@ install -m 0644 "$release_directory/deploy/standalone/ipms-connector-worker.time
 install -m 0644 "$release_directory/deploy/standalone/ipms-agent-deployment-worker.service" /etc/systemd/system/ipms-agent-deployment-worker.service
 install -m 0644 "$release_directory/deploy/standalone/ipms-agent-deployment-worker.timer" /etc/systemd/system/ipms-agent-deployment-worker.timer
 install -m 0644 "$release_directory/deploy/standalone/ipms-agent-gateway-material.service" /etc/systemd/system/ipms-agent-gateway-material.service
+install -m 0644 "$release_directory/deploy/standalone/ipms-agent-gateway-material.timer" /etc/systemd/system/ipms-agent-gateway-material.timer
 install -m 0644 "$release_directory/deploy/standalone/ipms-agent-gateway.service" /etc/systemd/system/ipms-agent-gateway.service
 install -m 0644 "$release_directory/deploy/standalone/ipms-agent-pki-expiry.service" /etc/systemd/system/ipms-agent-pki-expiry.service
 install -m 0644 "$release_directory/deploy/standalone/ipms-agent-pki-expiry.timer" /etc/systemd/system/ipms-agent-pki-expiry.timer
@@ -381,9 +404,9 @@ install -d -m 0755 /etc/fail2ban/jail.d
 nginx -t
 fail2ban-client -t
 systemctl daemon-reload
-systemctl enable fail2ban ipms-certificate-probe ipms-control-plane ipms-web-console ipms-connector-worker.timer ipms-agent-deployment-worker.timer ipms-agent-gateway-material ipms-agent-gateway ipms-agent-pki-expiry.timer nginx
+systemctl enable fail2ban ipms-certificate-probe ipms-control-plane ipms-web-console ipms-connector-worker.timer ipms-agent-deployment-worker.timer ipms-agent-gateway-material.timer ipms-agent-gateway ipms-agent-pki-expiry.timer nginx
 systemctl restart fail2ban ipms-certificate-probe ipms-control-plane ipms-web-console ipms-connector-worker.timer ipms-agent-deployment-worker.timer ipms-agent-pki-expiry.timer nginx
-systemctl restart ipms-agent-gateway-material ipms-agent-gateway
+systemctl restart ipms-agent-gateway-material ipms-agent-gateway ipms-agent-gateway-material.timer
 ufw allow from "$MANAGEMENT_SOURCE" to any port 443 proto tcp comment "IPMS HTTPS management"
 ufw allow 9419/tcp comment "IPMS Agent Gateway"
 ufw --force enable
@@ -394,8 +417,9 @@ systemctl is-active --quiet ipms-control-plane
 systemctl is-active --quiet ipms-web-console
 systemctl is-active --quiet ipms-connector-worker.timer
 systemctl is-active --quiet ipms-agent-deployment-worker.timer
-systemctl is-active --quiet ipms-agent-gateway-material
+[[ $(systemctl show --property=Result --value ipms-agent-gateway-material.service) == success ]]
 systemctl is-active --quiet ipms-agent-gateway
+systemctl is-active --quiet ipms-agent-gateway-material.timer
 systemctl is-active --quiet ipms-agent-pki-expiry.timer
 systemctl is-active --quiet nginx
 ss -lntH 'sport = :9419' | grep -q ':9419'

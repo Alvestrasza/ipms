@@ -1,3 +1,7 @@
+# File Name: deployment.py
+# Version: v0.2.76 | Last Modified: 2026-09-20
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Bounded Windows Agent deployment and protected HGS operation exclusion.
 from __future__ import annotations
 
 import hashlib
@@ -135,6 +139,10 @@ def _guard_deployment_management(deployment, *, expected_enrollment=None):
         raise RemoteDeploymentStepError("agent_management_operation_pending")
     from ipms.apps.security.gpo_jobs import active_gpo_jobs
     if active_gpo_jobs(current.tenant_id).filter(enrollment_id__in=protected_enrollments).exists():
+        raise RemoteDeploymentStepError("agent_management_operation_pending")
+    from ipms.apps.hgs.models import HgsDeployment
+    if HgsDeployment.objects.filter(tenant_id=current.tenant_id, nodes__enrollment_id__in=protected_enrollments,
+            status__in=("inspecting", "running", "waiting_for_reboot", "reconciliation_required")).exists():
         raise RemoteDeploymentStepError("agent_management_operation_pending")
     return enrollment
 
@@ -453,7 +461,8 @@ def _managed_existing_agent_update_script(
         "$archive = Join-Path $staging 'agent.zip'; "
         "$requiredFiles = @('import-windows-agent-enrollment.ps1', "
         "'install-windows-agent.ps1', 'ipms-agent-config.exe', "
-        "'ipms-agent.exe', 'ipms-agent-updater.exe', 'uninstall-windows-agent.ps1'); "
+        "'ipms-agent.exe', 'ipms-agent-updater.exe', 'prepare-hgs-secret.ps1', "
+        "'uninstall-windows-agent.ps1'); "
         "$service = Get-CimInstance -ClassName Win32_Service "
         "-Filter \"Name='IPMS Agent'\" -ErrorAction Stop; "
         "$serviceBinary = ([string]$service.PathName).Trim().Trim([char]34); "
@@ -474,7 +483,8 @@ def _managed_existing_agent_update_script(
         "-PathType Leaf)) { throw 'The Agent update package is incomplete.' } }; "
         "$backupNames = @('import-windows-agent-enrollment.ps1', "
         "'install-windows-agent.ps1', 'ipms-agent-config.exe', "
-        "'ipms-agent.exe', 'ipms-agent-updater.exe', 'uninstall-windows-agent.ps1', "
+        "'ipms-agent.exe', 'ipms-agent-updater.exe', 'prepare-hgs-secret.ps1', "
+        "'uninstall-windows-agent.ps1', "
         "'ipms-agent-import-enrollment.ps1', 'ipms-agent-uninstall.ps1'); "
         "foreach ($name in $backupNames) { "
         "$source = Join-Path $install $name; "
@@ -554,7 +564,8 @@ def _managed_legacy_agent_migration_script(
         "$archive = Join-Path $staging 'agent.zip'; "
         "$requiredFiles = @('import-windows-agent-enrollment.ps1', "
         "'install-windows-agent.ps1', 'ipms-agent-config.exe', "
-        "'ipms-agent.exe', 'ipms-agent-updater.exe', 'uninstall-windows-agent.ps1'); "
+        "'ipms-agent.exe', 'ipms-agent-updater.exe', 'prepare-hgs-secret.ps1', "
+        "'uninstall-windows-agent.ps1'); "
         "$service = Get-CimInstance -ClassName Win32_Service "
         "-Filter \"Name='IPMS Agent'\" -ErrorAction Stop; "
         "$legacyBinary = ([string]$service.PathName).Trim().Trim([char]34); "

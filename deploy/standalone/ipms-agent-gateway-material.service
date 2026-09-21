@@ -1,3 +1,8 @@
+# File Name: ipms-agent-gateway-material.service
+# Version: v0.2.76 | Last Modified: 2026-09-20
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Materialize every ready tenant Gateway identity into runtime storage.
+
 [Unit]
 Description=IPMS Agent Gateway TLS materialization
 After=postgresql.service
@@ -11,8 +16,7 @@ Group=ipms-agent-gateway
 WorkingDirectory=/srv/ipms/current/services/control-plane
 EnvironmentFile=/srv/ipms/shared/agent-gateway.env
 Environment=PYTHONPATH=/srv/ipms/current/services/control-plane/src
-ExecStart=/srv/ipms/current/services/control-plane/.venv/bin/python /srv/ipms/current/services/control-plane/manage.py export_agent_gateway_runtime --tenant-slug ${IPMS_AGENT_GATEWAY_TENANT_SLUG} --directory /run/ipms-agent-gateway
-RemainAfterExit=yes
+ExecStart=/srv/ipms/current/services/control-plane/.venv/bin/python /srv/ipms/current/services/control-plane/manage.py export_agent_gateway_runtime --all-tenants --directory /run/ipms-agent-gateway
 RuntimeDirectory=ipms-agent-gateway
 RuntimeDirectoryMode=0750
 RuntimeDirectoryPreserve=yes

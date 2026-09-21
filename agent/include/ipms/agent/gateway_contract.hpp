@@ -26,6 +26,7 @@ enum class ServerMessageType {
   hyperv_management_operation,
   security_baseline_scan,
   security_gpo_pilot,
+  hgs_deployment,
 };
 
 struct AgentGatewayConfig {

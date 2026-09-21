@@ -1,3 +1,7 @@
+# File Name: models.py
+# Version: v0.2.76 | Last Modified: 2026-09-20
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Tenant Agent identities, recovery custody and lifecycle state.
 import uuid
 
 from django.core.validators import MaxValueValidator, MinValueValidator
@@ -27,6 +31,9 @@ class AgentPkiPolicy(models.Model):
     root_certificate_pem = models.TextField(blank=True)
     root_fingerprint_sha256 = models.CharField(max_length=64, blank=True)
     root_recovery_exported_at = models.DateTimeField(blank=True, null=True)
+    gateway_last_verified_at = models.DateTimeField(blank=True, null=True)
+    gateway_last_verified_fingerprint_sha256 = models.CharField(max_length=64, blank=True)
+    gateway_last_verification_error = models.CharField(max_length=64, blank=True)
     certificate_lifetime_days = models.PositiveSmallIntegerField(
         default=30,
         validators=(MinValueValidator(1), MaxValueValidator(90)),
@@ -116,6 +123,27 @@ class AgentGatewayIdentity(models.Model):
     not_after = models.DateTimeField()
     created_at = models.DateTimeField(auto_now_add=True)
     rotated_at = models.DateTimeField(blank=True, null=True)
+
+
+class AgentPkiRecoveryMaterial(models.Model):
+    """Temporary, envelope-encrypted managed Root recovery export."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.OneToOneField(
+        Tenant,
+        on_delete=models.PROTECT,
+        related_name="agent_pki_recovery_material",
+    )
+    policy = models.OneToOneField(
+        AgentPkiPolicy,
+        on_delete=models.PROTECT,
+        related_name="recovery_material",
+    )
+    bundle_sha256 = models.CharField(max_length=64)
+    nonce = models.BinaryField()
+    ciphertext = models.BinaryField()
+    downloaded_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
 
 class AgentEnrollment(models.Model):

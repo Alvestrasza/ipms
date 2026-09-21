@@ -1,3 +1,10 @@
+<!--
+File Name: STANDALONE-DEV-DEPLOYMENT.md
+Version: v0.2.76 | Last Modified: 2026-09-20
+Author: Alice Endelgard | Organization: Alvestrasza Corporation
+Purpose: Deploy and verify the standalone development Appliance.
+-->
+
 # Standalone Development Deployment
 
 ## Scope
@@ -47,8 +54,18 @@ sudo bash deploy/standalone/install-dev.sh \
   --management-source 192.0.2.10 \
   --release-ref 0000000000000000000000000000000000000000 \
   --tenant-slug development \
-  --tenant-name "Development"
+  --tenant-name "Development" \
+  --agent-package-file /protected/releases/ipms-agent-windows-x64-0.2.49.zip \
+  --agent-package-sha256 0000000000000000000000000000000000000000000000000000000000000000 \
+  --agent-package-version 0.2.49
 ```
+
+Use either `--agent-package-file` for an offline, already transferred artifact
+or `--agent-package-url` for an HTTPS release asset. The installer requires the
+expected version and SHA-256 digest, verifies the bytes before activation and
+stores the resulting immutable package metadata for Portal readiness checks.
+Never replace these values with a digest calculated after an unverified
+download.
 
 The bootstrap username defaults to `admin`. A deployment may override it with
 `--admin-username`, but it must never use a shared or predictable password.

@@ -1,5 +1,60 @@
 # IPMS Agent
 
+Windows candidate **0.2.49** adds the HGS node provider for the dedicated HGS
+tenant on a single IPMS Appliance. Fixed schema-1 jobs cover inspection, offline
+role installation, dedicated forest promotion, additional nodes, HGS
+initialization, verification and separately approved reboots. Both the vTPM and
+Shielded VM planning profiles are supported; the latter requires TPM attestation.
+These jobs do not admit fabric hosts or change workload VM security settings.
+
+The reviewed PowerShell adapter is compiled into the native binary, extracted
+into protected local storage, and checked against the compiled bytes before a
+fixed `powershell.exe -File` invocation. Remote jobs cannot supply commands,
+scripts, modules or executable paths. Only Windows Server builds 20348 (2022)
+and 26100 (2025) pass the platform gate. Feature installation uses the approved
+local directory and mandatory DISM `-LimitAccess`; no online source fallback is
+permitted. The provider resolves only a fixed HGS component list and its bounded
+OS-declared dependency closure against local ServerManager/DISM metadata. Missing
+or unknown mappings block provisioning. `role_installed` requires every component
+to be installed before promotion or initialization. `offline_source_policy_ready`
+reports that this offline provider can resolve the components and enforce DISM
+`LimitAccess`, `Source`, `All` and `NoRestart`; it does not claim a Windows Update
+registry policy is configured. Actual Windows role mappings, domain promotion,
+clustering and both profiles still require lab acceptance on those versions.
+
+Before provisioning, install the exact signing and encryption certificates with
+their private keys on each HGS node and prepare local secret references in an
+elevated **Windows PowerShell 5.1** session. The helper prompts for the secret;
+never put passwords on its command line. Run this standalone operator tool from
+the verified extracted Agent package when included, or from the reviewed
+`agent/scripts` source directory. The service installer does not copy the helper
+into the installed service directory:
+
+```powershell
+.\prepare-hgs-secret.ps1 -Reference hgs_dsrm -Purpose dsrm -TenantId <HGS-tenant-UUID>
+.\prepare-hgs-secret.ps1 -Reference hgs_join -Purpose join -TenantId <HGS-tenant-UUID>
+```
+
+The join reference is needed only for additional nodes. The helper reads the
+existing Agent device identity and stores machine-DPAPI-protected values bound
+to that identity, tenant and purpose under the protected Agent data directory.
+It never uploads secret values or overwrites an existing reference. Use the
+reference names in the reviewed Portal plan. HGS initialization grants read
+access on the exact two CAPI/CNG key files to the gMSA discovered from the local
+KeyProtection application pool, preserving existing ACLs. Unknown providers,
+HSM-only paths, reparse paths and read-denial ambiguity fail closed. The returned
+key-access evidence proves this local configuration and access-control check;
+it is not a guarded-host attestation, cryptographic key release or VM boot test.
+
+HGS uses protected immutable receipts, a durable claim/write-intent boundary and
+reboot observations. Lost replies replay receipts; an interrupted write is
+inspected and never automatically repeated. Unproven outcomes keep a separate
+write fence while fresh read-only inspection remains available. Only the exact
+authenticated reconciliation release from the Portal clears that fence; the
+original uncertain receipt stays available. The HGS worker is isolated from
+heartbeat and cannot overlap an Agent lifecycle update. Normal host attestation
+and key release remain direct Hyper-V-to-HGS traffic after provisioning.
+
 Windows candidate **0.2.48** adds sparse Custom GPO definitions while retaining the 0.2.47 Administrative Template, ownership and stale-cleanup safeguards. It also permits an exact configured domain
 root as an exclusive Tier 0 target for managed machine or user GPOs. It treats
 that target as a domain object in GPMC and LDAP while retaining the component's

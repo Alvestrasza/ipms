@@ -1,7 +1,14 @@
+# File Name: platform_views.py
+# Version: v0.2.76 | Last Modified: 2026-09-20
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Platform tenant metadata administration without customer operational access.
 """Platform metadata administration without customer operational access."""
 
 from django.contrib.auth import get_user_model
+from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -11,12 +18,24 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ipms.apps.audit.models import AuditEvent
+from ipms.apps.agent_pki.models import AgentPkiPolicy, AgentPkiRecoveryMaterial
+from ipms.apps.agent_pki.onboarding import (
+    tenant_agent_onboarding_status,
+    verify_gateway_isolation,
+)
+from ipms.apps.agent_pki.services import (
+    confirm_managed_pki_recovery,
+    download_managed_pki_recovery,
+    prepare_managed_pki,
+)
 from ipms.apps.core.exceptions import PublicApiError
 from .models import Tenant, TenantMembership
 from .identity import create_local_user
 from .permissions import IsPlatformAdministrator
 from .serializers import (
     InitialTenantAdministratorSerializer,
+    AgentPkiInitializeSerializer,
+    AgentPkiRecoveryConfirmSerializer,
     PlatformTenantCreateSerializer,
     PlatformTenantUpdateSerializer,
 )
@@ -37,6 +56,7 @@ def platform_tenant_payload(tenant):
         "id": str(tenant.id),
         "slug": tenant.slug,
         "display_name": tenant.display_name,
+        "purpose": tenant.purpose,
         "status": tenant.status,
         "created_at": tenant.created_at.isoformat(),
         "updated_at": tenant.updated_at.isoformat(),
@@ -167,3 +187,91 @@ class InitialTenantAdministratorView(PlatformTenantView):
         except IntegrityError:
             raise PublicApiError("username_unavailable", status_code=409) from None
         return Response({"tenant": platform_tenant_payload(tenant)}, status=201)
+
+
+class PlatformTenantAgentOnboardingView(PlatformTenantView):
+    def get(self, request, pk):
+        tenant = get_object_or_404(Tenant, pk=pk)
+        return Response(tenant_agent_onboarding_status(tenant=tenant))
+
+    @sensitive_variables("data")
+    def post(self, request, pk):
+        serializer = AgentPkiInitializeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        with transaction.atomic():
+            tenant = get_object_or_404(
+                Tenant.objects.select_for_update(no_key=True), pk=pk
+            )
+            if tenant.status != Tenant.Status.ACTIVE:
+                raise PublicApiError("tenant_inactive", status_code=409)
+            if (
+                tenant.initial_administrator_created_at is None
+                and not independent_administrator_history(tenant)
+            ):
+                raise PublicApiError("tenant_administrator_required", status_code=409)
+            if AgentPkiPolicy.objects.filter(tenant=tenant).exists():
+                raise PublicApiError("agent_pki_already_configured", status_code=409)
+            if AgentPkiPolicy.objects.filter(
+                gateway_dns_name__iexact=data["gateway_dns_name"]
+            ).exists():
+                raise PublicApiError("gateway_dns_name_unavailable", status_code=409)
+            prepare_managed_pki(
+                tenant=tenant,
+                gateway_dns_name=data["gateway_dns_name"],
+                gateway_port=settings.AGENT_GATEWAY_PORT,
+                recovery_passphrase=data["recovery_passphrase"].encode("utf-8"),
+                actor=request.user.get_username(),
+            )
+        return Response(tenant_agent_onboarding_status(tenant=tenant), status=201)
+
+
+class PlatformTenantAgentRecoveryView(PlatformTenantView):
+    def get(self, request, pk):
+        tenant = get_object_or_404(Tenant, pk=pk)
+        try:
+            recovery, digest = download_managed_pki_recovery(
+                tenant=tenant,
+                actor=request.user.get_username(),
+            )
+        except AgentPkiRecoveryMaterial.DoesNotExist:
+            raise PublicApiError("agent_pki_recovery_unavailable", status_code=409) from None
+        response = HttpResponse(recovery, content_type="application/x-pem-file")
+        response["Content-Disposition"] = (
+            f'attachment; filename="ipms-{tenant.slug}-agent-root-recovery.pem"'
+        )
+        response["Cache-Control"] = "no-store"
+        response["Pragma"] = "no-cache"
+        response["X-Content-Type-Options"] = "nosniff"
+        response["X-IPMS-Recovery-SHA256"] = digest
+        return response
+
+    def post(self, request, pk):
+        serializer = AgentPkiRecoveryConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        tenant = get_object_or_404(Tenant, pk=pk)
+        try:
+            confirm_managed_pki_recovery(
+                tenant=tenant,
+                bundle_sha256=serializer.validated_data["bundle_sha256"],
+                actor=request.user.get_username(),
+            )
+        except AgentPkiRecoveryMaterial.DoesNotExist:
+            raise PublicApiError("agent_pki_recovery_unavailable", status_code=409) from None
+        except ValidationError:
+            raise PublicApiError("agent_pki_recovery_not_confirmed", status_code=409) from None
+        return Response(tenant_agent_onboarding_status(tenant=tenant))
+
+
+class PlatformTenantAgentGatewayVerifyView(PlatformTenantView):
+    def post(self, request, pk):
+        tenant = get_object_or_404(Tenant, pk=pk)
+        if not AgentPkiPolicy.objects.filter(tenant=tenant).exists():
+            raise PublicApiError("agent_pki_not_configured", status_code=409)
+        verification = verify_gateway_isolation(requested_tenant=tenant)
+        return Response(
+            {
+                "verification": verification,
+                "onboarding": tenant_agent_onboarding_status(tenant=tenant),
+            }
+        )

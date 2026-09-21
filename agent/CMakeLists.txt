@@ -1,13 +1,13 @@
 # File Name: CMakeLists.txt
-# Version: v0.2.48
+# Version: v0.2.49
 # Created: 2026-08-31
-# Last Modified: 2026-09-17
+# Last Modified: 2026-09-20
 # Author: Alice Endelgard
 # Organization: Alvestrasza Corporation
 # Description: Native Agent build with bounded scans and snapshot-bound managed GPO operations.
 cmake_minimum_required(VERSION 3.24)
 
-project(ipms_agent VERSION 0.2.48 LANGUAGES CXX)
+project(ipms_agent VERSION 0.2.49 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,7 +20,7 @@ if(MSVC)
   add_compile_options(/EHsc)
 endif()
 
-add_library(ipms_agent_core STATIC src/configuration.cpp src/gateway_contract.cpp src/management_pack.cpp src/management_json.cpp src/hyperv_management_journal.cpp src/security_baseline.cpp src/gpo_management.cpp src/gpo_managed.cpp src/gpo_reconciliation.cpp src/gpo_override.cpp)
+add_library(ipms_agent_core STATIC src/configuration.cpp src/gateway_contract.cpp src/management_pack.cpp src/management_json.cpp src/hyperv_management_journal.cpp src/security_baseline.cpp src/gpo_management.cpp src/gpo_managed.cpp src/gpo_reconciliation.cpp src/gpo_override.cpp src/hgs_management.cpp)
 target_include_directories(ipms_agent_core PUBLIC include)
 target_compile_features(ipms_agent_core PUBLIC cxx_std_20)
 
@@ -32,6 +32,21 @@ add_executable(ipms-agent src/main.cpp)
 target_link_libraries(ipms-agent PRIVATE ipms_agent_core)
 
 if(WIN32)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/scripts/hgs-local-adapter.ps1")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/scripts/hgs-local-adapter.ps1" HGS_ADAPTER_CONTENT)
+  # MSVC limits the size of an individual string literal. Adjacent chunks keep
+  # the exact reviewed script bytes without introducing runtime code downloads.
+  string(LENGTH "${HGS_ADAPTER_CONTENT}" HGS_ADAPTER_LENGTH)
+  set(HGS_ADAPTER_LITERALS "")
+  set(HGS_ADAPTER_OFFSET 0)
+  while(HGS_ADAPTER_OFFSET LESS HGS_ADAPTER_LENGTH)
+    string(SUBSTRING "${HGS_ADAPTER_CONTENT}" ${HGS_ADAPTER_OFFSET} 8000 HGS_ADAPTER_CHUNK)
+    string(APPEND HGS_ADAPTER_LITERALS "R\"IPMS_HGS(${HGS_ADAPTER_CHUNK})IPMS_HGS\"\n")
+    math(EXPR HGS_ADAPTER_OFFSET "${HGS_ADAPTER_OFFSET} + 8000")
+  endwhile()
+  configure_file(include/ipms/agent/hgs_adapter_content.hpp.in "${CMAKE_CURRENT_BINARY_DIR}/generated/ipms/agent/hgs_adapter_content.hpp" @ONLY)
+  target_include_directories(ipms-agent PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+  target_sources(ipms-agent PRIVATE src/windows/windows_hgs_management.cpp)
   target_sources(ipms-agent PRIVATE src/windows/hyperv_pack.cpp src/windows/updater.cpp src/windows/windows_core_pack.cpp src/windows/windows_service.cpp src/windows/windows_software_pack.cpp src/windows/windows_telemetry.cpp src/windows/windows_transport.cpp src/windows/windows_native_console.cpp)
   target_sources(ipms-agent PRIVATE src/windows/hyperv_management.cpp src/windows/windows_management_journal.cpp)
   target_sources(ipms-agent PRIVATE src/windows/hyperv_management_operations.cpp src/windows/hyperv_management_settings.cpp)
@@ -70,6 +85,13 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(ipms-agent-hgs-tests tests/hgs_management_tests.cpp)
+  target_link_libraries(ipms-agent-hgs-tests PRIVATE ipms_agent_core)
+  add_test(NAME hgs-management-contract COMMAND ipms-agent-hgs-tests)
+  if(WIN32)
+    find_program(IPMS_WINDOWS_POWERSHELL NAMES powershell.exe PATHS "$ENV{SystemRoot}/System32/WindowsPowerShell/v1.0" NO_DEFAULT_PATH REQUIRED)
+    add_test(NAME hgs-adapter-boundaries COMMAND "${IPMS_WINDOWS_POWERSHELL}" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/hgs_adapter_tests.ps1")
+  endif()
   add_executable(ipms-agent-gpo-managed-tests tests/gpo_managed_contract_tests.cpp)
   target_link_libraries(ipms-agent-gpo-managed-tests PRIVATE ipms_agent_core)
   target_compile_definitions(ipms-agent-gpo-managed-tests PRIVATE IPMS_AGENT_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")

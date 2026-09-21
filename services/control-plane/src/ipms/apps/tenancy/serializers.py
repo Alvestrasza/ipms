@@ -1,3 +1,9 @@
+# File Name: serializers.py
+# Version: v0.2.76 | Last Modified: 2026-09-20
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Tenant API validation and immutable tenant purpose.
+import re
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -110,6 +116,7 @@ def tenant_user_payload(membership: TenantMembership, *, actor=None) -> dict:
 
 
 class PlatformTenantCreateSerializer(StrictInputSerializer):
+    purpose = serializers.ChoiceField(choices=Tenant.Purpose.choices, default=Tenant.Purpose.INFRASTRUCTURE)
     slug = serializers.SlugField(max_length=63)
     display_name = serializers.CharField(max_length=255)
     status = serializers.ChoiceField(
@@ -137,6 +144,44 @@ class PlatformTenantUpdateSerializer(StrictInputSerializer):
 class InitialTenantAdministratorSerializer(TenantUserCreateSerializer):
     role = None
     expires_at = None
+
+
+class AgentPkiInitializeSerializer(StrictInputSerializer):
+    gateway_dns_name = serializers.CharField(max_length=253)
+    recovery_passphrase = serializers.CharField(
+        min_length=20,
+        max_length=1024,
+        trim_whitespace=False,
+        write_only=True,
+    )
+    recovery_passphrase_confirmation = serializers.CharField(
+        min_length=20,
+        max_length=1024,
+        trim_whitespace=False,
+        write_only=True,
+    )
+
+    def validate_gateway_dns_name(self, value):
+        value = value.rstrip(".").lower()
+        pattern = re.compile(
+            r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*"
+            r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+        )
+        if not pattern.fullmatch(value):
+            raise serializers.ValidationError("Enter a valid DNS name.")
+        return value
+
+    @sensitive_variables()
+    def validate(self, attrs):
+        if attrs["recovery_passphrase"] != attrs["recovery_passphrase_confirmation"]:
+            raise serializers.ValidationError("The recovery passphrases do not match.")
+        if len(attrs["recovery_passphrase"].encode("utf-8")) < 20:
+            raise serializers.ValidationError("The recovery passphrase is too short.")
+        return attrs
+
+
+class AgentPkiRecoveryConfirmSerializer(StrictInputSerializer):
+    bundle_sha256 = serializers.RegexField(r"^[0-9a-fA-F]{64}$")
 
 
 class IdentityRenameSerializer(StrictInputSerializer):

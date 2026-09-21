@@ -1,6 +1,13 @@
+# File Name: services.py
+# Version: v0.2.76 | Last Modified: 2026-09-20
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Tenant Agent PKI, enrollment and isolated Gateway material services.
 import hashlib
 import ipaddress
+import json
+import os
 import secrets
+import shutil
 import uuid
 from datetime import timedelta
 from pathlib import Path
@@ -11,6 +18,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from ipms.apps.audit.models import AuditEvent
@@ -21,7 +29,9 @@ from .crypto import (
     atomic_write_private,
     certificate_fingerprint,
     create_managed_hierarchy,
+    decrypt_secret,
     decrypt_private_key,
+    encrypt_secret,
     encrypt_private_key,
     gateway_associated_data,
     issue_gateway_identity,
@@ -29,6 +39,7 @@ from .crypto import (
     issue_managed_issuer,
     issuer_associated_data,
     load_managed_root_recovery,
+    recovery_associated_data,
     validate_agent_csr,
 )
 from .models import (
@@ -37,6 +48,7 @@ from .models import (
     AgentGatewayIdentity,
     AgentIssuer,
     AgentPkiPolicy,
+    AgentPkiRecoveryMaterial,
     AgentRevocation,
 )
 
@@ -339,21 +351,27 @@ def _audit(*, tenant, actor: str, action: str, object_type: str, object_id, outc
     )
 
 
-@transaction.atomic
-def bootstrap_managed_pki(*, tenant, gateway_dns_name: str, recovery_output: Path, recovery_passphrase: bytes, actor: str):
+def _create_managed_pki_records(
+    *,
+    tenant,
+    gateway_dns_name: str,
+    gateway_port: int,
+    recovery_passphrase: bytes,
+    recovery_exported_at,
+):
     if AgentPkiPolicy.objects.filter(tenant=tenant).exists():
         raise ValidationError("Agent PKI is already configured for this tenant.")
     root_cert, issuer_key, issuer_cert, gateway_key, gateway_cert, recovery = (
         create_managed_hierarchy(gateway_dns_name, recovery_passphrase)
     )
-    atomic_write_private(recovery_output, recovery)
     policy = AgentPkiPolicy.objects.create(
         tenant=tenant,
         trust_mode=AgentPkiPolicy.TrustMode.IPMS_MANAGED,
         gateway_dns_name=gateway_dns_name,
+        gateway_port=gateway_port,
         root_certificate_pem=_pem(root_cert),
         root_fingerprint_sha256=certificate_fingerprint(root_cert),
-        root_recovery_exported_at=timezone.now(),
+        root_recovery_exported_at=recovery_exported_at,
     )
     issuer = AgentIssuer(id=uuid.uuid4(), tenant=tenant, policy=policy)
     issuer.private_key_nonce, issuer.private_key_ciphertext = encrypt_private_key(
@@ -386,6 +404,27 @@ def bootstrap_managed_pki(*, tenant, gateway_dns_name: str, recovery_output: Pat
     identity.not_before = gateway_cert.not_valid_before_utc
     identity.not_after = gateway_cert.not_valid_after_utc
     identity.save()
+    return policy, recovery
+
+
+@transaction.atomic
+def bootstrap_managed_pki(
+    *,
+    tenant,
+    gateway_dns_name: str,
+    recovery_output: Path,
+    recovery_passphrase: bytes,
+    actor: str,
+    gateway_port: int = 9419,
+):
+    policy, recovery = _create_managed_pki_records(
+        tenant=tenant,
+        gateway_dns_name=gateway_dns_name,
+        gateway_port=gateway_port,
+        recovery_passphrase=recovery_passphrase,
+        recovery_exported_at=timezone.now(),
+    )
+    atomic_write_private(recovery_output, recovery)
     _audit(
         tenant=tenant,
         actor=actor,
@@ -394,6 +433,94 @@ def bootstrap_managed_pki(*, tenant, gateway_dns_name: str, recovery_output: Pat
         object_id=policy.id,
         outcome=AuditEvent.Outcome.SUCCEEDED,
         details={"trust_mode": policy.trust_mode, "gateway_dns_name": gateway_dns_name},
+    )
+    return policy
+
+
+@transaction.atomic
+def prepare_managed_pki(
+    *,
+    tenant,
+    gateway_dns_name: str,
+    gateway_port: int,
+    recovery_passphrase: bytes,
+    actor: str,
+):
+    """Create managed PKI while retaining only a recoverable encrypted export."""
+
+    policy, recovery = _create_managed_pki_records(
+        tenant=tenant,
+        gateway_dns_name=gateway_dns_name,
+        gateway_port=gateway_port,
+        recovery_passphrase=recovery_passphrase,
+        recovery_exported_at=None,
+    )
+    material = AgentPkiRecoveryMaterial(
+        id=uuid.uuid4(),
+        tenant=tenant,
+        policy=policy,
+        bundle_sha256=hashlib.sha256(recovery).hexdigest(),
+    )
+    material.nonce, material.ciphertext = encrypt_secret(
+        recovery,
+        associated_data=recovery_associated_data(tenant.id, material.id),
+    )
+    material.save()
+    _audit(
+        tenant=tenant,
+        actor=actor,
+        action="agent_pki.prepare",
+        object_type="agent_pki_policy",
+        object_id=policy.id,
+        outcome=AuditEvent.Outcome.SUCCEEDED,
+        details={"trust_mode": policy.trust_mode, "gateway_dns_name": gateway_dns_name},
+    )
+    return policy, material
+
+
+@transaction.atomic
+def download_managed_pki_recovery(*, tenant, actor: str):
+    material = AgentPkiRecoveryMaterial.objects.select_for_update().get(tenant=tenant)
+    recovery = decrypt_secret(
+        bytes(material.nonce),
+        bytes(material.ciphertext),
+        associated_data=recovery_associated_data(tenant.id, material.id),
+    )
+    if hashlib.sha256(recovery).hexdigest() != material.bundle_sha256:
+        raise ValidationError("The Root recovery material integrity check failed.")
+    material.downloaded_at = timezone.now()
+    material.save(update_fields=("downloaded_at",))
+    _audit(
+        tenant=tenant,
+        actor=actor,
+        action="agent_pki.recovery.download",
+        object_type="agent_pki_policy",
+        object_id=material.policy_id,
+        outcome=AuditEvent.Outcome.SUCCEEDED,
+        details={"bundle_sha256": material.bundle_sha256},
+    )
+    return recovery, material.bundle_sha256
+
+
+@transaction.atomic
+def confirm_managed_pki_recovery(*, tenant, bundle_sha256: str, actor: str):
+    material = AgentPkiRecoveryMaterial.objects.select_for_update().get(tenant=tenant)
+    if material.downloaded_at is None:
+        raise ValidationError("The Root recovery material must be downloaded first.")
+    if not secrets.compare_digest(material.bundle_sha256, bundle_sha256.lower()):
+        raise ValidationError("The Root recovery material digest does not match.")
+    policy = AgentPkiPolicy.objects.select_for_update().get(id=material.policy_id)
+    material.delete()
+    policy.root_recovery_exported_at = timezone.now()
+    policy.save(update_fields=("root_recovery_exported_at", "updated_at"))
+    _audit(
+        tenant=tenant,
+        actor=actor,
+        action="agent_pki.recovery.confirm",
+        object_type="agent_pki_policy",
+        object_id=policy.id,
+        outcome=AuditEvent.Outcome.SUCCEEDED,
+        details={"bundle_sha256": bundle_sha256.lower()},
     )
     return policy
 
@@ -570,6 +697,13 @@ def create_enrollment_token(
         raise ValidationError(
             "Bootstrap tokens are unavailable in external-certificate mode."
         )
+    if (
+        policy.trust_mode == AgentPkiPolicy.TrustMode.IPMS_MANAGED
+        and policy.root_recovery_exported_at is None
+    ):
+        raise ValidationError(
+            "The Agent PKI recovery export has not been confirmed."
+        )
     device_id = uuid.uuid4()
     enrollment = AgentEnrollment.objects.create(
         tenant=tenant,
@@ -600,7 +734,7 @@ def create_enrollment_token(
 
 
 @transaction.atomic
-def enroll_agent(*, raw_token: str, csr_pem: str):
+def enroll_agent(*, raw_token: str, csr_pem: str, gateway_tenant_id=None):
     digest = hashlib.sha256(raw_token.encode()).hexdigest()
     token_tenant = (
         AgentEnrollmentToken.objects.filter(token_digest=digest)
@@ -620,6 +754,8 @@ def enroll_agent(*, raw_token: str, csr_pem: str):
     )
     if token is None:
         raise ValidationError("The enrollment token is invalid or expired.")
+    if gateway_tenant_id is not None and str(token.tenant_id) != str(gateway_tenant_id):
+        raise ValidationError("The enrollment token does not belong to this Gateway endpoint.")
     enrollment = token.enrollment
     if enrollment.status != AgentEnrollment.Status.PENDING:
         raise ValidationError("The enrollment is not pending.")
@@ -667,7 +803,12 @@ def enroll_agent(*, raw_token: str, csr_pem: str):
     return enrollment, enrollment.certificate_pem, issuer.certificate_pem + issuer.chain_pem
 
 
-def validate_peer_certificate(certificate_der: bytes, *, allow_suspended_report=False):
+def validate_peer_certificate(
+    certificate_der: bytes,
+    *,
+    allow_suspended_report=False,
+    gateway_tenant_id=None,
+):
     certificate = x509.load_der_x509_certificate(certificate_der)
     # Persistent console connections can survive beyond their TLS handshake.
     # Recheck the certificate validity window for every authenticated message.
@@ -693,6 +834,8 @@ def validate_peer_certificate(certificate_der: bytes, *, allow_suspended_report=
     ).first()
     if enrollment is None or AgentRevocation.objects.filter(enrollment=enrollment).exists():
         raise ValidationError("The Agent identity is not active.")
+    if gateway_tenant_id is not None and str(enrollment.tenant_id) != str(gateway_tenant_id):
+        raise ValidationError("The Agent identity does not belong to this Gateway endpoint.")
     if not allow_suspended_report:
         require_active_tenant(enrollment.tenant_id)
     elif enrollment.tenant.status not in {"active", "suspended"}:
@@ -1768,3 +1911,147 @@ def export_gateway_runtime(*, tenant, directory: Path) -> None:
         directory / "agent-trust.pem",
     ):
         path.chmod(0o640)
+
+
+def export_all_gateway_runtime(*, directory: Path) -> dict:
+    """Atomically publish isolated SNI material for every eligible tenant."""
+
+    policies = list(
+        AgentPkiPolicy.objects.select_related("tenant", "gateway_identity")
+        .filter(
+            tenant__status__in=("active", "suspended"),
+        )
+        .filter(
+            ~Q(trust_mode=AgentPkiPolicy.TrustMode.IPMS_MANAGED)
+            | Q(root_recovery_exported_at__isnull=False)
+        )
+        .order_by("tenant__slug")
+    )
+    if not policies:
+        raise ValidationError("No Agent Gateway tenant is ready for materialization.")
+    ports = {policy.gateway_port for policy in policies}
+    if len(ports) != 1:
+        raise ValidationError("All shared Agent Gateway tenants must use the same port.")
+    server_names: set[str] = set()
+    specification = []
+    for policy in policies:
+        server_name = policy.gateway_dns_name.rstrip(".").lower()
+        if server_name in server_names:
+            raise ValidationError("Agent Gateway DNS names must be unique per tenant.")
+        server_names.add(server_name)
+        issuers = list(
+            AgentIssuer.objects.filter(
+                tenant=policy.tenant,
+                status__in=(AgentIssuer.Status.ACTIVE, AgentIssuer.Status.OVERLAP),
+            ).order_by("fingerprint_sha256")
+        )
+        if not issuers:
+            raise ValidationError("An Agent Gateway tenant has no accepted issuer.")
+        specification.append(
+            {
+                "tenant_id": str(policy.tenant_id),
+                "tenant_slug": policy.tenant.slug,
+                "server_name": server_name,
+                "gateway_port": policy.gateway_port,
+                "gateway_fingerprint_sha256": policy.gateway_identity.fingerprint_sha256,
+                "issuer_fingerprints_sha256": [issuer.fingerprint_sha256 for issuer in issuers],
+                "policy": policy,
+                "identity": policy.gateway_identity,
+                "issuers": issuers,
+            }
+        )
+    revision_document = [
+        {key: value for key, value in item.items() if key not in {"policy", "identity", "issuers"}}
+        for item in specification
+    ]
+    revision = hashlib.sha256(
+        json.dumps(revision_document, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    directory.mkdir(mode=0o750, parents=True, exist_ok=True)
+    generation_name = f"generation-{revision}"
+    generation_directory = directory / generation_name
+    expected_material = [
+        generation_directory / "tenants" / item["tenant_id"] / name
+        for item in specification
+        for name in ("gateway.key", "gateway-chain.pem", "agent-trust.pem")
+    ]
+    if generation_directory.exists() and not all(
+        path.is_file() and path.stat().st_size > 0 for path in expected_material
+    ):
+        shutil.rmtree(generation_directory)
+    if not generation_directory.exists():
+        staging = directory / f".{generation_name}-{uuid.uuid4().hex}.tmp"
+        staging.mkdir(mode=0o750)
+        try:
+            for item in specification:
+                tenant_directory = staging / "tenants" / item["tenant_id"]
+                tenant_directory.mkdir(mode=0o750, parents=True)
+                identity = item["identity"]
+                private_key = decrypt_private_key(
+                    bytes(identity.private_key_nonce),
+                    bytes(identity.private_key_ciphertext),
+                    associated_data=gateway_associated_data(identity.tenant_id, identity.id),
+                )
+                key_pem = private_key.private_bytes(
+                    serialization.Encoding.PEM,
+                    serialization.PrivateFormat.PKCS8,
+                    serialization.NoEncryption(),
+                )
+                trust_pem = "".join(
+                    issuer.certificate_pem + issuer.chain_pem for issuer in item["issuers"]
+                )
+                for name, content in (
+                    ("gateway.key", key_pem),
+                    (
+                        "gateway-chain.pem",
+                        (identity.certificate_pem + identity.chain_pem).encode("ascii"),
+                    ),
+                    ("agent-trust.pem", trust_pem.encode("ascii")),
+                ):
+                    path = tenant_directory / name
+                    atomic_write_private(path, content)
+                    path.chmod(0o640)
+            os.replace(staging, generation_directory)
+        except Exception:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
+    tenants = [
+        {
+            "tenant_id": item["tenant_id"],
+            "tenant_slug": item["tenant_slug"],
+            "server_name": item["server_name"],
+            "gateway_port": item["gateway_port"],
+            "gateway_fingerprint_sha256": item["gateway_fingerprint_sha256"],
+            "relative_directory": f"{generation_name}/tenants/{item['tenant_id']}",
+        }
+        for item in specification
+    ]
+    manifest = {
+        "schema_version": 1,
+        "revision": revision,
+        "gateway_port": next(iter(ports)),
+        "tenants": tenants,
+    }
+    manifest_path = directory / "gateway-manifest.json"
+    manifest_bytes = (
+        json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode()
+    try:
+        unchanged = manifest_path.read_bytes() == manifest_bytes
+    except FileNotFoundError:
+        unchanged = False
+    if not unchanged:
+        atomic_write_private(manifest_path, manifest_bytes)
+        manifest_path.chmod(0o640)
+    generations = sorted(
+        (
+            path
+            for path in directory.iterdir()
+            if path.is_dir() and path.name.startswith("generation-")
+        ),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for old_generation in generations[2:]:
+        shutil.rmtree(old_generation)
+    return manifest

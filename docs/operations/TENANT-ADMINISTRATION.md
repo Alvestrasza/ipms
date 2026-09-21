@@ -1,7 +1,14 @@
+<!--
+File Name: TENANT-ADMINISTRATION.md
+Version: v0.2.76 | Last Modified: 2026-09-20
+Author: Alice Endelgard | Organization: Alvestrasza Corporation
+Purpose: Administer tenant metadata, initial identities and Agent onboarding.
+-->
+
 # Tenant Administration
 
-Application target: **0.2.33**. Windows Agent remains **0.2.26** and Linux Agent
-remains **0.2.13**.
+Application source target: **0.2.76**. HGS workflows require Windows Agent
+**0.2.49** or later. Published and deployed versions remain separate evidence.
 
 ## Platform workflow
 
@@ -12,7 +19,17 @@ remains **0.2.13**.
    be changed. Creation does not add the platform account to that tenant.
 3. Choose initial-administrator setup and enter a **different**, new local
    username and a strong initial password. No existing user is silently reused.
-4. Sign out and sign in as the tenant administrator to work with that tenant's
+4. Open **Agent access** for the tenant. Supply a dedicated Gateway DNS name and
+   a recovery passphrase that will be held outside the Appliance. Create the
+   managed Agent PKI.
+5. Download the encrypted Root recovery bundle, verify the displayed SHA-256,
+   store the bundle and passphrase in separate protected custody, then confirm
+   custody. Agent enrollment remains blocked until this confirmation.
+6. Wait for the Appliance material reconciler, then run **Verify Gateway and all
+   tenants**. This proves that the selected DNS/SNI endpoint presents the exact
+   tenant certificate and that every existing configured tenant still presents
+   its own identity.
+7. Sign out and sign in as the tenant administrator to work with that tenant's
    infrastructure, users and Service Accounts. The platform session never
    impersonates the new user.
 
@@ -35,11 +52,13 @@ are restricted to it. A platform administrator cannot enter this operational
 page, list tenant secrets or assign accounts to customer hosts. There is no
 cross-tenant credential move or sharing operation.
 
-Creating a tenant does **not** automatically create its Agent PKI, distribute
-gateway trust, install Agents, configure BMCs, or enable future services. Follow
-the separately accepted [PKI and Gateway setup](AGENT-PKI-AND-GATEWAY.md).
-Automatic hosted multi-tenant gateway provisioning and granular per-service
-write entitlements remain future work.
+Creating a tenant does **not** silently create cryptographic material. The
+platform operator completes the explicit **Agent access** ceremony described
+above. The shared Appliance listener uses exact SNI selection with a separate
+server identity and Agent trust bundle for every tenant; an unknown DNS name is
+rejected. Agent package readiness is global Appliance release evidence and is
+shown in the same workflow. See [PKI and Gateway setup](AGENT-PKI-AND-GATEWAY.md)
+for recovery, runtime and rotation details.
 
 ## Suspension
 

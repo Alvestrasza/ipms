@@ -1,3 +1,7 @@
+# File Name: operations.py
+# Version: v0.2.76 | Last Modified: 2026-09-20
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Tenant policy changes and irreversible withdrawal of execution authority.
 """Live tenant policy and irreversible withdrawal of queued execution authority.
 
 The caller of the suspension hook owns the Tenant NO KEY UPDATE lock. New
@@ -141,6 +145,8 @@ def withdraw_identity_operations(user, *, reason):
         withdraw_gpo_jobs(tenant_id=tenant_id, actor_id=user.pk, reason=reason)
         for tenant_id in sorted(gpo_tenant_ids)
     )
+    from ipms.apps.hgs.services import withdraw_hgs_jobs
+    counts["hgs_jobs"] = withdraw_hgs_jobs(actor_id=user.pk, reason=reason)
     return counts
 
 
@@ -226,6 +232,8 @@ def apply_tenant_status_change(tenant, previous_status, actor):
     counts["management_jobs"] = withdraw_management_jobs(tenant_id=tenant.pk, reason="tenant_suspended")
     from ipms.apps.security.gpo_jobs import withdraw_gpo_jobs
     counts["gpo_imports"] = withdraw_gpo_jobs(tenant_id=tenant.pk, reason="tenant_suspended")
+    from ipms.apps.hgs.services import withdraw_hgs_jobs
+    counts["hgs_jobs"] = withdraw_hgs_jobs(tenant_id=tenant.pk, reason="tenant_suspended")
     AuditEvent.objects.create(
         tenant=tenant,
         actor=actor,

@@ -1,3 +1,7 @@
+# File Name: test_platform.py
+# Version: v0.2.76 | Last Modified: 2026-09-20
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Platform tenant isolation and metadata contract regression checks.
 import threading
 import time
 import uuid
@@ -109,6 +113,7 @@ class PlatformApiTests(PlatformFixture, TestCase):
                 "slug",
                 "display_name",
                 "status",
+                "purpose",
                 "created_at",
                 "updated_at",
                 "needs_administrator",

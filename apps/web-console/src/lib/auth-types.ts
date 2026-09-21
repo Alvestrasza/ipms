@@ -1,7 +1,7 @@
 /**
  * File Name: auth-types.ts
  * Version: v0.1.0
- * Created: 2026-08-30 | Modified: 2026-09-14
+ * Created: 2026-08-30 | Modified: 2026-09-19
  * Author: Alice Endelgard | Organization: Alvestrasza Corporation
  * Purpose: Define tenant sessions and server-issued portal permission codes.
  */
@@ -25,6 +25,8 @@ export type PermissionCode =
   | "security.domains.manage"
   | "security.gpo_imports.run"
   | "security.gpo_imports.approve"
+  | "hgs.view"
+  | "hgs.manage"
   | "virtual_machines.operate"
   | "virtual_machines.console.control"
   | "virtual_machines.configure"
@@ -40,6 +42,7 @@ export type TenantSummary = {
   id: string;
   slug: string;
   display_name: string;
+  purpose?: "infrastructure" | "hgs";
   role: TenantRole;
   permissions: PermissionCode[];
 };

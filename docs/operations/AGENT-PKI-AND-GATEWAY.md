@@ -1,3 +1,10 @@
+<!--
+File Name: AGENT-PKI-AND-GATEWAY.md
+Version: v0.2.76 | Last Modified: 2026-09-20
+Author: Alice Endelgard | Organization: Alvestrasza Corporation
+Purpose: Operate tenant-isolated Agent PKI, recovery custody and the shared Gateway.
+-->
+
 # Agent PKI and mTLS Gateway Operations
 
 ## Scope
@@ -6,10 +13,12 @@ This runbook covers the dedicated IPMS Agent PKI and the isolated Agent
 Gateway on TCP 9419. It applies to machine identities only. Browser, BMC,
 database, connector, and code-signing trust must remain separate.
 
-The initial implementation provides the server-side enrollment and transport
-foundation. Native Windows and Linux Agent integration, the portal enrollment
-wizard, and production acceptance on representative customer PKIs remain
-separate delivery gates.
+The Appliance supports explicit platform-operator onboarding for multiple
+tenants on one listener. Each tenant receives its own managed hierarchy,
+Gateway server identity and Agent trust chain. Exact DNS/SNI selection keeps
+those identities separate while sharing the Appliance IP address and TCP 9419.
+Production acceptance on representative customer networks and recovery media
+remains a separate delivery gate.
 
 ## Managed hierarchy
 
@@ -20,12 +29,35 @@ it once as an encrypted PKCS#8 recovery bundle. The runtime Issuing CA and
 Gateway private keys are encrypted independently with the dedicated
 `IPMS_AGENT_PKI_MASTER_KEY` and tenant/object-specific authenticated data.
 
-The recovery bundle and its passphrase are a two-part recovery secret. Retrieve
-them through an approved, separate administrative channel, place them in
-separate protected escrow locations, verify recovery in an isolated exercise,
-and remove the bootstrap copies from the Appliance. Co-located bootstrap files
-are suitable only for the current development ceremony and are a production
-acceptance blocker.
+The recovery bundle and its passphrase are a two-part recovery secret. The
+Portal never stores the passphrase. Until custody is confirmed, the encrypted
+bundle is retained under an additional Appliance master-key envelope and Agent
+enrollment is blocked. Download the bundle, verify its displayed SHA-256, place
+bundle and passphrase in separate protected escrow locations, and confirm
+custody. Confirmation removes the staged export from the database. Verify
+recovery in an isolated exercise before production acceptance.
+
+## Portal tenant onboarding
+
+From **Administration > Tenants**, open **Agent access** after the independent
+tenant administrator exists. Enter a DNS name dedicated to this tenant. It may
+resolve to the same Appliance address as other tenants, but it must be unique
+and clients must use the DNS name rather than an IP address so TLS SNI and
+server identity validation remain available. Create the corresponding DNS
+record before verification; the Appliance does not manage the surrounding DNS
+service.
+
+Create the PKI, download and separately secure the recovery material, confirm
+custody, and run the Gateway verification. The verification connects to the
+configured DNS endpoint once for every tenant with that tenant's SNI name and
+Root trust. It compares the presented SHA-256 fingerprint with the database and
+reports readiness only when the new endpoint and all existing endpoints still
+match. `IPMS_AGENT_GATEWAY_PROBE_HOST` may override only the connection address
+for constrained or load-balanced installations; setting it to loopback reduces
+this check to local listener readiness. Agent-network firewall reachability is
+still validated by an Agent connection during deployment acceptance. The
+workflow also recomputes the Appliance Agent package SHA-256 and, for HGS
+tenants, requires Agent 0.2.49 or later.
 
 ## Enrollment contract
 
@@ -63,20 +95,27 @@ all copies of the one-time enrollment document.
 
 ## Runtime separation
 
-`ipms-agent-gateway-material.service` decrypts only the current Gateway key and
-accepted public chains into `/run/ipms-agent-gateway`. The listener runs as the
+`ipms-agent-gateway-material.timer` reconciles all eligible tenants into an
+immutable generation below `/run/ipms-agent-gateway` every 15 seconds. A
+manifest is published only after every tenant's Gateway key, server chain and
+accepted Agent issuer chain has been written. The listener reloads that
+manifest on the next TLS handshake and selects a tenant context by exact SNI.
+Unknown or duplicate names fail closed. Enrollment tokens and established
+Agent certificates are additionally checked against the selected tenant.
+
+The listener runs as the
 unprivileged `ipms-agent-gateway` account with a minimal environment that does
 not contain the Web, connector, or certificate-probe secrets. TLS 1.3 and ALPN
 `ipms-agent/1` are mandatory. Unauthenticated TLS is accepted only for the
 pinned, one-time enrollment message; every persistent Agent stream requires a
 validated client certificate.
 
-After a certificate or issuer change, rematerialize the protected runtime files
-and restart the listener:
+After a certificate or issuer change, request immediate reconciliation when a
+15-second wait is unsuitable:
 
 ```bash
 sudo systemctl restart ipms-agent-gateway-material.service
-sudo systemctl restart ipms-agent-gateway.service
+sudo systemctl is-active ipms-agent-gateway-material.timer
 sudo systemctl is-active ipms-agent-gateway.service
 ```
 
@@ -138,7 +177,8 @@ sudo -u ipms-control-plane \
   --actor operator@example.invalid
 ```
 
-Restart both Gateway services after rotation, rollback, or retirement.
+The material timer publishes rotations, rollbacks and retirements without
+replacing another tenant's material or restarting established connections.
 
 ## External trust modes
 
@@ -174,6 +214,14 @@ commits, screenshots, or public logs.
 
 - Managed bootstrap produces one encrypted Root recovery export and no runtime
   Root key.
+- Enrollment remains blocked until recovery download and separate custody are
+  confirmed.
+- Two tenant DNS names on the shared port present different expected server
+  fingerprints and trust only their own Agent issuers; unknown SNI is rejected.
+- Adding a tenant preserves every existing tenant identity during the Gateway
+  self-check.
+- The configured Agent package bytes match the pinned SHA-256 and the HGS
+  minimum Agent version.
 - A one-time token cannot be reused and a weak CSR key is rejected without
   consuming the token.
 - The Gateway accepts the first inventory only after enrollment and mTLS

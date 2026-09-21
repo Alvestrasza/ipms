@@ -2,6 +2,12 @@
 
 ## Scope
 
+Windows Agent 0.2.49 adds the fixed HGS assignment/receipt channel in
+[ADR-0019](ADR-0019-HGS-PROVISIONING.md). Its reviewed local adapter is embedded
+in the executable and cannot accept remote script content or arbitrary commands.
+HGS identities and approvals belong to a dedicated tenant. Deploy the matching
+receiver first; real forest/key-release acceptance is separate from contract tests.
+
 This contract defines the boundary between IPMS Control Plane and an enrolled IPMS Agent. It supplements the read-only connector contract; it does not turn agents into connector endpoints or generic management channels.
 
 Windows Agent 0.2.33 adds bounded, read-only computer GPO processing evidence

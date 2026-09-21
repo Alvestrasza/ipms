@@ -1,3 +1,7 @@
+# File Name: rbac.py
+# Version: v0.2.76 | Last Modified: 2026-09-20
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Tenant permissions with isolated HGS and infrastructure authorities.
 from __future__ import annotations
 
 from django.db.models import Q, QuerySet
@@ -7,6 +11,8 @@ from .models import PlatformAdministrator, Tenant, TenantMembership
 
 
 class Permission:
+    HGS_VIEW = "hgs.view"
+    HGS_MANAGE = "hgs.manage"
     SECURITY_COLLECTIONS_VIEW = 'security.collections.view'
     SECURITY_COLLECTIONS_MANAGE = 'security.collections.manage'
     SECURITY_DOMAINS_MANAGE = 'security.domains.manage'
@@ -123,7 +129,18 @@ def effective_tenant_role(user, tenant: Tenant) -> str | None:
 
 def effective_tenant_permissions(user, tenant: Tenant) -> frozenset[str]:
     role = effective_tenant_role(user, tenant)
-    return ROLE_PERMISSIONS.get(role, frozenset())
+    permissions = ROLE_PERMISSIONS.get(role, frozenset())
+    if tenant.purpose == Tenant.Purpose.HGS:
+        allowed = {
+            Permission.INVENTORY_VIEW, Permission.AGENTS_VIEW, Permission.AGENTS_MANAGE,
+            Permission.AUDIT_VIEW, Permission.USERS_VIEW, Permission.USERS_MANAGE,
+            Permission.SECURITY_BASELINES_MANAGE, Permission.SECURITY_SCANS_RUN,
+            Permission.HGS_VIEW, Permission.HGS_MANAGE,
+        }
+        if role:
+            permissions = permissions | {Permission.HGS_VIEW}
+        return frozenset(permissions & allowed)
+    return permissions - {Permission.HGS_VIEW, Permission.HGS_MANAGE}
 
 
 def has_tenant_permission(user, tenant: Tenant, permission: str) -> bool:

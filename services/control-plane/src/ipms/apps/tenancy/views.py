@@ -1,3 +1,7 @@
+# File Name: views.py
+# Version: v0.2.76 | Last Modified: 2026-09-20
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Tenant account administration and operation authority withdrawal.
 import json
 from ipaddress import ip_address
 
@@ -82,6 +86,7 @@ def _tenant_payload(user) -> list[dict[str, object]]:
             "id": str(tenant.id),
             "slug": tenant.slug,
             "display_name": tenant.display_name,
+            "purpose": tenant.purpose,
             "role": effective_tenant_role(user, tenant),
             "permissions": sorted(effective_tenant_permissions(user, tenant)),
         }
@@ -340,6 +345,8 @@ class TenantUserDetailView(APIView):
             if previous != current_authority:
                 from ipms.apps.security.gpo_jobs import withdraw_gpo_jobs
                 withdraw_gpo_jobs(tenant_id=request.tenant.pk, actor_id=membership.user_id, reason="membership_changed")
+                from ipms.apps.hgs.services import withdraw_hgs_jobs
+                withdraw_hgs_jobs(tenant_id=request.tenant.pk, actor_id=membership.user_id, reason="membership_changed")
             _audit_user_change(
                 request,
                 action="identity.membership.update",

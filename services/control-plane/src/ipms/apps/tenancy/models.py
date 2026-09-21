@@ -1,3 +1,7 @@
+# File Name: models.py
+# Version: v0.2.76 | Last Modified: 2026-09-20
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Tenant identities with immutable purpose and dedicated HGS memberships.
 import uuid
 
 from django.conf import settings
@@ -38,6 +42,10 @@ class PlatformAdministrator(models.Model):
 
 
 class Tenant(models.Model):
+    class Purpose(models.TextChoices):
+        INFRASTRUCTURE = "infrastructure", "Infrastructure"
+        HGS = "hgs", "Host Guardian Service"
+
     class Status(models.TextChoices):
         ACTIVE = "active", "Active"
         SUSPENDED = "suspended", "Suspended"
@@ -46,6 +54,7 @@ class Tenant(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     slug = models.SlugField(max_length=63, unique=True)
     display_name = models.CharField(max_length=255)
+    purpose = models.CharField(max_length=16, choices=Purpose.choices, default=Purpose.INFRASTRUCTURE)
     external_reference = models.CharField(
         max_length=255,
         blank=True,
@@ -67,6 +76,14 @@ class Tenant(models.Model):
 
     def __str__(self) -> str:
         return self.display_name
+
+    def save(self, *args, **kwargs):
+        # Purpose is an identity boundary, never a way to repurpose enrolled hosts.
+        if self.purpose not in self.Purpose.values:
+            raise ValidationError("Invalid tenant purpose.")
+        if self.pk and Tenant.objects.filter(pk=self.pk).exclude(purpose=self.purpose).exists():
+            raise ValidationError("Tenant purpose cannot be changed.")
+        return super().save(*args, **kwargs)
 
 
 class TenantMembership(models.Model):
@@ -113,6 +130,10 @@ class TenantMembership(models.Model):
         return f"{self.user} in {self.tenant} ({self.role})"
 
     def clean(self):
+        if self.user_id and self.tenant_id:
+            other = TenantMembership.objects.filter(user_id=self.user_id).exclude(tenant_id=self.tenant_id)
+            if (self.tenant.purpose == Tenant.Purpose.HGS and other.exists()) or other.filter(tenant__purpose=Tenant.Purpose.HGS).exists():
+                raise ValidationError("HGS identities must belong exclusively to their HGS tenant.")
         if (
             self.user_id
             and get_user_model()

@@ -1,9 +1,15 @@
+# File Name: gateway.py
+# Version: v0.2.76 | Last Modified: 2026-09-20
+# Author: Alice Endelgard | Organization: Alvestrasza Corporation
+# Description: Authenticated Agent protocol dispatch including fixed HGS messages.
 import asyncio
 import contextlib
 import json
 import logging
 import os
+import re
 import ssl
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -101,7 +107,13 @@ def _unique_management_json(line: bytes) -> dict:
         raise ValidationError("The management message is invalid.") from exc
 
 
-def build_tls_context(runtime_directory: Path) -> ssl.SSLContext:
+_GATEWAY_DNS_PATTERN = re.compile(
+    r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*"
+    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+)
+
+
+def _build_single_tls_context(runtime_directory: Path) -> ssl.SSLContext:
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_3
     context.verify_mode = ssl.CERT_OPTIONAL
@@ -114,6 +126,91 @@ def build_tls_context(runtime_directory: Path) -> ssl.SSLContext:
     )
     context.load_verify_locations(cafile=runtime_directory / "agent-trust.pem")
     context.set_alpn_protocols(["ipms-agent/1", "http/1.1"])
+    return context
+
+
+class GatewayTlsRegistry:
+    """Reload immutable per-tenant TLS contexts selected by exact SNI."""
+
+    def __init__(self, runtime_directory: Path):
+        self.runtime_directory = runtime_directory.resolve()
+        self.manifest_path = self.runtime_directory / "gateway-manifest.json"
+        self._lock = threading.RLock()
+        self._manifest_state: tuple[int, int] | None = None
+        self._contexts: dict[str, tuple[str, ssl.SSLContext]] = {}
+        self.refresh(force=True)
+
+    @property
+    def default_context(self) -> ssl.SSLContext:
+        with self._lock:
+            return next(iter(self._contexts.values()))[1]
+
+    def refresh(self, *, force: bool = False) -> None:
+        stat = self.manifest_path.stat()
+        state = (stat.st_mtime_ns, stat.st_size)
+        with self._lock:
+            if not force and state == self._manifest_state:
+                return
+            if stat.st_size > 1_048_576:
+                raise ValueError("The Agent Gateway manifest is too large.")
+            document = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+            if document.get("schema_version") != 1:
+                raise ValueError("The Agent Gateway manifest schema is invalid.")
+            tenants = document.get("tenants")
+            if not isinstance(tenants, list) or not 1 <= len(tenants) <= 1024:
+                raise ValueError("The Agent Gateway manifest tenant list is invalid.")
+            contexts: dict[str, tuple[str, ssl.SSLContext]] = {}
+            for tenant in tenants:
+                if not isinstance(tenant, dict):
+                    raise ValueError("The Agent Gateway manifest entry is invalid.")
+                server_name = str(tenant.get("server_name", "")).lower()
+                tenant_id = str(tenant.get("tenant_id", ""))
+                relative_directory = str(tenant.get("relative_directory", ""))
+                if (
+                    not _GATEWAY_DNS_PATTERN.fullmatch(server_name)
+                    or not tenant_id
+                    or not relative_directory
+                    or server_name in contexts
+                ):
+                    raise ValueError("The Agent Gateway manifest identity is invalid.")
+                material_directory = (self.runtime_directory / relative_directory).resolve()
+                if self.runtime_directory not in material_directory.parents:
+                    raise ValueError("The Agent Gateway material path is invalid.")
+                contexts[server_name] = (
+                    tenant_id,
+                    _build_single_tls_context(material_directory),
+                )
+            self._contexts = contexts
+            self._manifest_state = state
+
+    def select(self, ssl_object, server_name: str | None, initial_context) -> None:
+        try:
+            self.refresh()
+        except Exception as exc:
+            logger.error("Agent Gateway TLS material reload failed: %s", exc)
+            raise ssl.SSLError("Agent Gateway TLS material is unavailable.") from exc
+        normalized = (server_name or "").rstrip(".").lower()
+        with self._lock:
+            selected = self._contexts.get(normalized)
+        if selected is None:
+            raise ssl.SSLError("The Agent Gateway SNI identity is not configured.")
+        tenant_id, context = selected
+        ssl_object.context = context
+        try:
+            setattr(ssl_object, "ipms_gateway_tenant_id", tenant_id)
+        except (AttributeError, TypeError):
+            # Context-specific client trust still enforces isolation when the
+            # interpreter's SSL wrapper does not permit custom attributes.
+            pass
+
+
+def build_tls_context(runtime_directory: Path) -> ssl.SSLContext:
+    manifest = runtime_directory / "gateway-manifest.json"
+    if not manifest.exists():
+        return _build_single_tls_context(runtime_directory)
+    registry = GatewayTlsRegistry(runtime_directory)
+    context = registry.default_context
+    context.set_servername_callback(registry.select)
     return context
 
 
@@ -148,6 +245,7 @@ def _parse_http_request(header: bytes) -> tuple[str, dict[str, str], int]:
         "/v1/security-scan",
         "/v1/security-gpo",
         "/v1/security-gpo-artifact",
+        "/v1/hgs",
     }:
         raise ValidationError("The Agent Gateway HTTP route is invalid.")
     headers: dict[str, str] = {}
@@ -293,6 +391,7 @@ async def _handle_http_connection(
     writer: asyncio.StreamWriter,
     peer_certificate: bytes | None,
     *,
+    gateway_tenant_id=None,
     console_only: bool = False,
     allow_keepalive: bool = False,
 ) -> bool | None:
@@ -337,7 +436,7 @@ async def _handle_http_connection(
         if path == "/v1/hyperv-console"
         else MAX_MESSAGE_BYTES,
     )
-    if path in {"/v1/hyperv-management", "/v1/security-scan", "/v1/security-gpo", "/v1/security-gpo-artifact"}:
+    if path in {"/v1/hyperv-management", "/v1/security-scan", "/v1/security-gpo", "/v1/security-gpo-artifact", "/v1/hgs"}:
         document = _unique_management_json(body)
     if path == "/v1/enroll":
         if peer_certificate:
@@ -348,6 +447,7 @@ async def _handle_http_connection(
             enroll_agent,
             raw_token=str(document.get("bootstrap_token", "")),
             csr_pem=str(document.get("csr_pem", "")),
+            gateway_tenant_id=gateway_tenant_id,
         )
         await _http_reply(
             writer,
@@ -366,7 +466,8 @@ async def _handle_http_connection(
     enrollment = await database_call(
         validate_peer_certificate,
         peer_certificate,
-        allow_suspended_report=((path == "/v1/security-gpo"
+        gateway_tenant_id=gateway_tenant_id,
+        allow_suspended_report=((path == "/v1/hgs" and document.get("type") == "hgs" and document.get("mode") == "result") or (path == "/v1/security-gpo"
                                  and document.get("type") == "security_gpo"
                                  and document.get("action") in ("poll", "lookup", "result")) or (path == "/v1/hyperv-management"
                                  and document.get("type") == "hyperv_management"
@@ -378,6 +479,11 @@ async def _handle_http_connection(
     )
     if document.get("device_uri") != enrollment.device_uri:
         raise ValidationError("The Agent message identity is invalid.")
+    if path == "/v1/hgs":
+        from ipms.apps.hgs.services import hgs_exchange
+        response = await _database_call_async(hgs_exchange, enrollment, document)
+        await _http_reply(writer, 200, response)
+        return
     if path in {"/v1/security-gpo", "/v1/security-gpo-artifact"}:
         from ipms.apps.security.gpo_jobs import security_gpo_exchange
         response = await _database_call_async(
@@ -558,6 +664,7 @@ async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.Stream
             raise ValidationError("The Agent Gateway ALPN is invalid.")
         protocol = _connection_protocol(ssl_object.selected_alpn_protocol())
         peer_certificate = ssl_object.getpeercert(binary_form=True)
+        gateway_tenant_id = getattr(ssl_object, "ipms_gateway_tenant_id", None)
         if protocol == "http":
             # Persistence is opt-in and limited to authenticated console traffic.
             # Every request still revalidates certificate revocation and identity.
@@ -565,6 +672,7 @@ async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.Stream
             for request_index in range(256):
                 keep_alive = await _handle_http_connection(
                     reader, writer, peer_certificate,
+                    gateway_tenant_id=gateway_tenant_id,
                     console_only=request_index > 0,
                     allow_keepalive=request_index < 255,
                 )
@@ -580,6 +688,7 @@ async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.Stream
                 enroll_agent,
                 raw_token=str(document.get("bootstrap_token", "")),
                 csr_pem=str(document.get("csr_pem", "")),
+                gateway_tenant_id=gateway_tenant_id,
             )
             await _reply(
                 writer,
@@ -594,12 +703,15 @@ async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.Stream
         enrollment = await _database_call_async(
             validate_peer_certificate,
             peer_certificate,
+            gateway_tenant_id=gateway_tenant_id,
         )
         while True:
             # The legacy line protocol can keep one TLS connection for many
             # messages. Recheck mutable identity and tenant state every time.
             enrollment = await _database_call_async(
-                validate_peer_certificate, peer_certificate
+                validate_peer_certificate,
+                peer_certificate,
+                gateway_tenant_id=gateway_tenant_id,
             )
             if document["type"] not in ALLOWED_AGENT_MESSAGES:
                 raise ValidationError("The Agent message type is not allowed.")
